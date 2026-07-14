@@ -1,0 +1,87 @@
+from django.db import models
+
+class MediaCategory(models.Model):
+    category_id = models.AutoField(primary_key=True)
+    category_name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        permissions = [
+            ("view_category_name", "Can view category name"),
+            ("change_category_name", "Can change category name"),
+        ]
+
+    def __str__(self):
+        return self.category_name
+
+def get_media_upload_path(instance, filename):
+    category_slug = instance.category.category_name.lower().replace(' ', '_') if instance.category else 'general'
+    
+    # Resolve the ticket — directly or via expense's parent ticket
+    ticket = None
+    if instance.ticket_id:
+        ticket = instance.ticket
+    elif instance.expense_id:
+        ticket = instance.expense.ticket
+    
+    if ticket:
+        store_slug = ticket.store.store_name.lower().replace(' ', '_') if ticket.store else 'unknown_store'
+        return f"stores/{store_slug}/tickets/ticket_{ticket.ticket_id}/{category_slug}/{filename}"
+    return f"general/{category_slug}/{filename}"
+
+class Media(models.Model):
+    media_id = models.AutoField(primary_key=True)
+    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='attachments')
+    expense = models.ForeignKey('finance.Expense', on_delete=models.CASCADE, null=True, blank=True, related_name='receipts')
+    uploaded_by = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='uploaded_media')
+    category = models.ForeignKey(MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_files')
+    file_name = models.CharField(max_length=255)
+    file_url = models.FileField(upload_to=get_media_upload_path)
+    uploaded_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        permissions = [
+            ("view_ticket", "Can view ticket"),
+            ("change_ticket", "Can change ticket"),
+            ("view_expense", "Can view expense"),
+            ("change_expense", "Can change expense"),
+            ("view_uploaded_by", "Can view uploaded by"),
+            ("change_uploaded_by", "Can change uploaded by"),
+            ("view_category", "Can view category"),
+            ("change_category", "Can change category"),
+            ("view_file_name", "Can view file name"),
+            ("change_file_name", "Can change file name"),
+            ("view_file_url", "Can view file url"),
+            ("change_file_url", "Can change file url"),
+        ]
+
+    def __str__(self):
+        return self.file_name
+
+class Notification(models.Model):
+    notification_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='notifications')
+    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
+    notification_type = models.CharField(max_length=50)
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        permissions = [
+            ("view_user", "Can view user"),
+            ("change_user", "Can change user"),
+            ("view_ticket", "Can view ticket"),
+            ("change_ticket", "Can change ticket"),
+            ("view_notification_type", "Can view notification type"),
+            ("change_notification_type", "Can change notification type"),
+            ("view_title", "Can view title"),
+            ("change_title", "Can change title"),
+            ("view_message", "Can view message"),
+            ("change_message", "Can change message"),
+            ("view_is_read", "Can view is read"),
+            ("change_is_read", "Can change is read"),
+        ]
+
+    def __str__(self):
+        return f"Notif {self.notification_id} for {self.user.username} - {self.title}"
