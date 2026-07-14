@@ -132,6 +132,46 @@ class LoginView(APIView):
                 
         return Response({
             "token": token.key,
+            "permissions": list(user.get_all_permissions()),
+            "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
+            "store": {"store_id": user.store.store_id, "store_name": user.store.store_name} if user.store else None,
+            "user": {
+                "user_id": user.user_id,
+                "username": user.username,
+                "email": user.email,
+                "employee_no": user.employee_no,
+                "full_name": user.full_name,
+                "phone": user.phone,
+                "whatsapp_number": user.whatsapp_number,
+                "role": user.role.role_name if user.role else None,
+                "active": user.active,
+                "profile_image": profile_image_url,
+                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()]
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class ProfileView(APIView):
+    def get(self, request):
+        user = request.user
+        if not user or user.is_anonymous:
+            return Response(
+                {"error": "Unauthorized"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
+        # Build image URL if it exists
+        profile_image_url = None
+        if user.profile_image:
+            try:
+                profile_image_url = request.build_absolute_uri(user.profile_image.url)
+            except Exception:
+                profile_image_url = user.profile_image.url
+                
+        return Response({
+            "permissions": list(user.get_all_permissions()),
+            "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
+            "store": {"store_id": user.store.store_id, "store_name": user.store.store_name} if user.store else None,
             "user": {
                 "user_id": user.user_id,
                 "username": user.username,

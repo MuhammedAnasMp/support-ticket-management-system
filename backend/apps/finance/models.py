@@ -64,6 +64,7 @@ class Expense(models.Model):
     remarks = models.TextField(blank=True, null=True)
     approved = models.BooleanField(default=False)
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_expenses')
+    responsible_store = models.ForeignKey('stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
 
     class Meta:
         permissions = [
@@ -83,6 +84,8 @@ class Expense(models.Model):
             ('change_approved', 'Can change approved'),
             ('view_approved_by', 'Can view approved by'),
             ('change_approved_by', 'Can change approved by'),
+            ('view_responsible_store', 'Can view responsible store'),
+            ('change_responsible_store', 'Can change responsible store'),
         ]
 
     def __str__(self):

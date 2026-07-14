@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Home, Ticket, Store, Wrench, Users, Receipt, 
-  BarChart3, Settings, ChevronDown, X 
+import {
+  Home, Ticket, Store, Wrench, Users, Receipt,
+  BarChart3, Settings, ChevronDown, X
 } from 'lucide-react';
 
 interface SubItem {
@@ -47,15 +47,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, userRole }) =
       title: 'Tickets',
       icon: <Ticket className="w-5 h-5" />,
       subItems: [
-        { title: 'Create Ticket', path: '/tickets/create' },
         { title: 'All Tickets', path: '/tickets/all' },
-        { title: 'My Tickets', path: '/tickets/my' },
-        { title: 'Pending Approval', path: '/tickets/pending-approval' },
-        { title: 'Assigned', path: '/tickets/assigned' },
-        { title: 'In Progress', path: '/tickets/in-progress' },
-        { title: 'Completed', path: '/tickets/completed' },
-        { title: 'Closed', path: '/tickets/closed' },
-        { title: 'Rejected', path: '/tickets/rejected' },
+        { title: 'Create Ticket', path: '/tickets/create' },
+
       ],
     },
     {
@@ -172,11 +166,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, userRole }) =
                 <div>
                   <button
                     onClick={() => toggleExpand(item.title)}
-                    className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                      active 
-                        ? 'text-primary bg-primary/5 dark:bg-primary/10' 
-                        : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
-                    }`}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${active
+                      ? 'text-primary bg-primary/5 dark:bg-primary/10'
+                      : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
+                      }`}
                   >
                     <div className="flex items-center gap-3">
                       <span className={active ? 'text-primary' : 'text-outline dark:text-dark-on-surface-variant'}>
@@ -185,9 +178,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, userRole }) =
                       <span>{item.title}</span>
                     </div>
                     <ChevronDown
-                      className={`w-4 h-4 text-outline transition-transform duration-200 ${
-                        expanded ? 'transform rotate-180' : ''
-                      }`}
+                      className={`w-4 h-4 text-outline transition-transform duration-200 ${expanded ? 'transform rotate-180' : ''
+                        }`}
                     />
                   </button>
 
@@ -210,11 +202,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, userRole }) =
                               onClick={() => {
                                 if (window.innerWidth < 768) onClose();
                               }}
-                              className={`block px-3 py-2 rounded-md text-xs font-medium transition-all ${
-                                subActive
-                                  ? 'text-primary bg-accent-light/40 dark:bg-primary/20'
-                                  : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
-                              }`}
+                              className={`block px-3 py-2 rounded-md text-xs font-medium transition-all ${subActive
+                                ? 'text-primary bg-accent-light/40 dark:bg-primary/20'
+                                : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
+                                }`}
                             >
                               {sub.title}
                             </Link>
@@ -231,11 +222,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, userRole }) =
                   onClick={() => {
                     if (window.innerWidth < 768) onClose();
                   }}
-                  className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                    active
-                      ? 'text-primary bg-accent-light/40 dark:bg-primary/20'
-                      : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
-                  }`}
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${active
+                    ? 'text-primary bg-accent-light/40 dark:bg-primary/20'
+                    : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
+                    }`}
                 >
                   <span className={active ? 'text-primary' : 'text-outline dark:text-dark-on-surface-variant'}>
                     {item.icon}

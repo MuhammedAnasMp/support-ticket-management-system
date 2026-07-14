@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
 import { motion } from 'framer-motion';
 import { User, Lock, Wrench, AlertCircle, ArrowRight, RefreshCw } from 'lucide-react';
+import { setCredentials } from '../store/authSlice';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const LoginView: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [employeeNo, setEmployeeNo] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -49,8 +52,13 @@ export const LoginView: React.FC = () => {
       const data = await response.json();
 
       if (response.status === 200) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        dispatch(setCredentials({
+          token: data.token,
+          user: data.user,
+          permissions: data.permissions,
+          accessibleStores: data.accessible_stores,
+          store: data.store
+        }));
         sessionStorage.removeItem('pending_employee_no');
         sessionStorage.removeItem('pending_password');
         navigate('/');

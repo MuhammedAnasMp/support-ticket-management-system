@@ -1,24 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { User, Wrench, CheckCircle } from 'lucide-react';
+import React from 'react';
+import { useSelector } from 'react-redux';
+import type { RootState } from '../store';
 
 export const DashboardView: React.FC = () => {
-  const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        navigate('/login');
-      }
-    } else {
-      navigate('/login');
-    }
-  }, [navigate]);
+  const { user } = useSelector((state: RootState) => state.auth);
 
   if (!user) return null;
 

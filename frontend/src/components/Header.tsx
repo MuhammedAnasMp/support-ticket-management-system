@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu, User, LogOut, Sun, Moon, ChevronDown,
   Mail, Phone, Shield, MessageSquare
 } from 'lucide-react';
+import type { RootState } from '../store';
+import { clearCredentials } from '../store/authSlice';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -13,25 +16,16 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [user, setUser] = useState<any>(null);
+  const { user } = useSelector((state: RootState) => state.auth);
 
-  // Sync with document theme and read user profile
   useEffect(() => {
     const isDarkTheme = document.documentElement.classList.contains('dark');
     setIsDark(isDarkTheme);
-
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        // ignore
-      }
-    }
   }, []);
 
   // Handle outside clicks to close the user dropdown
@@ -59,8 +53,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) =>
   };
 
   const handleLogout = () => {
-    localStorage.clear();
     sessionStorage.clear();
+    dispatch(clearCredentials());
     navigate('/login');
   };
 

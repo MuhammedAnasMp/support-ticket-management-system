@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
 import { motion } from 'framer-motion';
 import { Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { setCredentials, clearCredentials } from '../store/authSlice';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const ApprovalPendingView: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState('');
   const [type, setType] = useState<'info' | 'error'>('info');
@@ -36,8 +39,13 @@ export const ApprovalPendingView: React.FC = () => {
       const data = await response.json();
 
       if (response.status === 200) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        dispatch(setCredentials({
+          token: data.token,
+          user: data.user,
+          permissions: data.permissions,
+          accessibleStores: data.accessible_stores,
+          store: data.store
+        }));
         sessionStorage.removeItem('pending_employee_no');
         sessionStorage.removeItem('pending_password');
         navigate('/');
@@ -109,6 +117,7 @@ export const ApprovalPendingView: React.FC = () => {
           <button
             onClick={() => {
               sessionStorage.clear();
+              dispatch(clearCredentials());
               navigate('/login');
             }}
             className="w-full py-2.5 px-4 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface font-medium text-sm rounded-lg cursor-pointer transition-all"

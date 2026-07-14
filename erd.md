@@ -125,6 +125,7 @@ erDiagram
         int ticket_id FK
         int worker_id FK
         int expense_type_id FK
+        int responsible_store_id FK
         decimal amount
         date expense_date
         string remarks
@@ -183,6 +184,7 @@ erDiagram
 
     STORE ||--o{ USER : has
     STORE ||--o{ TICKET : creates
+    STORE ||--o{ EXPENSE : responsible_for
 
     ROLE ||--o{ USER : assigned
 

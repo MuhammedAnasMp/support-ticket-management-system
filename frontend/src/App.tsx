@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
 import { 
   FileText, Store, Wrench, User, Receipt, BarChart3, Settings 
 } from 'lucide-react';
@@ -7,12 +8,16 @@ import { DashboardLayout } from './components/DashboardLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ThemeToggleOverlay } from './components/ThemeToggleOverlay';
 import { PlaceholderView } from './components/PlaceholderView';
+import type { RootState } from './store';
+import { setCredentials, clearCredentials } from './store/authSlice';
 
 // Page Views
 import { LoginView } from './pages/LoginView';
 import { SignupView } from './pages/SignupView';
 import { ApprovalPendingView } from './pages/ApprovalPendingView';
 import { DashboardView } from './pages/DashboardView';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // Theme helper functions
 const getInitialTheme = (): boolean => {
@@ -31,6 +36,9 @@ const getInitialTheme = (): boolean => {
 
 const App: React.FC = () => {
   const [isDark, setIsDark] = useState<boolean>(getInitialTheme());
+  const dispatch = useDispatch();
+  const token = useSelector((state: RootState) => state.auth.token);
+  const [refetching, setRefetching] = useState<boolean>(!!token);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -42,6 +50,55 @@ const App: React.FC = () => {
       localStorage.setItem('color-theme', 'light');
     }
   }, [isDark]);
+
+  useEffect(() => {
+    if (!token) {
+      setRefetching(false);
+      return;
+    }
+
+    const refetchProfile = async () => {
+      try {
+        const response = await fetch(`${API_URL}/accounts/profile/`, {
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          dispatch(setCredentials({
+            token,
+            user: data.user,
+            permissions: data.permissions,
+            accessibleStores: data.accessible_stores,
+            store: data.store
+          }));
+        } else {
+          dispatch(clearCredentials());
+        }
+      } catch (err) {
+        console.error('Failed to refetch user profile:', err);
+      } finally {
+        setRefetching(false);
+      }
+    };
+
+    refetchProfile();
+  }, [token, dispatch]);
+
+  if (refetching) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-dark-surface">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm font-medium text-on-surface-variant dark:text-dark-on-surface-variant">
+            Loading profile...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface transition-colors duration-200">

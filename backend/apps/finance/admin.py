@@ -14,8 +14,8 @@ class EmployeeRateAdmin(admin.ModelAdmin):
 
 @admin.register(Expense)
 class ExpenseAdmin(admin.ModelAdmin):
-    list_display = ('expense_id', 'ticket', 'worker', 'expense_type', 'amount', 'expense_date', 'approved', 'approved_by')
-    list_filter = ('approved', 'expense_date', 'expense_type')
+    list_display = ('expense_id', 'ticket', 'worker', 'expense_type', 'amount', 'responsible_store', 'expense_date', 'approved', 'approved_by')
+    list_filter = ('approved', 'expense_date', 'expense_type', 'responsible_store')
     search_fields = ('ticket__work_order_no', 'worker__username')
 
 @admin.register(Reconciliation)
