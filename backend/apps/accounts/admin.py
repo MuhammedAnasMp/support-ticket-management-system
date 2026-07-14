@@ -10,18 +10,18 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
-    list_display = ('user_id', 'username', 'email', 'employee_no', 'full_name', 'phone', 'role', 'store', 'active', 'is_staff')
+    list_display = ('user_id', 'username', 'email', 'employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'store', 'active', 'is_staff')
     list_filter = ('active', 'is_staff', 'is_superuser', 'role', 'store')
     search_fields = ('username', 'email', 'employee_no', 'full_name', 'phone')
     
     fieldsets = UserAdmin.fieldsets + (
         ('Custom Info', {
-            'fields': ('employee_no', 'full_name', 'phone', 'role', 'store', 'accessible_stores', 'sub_departments', 'active')
+            'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'store', 'accessible_stores', 'sub_departments', 'active')
         }),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (
         ('Custom Info', {
-            'fields': ('employee_no', 'full_name', 'phone', 'role', 'store', 'accessible_stores', 'sub_departments', 'active')
+            'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'store', 'accessible_stores', 'sub_departments', 'active')
         }),
     )
     filter_horizontal = ('accessible_stores', 'sub_departments')
