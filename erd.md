@@ -5,7 +5,7 @@ erDiagram
         string store_name
         string address
         string phone
-        string manager_name
+        string whatsapp_number
         bool active
     }
 
@@ -31,6 +31,8 @@ erDiagram
         string full_name
         string email
         string phone
+        string whatsapp_number
+        string profile_image
         int role_id FK
         int store_id FK
         bool active
@@ -50,7 +52,6 @@ erDiagram
     MAINTENANCE_NATURE {
         int nature_id PK
         string nature_name
-        int department_id FK
         int sub_department_id FK
         int default_priority_id FK
         bool active
@@ -186,7 +187,6 @@ erDiagram
     ROLE ||--o{ USER : assigned
 
     DEPARTMENT ||--o{ SUB_DEPARTMENT : contains
-    DEPARTMENT ||--o{ MAINTENANCE_NATURE : owns
     SUB_DEPARTMENT ||--o{ MAINTENANCE_NATURE : group
 
     USER }o--o{ SUB_DEPARTMENT : assigned_sub_departments

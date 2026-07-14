@@ -14,8 +14,12 @@ class StatusAdmin(admin.ModelAdmin):
 @admin.register(MaintenanceNature)
 class MaintenanceNatureAdmin(admin.ModelAdmin):
     list_display = ('nature_id', 'nature_name', 'department', 'sub_department', 'default_priority', 'active')
-    list_filter = ('active', 'department', 'sub_department')
+    list_filter = ('active', 'sub_department')
     search_fields = ('nature_name',)
+
+    def department(self, obj):
+        return obj.sub_department.department.department_name
+    department.short_description = 'Department'
 
 @admin.register(NatureWorker)
 class NatureWorkerAdmin(admin.ModelAdmin):

@@ -32,8 +32,7 @@ class Status(models.Model):
 class MaintenanceNature(models.Model):
     nature_id = models.AutoField(primary_key=True)
     nature_name = models.CharField(max_length=255)
-    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='maintenance_natures')
-    sub_department = models.ForeignKey('stores.SubDepartment', on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_natures')
+    sub_department = models.ForeignKey('stores.SubDepartment', on_delete=models.CASCADE, related_name='maintenance_natures', default=1)
     default_priority = models.ForeignKey(Priority, on_delete=models.SET_NULL, null=True, blank=True, related_name='default_natures')
     active = models.BooleanField(default=True)
 
@@ -41,8 +40,6 @@ class MaintenanceNature(models.Model):
         permissions = [
             ("view_nature_name", "Can view nature name"),
             ("change_nature_name", "Can change nature name"),
-            ("view_department", "Can view department"),
-            ("change_department", "Can change department"),
             ("view_sub_department", "Can view sub department"),
             ("change_sub_department", "Can change sub department"),
             ("view_default_priority", "Can view default priority"),

@@ -1,0 +1,34 @@
+
+9	Technician
+8	Store Manager
+7	Admin
+6	Office Staff
+
+
+
+
+| Level       | Priority Name |
+| ----------- | ------------- |
+| **Level 1** | Critical      |
+| **Level 2** | High          |
+| **Level 3** | Medium        |
+| **Level 4** | Low           |
+| **Level 5** | Very Low      |
+
+
+
+
+8	Material Photo
+6	Receipt
+5	After Repair
+4	Before Repair
+3	Issue Media
+2	Bus Fair
+
+
+
+
+4	Reconciled
+	3	Completed
+	2	In Progress
+	1	Open

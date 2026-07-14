@@ -3,9 +3,9 @@ from .models import Store, Department, SubDepartment
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ('store_id', 'store_name', 'address', 'phone', 'manager_name', 'active')
+    list_display = ('store_id', 'store_name', 'address', 'phone', 'whatsapp_number', 'active')
     list_filter = ('active',)
-    search_fields = ('store_name', 'manager_name', 'phone')
+    search_fields = ('store_name', 'address', 'phone', 'whatsapp_number')
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):

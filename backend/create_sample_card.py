@@ -22,8 +22,8 @@ def run_sample_flow():
     store, _ = Store.objects.get_or_create(
         store_name="Hypermarket Store-001",
         address="123 Main Street",
-        phone="555-0100",
-        manager_name="John Doe",
+        phone="87654321",
+        whatsapp_number="9876543210",
         active=True
     )
     print(f"1. Store created: {store}")
@@ -95,7 +95,7 @@ def run_sample_flow():
     print(f"5. Users created: {manager_user.full_name} (Manager), {worker_user.full_name} (Worker), {office_user.full_name} (Office)")
 
     # 5. Create Priorities & Statuses
-    priority_high, _ = Priority.objects.get_or_create(priority_name="High", level=1)
+    priority_high, _ = Priority.objects.get_or_create(priority_name="High", defaults={"level": 2})
     status_open, _ = Status.objects.get_or_create(status_name="Open")
     status_progress, _ = Status.objects.get_or_create(status_name="In Progress")
     status_completed, _ = Status.objects.get_or_create(status_name="Completed")
@@ -105,7 +105,6 @@ def run_sample_flow():
     # 6. Create Maintenance Nature
     nature, _ = MaintenanceNature.objects.get_or_create(
         nature_name="Database Performance Lag",
-        department=department,
         sub_department=sub_dept,
         default_priority=priority_high,
         active=True

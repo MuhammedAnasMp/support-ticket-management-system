@@ -1,12 +1,23 @@
 from django.db import models
+from django.core.validators import RegexValidator
+
+phone_validator = RegexValidator(
+    regex=r'^\d{8}$',
+    message='Phone number must be exactly 8 digits.'
+)
+
+whatsapp_validator = RegexValidator(
+    regex=r'^\d{8}$|^\d{10}$',
+    message='WhatsApp number must be either 8 or 10 digits.'
+)
 
 
 class Store(models.Model):
     store_id = models.AutoField(primary_key=True)
     store_name = models.CharField(max_length=255)
     address = models.TextField(null=True, blank=True)
-    phone = models.CharField(max_length=50, null=True, blank=True)
-    manager_name = models.CharField(max_length=255, null=True, blank=True)
+    phone = models.CharField(max_length=50, null=True, blank=True, validators=[phone_validator])
+    whatsapp_number = models.CharField(max_length=50, null=True, blank=True, validators=[whatsapp_validator])
     active = models.BooleanField(default=True)
 
     def __str__(self):

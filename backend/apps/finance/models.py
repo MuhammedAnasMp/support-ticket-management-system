@@ -1,5 +1,6 @@
-from django.db import models
+from django.db import models, transaction
 from django.conf import settings
+from datetime import timedelta
 
 class ExpenseType(models.Model):
     expense_type_id = models.AutoField(primary_key=True)
@@ -35,6 +36,23 @@ class EmployeeRate(models.Model):
 
     def __str__(self):
         return f"{self.worker.username} - {self.hourly_rate}"
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        if is_new:
+            with transaction.atomic():
+                previous_rate = EmployeeRate.objects.filter(
+                    worker=self.worker,
+                    effective_from__lt=self.effective_from
+                ).order_by('-effective_from').first()
+
+                if previous_rate and (previous_rate.effective_to is None or previous_rate.effective_to >= self.effective_from):
+                    previous_rate.effective_to = self.effective_from - timedelta(days=1)
+                    previous_rate.save(update_fields=['effective_to'])
+
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
 class Expense(models.Model):
     expense_id = models.AutoField(primary_key=True)
