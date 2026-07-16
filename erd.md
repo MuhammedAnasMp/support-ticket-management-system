@@ -2,11 +2,20 @@ erDiagram
 
     STORE {
         int store_id PK
+        int manager_id FK
+        int area_id FK
         string store_name
         string address
         string phone
         string whatsapp_number
+        decimal longitude
+        decimal latitude
         bool active
+    }
+
+    AREA {
+        int area_id PK
+        string area_name
     }
 
     DEPARTMENT {
@@ -117,6 +126,7 @@ erDiagram
 
     EXPENSE_TYPE {
         int expense_type_id PK
+        int parent_id FK
         string expense_name
     }
 
@@ -126,6 +136,7 @@ erDiagram
         int worker_id FK
         int expense_type_id FK
         int responsible_store_id FK
+        int receipt_id FK
         decimal amount
         date expense_date
         string remarks
@@ -141,7 +152,6 @@ erDiagram
     MEDIA {
         int media_id PK
         int ticket_id FK
-        int expense_id FK
         int uploaded_by FK
         int category_id FK
         string file_name
@@ -182,7 +192,9 @@ erDiagram
         string remarks
     }
 
+    AREA ||--o{ STORE : contains
     STORE ||--o{ USER : has
+    STORE ||--o| USER : managed_by
     STORE ||--o{ TICKET : creates
     STORE ||--o{ EXPENSE : responsible_for
 
@@ -237,10 +249,11 @@ erDiagram
     TICKET ||--o{ TICKET_HISTORY : history
 
     EXPENSE_TYPE ||--o{ EXPENSE : type
+    EXPENSE_TYPE }o--o| EXPENSE_TYPE : parent
 
     MEDIA_CATEGORY ||--o{ MEDIA : category
 
-    EXPENSE ||--o{ MEDIA : receipt
+    EXPENSE }o--o| MEDIA : receipt
 
 
 
@@ -262,6 +275,7 @@ common
 └── Notification
 
 stores
+├── Area
 ├── Store
 ├── Department
 └── SubDepartment
@@ -296,3 +310,11 @@ media/
                      ├── receipt/
                      ├── worker_photo/
                      └── material_photo/
+
+## Business Rules & Permissions
+
+- **Store Manager**: Every store has exactly one Store Manager (modeled as `manager` OneToOneField from `Store` to `User`).
+- **Ticket Creation**: Any user (e.g. Store Manager, Assistant Manager, Staff, Office Staff, Area Manager) can create tickets, provided their role has the role-based permission (`create_ticket`).
+- **Store Belonging**: Users may belong to a store (modeled as `store` ForeignKey on `User`).
+- **Ticket Assignment**: A ticket is linked to the store it was created for and records the user who created it (`store` and `created_by` ForeignKeys on `Ticket`).
+- **Store Grouping (Area)**: Stores are grouped based on geographic or administrative Areas (modeled as `area` ForeignKey from `Store` to `Area`).

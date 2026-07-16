@@ -8,7 +8,7 @@ class MediaCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Media)
 class MediaAdmin(admin.ModelAdmin):
-    list_display = ('media_id', 'file_name', 'ticket', 'expense', 'uploaded_by', 'category', 'uploaded_date')
+    list_display = ('media_id', 'file_name', 'ticket', 'uploaded_by', 'category', 'uploaded_date')
     list_filter = ('category', 'uploaded_date')
     search_fields = ('file_name', 'ticket__work_order_no', 'uploaded_by__username')
 

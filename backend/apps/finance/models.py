@@ -5,15 +5,18 @@ from datetime import timedelta
 class ExpenseType(models.Model):
     expense_type_id = models.AutoField(primary_key=True)
     expense_name = models.CharField(max_length=100, unique=True)
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_types')
 
     class Meta:
         permissions = [
             ('view_expense_name', 'Can view expense name'),
             ('change_expense_name', 'Can change expense name'),
+            ('view_parent', 'Can view parent'),
+            ('change_parent', 'Can change parent'),
         ]
 
     def __str__(self):
-        return self.expense_name
+        return f"{self.parent.expense_name} > {self.expense_name}" if self.parent else self.expense_name
 
 class EmployeeRate(models.Model):
     rate_id = models.AutoField(primary_key=True)
@@ -62,6 +65,7 @@ class Expense(models.Model):
     amount = models.DecimalField(decimal_places=2, max_digits=10)
     expense_date = models.DateField()
     remarks = models.TextField(blank=True, null=True)
+    receipt = models.ForeignKey('common.Media', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
     approved = models.BooleanField(default=False)
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_expenses')
     responsible_store = models.ForeignKey('stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
@@ -80,6 +84,8 @@ class Expense(models.Model):
             ('change_expense_date', 'Can change expense date'),
             ('view_remarks', 'Can view remarks'),
             ('change_remarks', 'Can change remarks'),
+            ('view_receipt', 'Can view receipt'),
+            ('change_receipt', 'Can change receipt'),
             ('view_approved', 'Can view approved'),
             ('change_approved', 'Can change approved'),
             ('view_approved_by', 'Can view approved by'),

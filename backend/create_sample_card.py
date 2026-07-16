@@ -9,7 +9,7 @@ from django.core.files.base import ContentFile
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from apps.stores.models import Store, Department, SubDepartment
+from apps.stores.models import Store, Department, SubDepartment, Area
 from apps.accounts.models import Role, CustomUser
 from apps.maintenance.models import Priority, Status, MaintenanceNature, Ticket, Allocation, WorkLog, TicketHistory
 from apps.finance.models import ExpenseType, EmployeeRate, Expense, Reconciliation
@@ -19,8 +19,14 @@ def run_sample_flow():
     print("--- Starting Sample Card (Ticket) End-to-End Flow ---")
 
     # 1. Create Store & Department
+    area, _ = Area.objects.get_or_create(
+        area_name="Capital Area"
+    )
+    print(f"0. Area created: {area}")
+
     store, _ = Store.objects.get_or_create(
         store_name="Hypermarket Store-001",
+        area=area,
         address="123 Main Street",
         phone="87654321",
         whatsapp_number="9876543210",
@@ -182,24 +188,8 @@ def run_sample_flow():
     print(f"12. Work logged: {work_log.hours} hours. Labour amount: {work_log.labour_amount} USD")
 
     # 11. Log Expense (Bills: Bus Fare, Material, etc.)
-    expense_type_travel, _ = ExpenseType.objects.get_or_create(expense_name="Bus Fare")
-    expense, _ = Expense.objects.get_or_create(
-        ticket=ticket,
-        worker=worker_user,
-        expense_type=expense_type_travel,
-        defaults={
-            "amount": Decimal("15.50"),
-            "expense_date": datetime.date.today(),
-            "remarks": "Roundtrip bus ticket to Hypermarket Store-001",
-            "approved": True,
-            "approved_by": manager_user
-        }
-    )
-    print(f"13. Expense logged: {expense.amount} USD for {expense.expense_type.expense_name} (Approved by Manager)")
-
     # Ensure fresh media files are written to disk
     Media.objects.filter(ticket=ticket).delete()
-    Media.objects.filter(expense=expense).delete()
 
     # 12. Upload Media (Issue photo & Receipt)
     cat_issue = MediaCategory.objects.get(category_name="Issue Media")
@@ -222,7 +212,7 @@ def run_sample_flow():
     print(f"14. Issue Media attachment: {media_issue.file_name} -> Upload path: {media_issue.file_url.name}")
 
     media_receipt, created_receipt = Media.objects.get_or_create(
-        expense=expense,
+        ticket=ticket,
         uploaded_by=worker_user,
         category=cat_receipt,
         defaults={
@@ -236,6 +226,26 @@ def run_sample_flow():
         )
         media_receipt.save()
     print(f"15. Expense Receipt attachment: {media_receipt.file_name} -> Upload path: {media_receipt.file_url.name}")
+
+    expense_parent_travel, _ = ExpenseType.objects.get_or_create(expense_name="Transportation")
+    expense_type_travel, _ = ExpenseType.objects.get_or_create(
+        expense_name="Bus Fare",
+        defaults={"parent": expense_parent_travel}
+    )
+    expense, _ = Expense.objects.get_or_create(
+        ticket=ticket,
+        worker=worker_user,
+        expense_type=expense_type_travel,
+        defaults={
+            "amount": Decimal("15.50"),
+            "expense_date": datetime.date.today(),
+            "remarks": "Roundtrip bus ticket to Hypermarket Store-001",
+            "receipt": media_receipt,
+            "approved": True,
+            "approved_by": manager_user
+        }
+    )
+    print(f"13. Expense logged: {expense.amount} USD for {expense.expense_type.expense_name} (Approved by Manager)")
 
 
     # Complete Ticket

@@ -16,12 +16,8 @@ class MediaCategory(models.Model):
 def get_media_upload_path(instance, filename):
     category_slug = instance.category.category_name.lower().replace(' ', '_') if instance.category else 'general'
     
-    # Resolve the ticket — directly or via expense's parent ticket
-    ticket = None
-    if instance.ticket_id:
-        ticket = instance.ticket
-    elif instance.expense_id:
-        ticket = instance.expense.ticket
+    # Resolve the ticket directly
+    ticket = instance.ticket
     
     if ticket:
         store_slug = ticket.store.store_name.lower().replace(' ', '_') if ticket.store else 'unknown_store'
@@ -31,7 +27,6 @@ def get_media_upload_path(instance, filename):
 class Media(models.Model):
     media_id = models.AutoField(primary_key=True)
     ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='attachments')
-    expense = models.ForeignKey('finance.Expense', on_delete=models.CASCADE, null=True, blank=True, related_name='receipts')
     uploaded_by = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='uploaded_media')
     category = models.ForeignKey(MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_files')
     file_name = models.CharField(max_length=255)
@@ -42,8 +37,6 @@ class Media(models.Model):
         permissions = [
             ("view_ticket", "Can view ticket"),
             ("change_ticket", "Can change ticket"),
-            ("view_expense", "Can view expense"),
-            ("change_expense", "Can change expense"),
             ("view_uploaded_by", "Can view uploaded by"),
             ("change_uploaded_by", "Can change uploaded by"),
             ("view_category", "Can view category"),

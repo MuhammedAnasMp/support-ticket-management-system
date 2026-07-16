@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import RegexValidator
+from django.conf import settings
 
 phone_validator = RegexValidator(
     regex=r'^\d{8}$',
@@ -12,12 +13,36 @@ whatsapp_validator = RegexValidator(
 )
 
 
+class Area(models.Model):
+    area_id = models.AutoField(primary_key=True)
+    area_name = models.CharField(max_length=255, unique=True)
+
+    def __str__(self):
+        return self.area_name
+
+
 class Store(models.Model):
     store_id = models.AutoField(primary_key=True)
     store_name = models.CharField(max_length=255)
+    area = models.ForeignKey(
+        Area,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stores'
+    )
     address = models.TextField(null=True, blank=True)
     phone = models.CharField(max_length=50, null=True, blank=True, validators=[phone_validator])
     whatsapp_number = models.CharField(max_length=50, null=True, blank=True, validators=[whatsapp_validator])
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    manager = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='managed_store'
+    )
     active = models.BooleanField(default=True)
 
     def __str__(self):

@@ -1,6 +1,10 @@
 from rest_framework import viewsets
-from .models import Store, Department, SubDepartment
-from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer
+from .models import Store, Department, SubDepartment, Area
+from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer
+
+class AreaViewSet(viewsets.ModelViewSet):
+    queryset = Area.objects.all()
+    serializer_class = AreaSerializer
 
 class StoreViewSet(viewsets.ModelViewSet):
     serializer_class = StoreSerializer

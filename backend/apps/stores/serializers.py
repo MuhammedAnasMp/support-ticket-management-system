@@ -1,5 +1,10 @@
 from rest_framework import serializers
-from .models import Store, Department, SubDepartment
+from .models import Store, Department, SubDepartment, Area
+
+class AreaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Area
+        fields = '__all__'
 
 class StoreSerializer(serializers.ModelSerializer):
     class Meta:

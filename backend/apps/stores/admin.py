@@ -1,10 +1,15 @@
 from django.contrib import admin
-from .models import Store, Department, SubDepartment
+from .models import Store, Department, SubDepartment, Area
+
+@admin.register(Area)
+class AreaAdmin(admin.ModelAdmin):
+    list_display = ('area_id', 'area_name')
+    search_fields = ('area_name',)
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ('store_id', 'store_name', 'address', 'phone', 'whatsapp_number', 'active')
-    list_filter = ('active',)
+    list_display = ('store_id', 'store_name', 'area', 'address', 'phone', 'whatsapp_number', 'active')
+    list_filter = ('active', 'area')
     search_fields = ('store_name', 'address', 'phone', 'whatsapp_number')
 
 @admin.register(Department)

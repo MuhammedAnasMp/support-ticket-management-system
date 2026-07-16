@@ -121,6 +121,7 @@ class Ticket(models.Model):
             ("change_closed_by", "Can change closed by"),
             ("view_closed_date", "Can view closed date"),
             ("change_closed_date", "Can change closed date"),
+            ("create_ticket", "Can create ticket"),
         ]
 
     def __str__(self):
