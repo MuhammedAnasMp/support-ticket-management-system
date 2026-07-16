@@ -26,6 +26,26 @@ class TicketSerializer(serializers.ModelSerializer):
         model = Ticket
         fields = '__all__'
 
+    def validate(self, data):
+        department = data.get('department')
+        priority = data.get('priority')
+        status = data.get('status')
+        nature = data.get('nature')
+
+        if priority and department and priority.department != department:
+            raise serializers.ValidationError(
+                {"priority": f"Priority '{priority.priority_name}' does not belong to department '{department.department_name}'."}
+            )
+        if status and department and status.department != department:
+            raise serializers.ValidationError(
+                {"status": f"Status '{status.status_name}' does not belong to department '{department.department_name}'."}
+            )
+        if nature and department and nature.sub_department.department != department:
+            raise serializers.ValidationError(
+                {"nature": f"Work Nature '{nature.nature_name}' belongs to a different department than '{department.department_name}'."}
+            )
+        return data
+
 class AllocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Allocation

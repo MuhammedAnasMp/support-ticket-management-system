@@ -4,10 +4,14 @@ from datetime import timedelta
 
 class ExpenseType(models.Model):
     expense_type_id = models.AutoField(primary_key=True)
-    expense_name = models.CharField(max_length=100, unique=True)
+    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='expense_types')
+    expense_name = models.CharField(max_length=100)
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_types')
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['department', 'expense_name'], name='unique_department_expense_name')
+        ]
         permissions = [
             ('view_expense_name', 'Can view expense name'),
             ('change_expense_name', 'Can change expense name'),

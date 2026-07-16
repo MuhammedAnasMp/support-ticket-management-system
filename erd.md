@@ -49,12 +49,14 @@ erDiagram
 
     PRIORITY {
         int priority_id PK
+        int department_id FK
         string priority_name
         int level
     }
 
     STATUS {
         int status_id PK
+        int department_id FK
         string status_name
     }
 
@@ -126,6 +128,7 @@ erDiagram
 
     EXPENSE_TYPE {
         int expense_type_id PK
+        int department_id FK
         int parent_id FK
         string expense_name
     }
@@ -146,6 +149,7 @@ erDiagram
 
     MEDIA_CATEGORY {
         int category_id PK
+        int department_id FK
         string category_name
     }
 
@@ -201,6 +205,10 @@ erDiagram
     ROLE ||--o{ USER : assigned
 
     DEPARTMENT ||--o{ SUB_DEPARTMENT : contains
+    DEPARTMENT ||--o{ PRIORITY : contains
+    DEPARTMENT ||--o{ STATUS : contains
+    DEPARTMENT ||--o{ EXPENSE_TYPE : contains
+    DEPARTMENT ||--o{ MEDIA_CATEGORY : contains
     SUB_DEPARTMENT ||--o{ WORK_NATURE : group
 
     USER }o--o{ SUB_DEPARTMENT : assigned_sub_departments

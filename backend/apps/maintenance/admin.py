@@ -3,12 +3,14 @@ from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocati
 
 @admin.register(Priority)
 class PriorityAdmin(admin.ModelAdmin):
-    list_display = ('priority_id', 'priority_name', 'level')
+    list_display = ('priority_id', 'department', 'priority_name', 'level')
+    list_filter = ('department',)
     search_fields = ('priority_name',)
 
 @admin.register(Status)
 class StatusAdmin(admin.ModelAdmin):
-    list_display = ('status_id', 'status_name')
+    list_display = ('status_id', 'department', 'status_name')
+    list_filter = ('department',)
     search_fields = ('status_name',)
 
 @admin.register(WorkNature)

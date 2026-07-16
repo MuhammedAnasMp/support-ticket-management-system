@@ -2,9 +2,13 @@ from django.db import models
 
 class MediaCategory(models.Model):
     category_id = models.AutoField(primary_key=True)
-    category_name = models.CharField(max_length=100, unique=True)
+    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='media_categories')
+    category_name = models.CharField(max_length=100)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['department', 'category_name'], name='unique_department_category_name')
+        ]
         permissions = [
             ("view_category_name", "Can view category name"),
             ("change_category_name", "Can change category name"),

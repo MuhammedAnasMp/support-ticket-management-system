@@ -2,10 +2,14 @@ from django.db import models
 
 class Priority(models.Model):
     priority_id = models.AutoField(primary_key=True)
-    priority_name = models.CharField(max_length=50, unique=True)
+    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='priorities')
+    priority_name = models.CharField(max_length=50)
     level = models.IntegerField()
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['department', 'priority_name'], name='unique_department_priority_name')
+        ]
         permissions = [
             ("view_priority_name", "Can view priority name"),
             ("change_priority_name", "Can change priority name"),
@@ -18,9 +22,13 @@ class Priority(models.Model):
 
 class Status(models.Model):
     status_id = models.AutoField(primary_key=True)
-    status_name = models.CharField(max_length=50, unique=True)
+    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='statuses')
+    status_name = models.CharField(max_length=50)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['department', 'status_name'], name='unique_department_status_name')
+        ]
         permissions = [
             ("view_status_name", "Can view status name"),
             ("change_status_name", "Can change status name"),

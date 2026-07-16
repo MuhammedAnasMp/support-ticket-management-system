@@ -10,9 +10,23 @@ class PriorityViewSet(viewsets.ModelViewSet):
     queryset = Priority.objects.all()
     serializer_class = PrioritySerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        department = self.request.query_params.get('department')
+        if department:
+            queryset = queryset.filter(department_id=department)
+        return queryset
+
 class StatusViewSet(viewsets.ModelViewSet):
     queryset = Status.objects.all()
     serializer_class = StatusSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        department = self.request.query_params.get('department')
+        if department:
+            queryset = queryset.filter(department_id=department)
+        return queryset
 
 class WorkNatureViewSet(viewsets.ModelViewSet):
     queryset = WorkNature.objects.all()

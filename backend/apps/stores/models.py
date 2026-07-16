@@ -22,7 +22,7 @@ class Area(models.Model):
 
 
 class Store(models.Model):
-    store_id = models.AutoField(primary_key=True)
+    store_id = models.CharField(max_length=20)
     store_name = models.CharField(max_length=255)
     area = models.ForeignKey(
         Area,
@@ -32,10 +32,14 @@ class Store(models.Model):
         related_name='stores'
     )
     address = models.TextField(null=True, blank=True)
-    phone = models.CharField(max_length=50, null=True, blank=True, validators=[phone_validator])
-    whatsapp_number = models.CharField(max_length=50, null=True, blank=True, validators=[whatsapp_validator])
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    phone = models.CharField(max_length=50, null=True,
+                             blank=True, validators=[phone_validator])
+    whatsapp_number = models.CharField(
+        max_length=50, null=True, blank=True, validators=[whatsapp_validator])
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True)
     manager = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

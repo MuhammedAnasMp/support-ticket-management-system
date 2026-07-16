@@ -3,7 +3,8 @@ from .models import MediaCategory, Media, Notification
 
 @admin.register(MediaCategory)
 class MediaCategoryAdmin(admin.ModelAdmin):
-    list_display = ('category_id', 'category_name')
+    list_display = ('category_id', 'department', 'category_name')
+    list_filter = ('department',)
     search_fields = ('category_name',)
 
 @admin.register(Media)

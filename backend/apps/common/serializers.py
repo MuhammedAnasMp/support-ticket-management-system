@@ -11,6 +11,15 @@ class MediaSerializer(serializers.ModelSerializer):
         model = Media
         fields = '__all__'
 
+    def validate(self, data):
+        ticket = data.get('ticket')
+        category = data.get('category')
+        if ticket and category and category.department != ticket.department:
+            raise serializers.ValidationError(
+                {"category": f"Media Category '{category.category_name}' does not belong to ticket department '{ticket.department.department_name}'."}
+            )
+        return data
+
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification

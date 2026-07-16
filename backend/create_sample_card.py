@@ -101,11 +101,11 @@ def run_sample_flow():
     print(f"5. Users created: {manager_user.full_name} (Manager), {worker_user.full_name} (Worker), {office_user.full_name} (Office)")
 
     # 5. Create Priorities & Statuses
-    priority_high, _ = Priority.objects.get_or_create(priority_name="High", defaults={"level": 2})
-    status_open, _ = Status.objects.get_or_create(status_name="Open")
-    status_progress, _ = Status.objects.get_or_create(status_name="In Progress")
-    status_completed, _ = Status.objects.get_or_create(status_name="Completed")
-    status_reconciled, _ = Status.objects.get_or_create(status_name="Reconciled")
+    priority_high, _ = Priority.objects.get_or_create(department=department, priority_name="High", defaults={"level": 2})
+    status_open, _ = Status.objects.get_or_create(department=department, status_name="Open")
+    status_progress, _ = Status.objects.get_or_create(department=department, status_name="In Progress")
+    status_completed, _ = Status.objects.get_or_create(department=department, status_name="Completed")
+    status_reconciled, _ = Status.objects.get_or_create(department=department, status_name="Reconciled")
     print("6. Priorities and Statuses set up.")
 
     # 6. Create Work Nature
@@ -192,8 +192,8 @@ def run_sample_flow():
     Media.objects.filter(ticket=ticket).delete()
 
     # 12. Upload Media (Issue photo & Receipt)
-    cat_issue = MediaCategory.objects.get(category_name="Issue Media")
-    cat_receipt = MediaCategory.objects.get(category_name="Receipt")
+    cat_issue, _ = MediaCategory.objects.get_or_create(department=department, category_name="Issue Media")
+    cat_receipt, _ = MediaCategory.objects.get_or_create(department=department, category_name="Receipt")
 
     media_issue, created_issue = Media.objects.get_or_create(
         ticket=ticket,
@@ -227,8 +227,9 @@ def run_sample_flow():
         media_receipt.save()
     print(f"15. Expense Receipt attachment: {media_receipt.file_name} -> Upload path: {media_receipt.file_url.name}")
 
-    expense_parent_travel, _ = ExpenseType.objects.get_or_create(expense_name="Transportation")
+    expense_parent_travel, _ = ExpenseType.objects.get_or_create(department=department, expense_name="Transportation")
     expense_type_travel, _ = ExpenseType.objects.get_or_create(
+        department=department,
         expense_name="Bus Fare",
         defaults={"parent": expense_parent_travel}
     )

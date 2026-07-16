@@ -3,8 +3,8 @@ from .models import ExpenseType, EmployeeRate, Expense, Reconciliation
 
 @admin.register(ExpenseType)
 class ExpenseTypeAdmin(admin.ModelAdmin):
-    list_display = ('expense_type_id', 'expense_name', 'parent')
-    list_filter = ('parent',)
+    list_display = ('expense_type_id', 'department', 'expense_name', 'parent')
+    list_filter = ('department', 'parent')
     search_fields = ('expense_name',)
 
 @admin.register(EmployeeRate)
