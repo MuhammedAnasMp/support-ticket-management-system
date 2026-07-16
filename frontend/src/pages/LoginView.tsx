@@ -126,9 +126,18 @@ export const LoginView: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
-              Password
-            </label>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={() => navigate('/forgot-password')}
+                className="text-xs text-primary hover:underline font-medium cursor-pointer"
+              >
+                Forgot password?
+              </button>
+            </div>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-outline dark:text-dark-on-surface-variant">
                 <Lock className="w-5 h-5" />

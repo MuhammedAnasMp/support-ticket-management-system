@@ -114,6 +114,41 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return self.full_name if self.full_name else self.username
 
+class PasswordResetOTP(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='password_reset_otps')
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.otp}"
+
+    def is_valid(self):
+        from django.utils import timezone
+        import datetime
+        return not self.is_used and (timezone.now() - self.created_at) < datetime.timedelta(minutes=10)
+
+class WhatsAppLog(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='whatsapp_logs')
+    whatsapp_number = models.CharField(max_length=50)
+    message_type = models.CharField(max_length=50, default='OTP')
+    otp = models.CharField(max_length=6, null=True, blank=True)
+    payload = models.TextField(null=True, blank=True)
+    response = models.TextField(null=True, blank=True)
+    status = models.CharField(max_length=50) # 'success' or 'failed'
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.whatsapp_number} - {self.status} - {self.created_at}"
+
+
+
 @receiver(m2m_changed, sender=CustomUser.sub_departments.through)
 def update_user_approval(sender, instance, action, **kwargs):
     if action in ['post_add', 'post_remove', 'post_clear']:

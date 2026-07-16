@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    PriorityViewSet, StatusViewSet, MaintenanceNatureViewSet,
+    PriorityViewSet, StatusViewSet, WorkNatureViewSet,
     NatureWorkerViewSet, TicketViewSet, AllocationViewSet,
     WorkLogViewSet, TicketHistoryViewSet
 )
@@ -9,7 +9,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r'priority', PriorityViewSet)
 router.register(r'status', StatusViewSet)
-router.register(r'maintenancenature', MaintenanceNatureViewSet)
+router.register(r'worknature', WorkNatureViewSet)
 router.register(r'natureworker', NatureWorkerViewSet)
 router.register(r'ticket', TicketViewSet)
 router.register(r'allocation', AllocationViewSet)

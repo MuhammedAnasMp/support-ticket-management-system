@@ -14,6 +14,7 @@ import { setCredentials, clearCredentials } from './store/authSlice';
 // Page Views
 import { LoginView } from './pages/LoginView';
 import { SignupView } from './pages/SignupView';
+import { ForgotPasswordView } from './pages/ForgotPasswordView';
 import { ApprovalPendingView } from './pages/ApprovalPendingView';
 import { DashboardView } from './pages/DashboardView';
 
@@ -107,6 +108,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/login" element={<LoginView />} />
           <Route path="/signup" element={<SignupView />} />
+          <Route path="/forgot-password" element={<ForgotPasswordView />} />
           <Route path="/approval-pending" element={<ApprovalPendingView />} />
           
           {/* Dashboard and Subpage Routes wrapped with DashboardLayout */}

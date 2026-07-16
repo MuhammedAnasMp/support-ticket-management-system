@@ -58,7 +58,7 @@ erDiagram
         string status_name
     }
 
-    MAINTENANCE_NATURE {
+    WORK_NATURE {
         int nature_id PK
         string nature_name
         int sub_department_id FK
@@ -201,18 +201,18 @@ erDiagram
     ROLE ||--o{ USER : assigned
 
     DEPARTMENT ||--o{ SUB_DEPARTMENT : contains
-    SUB_DEPARTMENT ||--o{ MAINTENANCE_NATURE : group
+    SUB_DEPARTMENT ||--o{ WORK_NATURE : group
 
     USER }o--o{ SUB_DEPARTMENT : assigned_sub_departments
     USER }o--o{ STORE : accessible_stores
 
-    PRIORITY ||--o{ MAINTENANCE_NATURE : default_priority
+    PRIORITY ||--o{ WORK_NATURE : default_priority
     PRIORITY ||--o{ TICKET : priority
 
     STATUS ||--o{ TICKET : status
 
-    MAINTENANCE_NATURE ||--o{ NATURE_WORKER : default_workers
-    MAINTENANCE_NATURE ||--o{ TICKET : category
+    WORK_NATURE ||--o{ NATURE_WORKER : default_workers
+    WORK_NATURE ||--o{ TICKET : category
 
     USER ||--o{ NATURE_WORKER : skilled_worker
 
@@ -283,7 +283,7 @@ stores
 maintenance
 ├── Priority
 ├── Status
-├── MaintenanceNature
+├── WorkNature
 ├── NatureWorker
 ├── Ticket
 ├── Allocation

@@ -11,7 +11,7 @@ django.setup()
 
 from apps.stores.models import Store, Department, SubDepartment, Area
 from apps.accounts.models import Role, CustomUser
-from apps.maintenance.models import Priority, Status, MaintenanceNature, Ticket, Allocation, WorkLog, TicketHistory
+from apps.maintenance.models import Priority, Status, WorkNature, Ticket, Allocation, WorkLog, TicketHistory
 from apps.finance.models import ExpenseType, EmployeeRate, Expense, Reconciliation
 from apps.common.models import MediaCategory, Media
 
@@ -108,14 +108,14 @@ def run_sample_flow():
     status_reconciled, _ = Status.objects.get_or_create(status_name="Reconciled")
     print("6. Priorities and Statuses set up.")
 
-    # 6. Create Maintenance Nature
-    nature, _ = MaintenanceNature.objects.get_or_create(
+    # 6. Create Work Nature
+    nature, _ = WorkNature.objects.get_or_create(
         nature_name="Database Performance Lag",
         sub_department=sub_dept,
         default_priority=priority_high,
         active=True
     )
-    print(f"7. Maintenance Nature created: {nature}")
+    print(f"7. Work Nature created: {nature}")
 
     # 7. Create Employee Rate
     worker_rate, _ = EmployeeRate.objects.get_or_create(

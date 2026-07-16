@@ -29,10 +29,10 @@ class Status(models.Model):
     def __str__(self):
         return self.status_name
 
-class MaintenanceNature(models.Model):
+class WorkNature(models.Model):
     nature_id = models.AutoField(primary_key=True)
     nature_name = models.CharField(max_length=255)
-    sub_department = models.ForeignKey('stores.SubDepartment', on_delete=models.CASCADE, related_name='maintenance_natures', default=1)
+    sub_department = models.ForeignKey('stores.SubDepartment', on_delete=models.CASCADE, related_name='work_natures', default=1)
     default_priority = models.ForeignKey(Priority, on_delete=models.SET_NULL, null=True, blank=True, related_name='default_natures')
     active = models.BooleanField(default=True)
 
@@ -53,7 +53,7 @@ class MaintenanceNature(models.Model):
 
 class NatureWorker(models.Model):
     nature_worker_id = models.AutoField(primary_key=True)
-    nature = models.ForeignKey(MaintenanceNature, on_delete=models.CASCADE, related_name='nature_workers')
+    nature = models.ForeignKey(WorkNature, on_delete=models.CASCADE, related_name='nature_workers')
     worker = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='skilled_natures')
 
     class Meta:
@@ -72,7 +72,7 @@ class Ticket(models.Model):
     work_order_no = models.CharField(max_length=100, unique=True)
     store = models.ForeignKey('stores.Store', on_delete=models.CASCADE, related_name='tickets')
     department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='tickets')
-    nature = models.ForeignKey(MaintenanceNature, on_delete=models.CASCADE, related_name='tickets')
+    nature = models.ForeignKey(WorkNature, on_delete=models.CASCADE, related_name='tickets')
     priority = models.ForeignKey(Priority, on_delete=models.PROTECT, related_name='tickets')
     status = models.ForeignKey(Status, on_delete=models.PROTECT, related_name='tickets')
     title = models.CharField(max_length=255)

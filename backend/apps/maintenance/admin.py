@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Priority, Status, MaintenanceNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
 
 @admin.register(Priority)
 class PriorityAdmin(admin.ModelAdmin):
@@ -11,8 +11,8 @@ class StatusAdmin(admin.ModelAdmin):
     list_display = ('status_id', 'status_name')
     search_fields = ('status_name',)
 
-@admin.register(MaintenanceNature)
-class MaintenanceNatureAdmin(admin.ModelAdmin):
+@admin.register(WorkNature)
+class WorkNatureAdmin(admin.ModelAdmin):
     list_display = ('nature_id', 'nature_name', 'department', 'sub_department', 'default_priority', 'active')
     list_filter = ('active', 'sub_department')
     search_fields = ('nature_name',)

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Priority, Status, MaintenanceNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
 
 class PrioritySerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,9 +11,9 @@ class StatusSerializer(serializers.ModelSerializer):
         model = Status
         fields = '__all__'
 
-class MaintenanceNatureSerializer(serializers.ModelSerializer):
+class WorkNatureSerializer(serializers.ModelSerializer):
     class Meta:
-        model = MaintenanceNature
+        model = WorkNature
         fields = '__all__'
 
 class NatureWorkerSerializer(serializers.ModelSerializer):

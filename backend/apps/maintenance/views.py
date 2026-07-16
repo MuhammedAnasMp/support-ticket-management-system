@@ -1,7 +1,7 @@
 from rest_framework import viewsets
-from .models import Priority, Status, MaintenanceNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
 from .serializers import (
-    PrioritySerializer, StatusSerializer, MaintenanceNatureSerializer,
+    PrioritySerializer, StatusSerializer, WorkNatureSerializer,
     NatureWorkerSerializer, TicketSerializer, AllocationSerializer,
     WorkLogSerializer, TicketHistorySerializer
 )
@@ -14,9 +14,9 @@ class StatusViewSet(viewsets.ModelViewSet):
     queryset = Status.objects.all()
     serializer_class = StatusSerializer
 
-class MaintenanceNatureViewSet(viewsets.ModelViewSet):
-    queryset = MaintenanceNature.objects.all()
-    serializer_class = MaintenanceNatureSerializer
+class WorkNatureViewSet(viewsets.ModelViewSet):
+    queryset = WorkNature.objects.all()
+    serializer_class = WorkNatureSerializer
 
 class NatureWorkerViewSet(viewsets.ModelViewSet):
     queryset = NatureWorker.objects.all()

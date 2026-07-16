@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Role, CustomUser
+from .models import Role, CustomUser, PasswordResetOTP, WhatsAppLog
 
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
@@ -25,3 +25,17 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
     filter_horizontal = ('accessible_stores', 'sub_departments')
+
+@admin.register(PasswordResetOTP)
+class PasswordResetOTPAdmin(admin.ModelAdmin):
+    list_display = ('user', 'otp', 'is_used', 'created_at')
+    list_filter = ('is_used', 'created_at')
+    search_fields = ('user__username', 'user__employee_no', 'otp')
+    readonly_fields = ('created_at',)
+
+@admin.register(WhatsAppLog)
+class WhatsAppLogAdmin(admin.ModelAdmin):
+    list_display = ('whatsapp_number', 'user', 'message_type', 'status', 'created_at')
+    list_filter = ('status', 'message_type', 'created_at')
+    search_fields = ('whatsapp_number', 'user__username', 'user__employee_no', 'otp')
+    readonly_fields = ('created_at',)
