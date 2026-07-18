@@ -18,6 +18,9 @@ export interface UserDetails {
   active: boolean;
   profile_image: string | null;
   sub_departments: string[];
+  natures?: string[];
+  tickets_created_count?: number;
+  tickets_assigned_count?: number;
 }
 
 export interface AuthState {

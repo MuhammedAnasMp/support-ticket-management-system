@@ -22,7 +22,7 @@ class Area(models.Model):
 
 
 class Store(models.Model):
-    store_id = models.CharField(max_length=20)
+    store_id = models.CharField(max_length=20, primary_key=True)
     store_name = models.CharField(max_length=255)
     area = models.ForeignKey(
         Area,

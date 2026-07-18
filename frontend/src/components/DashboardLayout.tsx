@@ -9,21 +9,7 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
   const location = useLocation();
-
-  // Load user role from localStorage
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setUserRole(user.role);
-      } catch (e) {
-        // ignore
-      }
-    }
-  }, []);
 
   // Map pathnames to human readable page titles
   const getPageTitle = (path: string): string => {
@@ -74,7 +60,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       <Sidebar 
         isOpen={sidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
-        userRole={userRole}
       />
 
       {/* Main Container */}

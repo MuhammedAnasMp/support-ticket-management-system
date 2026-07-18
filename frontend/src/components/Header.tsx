@@ -138,7 +138,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) =>
                     {user?.full_name}
                   </h4>
                   <span className="inline-block mt-1 py-0.5 px-2.5 bg-primary/10 dark:bg-primary/20 text-primary text-[10px] font-bold uppercase rounded-full">
-                    {user?.role || 'Employee'}
+                    {user?.role || 'Unassigned'}
                   </span>
                 </div>
 

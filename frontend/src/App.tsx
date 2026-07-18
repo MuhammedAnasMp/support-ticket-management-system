@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { 
-  FileText, Store, Wrench, User, Receipt, BarChart3, Settings 
+import {
+  FileText, Store, Wrench, User, Receipt, BarChart3, Settings
 } from 'lucide-react';
 import { DashboardLayout } from './components/DashboardLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -17,6 +17,14 @@ import { SignupView } from './pages/SignupView';
 import { ForgotPasswordView } from './pages/ForgotPasswordView';
 import { ApprovalPendingView } from './pages/ApprovalPendingView';
 import { DashboardView } from './pages/DashboardView';
+import { TicketsView } from './pages/TicketsView';
+import { StoresView } from './pages/StoresView';
+import { MaintenanceView } from './pages/MaintenanceView';
+import { WorkforceView } from './pages/WorkforceView';
+import { ExpensesView } from './pages/ExpensesView';
+import { ReportsView } from './pages/ReportsView';
+import { AdministrationView } from './pages/AdministrationView';
+import Test from './Test';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -110,7 +118,7 @@ const App: React.FC = () => {
           <Route path="/signup" element={<SignupView />} />
           <Route path="/forgot-password" element={<ForgotPasswordView />} />
           <Route path="/approval-pending" element={<ApprovalPendingView />} />
-          
+
           {/* Dashboard and Subpage Routes wrapped with DashboardLayout */}
           <Route path="/" element={
             <ProtectedRoute>
@@ -123,7 +131,7 @@ const App: React.FC = () => {
           <Route path="/tickets/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Tickets" icon={<FileText className="w-12 h-12 text-primary" />} />
+                <TicketsView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
@@ -131,7 +139,7 @@ const App: React.FC = () => {
           <Route path="/stores/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Stores" icon={<Store className="w-12 h-12 text-primary" />} />
+                <StoresView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
@@ -139,7 +147,7 @@ const App: React.FC = () => {
           <Route path="/maintenance/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Maintenance" icon={<Wrench className="w-12 h-12 text-primary" />} />
+                <MaintenanceView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
@@ -147,7 +155,7 @@ const App: React.FC = () => {
           <Route path="/workforce/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Workforce" icon={<User className="w-12 h-12 text-primary" />} />
+                <WorkforceView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
@@ -155,7 +163,7 @@ const App: React.FC = () => {
           <Route path="/expenses/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Expense Approval" icon={<Receipt className="w-12 h-12 text-primary" />} />
+                <ExpensesView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
@@ -163,7 +171,7 @@ const App: React.FC = () => {
           <Route path="/reports/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Reports" icon={<BarChart3 className="w-12 h-12 text-primary" />} />
+                <ReportsView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
@@ -171,12 +179,13 @@ const App: React.FC = () => {
           <Route path="/admin/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <PlaceholderView moduleName="Administration" icon={<Settings className="w-12 h-12 text-primary" />} />
+                <AdministrationView />
               </DashboardLayout>
             </ProtectedRoute>
           } />
 
           <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="test" element={<Test />} />
         </Routes>
       </Router>
     </div>

@@ -151,7 +151,10 @@ class LoginView(APIView):
                 "role": user.role.role_name if user.role else None,
                 "active": user.active,
                 "profile_image": profile_image_url,
-                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()]
+                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
+                "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
+                "tickets_created_count": user.created_tickets.count(),
+                "tickets_assigned_count": user.allocations.count(),
             }
         }, status=status.HTTP_200_OK)
 
@@ -189,7 +192,10 @@ class ProfileView(APIView):
                 "role": user.role.role_name if user.role else None,
                 "active": user.active,
                 "profile_image": profile_image_url,
-                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()]
+                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
+                "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
+                "tickets_created_count": user.created_tickets.count(),
+                "tickets_assigned_count": user.allocations.count(),
             }
         }, status=status.HTTP_200_OK)
 

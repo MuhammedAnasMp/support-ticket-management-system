@@ -30,7 +30,7 @@ class DepartmentWiseValidationTestCase(TestCase):
 
         # Create areas and stores
         self.area = Area.objects.create(area_name="Capital Area")
-        self.store = Store.objects.create(store_name="Store-001", area=self.area)
+        self.store = Store.objects.create(store_id="S-001", store_name="Store-001", area=self.area)
 
         # Create users
         self.manager = CustomUser.objects.create_user(
