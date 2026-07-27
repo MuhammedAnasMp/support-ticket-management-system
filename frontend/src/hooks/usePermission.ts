@@ -6,7 +6,8 @@ export const usePermission = () => {
 
   const hasPermission = (perm?: string): boolean => {
     if (!perm) return true;
-    if (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'administrator') return true;
+    const roleName = (user?.role as any)?.role_name?.toLowerCase() || (user?.role as string)?.toLowerCase();
+    if (roleName === 'admin' || roleName === 'administrator') return true;
     const normalized = perm.toLowerCase();
     return permissions.some(
       (p) => p.toLowerCase() === normalized || p.toLowerCase().endsWith('.' + normalized)

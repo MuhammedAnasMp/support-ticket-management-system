@@ -1,10 +1,19 @@
 from rest_framework import viewsets
 from .models import ExpenseType, EmployeeRate, Expense, Reconciliation
-from .serializers import ExpenseTypeSerializer, EmployeeRateSerializer, ExpenseSerializer, ReconciliationSerializer
+from .serializers import (
+    ExpenseTypeSerializer, EmployeeRateSerializer, ExpenseSerializer,
+    ReconciliationSerializer, ExpenseWriteSerializer, ExpenseTypeWriteSerializer
+)
+
 
 class ExpenseTypeViewSet(viewsets.ModelViewSet):
     queryset = ExpenseType.objects.all()
     serializer_class = ExpenseTypeSerializer
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return ExpenseTypeWriteSerializer
+        return ExpenseTypeSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -13,14 +22,69 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(department_id=department)
         return queryset
 
+
 class EmployeeRateViewSet(viewsets.ModelViewSet):
     queryset = EmployeeRate.objects.all()
     serializer_class = EmployeeRateSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return EmployeeRate.objects.none()
+        
+        # Admins or users with general permission to view rates can see all
+        if user.is_superuser or user.has_perm('finance.view_employeerate') or user.has_perm('accounts.view_customuser'):
+            return queryset
+            
+        # Standard workers can only view their own rate
+        return queryset.filter(worker=user)
+
 
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
 
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return ExpenseWriteSerializer
+        return ExpenseSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return Expense.objects.none()
+        
+        if not user.is_superuser:
+            home_store_id = user.store_id
+            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            if home_store_id:
+                accessible_store_ids.append(home_store_id)
+            queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+
+        ticket = self.request.query_params.get("ticket")
+        if ticket:
+            queryset = queryset.filter(ticket_id=ticket)
+
+        return queryset
+
+
 class ReconciliationViewSet(viewsets.ModelViewSet):
     queryset = Reconciliation.objects.all()
     serializer_class = ReconciliationSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return Reconciliation.objects.none()
+            
+        if not user.is_superuser:
+            home_store_id = user.store_id
+            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            if home_store_id:
+                accessible_store_ids.append(home_store_id)
+            queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+
+        return queryset

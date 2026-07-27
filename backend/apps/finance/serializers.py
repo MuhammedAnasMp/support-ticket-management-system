@@ -1,7 +1,25 @@
 from rest_framework import serializers
 from .models import ExpenseType, EmployeeRate, Expense, Reconciliation
+from apps.common.serializers import MediaSerializer
+
 
 class ExpenseTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExpenseType
+        fields = '__all__'
+        depth = 1
+
+    def validate(self, data):
+        parent = data.get('parent')
+        department = data.get('department')
+        if parent and department and parent.department != department:
+            raise serializers.ValidationError(
+                {"parent": f"Parent expense type must belong to the same department ({department.department_name})."}
+            )
+        return data
+
+
+class ExpenseTypeWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenseType
         fields = '__all__'
@@ -15,12 +33,23 @@ class ExpenseTypeSerializer(serializers.ModelSerializer):
             )
         return data
 
+
 class EmployeeRateSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeRate
         fields = '__all__'
+        depth = 1
+
 
 class ExpenseSerializer(serializers.ModelSerializer):
+    receipts = MediaSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Expense
+        fields = '__all__'
+        depth = 1
+
+class ExpenseWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Expense
         fields = '__all__'
@@ -34,7 +63,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
             )
         return data
 
+
 class ReconciliationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reconciliation
         fields = '__all__'
+        depth = 1

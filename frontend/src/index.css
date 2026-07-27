@@ -5,12 +5,12 @@
 
 @theme {
   --font-sans: 'Inter', sans-serif;
-  
+
   /* Brand colors matching DESIGN.md */
   --color-primary: #1A73E8;
   --color-primary-hover: #1557b0;
   --color-primary-focus: rgba(26, 115, 232, 0.25);
-  
+
   /* Neutral tiers - Light mode */
   --color-surface: #f8f9fa;
   --color-surface-dim: #d9dadb;
@@ -32,7 +32,7 @@
   --color-dark-on-surface: #e3e3e4;
   --color-dark-on-surface-variant: #c4c7c5;
   --color-dark-outline-variant: #2e3033;
-  
+
   /* Accents */
   --color-accent-light: #c2e7ff;
   --color-error: #ba1a1a;
@@ -60,19 +60,24 @@ body {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 4px;
 }
+
 .dark ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.25);
 }
+
 .dark ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }

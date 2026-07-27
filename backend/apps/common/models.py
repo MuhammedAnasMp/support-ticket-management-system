@@ -33,6 +33,7 @@ class Media(models.Model):
     ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='attachments')
     uploaded_by = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='uploaded_media')
     category = models.ForeignKey(MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_files')
+    expense = models.ForeignKey('finance.Expense', on_delete=models.SET_NULL, null=True, blank=True, related_name='receipts')
     file_name = models.CharField(max_length=255)
     file_url = models.FileField(upload_to=get_media_upload_path)
     uploaded_date = models.DateTimeField(auto_now_add=True)

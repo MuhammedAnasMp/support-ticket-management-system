@@ -17,10 +17,11 @@ whatsapp_validator = RegexValidator(
     message='WhatsApp number must be either 8 or 10 digits.'
 )
 
+
 def get_profile_image_path(instance, filename):
     dept_name = 'unassigned'
     subdept_name = 'unassigned'
-    
+
     if instance.pk:
         # User exists, try to get the first subdepartment
         sub_dept = instance.sub_departments.first()
@@ -28,28 +29,29 @@ def get_profile_image_path(instance, filename):
             subdept_name = sub_dept.sub_department_name
             if sub_dept.department:
                 dept_name = sub_dept.department.department_name
-                
+
     def clean(s):
         cleaned = re.sub(r'[^a-zA-Z0-9_\-]', '_', s.lower())
         return cleaned.strip('_')
-        
+
     dept_clean = clean(dept_name) or 'unassigned'
     subdept_clean = clean(subdept_name) or 'unassigned'
     username_clean = clean(instance.username or 'user')
-    
+
     return f"profileimagse/{dept_clean}/{subdept_clean}/{username_clean}.png"
+
 
 def move_profile_image_to_correct_path(instance):
     if not instance.profile_image:
         return
-        
+
     old_name = instance.profile_image.name
     new_name = get_profile_image_path(instance, "")
-    
+
     if old_name != new_name:
         old_full_path = os.path.join(settings.MEDIA_ROOT, old_name)
         new_full_path = os.path.join(settings.MEDIA_ROOT, new_name)
-        
+
         if os.path.exists(old_full_path):
             os.makedirs(os.path.dirname(new_full_path), exist_ok=True)
             try:
@@ -60,6 +62,7 @@ def move_profile_image_to_correct_path(instance):
                 instance.save(update_fields=['profile_image'])
             except Exception:
                 pass
+
 
 class Role(models.Model):
     role_id = models.AutoField(primary_key=True)
@@ -74,17 +77,27 @@ class Role(models.Model):
     def __str__(self):
         return self.role_name
 
+
 class CustomUser(AbstractUser):
-    user_id = models.AutoField(primary_key=True)  # Overriding the default id PK
-    employee_no = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    # Overriding the default id PK
+    user_id = models.AutoField(primary_key=True)
+    employee_no = models.CharField(
+        max_length=50, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=255)
-    phone = models.CharField(max_length=50, null=True, blank=True, validators=[phone_validator])
-    whatsapp_number = models.CharField(max_length=50, null=True, blank=True, validators=[whatsapp_validator])
-    profile_image = models.ImageField(upload_to=get_profile_image_path, null=True, blank=True)
-    role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
-    store = models.ForeignKey('stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
-    accessible_stores = models.ManyToManyField('stores.Store', blank=True, related_name='accessible_users')
-    sub_departments = models.ManyToManyField('stores.SubDepartment', blank=True, related_name='users')
+    phone = models.CharField(max_length=50, null=True,
+                             blank=True, validators=[phone_validator])
+    whatsapp_number = models.CharField(
+        max_length=50, null=True, blank=True, validators=[whatsapp_validator])
+    profile_image = models.ImageField(
+        upload_to=get_profile_image_path, null=True, blank=True)
+    role = models.ForeignKey(
+        Role, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+    store = models.ForeignKey(
+        'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+    accessible_stores = models.ManyToManyField(
+        'stores.Store', blank=True, related_name='accessible_users')
+    sub_departments = models.ManyToManyField(
+        'stores.SubDepartment', blank=True, related_name='users')
     active = models.BooleanField(default=False)
 
     class Meta:
@@ -114,8 +127,10 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return self.full_name if self.full_name else self.username
 
+
 class PasswordResetOTP(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='password_reset_otps')
+    user = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE, related_name='password_reset_otps')
     otp = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
     is_used = models.BooleanField(default=False)
@@ -131,14 +146,16 @@ class PasswordResetOTP(models.Model):
         import datetime
         return not self.is_used and (timezone.now() - self.created_at) < datetime.timedelta(minutes=10)
 
+
 class WhatsAppLog(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='whatsapp_logs')
+    user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL,
+                             null=True, blank=True, related_name='whatsapp_logs')
     whatsapp_number = models.CharField(max_length=50)
     message_type = models.CharField(max_length=50, default='OTP')
     otp = models.CharField(max_length=6, null=True, blank=True)
     payload = models.TextField(null=True, blank=True)
     response = models.TextField(null=True, blank=True)
-    status = models.CharField(max_length=50) # 'success' or 'failed'
+    status = models.CharField(max_length=50)  # 'success' or 'failed'
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -146,7 +163,6 @@ class WhatsAppLog(models.Model):
 
     def __str__(self):
         return f"{self.whatsapp_number} - {self.status} - {self.created_at}"
-
 
 
 @receiver(m2m_changed, sender=CustomUser.sub_departments.through)
@@ -159,7 +175,6 @@ def update_user_approval(sender, instance, action, **kwargs):
         else:
             instance.active = False
         instance.save(update_fields=['active'])
-        
+
         # Relocate the profile image to correct department/sub-department folder
         move_profile_image_to_correct_path(instance)
-

@@ -4,7 +4,7 @@ from .views import MediaCategoryViewSet, MediaViewSet, NotificationViewSet
 
 router = DefaultRouter()
 router.register(r'mediacategory', MediaCategoryViewSet)
-router.register(r'media', MediaViewSet)
+router.register(r"media", MediaViewSet, basename="media")
 router.register(r'notification', NotificationViewSet)
 
 urlpatterns = [

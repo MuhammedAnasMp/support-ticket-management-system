@@ -87,7 +87,10 @@ export const MaintenanceView: React.FC = () => {
         if (resUsers.ok) {
           const uList = await resUsers.json();
           // Filter technicians/workers
-          setUsers(uList.filter((u: any) => u.role?.toLowerCase() === 'technician' || u.role?.toLowerCase() === 'worker'));
+          setUsers(uList.filter((u: any) => {
+            const roleName = (u.role as any)?.role_name?.toLowerCase() || (u.role as string)?.toLowerCase();
+            return roleName === 'technician' || roleName === 'worker';
+          }));
         }
       } else if (subpage === 'priorities') {
         const res = await fetch(`${API_URL}/maintenance/priority/`, { headers });

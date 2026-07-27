@@ -14,11 +14,9 @@ class StoreViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Store.objects.none()
         
-        # Office or Superuser has access to all stores
-        if user.is_superuser or (user.role and user.role.role_name.lower() == 'office'):
+        if user.is_superuser:
             return Store.objects.all()
         
-        # Managers and Employees see only stores they have access to
         home_store_id = user.store_id
         accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
         if home_store_id:

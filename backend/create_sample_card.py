@@ -1,3 +1,8 @@
+from apps.common.models import MediaCategory, Media
+from apps.finance.models import ExpenseType, EmployeeRate, Expense, Reconciliation
+from apps.maintenance.models import Priority, Status, WorkNature, Ticket, Allocation, WorkLog, TicketHistory
+from apps.accounts.models import Role, CustomUser
+from apps.stores.models import Store, Department, SubDepartment, Area
 import os
 import django
 import datetime
@@ -9,11 +14,6 @@ from django.core.files.base import ContentFile
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from apps.stores.models import Store, Department, SubDepartment, Area
-from apps.accounts.models import Role, CustomUser
-from apps.maintenance.models import Priority, Status, WorkNature, Ticket, Allocation, WorkLog, TicketHistory
-from apps.finance.models import ExpenseType, EmployeeRate, Expense, Reconciliation
-from apps.common.models import MediaCategory, Media
 
 def run_sample_flow():
     print("--- Starting Sample Card (Ticket) End-to-End Flow ---")
@@ -98,14 +98,20 @@ def run_sample_flow():
     # Office has access to all stores
     office_user.accessible_stores.add(store)
 
-    print(f"5. Users created: {manager_user.full_name} (Manager), {worker_user.full_name} (Worker), {office_user.full_name} (Office)")
+    print(
+        f"5. Users created: {manager_user.full_name} (Manager), {worker_user.full_name} (Worker), {office_user.full_name} (Office)")
 
     # 5. Create Priorities & Statuses
-    priority_high, _ = Priority.objects.get_or_create(department=department, priority_name="High", defaults={"level": 2})
-    status_open, _ = Status.objects.get_or_create(department=department, status_name="Open")
-    status_progress, _ = Status.objects.get_or_create(department=department, status_name="In Progress")
-    status_completed, _ = Status.objects.get_or_create(department=department, status_name="Completed")
-    status_reconciled, _ = Status.objects.get_or_create(department=department, status_name="Reconciled")
+    priority_high, _ = Priority.objects.get_or_create(
+        department=department, priority_name="High", defaults={"level": 2})
+    status_open, _ = Status.objects.get_or_create(
+        department=department, status_name="Open")
+    status_progress, _ = Status.objects.get_or_create(
+        department=department, status_name="In Progress")
+    status_completed, _ = Status.objects.get_or_create(
+        department=department, status_name="Completed")
+    status_reconciled, _ = Status.objects.get_or_create(
+        department=department, status_name="Reconciled")
     print("6. Priorities and Statuses set up.")
 
     # 6. Create Work Nature
@@ -159,7 +165,8 @@ def run_sample_flow():
             "remarks": "Please resolve connection pool leaks."
         }
     )
-    print(f"10. Work Allocated to: {allocation.worker.username} (Planned Hours: {allocation.planned_hours})")
+    print(
+        f"10. Work Allocated to: {allocation.worker.username} (Planned Hours: {allocation.planned_hours})")
 
     # Update Ticket Status to In Progress
     ticket.status = status_progress
@@ -185,15 +192,18 @@ def run_sample_flow():
             "work_done": "Cleared pool leaks, updated postgres pool configurations, restarted database server."
         }
     )
-    print(f"12. Work logged: {work_log.hours} hours. Labour amount: {work_log.labour_amount} USD")
+    print(
+        f"12. Work logged: {work_log.hours} hours. Labour amount: {work_log.labour_amount} USD")
 
     # 11. Log Expense (Bills: Bus Fare, Material, etc.)
     # Ensure fresh media files are written to disk
     Media.objects.filter(ticket=ticket).delete()
 
     # 12. Upload Media (Issue photo & Receipt)
-    cat_issue, _ = MediaCategory.objects.get_or_create(department=department, category_name="Issue Media")
-    cat_receipt, _ = MediaCategory.objects.get_or_create(department=department, category_name="Receipt")
+    cat_issue, _ = MediaCategory.objects.get_or_create(
+        department=department, category_name="Issue Media")
+    cat_receipt, _ = MediaCategory.objects.get_or_create(
+        department=department, category_name="Receipt")
 
     media_issue, created_issue = Media.objects.get_or_create(
         ticket=ticket,
@@ -209,7 +219,8 @@ def run_sample_flow():
             ContentFile(b"Mock MP4 video data showing database lag")
         )
         media_issue.save()
-    print(f"14. Issue Media attachment: {media_issue.file_name} -> Upload path: {media_issue.file_url.name}")
+    print(
+        f"14. Issue Media attachment: {media_issue.file_name} -> Upload path: {media_issue.file_url.name}")
 
     media_receipt, created_receipt = Media.objects.get_or_create(
         ticket=ticket,
@@ -225,9 +236,11 @@ def run_sample_flow():
             ContentFile(b"Mock PNG image data of bus receipt")
         )
         media_receipt.save()
-    print(f"15. Expense Receipt attachment: {media_receipt.file_name} -> Upload path: {media_receipt.file_url.name}")
+    print(
+        f"15. Expense Receipt attachment: {media_receipt.file_name} -> Upload path: {media_receipt.file_url.name}")
 
-    expense_parent_travel, _ = ExpenseType.objects.get_or_create(department=department, expense_name="Transportation")
+    expense_parent_travel, _ = ExpenseType.objects.get_or_create(
+        department=department, expense_name="Transportation")
     expense_type_travel, _ = ExpenseType.objects.get_or_create(
         department=department,
         expense_name="Bus Fare",
@@ -246,8 +259,8 @@ def run_sample_flow():
             "approved_by": manager_user
         }
     )
-    print(f"13. Expense logged: {expense.amount} USD for {expense.expense_type.expense_name} (Approved by Manager)")
-
+    print(
+        f"13. Expense logged: {expense.amount} USD for {expense.expense_type.expense_name} (Approved by Manager)")
 
     # Complete Ticket
     ticket.status = status_completed
@@ -275,7 +288,8 @@ def run_sample_flow():
             "completed": True
         }
     )
-    print(f"17. Reconciliation finished: Grand Total = {recon.grand_total} USD (Labour: {recon.labour_total}, Expense: {recon.expense_total})")
+    print(
+        f"17. Reconciliation finished: Grand Total = {recon.grand_total} USD (Labour: {recon.labour_total}, Expense: {recon.expense_total})")
 
     # Update Ticket to Reconciled
     ticket.status = status_reconciled
@@ -288,6 +302,7 @@ def run_sample_flow():
     )
     print(f"18. Ticket Status updated to: {ticket.status.status_name}")
     print("--- End-to-End Flow Completed Successfully ---")
+
 
 if __name__ == '__main__':
     run_sample_flow()

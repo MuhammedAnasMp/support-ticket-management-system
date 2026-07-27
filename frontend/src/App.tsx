@@ -21,9 +21,6 @@ import { TicketsView } from './pages/TicketsView';
 import { StoresView } from './pages/StoresView';
 import { MaintenanceView } from './pages/MaintenanceView';
 import { WorkforceView } from './pages/WorkforceView';
-import { ExpensesView } from './pages/ExpensesView';
-import { ReportsView } from './pages/ReportsView';
-import { AdministrationView } from './pages/AdministrationView';
 import Test from './Test';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -160,29 +157,7 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
 
-          <Route path="/expenses/:subpage" element={
-            <ProtectedRoute>
-              <DashboardLayout>
-                <ExpensesView />
-              </DashboardLayout>
-            </ProtectedRoute>
-          } />
 
-          <Route path="/reports/:subpage" element={
-            <ProtectedRoute>
-              <DashboardLayout>
-                <ReportsView />
-              </DashboardLayout>
-            </ProtectedRoute>
-          } />
-
-          <Route path="/admin/:subpage" element={
-            <ProtectedRoute>
-              <DashboardLayout>
-                <AdministrationView />
-              </DashboardLayout>
-            </ProtectedRoute>
-          } />
 
           <Route path="*" element={<Navigate to="/" replace />} />
           <Route path="test" element={<Test />} />

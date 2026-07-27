@@ -5,9 +5,9 @@ from apps.accounts.models import Role, CustomUser
 from apps.maintenance.models import Priority, Status, WorkNature, Ticket
 from apps.common.models import MediaCategory, Media
 from apps.finance.models import ExpenseType, Expense
-from apps.maintenance.serializers import TicketSerializer
-from apps.common.serializers import MediaSerializer
-from apps.finance.serializers import ExpenseSerializer, ExpenseTypeSerializer
+from apps.maintenance.serializers import TicketWriteSerializer
+from apps.common.serializers import MediaWriteSerializer
+from apps.finance.serializers import ExpenseWriteSerializer, ExpenseTypeWriteSerializer
 from rest_framework.exceptions import ValidationError
 
 class DepartmentWiseValidationTestCase(TestCase):
@@ -104,7 +104,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "description": "Details",
             "created_by": self.manager.user_id
         }
-        serializer = TicketSerializer(data=data)
+        serializer = TicketWriteSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_invalid_ticket_priority_department(self):
@@ -119,7 +119,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "description": "Details",
             "created_by": self.manager.user_id
         }
-        serializer = TicketSerializer(data=data)
+        serializer = TicketWriteSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("priority", serializer.errors)
 
@@ -135,7 +135,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "description": "Details",
             "created_by": self.manager.user_id
         }
-        serializer = TicketSerializer(data=data)
+        serializer = TicketWriteSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("status", serializer.errors)
 
@@ -151,7 +151,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "description": "Details",
             "created_by": self.manager.user_id
         }
-        serializer = TicketSerializer(data=data)
+        serializer = TicketWriteSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("nature", serializer.errors)
 
@@ -168,7 +168,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "file_name": "it_screenshot.png",
             "file_url": file_valid
         }
-        serializer = MediaSerializer(data=media_valid_data)
+        serializer = MediaWriteSerializer(data=media_valid_data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
         # Test invalid Media (matching IT ticket with Maintenance category)
@@ -179,7 +179,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "file_name": "maint_photo.png",
             "file_url": file_invalid
         }
-        serializer = MediaSerializer(data=media_invalid_data)
+        serializer = MediaWriteSerializer(data=media_invalid_data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("category", serializer.errors)
 
@@ -192,7 +192,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "amount": "120.00",
             "expense_date": "2026-07-16"
         }
-        serializer = ExpenseSerializer(data=expense_valid_data)
+        serializer = ExpenseWriteSerializer(data=expense_valid_data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
         # Test invalid Expense (matching IT ticket with Maintenance expense type)
@@ -203,7 +203,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "amount": "120.00",
             "expense_date": "2026-07-16"
         }
-        serializer = ExpenseSerializer(data=expense_invalid_data)
+        serializer = ExpenseWriteSerializer(data=expense_invalid_data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("expense_type", serializer.errors)
 
@@ -214,6 +214,6 @@ class DepartmentWiseValidationTestCase(TestCase):
             "expense_name": "Maint Sub Type",
             "parent": self.exp_type_it.expense_type_id # Different department
         }
-        serializer = ExpenseTypeSerializer(data=data)
+        serializer = ExpenseTypeWriteSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("parent", serializer.errors)

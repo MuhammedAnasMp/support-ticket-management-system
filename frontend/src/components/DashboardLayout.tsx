@@ -14,7 +14,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   // Map pathnames to human readable page titles
   const getPageTitle = (path: string): string => {
     if (path === '/') return 'Dashboard Overview';
-    
+
     // Split and capitalize path segments
     const segments = path.split('/').filter(Boolean);
     if (segments.length === 0) return 'Dashboard';
@@ -57,21 +57,21 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   return (
     <div className="flex min-h-screen bg-surface dark:bg-dark-surface transition-colors duration-200">
       {/* Navigation Sidebar Drawer */}
-      <Sidebar 
-        isOpen={sidebarOpen} 
-        onClose={() => setSidebarOpen(false)} 
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       {/* Main Container */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Top Header */}
-        <Header 
-          onToggleSidebar={() => setSidebarOpen(true)} 
+        <Header
+          onToggleSidebar={() => setSidebarOpen(true)}
           pageTitle={getPageTitle(location.pathname)}
         />
 
         {/* Scrollable Work Area */}
-        <main className="flex-1 overflow-y-auto px-6 py-8 md:px-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 overflow-y-auto px-6 py-8 md:px-8 .max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>

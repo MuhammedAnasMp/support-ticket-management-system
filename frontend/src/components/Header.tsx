@@ -109,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) =>
                 {user?.full_name || 'Guest User'}
               </p>
               <p className="text-[10px] text-on-surface-variant dark:text-dark-on-surface-variant capitalize">
-                {user?.role || 'User'}
+                {(user?.role as any)?.role_name || user?.role || 'User'}
               </p>
             </div>
             <ChevronDown className="w-4 h-4 text-outline hidden sm:block" />
@@ -138,7 +138,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) =>
                     {user?.full_name}
                   </h4>
                   <span className="inline-block mt-1 py-0.5 px-2.5 bg-primary/10 dark:bg-primary/20 text-primary text-[10px] font-bold uppercase rounded-full">
-                    {user?.role || 'Unassigned'}
+                    {(user?.role as any)?.role_name || user?.role || 'Unassigned'}
                   </span>
                 </div>
 

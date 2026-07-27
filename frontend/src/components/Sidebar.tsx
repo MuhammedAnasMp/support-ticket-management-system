@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       subItems: [
         { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
         { title: 'Areas', path: '/stores/areas', permission: 'stores.view_area' },
-        { title: 'Departments', path: '/stores/departments', permission: 'stores.view_department' },
+        // { title: 'Departments', path: '/stores/departments', permission: 'stores.view_department' },
         { title: 'Sub Departments', path: '/stores/sub-departments', permission: 'stores.view_subdepartment' },
       ],
     },
@@ -85,42 +85,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       subItems: [
         { title: 'Employees', path: '/workforce/employees', permission: 'accounts.view_customuser' },
         { title: 'Employee Rates', path: '/workforce/rates', permission: 'finance.view_employeerate' },
-        { title: 'Worker Skills', path: '/workforce/skills', permission: 'maintenance.view_natureworker' },
+        // { title: 'Worker Skills', path: '/workforce/skills', permission: 'maintenance.view_natureworker' },
       ],
-    },
-    {
-      title: 'Expense Approval',
-      icon: <Receipt className="w-5 h-5" />,
-      subItems: [
-        { title: 'Pending Claims', path: '/expenses/pending', permission: 'finance.view_expense' },
-        { title: 'Approved Expenses', path: '/expenses/approved', permission: 'finance.view_expense' },
-        { title: 'Rejected Expenses', path: '/expenses/rejected', permission: 'finance.view_expense' },
-        { title: 'Expense Types', path: '/expenses/types', permission: 'finance.view_expensetype' },
-      ],
-    },
-    {
-      title: 'Reports',
-      icon: <BarChart3 className="w-5 h-5" />,
-      subItems: [
-        { title: 'Ticket Report', path: '/reports/tickets', permission: 'finance.view_reconciliation' },
-        { title: 'Store Performance', path: '/reports/store-performance', permission: 'finance.view_reconciliation' },
-        { title: 'Labour Cost', path: '/reports/labour-cost', permission: 'finance.view_reconciliation' },
-        { title: 'Expense Report', path: '/reports/expenses', permission: 'finance.view_reconciliation' },
-        { title: 'Worker Performance', path: '/reports/worker-performance', permission: 'finance.view_reconciliation' },
-        { title: 'Monthly Summary', path: '/reports/monthly-summary', permission: 'finance.view_reconciliation' },
-        { title: 'Reconciliation Report', path: '/reports/reconciliation', permission: 'finance.view_reconciliation' },
-      ],
-    },
-    {
-      title: 'Administration',
-      icon: <Settings className="w-5 h-5" />,
-      subItems: [
-        { title: 'Users', path: '/admin/users', permission: 'accounts.view_customuser' },
-        { title: 'Roles', path: '/admin/roles', permission: 'accounts.view_role' },
-        { title: 'Permissions', path: '/admin/permissions', permission: 'accounts.view_permission' },
-        { title: 'System Settings', path: '/admin/settings', permission: 'accounts.view_settings' },
-      ],
-    },
+    }
   ];
 
   // Check if a path or any subitem path matches the current location
@@ -132,12 +99,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     return false;
   };
 
-  // Check role authorization
-  const hasAccess = (roles?: string[]) => {
-    if (!roles || roles.length === 0) return true;
-    if (!userRole) return false;
-    return roles.includes(userRole);
-  };
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-surface-container dark:bg-dark-surface-container border-r border-outline-variant dark:border-dark-outline-variant w-64 md:w-72">
@@ -282,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </div>
             <ChevronDown className={`w-4 h-4 text-outline transition-transform duration-200 ${profileExpanded ? 'transform rotate-180' : ''}`} />
           </button>
-          
+
           <AnimatePresence initial={false}>
             {profileExpanded && (
               <motion.div
@@ -296,7 +257,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                   <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
                   <span>Emp ID: <span className="font-semibold text-on-surface dark:text-dark-on-surface">{user.employee_no}</span></span>
                 </div>
-                
+
                 {store && (
                   <div className="flex items-start gap-2">
                     <Store className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
@@ -306,7 +267,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     </div>
                   </div>
                 )}
-                
+
                 {user.sub_departments && user.sub_departments.length > 0 && (
                   <div className="flex items-start gap-2">
                     <Wrench className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
