@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   User, Lock, Mail, Phone, Clock, MessageSquare, 
@@ -10,6 +10,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const SignupView: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const roleParam = searchParams.get('role') || '';
+  const departmentParam = searchParams.get('department') || '';
+  const storeParam = searchParams.get('store') || '';
+
   const [employeeNo, setEmployeeNo] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -18,6 +24,20 @@ export const SignupView: React.FC = () => {
   const [password, setPassword] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // Metadata dropdowns
+  const [roles, setRoles] = useState<any[]>([]);
+  const [stores, setStores] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+
+  // Selected values
+  const [selectedRole, setSelectedRole] = useState(roleParam);
+  const [selectedStore, setSelectedStore] = useState(storeParam);
+  const [selectedDepartment, setSelectedDepartment] = useState(departmentParam);
+
+  const isRoleLocked = Boolean(roleParam);
+  const isStoreLocked = Boolean(storeParam);
+  const isDepartmentLocked = Boolean(departmentParam);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -32,6 +52,30 @@ export const SignupView: React.FC = () => {
       navigate('/approval-pending');
     }
   }, [navigate]);
+
+  useEffect(() => {
+    fetchMetadata();
+  }, []);
+
+  const fetchMetadata = async () => {
+    try {
+      const response = await fetch(`${API_URL}/accounts/signup/`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.roles) setRoles(data.roles);
+        if (data.stores) setStores(data.stores);
+        if (data.departments) setDepartments(data.departments);
+      }
+    } catch (err) {
+      console.error('Failed to load metadata', err);
+    }
+  };
+
+  const selectedRoleObj = roles.find(r => String(r.role_id) === String(selectedRole));
+  const selectedRoleName = selectedRoleObj?.role_name?.toLowerCase() || '';
+
+  const isStoreManager = String(selectedRole) === '3' || selectedRoleName === 'store manager';
+  const isTechnician = String(selectedRole) === '5' || selectedRoleName === 'technician';
 
   const handleEmployeeNoChange = (val: string) => {
     const clean = val.replace(/\D/g, '');
@@ -75,6 +119,21 @@ export const SignupView: React.FC = () => {
       return;
     }
 
+    if (!selectedRole) {
+      setError('Please select a Role.');
+      return;
+    }
+
+    if (isStoreManager && !selectedStore) {
+      setError('Please select a Store for Store Manager role.');
+      return;
+    }
+
+    if (isTechnician && !selectedDepartment) {
+      setError('Please select a Department for Technician role.');
+      return;
+    }
+
     if (phone.length !== 8) {
       setError('Phone number must be exactly 8 digits.');
       return;
@@ -94,6 +153,13 @@ export const SignupView: React.FC = () => {
     formData.append('whatsapp_number', whatsappNumber);
     formData.append('password', password);
     formData.append('profile_image', imageFile);
+    formData.append('role', selectedRole);
+    if (isStoreManager && selectedStore) {
+      formData.append('store', selectedStore);
+    }
+    if (isTechnician && selectedDepartment) {
+      formData.append('department', selectedDepartment);
+    }
 
     try {
       const response = await fetch(`${API_URL}/accounts/signup/`, {
@@ -132,7 +198,7 @@ export const SignupView: React.FC = () => {
             Waiting for Approval
           </h2>
           <p className="text-sm text-on-surface-variant dark:text-dark-on-surface-variant mb-6">
-            Your registration was successful! Your account is currently pending activation. An admin must assign a sub-department to your account to confirm approval.
+            Your registration was successful! Your account is currently pending activation. An admin will review and approve your account.
           </p>
           <div className="space-y-3">
             <button
@@ -205,6 +271,71 @@ export const SignupView: React.FC = () => {
               Profile Photo (Required)
             </span>
           </div>
+
+          {/* Role Selection Dropdown */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+              Role
+            </label>
+            <select
+              required
+              value={selectedRole}
+              disabled={isRoleLocked}
+              onChange={(e) => {
+                setSelectedRole(e.target.value);
+                setSelectedStore('');
+                setSelectedDepartment('');
+              }}
+              className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+            >
+              {!isRoleLocked && <option value="">Select Role</option>}
+              {roles.map(r => (
+                <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Store Selection Dropdown for Store Manager */}
+          {isStoreManager && (
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                Store
+              </label>
+              <select
+                required
+                value={selectedStore}
+                disabled={isStoreLocked}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+              >
+                {!isStoreLocked && <option value="">Select Store</option>}
+                {stores.map(s => (
+                  <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Department Selection Dropdown for Technician */}
+          {isTechnician && (
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                Department
+              </label>
+              <select
+                required
+                value={selectedDepartment}
+                disabled={isDepartmentLocked}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+              >
+                {!isDepartmentLocked && <option value="">Select Department</option>}
+                {departments.map(d => (
+                  <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

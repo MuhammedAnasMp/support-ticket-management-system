@@ -5,6 +5,11 @@ export const usePermission = () => {
   const { user, permissions } = useSelector((state: RootState) => state.auth);
 
   const hasPermission = (perm?: string): boolean => {
+
+
+    // console.log("Permission checked:", perm);
+    console.trace("Permission checked:", perm);
+
     if (!perm) return true;
     const roleName = (user?.role as any)?.role_name?.toLowerCase() || (user?.role as string)?.toLowerCase();
     if (roleName === 'admin' || roleName === 'administrator') return true;

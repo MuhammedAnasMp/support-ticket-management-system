@@ -20,6 +20,16 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
         department = self.request.query_params.get('department')
         if department:
             queryset = queryset.filter(department_id=department)
+
+        has_parent = self.request.query_params.get('has_parent')
+        if has_parent is not None:
+            if has_parent.lower() in ['true', '1']:
+                queryset = queryset.filter(parent__isnull=False)
+            elif has_parent.lower() in ['false', '0']:
+                queryset = queryset.filter(parent__isnull=True)
+        elif self.action == 'list':
+            queryset = queryset.filter(parent__isnull=False)
+
         return queryset
 
 
@@ -57,11 +67,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             return Expense.objects.none()
         
         if not user.is_superuser:
-            home_store_id = user.store_id
             accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
-            if home_store_id:
-                accessible_store_ids.append(home_store_id)
-            queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+            if accessible_store_ids:
+                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
 
         ticket = self.request.query_params.get("ticket")
         if ticket:
@@ -81,10 +89,8 @@ class ReconciliationViewSet(viewsets.ModelViewSet):
             return Reconciliation.objects.none()
             
         if not user.is_superuser:
-            home_store_id = user.store_id
             accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
-            if home_store_id:
-                accessible_store_ids.append(home_store_id)
-            queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+            if accessible_store_ids:
+                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
 
         return queryset

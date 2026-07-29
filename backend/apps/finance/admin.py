@@ -3,8 +3,8 @@ from .models import ExpenseType, EmployeeRate, Expense, Reconciliation
 
 @admin.register(ExpenseType)
 class ExpenseTypeAdmin(admin.ModelAdmin):
-    list_display = ('expense_type_id', 'department', 'expense_name', 'parent')
-    list_filter = ('department', 'parent')
+    list_display = ('expense_type_id', 'department', 'expense_name', 'parent', 'required')
+    list_filter = ('department', 'required', 'parent')
     search_fields = ('expense_name',)
 
 @admin.register(EmployeeRate)
@@ -15,7 +15,7 @@ class EmployeeRateAdmin(admin.ModelAdmin):
 
 @admin.register(Expense)
 class ExpenseAdmin(admin.ModelAdmin):
-    list_display = ('expense_id', 'ticket', 'worker', 'expense_type', 'amount', 'responsible_store', 'expense_date', 'receipt', 'approved', 'approved_by')
+    list_display = ('expense_id', 'ticket', 'worker', 'expense_type', 'amount', 'responsible_store', 'expense_date', 'approved', 'approved_by')
     list_filter = ('approved', 'expense_date', 'expense_type', 'responsible_store')
     search_fields = ('ticket__work_order_no', 'worker__username')
 

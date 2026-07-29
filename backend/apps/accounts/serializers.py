@@ -18,7 +18,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
         fields = [
             'user_id', 'username', 'email', 'first_name', 'last_name',
             'employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image',
-            'role', 'store', 'accessible_stores', 'sub_departments', 'active', 'password',
+            'role', 'accessible_stores', 'sub_departments', 'active', 'password',
             'hourly_rate', 'skills', 'effective_from', 'effective_to'
         ]
 
@@ -150,7 +150,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
         
         # Populate nested objects for reads
         representation['role'] = RoleSerializer(instance.role).data if instance.role else None
-        representation['store'] = StoreSerializer(instance.store).data if instance.store else None
         representation['accessible_stores'] = StoreSerializer(instance.accessible_stores.all(), many=True).data
         representation['sub_departments'] = SubDepartmentSerializer(instance.sub_departments.all(), many=True).data
         

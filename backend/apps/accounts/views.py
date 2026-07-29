@@ -10,7 +10,7 @@ from .serializers import RoleSerializer, CustomUserSerializer
 
 
 class RoleViewSet(viewsets.ModelViewSet):
-    queryset = Role.objects.all()
+    queryset = Role.objects.exclude(pk=1)
     serializer_class = RoleSerializer
 
 
@@ -18,12 +18,48 @@ class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
 
+    def get_queryset(self):
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return CustomUser.objects.none()
+
+        if user.is_superuser:
+            return CustomUser.objects.all()
+
+        user_groups_lower = set(g.name.lower() for g in user.groups.all())
+        can_view_all = (
+            user.has_perm('maintenance.view_all_department_tickets') or
+            user.has_perm('maintenance.create_ticket_all_departments') or
+            'main_admin' in user_groups_lower or
+            'main administrator' in user_groups_lower
+        )
+        if can_view_all:
+            return CustomUser.objects.all()
+
+        user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
+        if user_dept_ids:
+            return CustomUser.objects.filter(sub_departments__department_id__in=user_dept_ids).distinct()
+
+        return CustomUser.objects.filter(pk=user.pk)
+
 
 class SignupView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    def get(self, request):
+        from apps.stores.models import Store, Department
+        roles = Role.objects.exclude(pk=1).values('role_id', 'role_name')
+        stores = Store.objects.all().values('store_id', 'store_name')
+        departments = Department.objects.all().values('department_id', 'department_name')
+        return Response({
+            "roles": list(roles),
+            "stores": list(stores),
+            "departments": list(departments)
+        })
+
     def post(self, request):
+        from apps.stores.models import Store, SubDepartment
         employee_no = request.data.get('employee_no')
         full_name = request.data.get('full_name')
         email = request.data.get('email')
@@ -31,6 +67,9 @@ class SignupView(APIView):
         whatsapp_number = request.data.get('whatsapp_number')
         password = request.data.get('password')
         profile_image = request.FILES.get('profile_image')
+        role_id = request.data.get('role')
+        store_id = request.data.get('store')
+        department_id = request.data.get('department')
 
         # Validation checks
         if not all([employee_no, full_name, email, phone, whatsapp_number, password]) or not profile_image:
@@ -69,6 +108,8 @@ class SignupView(APIView):
 
         # Create user
         try:
+            role = Role.objects.get(pk=role_id) if role_id else None
+
             user = CustomUser.objects.create(
                 username=employee_no,
                 employee_no=employee_no,
@@ -76,12 +117,17 @@ class SignupView(APIView):
                 email=email,
                 phone=phone,
                 whatsapp_number=whatsapp_number,
+                role=role,
                 active=False  # Defaults to inactive / waiting approval
             )
             user.set_password(password)
             if profile_image:
                 user.profile_image = profile_image
             user.save()
+
+            if department_id:
+                sub_depts = SubDepartment.objects.filter(department_id=department_id)
+                user.sub_departments.set(sub_depts)
 
             return Response(
                 {"message": "Waiting for the approval.", "approved": False},
@@ -139,7 +185,6 @@ class LoginView(APIView):
             "token": token.key,
             "permissions": list(user.get_all_permissions()),
             "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
-            "store": {"store_id": user.store.store_id, "store_name": user.store.store_name} if user.store else None,
             "user": {
                 "user_id": user.user_id,
                 "username": user.username,
@@ -181,7 +226,6 @@ class ProfileView(APIView):
         return Response({
             "permissions": list(user.get_all_permissions()),
             "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
-            "store": {"store_id": user.store.store_id, "store_name": user.store.store_name} if user.store else None,
             "user": {
                 "user_id": user.user_id,
                 "username": user.username,

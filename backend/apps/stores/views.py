@@ -17,11 +17,7 @@ class StoreViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return Store.objects.all()
         
-        home_store_id = user.store_id
         accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
-        if home_store_id:
-            accessible_store_ids.append(home_store_id)
-            
         return Store.objects.filter(store_id__in=accessible_store_ids).distinct()
 
 class DepartmentViewSet(viewsets.ModelViewSet):

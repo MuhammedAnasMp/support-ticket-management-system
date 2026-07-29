@@ -56,8 +56,7 @@ export const LoginView: React.FC = () => {
           token: data.token,
           user: data.user,
           permissions: data.permissions,
-          accessibleStores: data.accessible_stores,
-          store: data.store
+          accessibleStores: data.accessible_stores
         }));
         sessionStorage.removeItem('pending_employee_no');
         sessionStorage.removeItem('pending_password');

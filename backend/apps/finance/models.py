@@ -2,15 +2,20 @@ from django.db import models, transaction
 from django.conf import settings
 from datetime import timedelta
 
+
 class ExpenseType(models.Model):
     expense_type_id = models.AutoField(primary_key=True)
-    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='expense_types')
+    department = models.ForeignKey(
+        'stores.Department', on_delete=models.CASCADE, related_name='expense_types')
     expense_name = models.CharField(max_length=100)
-    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_types')
+    parent = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_types')
+    required = models.BooleanField(default=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['department', 'expense_name'], name='unique_department_expense_name')
+            models.UniqueConstraint(
+                fields=['department', 'expense_name'], name='unique_department_expense_name')
         ]
         permissions = [
             ('view_expense_name', 'Can view expense name'),
@@ -22,9 +27,11 @@ class ExpenseType(models.Model):
     def __str__(self):
         return f"{self.parent.expense_name} > {self.expense_name}" if self.parent else self.expense_name
 
+
 class EmployeeRate(models.Model):
     rate_id = models.AutoField(primary_key=True)
-    worker = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='rates')
+    worker = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='rates')
     hourly_rate = models.DecimalField(decimal_places=2, max_digits=10)
     effective_from = models.DateField()
     effective_to = models.DateField(blank=True, null=True)
@@ -54,25 +61,33 @@ class EmployeeRate(models.Model):
                 ).order_by('-effective_from').first()
 
                 if previous_rate and (previous_rate.effective_to is None or previous_rate.effective_to >= self.effective_from):
-                    previous_rate.effective_to = self.effective_from - timedelta(days=1)
+                    previous_rate.effective_to = self.effective_from - \
+                        timedelta(days=1)
                     previous_rate.save(update_fields=['effective_to'])
 
                 super().save(*args, **kwargs)
         else:
             super().save(*args, **kwargs)
 
+
 class Expense(models.Model):
     expense_id = models.AutoField(primary_key=True)
-    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, related_name='expenses')
-    worker = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='expenses')
-    expense_type = models.ForeignKey(ExpenseType, on_delete=models.PROTECT, related_name='expenses')
+    ticket = models.ForeignKey(
+        'maintenance.Ticket', on_delete=models.CASCADE, related_name='expenses')
+    worker = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='expenses')
+    expense_type = models.ForeignKey(
+        ExpenseType, on_delete=models.PROTECT, related_name='expenses')
     amount = models.DecimalField(decimal_places=2, max_digits=10)
     expense_date = models.DateField()
     remarks = models.TextField(blank=True, null=True)
-    receipt = models.ForeignKey('common.Media', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    # receipt = models.ForeignKey(
+    #     'common.Media', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
     approved = models.BooleanField(default=False)
-    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_expenses')
-    responsible_store = models.ForeignKey('stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='approved_expenses')
+    responsible_store = models.ForeignKey(
+        'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
 
     class Meta:
         permissions = [
@@ -101,10 +116,13 @@ class Expense(models.Model):
     def __str__(self):
         return f"Expense {self.expense_id} - {self.amount}"
 
+
 class Reconciliation(models.Model):
     reconciliation_id = models.AutoField(primary_key=True)
-    ticket = models.OneToOneField('maintenance.Ticket', on_delete=models.CASCADE, related_name='reconciliation')
-    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='verifications')
+    ticket = models.OneToOneField(
+        'maintenance.Ticket', on_delete=models.CASCADE, related_name='reconciliation')
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='verifications')
     labour_total = models.DecimalField(decimal_places=2, max_digits=12)
     expense_total = models.DecimalField(decimal_places=2, max_digits=12)
     material_total = models.DecimalField(decimal_places=2, max_digits=12)

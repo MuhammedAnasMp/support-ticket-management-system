@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -6,10 +6,12 @@ import {
   Plus, Search, Edit2, Trash2, X, Loader2, AlertCircle,
   User, DollarSign, Award, Calendar, Building2, Wrench,
   UserCheck, UserX, CheckCircle2,
-  UserLock, ChevronLeft, ChevronRight
+  UserLock, ChevronLeft, ChevronRight,
+  Link as LinkIcon, Copy, Check
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
+import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -18,8 +20,7 @@ export const WorkforceView: React.FC = () => {
   const { token, user } = useSelector((state: RootState) => state.auth);
   const { hasPermission } = usePermission();
 
-  const canAddEmployee = hasPermission('accounts.add_customuser');
-  const canEditEmployee = hasPermission('accounts.change_customuser');
+
 
   // Get parent department IDs for the logged-in user to restrict working departments & skills
   const getLoggedInUserDepartmentIds = () => {
@@ -62,8 +63,39 @@ export const WorkforceView: React.FC = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
   const [areas, setAreas] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
   const [subDepartments, setSubDepartments] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
+
+  const canCreateAllDepts = hasPermission('create_ticket_all_departments');
+
+  const userDepartmentIds = useMemo(() => {
+    if (canCreateAllDepts) return null;
+    if (!user?.sub_departments || user.sub_departments.length === 0) return null;
+    const deptIds = new Set<number>();
+    user.sub_departments.forEach((sd: any) => {
+      let sdObj = sd;
+      if (typeof sd === 'string' || typeof sd === 'number') {
+        sdObj = subDepartments.find(item =>
+          item.sub_department_id === Number(sd) ||
+          item.sub_department_name.toLowerCase() === String(sd).toLowerCase()
+        );
+      }
+      if (sdObj) {
+        const parentDeptId = Number(sdObj.department?.department_id ?? sdObj.department);
+        if (parentDeptId) {
+          deptIds.add(parentDeptId);
+        }
+      }
+    });
+    return deptIds.size > 0 ? deptIds : null;
+  }, [user, canCreateAllDepts, subDepartments]);
+
+  const availableDepartments = useMemo(() => {
+    if (canCreateAllDepts) return departments;
+    if (!userDepartmentIds) return [];
+    return departments.filter(d => userDepartmentIds.has(Number(d.department_id)));
+  }, [departments, userDepartmentIds, canCreateAllDepts]);
 
   // Modals state
   const [showModal, setShowModal] = useState(false);
@@ -82,6 +114,38 @@ export const WorkforceView: React.FC = () => {
   const [deptFilter, setDeptFilter] = useState('');
   const [skillFilter, setSkillFilter] = useState('');
 
+  // Signup Link Generator Modal States
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [genRole, setGenRole] = useState('');
+  const [genStore, setGenStore] = useState('');
+  const [genDepartment, setGenDepartment] = useState('');
+  const [copiedToast, setCopiedToast] = useState(false);
+
+  const genRoleObj = roles.find(r => String(r.role_id) === String(genRole));
+  const genRoleName = (genRoleObj?.role_name || '').toLowerCase();
+
+  const isGenStoreManager = genRoleName === 'store manager';
+  const isGenTechnician = genRoleName === 'technician';
+
+  useEffect(() => {
+    if (showLinkModal && isGenTechnician && !canCreateAllDepts && availableDepartments.length > 0) {
+      const defaultDeptId = String(availableDepartments[0].department_id);
+      if (genDepartment !== defaultDeptId) {
+        setGenDepartment(defaultDeptId);
+      }
+    }
+  }, [showLinkModal, isGenTechnician, canCreateAllDepts, availableDepartments]);
+
+  const getGeneratedLink = () => {
+    const baseUrl = `${window.location.origin}/signup`;
+    const params = new URLSearchParams();
+    if (genRole) params.set('role', genRole);
+    if (genStore && isGenStoreManager) params.set('store', genStore);
+    if (genDepartment && isGenTechnician) params.set('department', genDepartment);
+    const str = params.toString();
+    return str ? `${baseUrl}?${str}` : baseUrl;
+  };
+
   // Forms state
   const [rateForm, setRateForm] = useState({
     worker: '',
@@ -98,7 +162,6 @@ export const WorkforceView: React.FC = () => {
     whatsapp_number: '',
     password: '',
     role: '',
-    store: '',
     accessible_stores: [] as string[],
     sub_departments: [] as number[],
     skills: [] as number[],
@@ -110,6 +173,19 @@ export const WorkforceView: React.FC = () => {
   });
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  const formRoleObj = roles.find(r => String(r.role_id) === String(employeeForm.role));
+  const formRoleName = (formRoleObj?.role_name || '').toLowerCase();
+  const isFormTechnician = formRoleName === 'technician';
+  const isFormStoreManager = formRoleName === 'store manager';
+  const isFormAreaManager = formRoleName === 'area manager';
+  const needsWorkingDepartments = !isFormStoreManager && !isFormAreaManager;
+
+  useEffect(() => {
+    if (!isFormTechnician && activeFormTab === 'payroll') {
+      setActiveFormTab('basic');
+    }
+  }, [isFormTechnician, activeFormTab]);
 
   useEffect(() => {
     fetchData();
@@ -139,20 +215,22 @@ export const WorkforceView: React.FC = () => {
       const headers = { Authorization: `Token ${token}` };
 
       if (subpage === 'employees' || !subpage) {
-        const [resUsers, resRoles, resStores, resDepts, resSkills, resAreas] = await Promise.all([
+        const [resUsers, resRoles, resStores, resSubDepts, resSkills, resAreas, resDepts] = await Promise.all([
           fetch(`${API_URL}/accounts/customuser/`, { headers }),
           fetch(`${API_URL}/accounts/role/`, { headers }),
           fetch(`${API_URL}/stores/store/`, { headers }),
           fetch(`${API_URL}/stores/subdepartment/`, { headers }),
           fetch(`${API_URL}/maintenance/worknature/`, { headers }),
-          fetch(`${API_URL}/stores/area/`, { headers })
+          fetch(`${API_URL}/stores/area/`, { headers }),
+          fetch(`${API_URL}/stores/department/`, { headers })
         ]);
         if (resUsers.ok) setData(await resUsers.json());
         if (resRoles.ok) setRoles(await resRoles.json());
         if (resStores.ok) setStores(await resStores.json());
-        if (resDepts.ok) setSubDepartments(await resDepts.json());
+        if (resSubDepts.ok) setSubDepartments(await resSubDepts.json());
         if (resSkills.ok) setSkills(await resSkills.json());
         if (resAreas && resAreas.ok) setAreas(await resAreas.json());
+        if (resDepts && resDepts.ok) setDepartments(await resDepts.json());
       } else if (subpage === 'rates') {
         const [resRates, resWorkers] = await Promise.all([
           fetch(`${API_URL}/finance/employeerate/`, { headers }),
@@ -274,7 +352,6 @@ export const WorkforceView: React.FC = () => {
       whatsapp_number: '',
       password: '',
       role: '',
-      store: '',
       accessible_stores: [],
       sub_departments: [],
       skills: [],
@@ -304,7 +381,6 @@ export const WorkforceView: React.FC = () => {
       whatsapp_number: item.whatsapp_number || '',
       password: '',
       role: item.role?.role_id || item.role || '',
-      store: item.store?.store_id || item.store || '',
       accessible_stores: item.accessible_stores?.map((s: any) => s.store_id || s) || [],
       sub_departments: item.sub_departments?.map((d: any) => d.sub_department_id || d) || [],
       skills: item.skills?.map((sk: any) => sk.nature_id) || [],
@@ -332,6 +408,9 @@ export const WorkforceView: React.FC = () => {
         body: JSON.stringify({ active: newStatus })
       });
       if (response.ok) {
+        if (newStatus) {
+          setEmployeeTab('approved');
+        }
         fetchData();
       } else {
         setErrorMsg(`Failed to ${actionText} employee account.`);
@@ -378,7 +457,6 @@ export const WorkforceView: React.FC = () => {
     }
 
     if (employeeForm.role) formData.append('role', employeeForm.role.toString());
-    if (employeeForm.store) formData.append('store', employeeForm.store.toString());
     formData.append('active', employeeForm.active ? 'true' : 'false');
     if (profileImage) formData.append('profile_image', profileImage);
 
@@ -405,6 +483,9 @@ export const WorkforceView: React.FC = () => {
       });
       if (response.ok) {
         setShowEmployeeModal(false);
+        if (employeeForm.active) {
+          setEmployeeTab('approved');
+        }
         fetchData();
       } else {
         const errorRes = await response.json();
@@ -438,10 +519,7 @@ export const WorkforceView: React.FC = () => {
   };
 
   const roleName = ((user?.role as any)?.role_name || (user?.role as string) || '').toLowerCase();
-  const isOfficeStaffOrAdmin =
-    roleName.includes('admin') ||
-    roleName.includes('office') ||
-    hasPermission('accounts.change_customuser');
+  const isOfficeStaffOrAdmin = roleName.includes('admin') || roleName.includes('office') || hasPermission('accounts.change_customuser');
 
   const unapprovedCount = data.filter(
     item => (subpage === 'employees' || !subpage) && item.active === false
@@ -497,59 +575,85 @@ export const WorkforceView: React.FC = () => {
           </button>
         )}
 
-        {(subpage === 'employees' || !subpage) && canAddEmployee && (
-          <button
-            onClick={handleOpenCreateEmployee}
-            className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add Employee
-          </button>
-        )}
+        {(subpage === 'employees' || !subpage) &&
+
+          <Can permission='accounts.add_customuser'>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setGenRole('');
+                  setGenStore('');
+                  setGenDepartment('');
+                  setCopiedToast(false);
+                  setShowLinkModal(true);
+                }}
+                className="flex items-center gap-1.5 bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant text-xs font-semibold px-4 py-2.5 rounded hover:border-primary transition-all cursor-pointer shadow-sm"
+              >
+                <LinkIcon className="w-4 h-4 text-primary" />
+                Generate Registration Link
+              </button>
+              <button
+                onClick={handleOpenCreateEmployee}
+                className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add Employee
+              </button>
+            </div>
+          </Can>
+
+          // canAddEmployee && (
+          // )
+        }
       </div>
 
       {/* Employee Approval Sub-tabs (Only for Office Staff and Admin) */}
-      {(subpage === 'employees' || !subpage) && isOfficeStaffOrAdmin && (
-        <div className="flex items-center gap-2 border-b border-outline-variant dark:border-dark-outline-variant pb-2">
-          <button
-            type="button"
-            onClick={() => setEmployeeTab('approved')}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded transition-all cursor-pointer ${employeeTab === 'approved'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-outline hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high'
-              }`}
-          >
-            <UserCheck className="w-4 h-4" />
-            <span>Approved Employees</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${employeeTab === 'approved' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-dark-surface-container-high text-outline'
-              }`}>
-              {approvedCount}
-            </span>
-          </button>
+      {(subpage === 'employees' || !subpage) &&
 
-          <button
-            type="button"
-            onClick={() => setEmployeeTab('unapproved')}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded transition-all cursor-pointer ${employeeTab === 'unapproved'
-              ? 'bg-amber-600 text-white shadow-sm'
-              : 'text-outline hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high'
-              }`}
-          >
-            <UserLock className="w-4 h-4" />
-            <span>Unapproved / Inactive</span>
-            {unapprovedCount > 0 ? (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
-                {unapprovedCount}
-              </span>
-            ) : (
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${employeeTab === 'unapproved' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-dark-surface-container-high text-outline'
+        <Can permission={isOfficeStaffOrAdmin}>
+          <div className="flex items-center gap-2 border-b border-outline-variant dark:border-dark-outline-variant pb-2">
+            <button
+              type="button"
+              onClick={() => setEmployeeTab('approved')}
+              className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded transition-all cursor-pointer ${employeeTab === 'approved'
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-outline hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high'
+                }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Approved Employees</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${employeeTab === 'approved' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-dark-surface-container-high text-outline'
                 }`}>
-                0
+                {approvedCount}
               </span>
-            )}
-          </button>
-        </div>
-      )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEmployeeTab('unapproved')}
+              className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded transition-all cursor-pointer ${employeeTab === 'unapproved'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-outline hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high'
+                }`}
+            >
+              <UserLock className="w-4 h-4" />
+              <span>Unapproved / Inactive</span>
+              {unapprovedCount > 0 ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                  {unapprovedCount}
+                </span>
+              ) : (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${employeeTab === 'unapproved' ? 'bg-white/20 text-white' : 'bg-surface-container-highest dark:bg-dark-surface-container-high text-outline'
+                  }`}>
+                  0
+                </span>
+              )}
+            </button>
+          </div>
+        </Can>
+
+
+      }
 
       {/* Workforce Listing Table */}
       {loading ? (
@@ -569,12 +673,14 @@ export const WorkforceView: React.FC = () => {
                       <th className="px-6 py-4">Employee ID</th>
                       <th className="px-6 py-4">Full Name</th>
                       <th className="px-6 py-4">Role</th>
-                      <th className="px-6 py-4">Home Store</th>
                       <th className="px-6 py-4">Working Department</th>
                       <th className="px-6 py-4">Skills</th>
                       <th className="px-6 py-4">Hourly Rate</th>
                       <th className="px-6 py-4">Status</th>
-                      {(canEditEmployee || hasPermission('accounts.delete_customuser')) && <th className="px-6 py-4 text-right">Actions</th>}
+
+                      <Can permission='accounts.delete_customuser'>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </Can>
                     </>
                   ) : subpage === 'rates' ? (
                     <>
@@ -628,9 +734,6 @@ export const WorkforceView: React.FC = () => {
                               {item.role?.role_name || item.role || 'No Role'}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-xs text-on-surface/90 dark:text-dark-on-surface/90 font-medium">
-                            {item.store?.store_name || 'All Accessible Stores'}
-                          </td>
                           <td className="px-6 py-4 text-xs text-outline font-normal">
                             {item.sub_departments?.map((sd: any) => sd.sub_department_name).join(', ') || '-'}
                           </td>
@@ -661,9 +764,11 @@ export const WorkforceView: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          {(canEditEmployee || hasPermission('accounts.delete_customuser')) && (
+
+                          <Can permission='accounts.delete_customuser'>
                             <td className="px-6 py-4 text-right space-x-2">
-                              {canEditEmployee && (
+
+                              <Can permission={['accounts.change_customuser',]}>
                                 <>
                                   {!item.active ? (
                                     <button
@@ -695,7 +800,9 @@ export const WorkforceView: React.FC = () => {
                                     </>
                                   )}
                                 </>
-                              )}
+                              </Can>
+
+
                               {/* {hasPermission('accounts.delete_customuser') && (
                                 <button
                                   onClick={() => handleDeleteEmployee(item.user_id)}
@@ -706,7 +813,9 @@ export const WorkforceView: React.FC = () => {
                                 </button>
                               )} */}
                             </td>
-                          )}
+
+                          </Can>
+
                         </>
                       ) : subpage === 'rates' ? (
                         <>
@@ -1004,15 +1113,17 @@ export const WorkforceView: React.FC = () => {
                   <Wrench className="w-4 h-4" />
                   Store Access & Skills
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFormTab('payroll')}
-                  className={`px-3 py-2 text-xs font-bold whitespace-nowrap transition-all border-b-2 -mb-[1px] flex items-center gap-1.5 ${activeFormTab === 'payroll' ? 'border-primary text-primary bg-primary/5 dark:bg-primary/5' : 'border-transparent text-outline hover:text-on-surface'
-                    }`}
-                >
-                  <DollarSign className="w-4 h-4" />
-                  Salary & Rate
-                </button>
+                {isFormTechnician && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFormTab('payroll')}
+                    className={`px-3 py-2 text-xs font-bold whitespace-nowrap transition-all border-b-2 -mb-[1px] flex items-center gap-1.5 ${activeFormTab === 'payroll' ? 'border-primary text-primary bg-primary/5 dark:bg-primary/5' : 'border-transparent text-outline hover:text-on-surface'
+                      }`}
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    Salary & Rate
+                  </button>
+                )}
               </div>
 
               {/* Notice Banner for Unapproved Accounts */}
@@ -1200,7 +1311,7 @@ export const WorkforceView: React.FC = () => {
                         </span>
                       </label>
                     </div> */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
                       <div>
                         <label className="block text-xs font-semibold text-outline mb-1.5">Primary Role</label>
                         <select
@@ -1214,22 +1325,9 @@ export const WorkforceView: React.FC = () => {
                           ))}
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-outline mb-1.5">Home Store</label>
-                        <select
-                          value={employeeForm.store}
-                          onChange={e => setEmployeeForm({ ...employeeForm, store: e.target.value })}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                        >
-                          <option value="">Select Home Store</option>
-                          {stores.map(s => (
-                            <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
-                          ))}
-                        </select>
-                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3 border-t border-outline-variant/30 dark:border-dark-outline-variant/30">
+                    <div className={`grid grid-cols-1 ${needsWorkingDepartments ? 'md:grid-cols-2' : ''} gap-6 pt-3 border-t border-outline-variant/30 dark:border-dark-outline-variant/30`}>
 
                       {/* Accessible Stores Checkbox list with instant search bar and Area selection */}
                       <div className="flex flex-col h-[280px]">
@@ -1343,108 +1441,112 @@ export const WorkforceView: React.FC = () => {
                         })()}
                       </div>
 
-                      {/* Working Departments Checkbox list with instant search bar */}
-                      <div className="flex flex-col h-[280px]">
+                      {/* Working Departments Checkbox list - Only for roles needing working departments */}
+                      {needsWorkingDepartments && (
+                        <div className="flex flex-col h-[280px]">
+                          <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
+                            <Wrench className="w-4 h-4" />
+                            Working Departments ({employeeForm.sub_departments.length})
+                          </h4>
+                          <div className="relative mb-2 shrink-0">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
+                            <input
+                              type="text"
+                              placeholder="Filter departments..."
+                              value={deptFilter}
+                              onChange={e => setDeptFilter(e.target.value)}
+                              className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded pl-8 pr-3 py-1.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                            />
+                          </div>
+                          <div className="flex-1 overflow-y-auto border border-outline-variant dark:border-dark-outline-variant rounded p-3 space-y-2 bg-surface/50 dark:bg-dark-surface/50">
+                            {(() => {
+                              const userDeptIds = getLoggedInUserDepartmentIds();
+                              const filteredSubDepts = userDeptIds
+                                ? subDepartments.filter(sd => {
+                                  const deptId = sd.department?.department_id ?? sd.department;
+                                  return userDeptIds.has(Number(deptId));
+                                })
+                                : subDepartments;
+
+                              return filteredSubDepts
+                                .filter(d => d.sub_department_name.toLowerCase().includes(deptFilter.toLowerCase()))
+                                .map(d => {
+                                  const checked = employeeForm.sub_departments.includes(d.sub_department_id);
+                                  return (
+                                    <label key={d.sub_department_id} className="flex items-center gap-2.5 text-xs text-on-surface/90 dark:text-dark-on-surface/90 cursor-pointer hover:text-primary dark:hover:text-primary py-0.5 select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={e => {
+                                          const newList = e.target.checked
+                                            ? [...employeeForm.sub_departments, d.sub_department_id]
+                                            : employeeForm.sub_departments.filter(id => id !== d.sub_department_id);
+                                          setEmployeeForm({ ...employeeForm, sub_departments: newList });
+                                        }}
+                                        className="w-4 h-4 text-primary border-outline-variant dark:border-dark-outline-variant rounded focus:ring-primary"
+                                      />
+                                      {d.sub_department_name}
+                                    </label>
+                                  );
+                                });
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Worker Technical Skills Checkbox list - Only for Technician */}
+                    {isFormTechnician && (
+                      <div className="flex flex-col h-[220px] pt-4 border-t border-outline-variant/30 dark:border-dark-outline-variant/30">
                         <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
-                          <Wrench className="w-4 h-4" />
-                          Working Departments ({employeeForm.sub_departments.length})
+                          <Award className="w-4 h-4" />
+                          Worker Skilled Expertise ({employeeForm.skills.length})
                         </h4>
                         <div className="relative mb-2 shrink-0">
                           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
                           <input
                             type="text"
-                            placeholder="Filter departments..."
-                            value={deptFilter}
-                            onChange={e => setDeptFilter(e.target.value)}
+                            placeholder="Filter skills..."
+                            value={skillFilter}
+                            onChange={e => setSkillFilter(e.target.value)}
                             className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded pl-8 pr-3 py-1.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                           />
                         </div>
-                        <div className="flex-1 overflow-y-auto border border-outline-variant dark:border-dark-outline-variant rounded p-3 space-y-2 bg-surface/50 dark:bg-dark-surface/50">
+                        <div className="flex-1 overflow-y-auto border border-outline-variant dark:border-dark-outline-variant rounded p-3 grid grid-cols-1 md:grid-cols-2 gap-2 bg-surface/50 dark:bg-dark-surface/50">
                           {(() => {
                             const userDeptIds = getLoggedInUserDepartmentIds();
-                            const filteredSubDepts = userDeptIds
-                              ? subDepartments.filter(sd => {
-                                const deptId = sd.department?.department_id ?? sd.department;
-                                return userDeptIds.has(Number(deptId));
+                            const filteredSkills = userDeptIds
+                              ? skills.filter(sk => {
+                                const skDeptId = sk.sub_department?.department?.department_id ?? sk.sub_department?.department;
+                                return userDeptIds.has(Number(skDeptId));
                               })
-                              : subDepartments;
+                              : skills;
 
-                            return filteredSubDepts
-                              .filter(d => d.sub_department_name.toLowerCase().includes(deptFilter.toLowerCase()))
-                              .map(d => {
-                                const checked = employeeForm.sub_departments.includes(d.sub_department_id);
+                            return filteredSkills
+                              .filter(sk => sk.nature_name.toLowerCase().includes(skillFilter.toLowerCase()))
+                              .map(sk => {
+                                const checked = employeeForm.skills.includes(sk.nature_id);
                                 return (
-                                  <label key={d.sub_department_id} className="flex items-center gap-2.5 text-xs text-on-surface/90 dark:text-dark-on-surface/90 cursor-pointer hover:text-primary dark:hover:text-primary py-0.5 select-none">
+                                  <label key={sk.nature_id} className="flex items-center gap-2.5 text-xs text-on-surface/90 dark:text-dark-on-surface/90 cursor-pointer hover:text-primary dark:hover:text-primary select-none">
                                     <input
                                       type="checkbox"
                                       checked={checked}
                                       onChange={e => {
                                         const newList = e.target.checked
-                                          ? [...employeeForm.sub_departments, d.sub_department_id]
-                                          : employeeForm.sub_departments.filter(id => id !== d.sub_department_id);
-                                        setEmployeeForm({ ...employeeForm, sub_departments: newList });
+                                          ? [...employeeForm.skills, sk.nature_id]
+                                          : employeeForm.skills.filter(id => id !== sk.nature_id);
+                                        setEmployeeForm({ ...employeeForm, skills: newList });
                                       }}
                                       className="w-4 h-4 text-primary border-outline-variant dark:border-dark-outline-variant rounded focus:ring-primary"
                                     />
-                                    {d.sub_department_name}
+                                    {sk.nature_name}
                                   </label>
                                 );
                               });
                           })()}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Worker Technical Skills Checkbox list with instant search bar */}
-                    <div className="flex flex-col h-[220px] pt-4 border-t border-outline-variant/30 dark:border-dark-outline-variant/30">
-                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
-                        <Award className="w-4 h-4" />
-                        Worker Skilled Expertise ({employeeForm.skills.length})
-                      </h4>
-                      <div className="relative mb-2 shrink-0">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
-                        <input
-                          type="text"
-                          placeholder="Filter skills..."
-                          value={skillFilter}
-                          onChange={e => setSkillFilter(e.target.value)}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded pl-8 pr-3 py-1.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                        />
-                      </div>
-                      <div className="flex-1 overflow-y-auto border border-outline-variant dark:border-dark-outline-variant rounded p-3 grid grid-cols-1 md:grid-cols-2 gap-2 bg-surface/50 dark:bg-dark-surface/50">
-                        {(() => {
-                          const userDeptIds = getLoggedInUserDepartmentIds();
-                          const filteredSkills = userDeptIds
-                            ? skills.filter(sk => {
-                              const skDeptId = sk.sub_department?.department?.department_id ?? sk.sub_department?.department;
-                              return userDeptIds.has(Number(skDeptId));
-                            })
-                            : skills;
-
-                          return filteredSkills
-                            .filter(sk => sk.nature_name.toLowerCase().includes(skillFilter.toLowerCase()))
-                            .map(sk => {
-                              const checked = employeeForm.skills.includes(sk.nature_id);
-                              return (
-                                <label key={sk.nature_id} className="flex items-center gap-2.5 text-xs text-on-surface/90 dark:text-dark-on-surface/90 cursor-pointer hover:text-primary dark:hover:text-primary select-none">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={e => {
-                                      const newList = e.target.checked
-                                        ? [...employeeForm.skills, sk.nature_id]
-                                        : employeeForm.skills.filter(id => id !== sk.nature_id);
-                                      setEmployeeForm({ ...employeeForm, skills: newList });
-                                    }}
-                                    className="w-4 h-4 text-primary border-outline-variant dark:border-dark-outline-variant rounded focus:ring-primary"
-                                  />
-                                  {sk.nature_name}
-                                </label>
-                              );
-                            });
-                        })()}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -1561,6 +1663,130 @@ export const WorkforceView: React.FC = () => {
                 >
                   {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   Save Employee
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showLinkModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-surface-container dark:bg-dark-surface-container w-full max-w-lg rounded-2xl border border-outline-variant dark:border-dark-outline-variant shadow-xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-outline-variant dark:border-dark-outline-variant">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <LinkIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">Generate Registration Link</h3>
+                    <p className="text-xs text-outline">Create dynamic signup links with pre-filled and locked roles</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowLinkModal(false)} className="p-1 rounded-lg text-outline hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                    Target Role
+                  </label>
+                  <select
+                    value={genRole}
+                    onChange={e => {
+                      setGenRole(e.target.value);
+                      setGenStore('');
+                      setGenDepartment('');
+                    }}
+                    className="w-full px-4 py-2.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                  >
+                    <option value="">Select Role (Optional)</option>
+                    {roles.map(r => (
+                      <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {isGenStoreManager && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                      Target Store
+                    </label>
+                    <select
+                      value={genStore}
+                      onChange={e => setGenStore(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                    >
+                      <option value="">Select Store (Optional)</option>
+                      {stores.map(s => (
+                        <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {isGenTechnician && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                      Target Department
+                    </label>
+                    <select
+                      value={genDepartment}
+                      disabled={!canCreateAllDepts}
+                      onChange={e => setGenDepartment(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs outline-none focus:border-primary text-on-surface dark:text-dark-on-surface disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <Can permission='maintenance.create_ticket_all_departments'>
+                        <option value="">Select Department (Optional)</option>
+                      </Can>
+                      {/* {canCreateAllDepts && } */}
+                      {availableDepartments.map(d => (
+                        <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                    Generated Dynamic Link
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={getGeneratedLink()}
+                      className="w-full px-3 py-2.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-mono outline-none text-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(getGeneratedLink());
+                        setCopiedToast(true);
+                        setTimeout(() => setCopiedToast(false), 2000);
+                      }}
+                      className="px-4 py-2.5 bg-primary hover:bg-primary/95 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shrink-0 transition-all shadow-sm"
+                    >
+                      {copiedToast ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedToast ? 'Copied!' : 'Copy Link'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end p-6 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container">
+                <button
+                  type="button"
+                  onClick={() => setShowLinkModal(false)}
+                  className="px-4 py-2 bg-surface-container-high dark:bg-dark-surface-container-high border border-outline-variant dark:border-dark-outline-variant text-xs font-semibold rounded text-on-surface dark:text-dark-on-surface hover:border-primary transition-all cursor-pointer"
+                >
+                  Close
                 </button>
               </div>
             </motion.div>

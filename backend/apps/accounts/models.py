@@ -92,8 +92,6 @@ class CustomUser(AbstractUser):
         upload_to=get_profile_image_path, null=True, blank=True)
     role = models.ForeignKey(
         Role, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
-    store = models.ForeignKey(
-        'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     accessible_stores = models.ManyToManyField(
         'stores.Store', blank=True, related_name='accessible_users')
     sub_departments = models.ManyToManyField(
@@ -178,3 +176,12 @@ def update_user_approval(sender, instance, action, **kwargs):
 
         # Relocate the profile image to correct department/sub-department folder
         move_profile_image_to_correct_path(instance)
+
+
+@receiver(models.signals.post_save, sender=CustomUser)
+def sync_user_role_to_group(sender, instance, **kwargs):
+    if instance.role:
+        from django.contrib.auth.models import Group
+        group, _ = Group.objects.get_or_create(name=instance.role.role_name)
+        if not instance.groups.filter(id=group.id).exists():
+            instance.groups.add(group)

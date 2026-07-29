@@ -54,8 +54,12 @@ class Command(BaseCommand):
         )
 
         # JSON file path
-        root_dir = os.path.dirname(settings.BASE_DIR)
-        file_path = os.path.join(root_dir, "default_permissions.json")
+        root_dir = r"E:\Code\Maintenancde Tracker"
+        file_path = os.path.join(root_dir, "frontend",
+                                 "src", "hooks", "default_permissions.json")
+
+        # root_dir = os.path.dirname(settings.BASE_DIR)
+        # file_path = os.path.join(root_dir, "default_permissions.json")
 
         # Load existing JSON (to preserve descriptions/UI text)
         existing_data = {}

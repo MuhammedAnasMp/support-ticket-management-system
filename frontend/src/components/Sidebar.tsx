@@ -33,7 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const [profileExpanded, setProfileExpanded] = useState(false);
 
-  const { user, accessibleStores, store } = useSelector((state: RootState) => state.auth);
+  const { user, accessibleStores } = useSelector((state: RootState) => state.auth);
   const { hasPermission } = usePermission();
 
   const toggleExpand = (title: string) => {
@@ -141,7 +141,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             return (
               <div key={idx} className="space-y-1">
                 {hasSubItems ? (
-                  // Multi-tier Item (Accordion Trigger)
                   <div>
                     <button
                       onClick={() => toggleExpand(item.title)}
@@ -258,15 +257,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                   <span>Emp ID: <span className="font-semibold text-on-surface dark:text-dark-on-surface">{user.employee_no}</span></span>
                 </div>
 
-                {store && (
-                  <div className="flex items-start gap-2">
-                    <Store className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-outline block leading-none">Home Store</span>
-                      <span className="font-medium text-on-surface dark:text-dark-on-surface truncate block mt-0.5">{store.store_name}</span>
-                    </div>
-                  </div>
-                )}
+
 
                 {user.sub_departments && user.sub_departments.length > 0 && (
                   <div className="flex items-start gap-2">

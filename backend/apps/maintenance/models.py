@@ -1,14 +1,18 @@
 from django.db import models
+from django.dispatch import receiver
+
 
 class Priority(models.Model):
     priority_id = models.AutoField(primary_key=True)
-    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='priorities')
+    department = models.ForeignKey(
+        'stores.Department', on_delete=models.CASCADE, related_name='priorities')
     priority_name = models.CharField(max_length=50)
     level = models.IntegerField()
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['department', 'priority_name'], name='unique_department_priority_name')
+            models.UniqueConstraint(
+                fields=['department', 'priority_name'], name='unique_department_priority_name')
         ]
         permissions = [
             ("view_priority_name", "Can view priority name"),
@@ -20,14 +24,16 @@ class Priority(models.Model):
     def __str__(self):
         return self.priority_name
 
+
 class Status(models.Model):
     status_id = models.AutoField(primary_key=True)
-    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='statuses')
+    # department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='statuses')
     status_name = models.CharField(max_length=50)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['department', 'status_name'], name='unique_department_status_name')
+            models.UniqueConstraint(
+                fields=['status_name'], name='unique_department_status_name')
         ]
         permissions = [
             ("view_status_name", "Can view status name"),
@@ -37,11 +43,15 @@ class Status(models.Model):
     def __str__(self):
         return self.status_name
 
+
 class WorkNature(models.Model):
     nature_id = models.AutoField(primary_key=True)
     nature_name = models.CharField(max_length=255)
-    sub_department = models.ForeignKey('stores.SubDepartment', on_delete=models.CASCADE, related_name='work_natures', default=1)
-    default_priority = models.ForeignKey(Priority, on_delete=models.SET_NULL, null=True, blank=True, related_name='default_natures')
+    sub_department = models.ForeignKey(
+        'stores.SubDepartment', on_delete=models.CASCADE, related_name='work_natures', default=1)
+    default_priority = models.ForeignKey(
+        Priority, on_delete=models.SET_NULL, null=True, blank=True, related_name='default_natures')
+    media_required = models.BooleanField(default=True)
     active = models.BooleanField(default=True)
 
     class Meta:
@@ -59,10 +69,13 @@ class WorkNature(models.Model):
     def __str__(self):
         return self.nature_name
 
+
 class NatureWorker(models.Model):
     nature_worker_id = models.AutoField(primary_key=True)
-    nature = models.ForeignKey(WorkNature, on_delete=models.CASCADE, related_name='nature_workers')
-    worker = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='skilled_natures')
+    nature = models.ForeignKey(
+        WorkNature, on_delete=models.CASCADE, related_name='nature_workers')
+    worker = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='skilled_natures')
 
     class Meta:
         permissions = [
@@ -75,24 +88,34 @@ class NatureWorker(models.Model):
     def __str__(self):
         return f"{self.nature.nature_name} - {self.worker.username}"
 
+
 class Ticket(models.Model):
     ticket_id = models.AutoField(primary_key=True)
     work_order_no = models.CharField(max_length=100, unique=True)
-    store = models.ForeignKey('stores.Store', on_delete=models.CASCADE, related_name='tickets')
-    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='tickets')
-    nature = models.ForeignKey(WorkNature, on_delete=models.CASCADE, related_name='tickets')
-    priority = models.ForeignKey(Priority, on_delete=models.PROTECT, related_name='tickets')
-    status = models.ForeignKey(Status, on_delete=models.PROTECT, related_name='tickets')
+    store = models.ForeignKey(
+        'stores.Store', on_delete=models.CASCADE, related_name='tickets')
+    department = models.ForeignKey(
+        'stores.Department', on_delete=models.CASCADE, related_name='tickets')
+    nature = models.ForeignKey(
+        WorkNature, on_delete=models.CASCADE, related_name='tickets')
+    priority = models.ForeignKey(
+        Priority, on_delete=models.PROTECT, related_name='tickets')
+    status = models.ForeignKey(
+        Status, on_delete=models.PROTECT, related_name='tickets')
     title = models.CharField(max_length=255)
     description = models.TextField()
-    created_by = models.ForeignKey('accounts.CustomUser', on_delete=models.PROTECT, related_name='created_tickets')
+    created_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.PROTECT, related_name='created_tickets')
     created_date = models.DateTimeField(auto_now_add=True)
-    approved_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_tickets')
+    approved_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='approved_tickets')
     approved_date = models.DateTimeField(null=True, blank=True)
-    rejected_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='rejected_tickets')
+    rejected_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='rejected_tickets')
     rejected_date = models.DateTimeField(null=True, blank=True)
     reject_reason = models.TextField(null=True, blank=True)
-    closed_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='closed_tickets')
+    closed_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
+                                  null=True, blank=True, related_name='closed_tickets')
     closed_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -130,16 +153,34 @@ class Ticket(models.Model):
             ("view_closed_date", "Can view closed date"),
             ("change_closed_date", "Can change closed date"),
             ("create_ticket", "Can create ticket"),
+            ("approve_ticket", "Can approve ticket"),
+            ("reject_ticket", "Can reject ticket"),
+            ("complete_ticket", "Can complete ticket"),
+            ("view_all_department_tickets", "Can view all department tickets"),
+            ("create_ticket_all_departments",
+             "Can create ticket under all departments"),
+
+
+            ("can_view_open_ticket", "Can view open ticket"),
+            ("can_view_reconciled_ticket", "Can view reconciled ticket"),
+            ("can_view_in_progress_ticket", "Can view in progress ticket"),
+            ("can_view_completed_ticket", "Can view completed ticket"),
+            ("can_view_rejected_ticket", "Can view rejected ticket"),
+            ("can_view_blocked_ticket", "Can view blocked ticket"),
         ]
 
     def __str__(self):
         return f"{self.work_order_no} - {self.title}"
 
+
 class Allocation(models.Model):
     allocation_id = models.AutoField(primary_key=True)
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='allocations')
-    worker = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='allocations')
-    assigned_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL, null=True, related_name='assigned_allocations')
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='allocations')
+    worker = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='allocations')
+    assigned_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, related_name='assigned_allocations')
     assigned_date = models.DateTimeField(auto_now_add=True)
     planned_hours = models.DecimalField(max_digits=5, decimal_places=2)
     remarks = models.TextField(null=True, blank=True)
@@ -161,11 +202,21 @@ class Allocation(models.Model):
     def __str__(self):
         return f"Alloc {self.allocation_id} - Ticket {self.ticket.work_order_no} to {self.worker.username}"
 
+
+@receiver(models.signals.post_save, sender=Allocation)
+def add_store_to_worker_accessible_stores(sender, instance, **kwargs):
+    if instance.worker and instance.ticket and instance.ticket.store:
+        instance.worker.accessible_stores.add(instance.ticket.store)
+
+
 class WorkLog(models.Model):
     worklog_id = models.AutoField(primary_key=True)
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='work_logs')
-    worker = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='work_logs')
-    allocation = models.ForeignKey(Allocation, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_logs')
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='work_logs')
+    worker = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='work_logs')
+    allocation = models.ForeignKey(
+        Allocation, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_logs')
     work_date = models.DateField()
     hours = models.DecimalField(max_digits=5, decimal_places=2)
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
@@ -196,11 +247,15 @@ class WorkLog(models.Model):
     def __str__(self):
         return f"WorkLog {self.worklog_id} by {self.worker.username}"
 
+
 class TicketHistory(models.Model):
     history_id = models.AutoField(primary_key=True)
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='history')
-    status = models.ForeignKey(Status, on_delete=models.PROTECT, related_name='history')
-    changed_by = models.ForeignKey('accounts.CustomUser', on_delete=models.PROTECT, related_name='ticket_history_changes')
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='history')
+    status = models.ForeignKey(
+        Status, on_delete=models.PROTECT, related_name='history')
+    changed_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.PROTECT, related_name='ticket_history_changes')
     changed_date = models.DateTimeField(auto_now_add=True)
     remarks = models.TextField(null=True, blank=True)
 

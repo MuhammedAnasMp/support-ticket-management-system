@@ -28,7 +28,6 @@ export interface AuthState {
   user: UserDetails | null;
   permissions: string[];
   accessibleStores: StoreDetails[];
-  store: StoreDetails | null;
 }
 
 const storedToken = localStorage.getItem('token');
@@ -37,7 +36,6 @@ const storedUser = localStorage.getItem('user');
 let initialUser: UserDetails | null = null;
 let initialPermissions: string[] = [];
 let initialAccessibleStores: StoreDetails[] = [];
-let initialStore: StoreDetails | null = null;
 
 if (storedUser) {
   try {
@@ -46,7 +44,6 @@ if (storedUser) {
     initialUser = parsed.user || parsed;
     initialPermissions = parsed.permissions || [];
     initialAccessibleStores = parsed.accessible_stores || [];
-    initialStore = parsed.store || null;
   } catch (e) {
     // Ignore invalid storage
   }
@@ -57,7 +54,6 @@ const initialState: AuthState = {
   user: initialUser,
   permissions: initialPermissions,
   accessibleStores: initialAccessibleStores,
-  store: initialStore,
 };
 
 const authSlice = createSlice({
@@ -71,14 +67,12 @@ const authSlice = createSlice({
         user: UserDetails;
         permissions: string[];
         accessibleStores: StoreDetails[];
-        store: StoreDetails | null;
       }>
     ) {
       state.token = action.payload.token;
       state.user = action.payload.user;
       state.permissions = action.payload.permissions;
       state.accessibleStores = action.payload.accessibleStores;
-      state.store = action.payload.store;
 
       localStorage.setItem('token', action.payload.token);
       localStorage.setItem(
@@ -87,7 +81,6 @@ const authSlice = createSlice({
           user: action.payload.user,
           permissions: action.payload.permissions,
           accessible_stores: action.payload.accessibleStores,
-          store: action.payload.store,
         })
       );
     },
@@ -96,7 +89,6 @@ const authSlice = createSlice({
       state.user = null;
       state.permissions = [];
       state.accessibleStores = [];
-      state.store = null;
 
       localStorage.removeItem('token');
       localStorage.removeItem('user');

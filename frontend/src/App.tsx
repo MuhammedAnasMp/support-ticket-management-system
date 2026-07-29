@@ -22,6 +22,7 @@ import { StoresView } from './pages/StoresView';
 import { MaintenanceView } from './pages/MaintenanceView';
 import { WorkforceView } from './pages/WorkforceView';
 import Test from './Test';
+import PageTitle from './PageTitle';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -77,8 +78,7 @@ const App: React.FC = () => {
             token,
             user: data.user,
             permissions: data.permissions,
-            accessibleStores: data.accessible_stores,
-            store: data.store
+            accessibleStores: data.accessible_stores
           }));
         } else {
           dispatch(clearCredentials());
@@ -109,6 +109,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface transition-colors duration-200">
       <Router>
+        <PageTitle />
         <ThemeToggleOverlay isDark={isDark} setIsDark={setIsDark} />
         <Routes>
           <Route path="/login" element={<LoginView />} />
