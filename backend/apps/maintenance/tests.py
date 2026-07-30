@@ -1,5 +1,8 @@
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
+from rest_framework.test import APITestCase
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from apps.stores.models import Department, SubDepartment, Store, Area
 from apps.accounts.models import Role, CustomUser
 from apps.maintenance.models import Priority, Status, WorkNature, Ticket
@@ -35,8 +38,9 @@ class DepartmentWiseValidationTestCase(TestCase):
         # Create users
         self.manager = CustomUser.objects.create_user(
             username="manager1", email="m1@test.com", password="pwd",
-            full_name="Mgr One", role=self.role_mgr, store=self.store
+            full_name="Mgr One", role=self.role_mgr
         )
+        self.manager.accessible_stores.add(self.store)
         self.worker = CustomUser.objects.create_user(
             username="worker1", email="w1@test.com", password="pwd",
             full_name="Worker One", role=self.role_tech
@@ -217,3 +221,91 @@ class DepartmentWiseValidationTestCase(TestCase):
         serializer = ExpenseTypeWriteSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("parent", serializer.errors)
+
+
+class TicketStatusFilteringAPITests(APITestCase):
+    def setUp(self):
+        # Create standard test setup
+        self.role_mgr = Role.objects.create(role_name="Store Manager")
+        self.dept_maint = Department.objects.create(department_name="Maintenance")
+        self.area = Area.objects.create(area_name="Capital Area")
+        self.store = Store.objects.create(store_id="S-001", store_name="Store-001", area=self.area)
+        
+        self.user = CustomUser.objects.create_user(
+            username="manager1", email="m1@test.com", password="pwd",
+            full_name="Mgr One", role=self.role_mgr
+        )
+        self.user.accessible_stores.add(self.store)
+        
+        self.priority = Priority.objects.create(
+            department=self.dept_maint, priority_name="High", level=2
+        )
+        
+        self.status_open = Status.objects.create(status_name="Open")
+        self.status_progress = Status.objects.create(status_name="In Progress")
+        self.status_completed = Status.objects.create(status_name="Completed")
+        
+        self.subdept_maint = SubDepartment.objects.create(
+            department=self.dept_maint, sub_department_name="Electrical"
+        )
+        self.nature = WorkNature.objects.create(
+            nature_name="Generator Fault", sub_department=self.subdept_maint,
+            default_priority=self.priority
+        )
+
+        self.ticket_open = Ticket.objects.create(
+            work_order_no="WO-001", store=self.store, department=self.dept_maint,
+            nature=self.nature, priority=self.priority, status=self.status_open,
+            title="Open Ticket", description="Desc", created_by=self.user
+        )
+        self.ticket_progress = Ticket.objects.create(
+            work_order_no="WO-002", store=self.store, department=self.dept_maint,
+            nature=self.nature, priority=self.priority, status=self.status_progress,
+            title="In Progress Ticket", description="Desc", created_by=self.user
+        )
+        self.ticket_completed = Ticket.objects.create(
+            work_order_no="WO-003", store=self.store, department=self.dept_maint,
+            nature=self.nature, priority=self.priority, status=self.status_completed,
+            title="Completed Ticket", description="Desc", created_by=self.user
+        )
+
+        ticket_ct = ContentType.objects.get_for_model(Ticket)
+        self.perm_view_open = Permission.objects.get(codename='can_view_open_ticket', content_type=ticket_ct)
+        self.perm_view_progress = Permission.objects.get(codename='can_view_in_progress_ticket', content_type=ticket_ct)
+        self.perm_view_completed = Permission.objects.get(codename='can_view_completed_ticket', content_type=ticket_ct)
+        
+        self.client.force_authenticate(user=self.user)
+
+    def test_no_status_permissions_returns_nothing(self):
+        url = '/api/maintenance/tickets/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+    def test_only_open_status_permission_returns_only_open(self):
+        self.user.user_permissions.add(self.perm_view_open)
+        url = '/api/maintenance/tickets/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['ticket_id'], self.ticket_open.ticket_id)
+
+    def test_multiple_status_permissions(self):
+        self.user.user_permissions.add(self.perm_view_open, self.perm_view_progress)
+        url = '/api/maintenance/tickets/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 2)
+        ticket_ids = [t['ticket_id'] for t in response.data]
+        self.assertIn(self.ticket_open.ticket_id, ticket_ids)
+        self.assertIn(self.ticket_progress.ticket_id, ticket_ids)
+        self.assertNotIn(self.ticket_completed.ticket_id, ticket_ids)
+
+    def test_superuser_bypass(self):
+        self.user.is_superuser = True
+        self.user.save()
+        url = '/api/maintenance/tickets/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 3)
+

@@ -8,11 +8,14 @@ import {
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
+import type { PermissionKey } from '@/hooks/Can';
+import Can from '@/hooks/Can';
+
 
 interface SubItem {
   title: string;
   path: string;
-  permission?: string;
+  permission?: PermissionKey;
 }
 
 interface MenuItem {
@@ -20,7 +23,7 @@ interface MenuItem {
   icon: React.ReactNode;
   path?: string;
   subItems?: SubItem[];
-  permission?: string;
+  permission?: PermissionKey;
 }
 
 interface SidebarProps {
@@ -174,6 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                           {item.subItems?.map((sub, subIdx) => {
                             const subActive = location.pathname === sub.path;
                             return (
+
                               <Link
                                 key={subIdx}
                                 to={sub.path}
@@ -185,7 +189,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                   : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
                                   }`}
                               >
-                                {sub.title}
+                                <Can permission={sub.permission ?? false}>
+                                  {sub.title}
+                                </Can>
                               </Link>
                             );
                           })}

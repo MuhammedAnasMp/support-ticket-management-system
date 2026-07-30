@@ -17,12 +17,13 @@ import { SignupView } from './pages/SignupView';
 import { ForgotPasswordView } from './pages/ForgotPasswordView';
 import { ApprovalPendingView } from './pages/ApprovalPendingView';
 import { DashboardView } from './pages/DashboardView';
-import { TicketsView } from './pages/TicketsView';
+// import { TicketsView } from './pages/TicketsView';
 import { StoresView } from './pages/StoresView';
 import { MaintenanceView } from './pages/MaintenanceView';
 import { WorkforceView } from './pages/WorkforceView';
 import Test from './Test';
 import PageTitle from './PageTitle';
+import { TicketsView } from './pages/ticket/TicketsView';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 

@@ -78,6 +78,13 @@ body {
   background: rgba(0, 0, 0, 0.25);
 }
 
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+::selection {
+  background: var(--color-primary);
+  color: #ffffff;
 }
+
+/* AG Grid & react-date-range styles */
+@import "ag-grid-community/styles/ag-grid.css";
+@import "ag-grid-community/styles/ag-theme-alpine.css";
+@import "react-date-range/dist/styles.css";
+@import "react-date-range/dist/theme/default.css";

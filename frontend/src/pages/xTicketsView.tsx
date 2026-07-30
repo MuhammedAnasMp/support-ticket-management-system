@@ -303,7 +303,6 @@ export const TicketsView: React.FC = () => {
   const [createTicketFiles, setCreateTicketFiles] = useState<File[]>([]);
   const [isDraggingMedia, setIsDraggingMedia] = useState(false);
 
-
   // Memoize preview URLs so typing in input/textarea fields doesn't cause thumbnail flickering/blinking
   const createTicketPreviews = useMemo(() => {
     return createTicketFiles.map(file => {
@@ -1200,19 +1199,8 @@ export const TicketsView: React.FC = () => {
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
-  const canApproveRejectTicket = hasPermission('approve_ticket') || hasPermission('reject_ticket');
-  const canCompleteTicket = hasPermission('complete_ticket');
 
 
-
-  // const canViewOpenTicket = hasPermission('can_view_open_ticket');
-  // const canViewReconciledTicket = hasPermission('can_view_reconciled_ticket');
-
-
-  // const canViewInProgressTicket = hasPermission('can_view_in_progress_ticket');
-  // const canViewCompletedTicket = hasPermission('can_view_completed_ticket');
-  // const canViewRejectedTicket = hasPermission('can_view_rejected_ticket');
-  // const canViewBlockedTicket = hasPermission('can_view_blocked_ticket');
 
   const canViewStatus = (statusName) => {
     const permission = `can_view_${statusName
@@ -1222,6 +1210,15 @@ export const TicketsView: React.FC = () => {
     return hasPermission(permission);
   };
 
+  const getAllowedStatusPermissions = (statuses) => {
+    return statuses
+      .map(st =>
+        `can_view_${st.status_name
+          .toLowerCase()
+          .replace(/\s+/g, "_")}_ticket`
+      )
+      .filter(permission => hasPermission(permission));
+  };
 
 
   const filteredTickets = tickets.filter(t => {
@@ -1358,111 +1355,7 @@ export const TicketsView: React.FC = () => {
                       .map(n => <option key={n.nature_id} value={n.nature_id}>{n.nature_name}</option>)}
                   </select>
                 </div>
-                {(() => {
-                  const selNature = natures.find(n => Number(n.nature_id) === Number(createForm.nature_id));
-                  return selNature ? (selNature.media_required !== false) : true;
-                })() && (
-                    <div>
-                      <label className="block text-xs font-semibold text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">
-                        Attach Issue Media (Before Repair) - <span className="text-red-500 font-bold">Minimum 2 Files Required *</span>
-                      </label>
-                      <div
-                        onDragOver={e => { e.preventDefault(); setIsDraggingMedia(true); }}
-                        onDragLeave={e => { e.preventDefault(); setIsDraggingMedia(false); }}
-                        onDrop={e => {
-                          e.preventDefault();
-                          setIsDraggingMedia(false);
-                          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                            const newFiles = Array.from(e.dataTransfer.files);
-                            setCreateTicketFiles(prev => [...prev, ...newFiles]);
-                          }
-                        }}
-                        onClick={() => document.getElementById('ticket-create-media-input')?.click()}
-                        className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${isDraggingMedia
-                          ? 'border-primary bg-primary/10 dark:bg-primary/20'
-                          : 'border-outline-variant dark:border-dark-outline-variant hover:border-primary/50 bg-surface dark:bg-dark-surface'
-                          }`}
-                      >
-                        <input
-                          id="ticket-create-media-input"
-                          type="file"
-                          multiple
-                          accept="image/*,video/*,.pdf"
-                          className="hidden"
-                          onChange={e => {
-                            if (e.target.files && e.target.files.length > 0) {
-                              const newFiles = Array.from(e.target.files);
-                              setCreateTicketFiles(prev => [...prev, ...newFiles]);
-                              e.target.value = '';
-                            }
-                          }}
-                        />
-                        <Camera className="w-6 h-6 text-primary mx-auto mb-1 opacity-80" />
-                        <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
-                          Drag & drop issue files here, or <span className="text-primary underline">click to browse</span>
-                        </p>
-                        <p className="text-[10px] text-outline mt-0.5">Photos, videos, or PDF documents (Minimum 2 required)</p>
-                      </div>
 
-                      {/* Selected Media Preview Grid */}
-                      {createTicketFiles.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              Selected Media ({createTicketFiles.length} file{createTicketFiles.length > 1 ? 's' : ''}):
-                            </p>
-                            {createTicketFiles.length < 2 && (
-                              <span className="text-[11px] font-semibold text-amber-500">
-                                (Need {2 - createTicketFiles.length} more file)
-                              </span>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                            {createTicketPreviews.map(({ file, isImg, isVid, url }, idx) => {
-                              return (
-                                <div key={idx} className="relative group bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-xl p-1.5 flex flex-col items-center">
-                                  {/* Delete button overlay */}
-                                  <button
-                                    type="button"
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      setCreateTicketFiles(prev => prev.filter((_, i) => i !== idx));
-                                    }}
-                                    className="absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 shadow-md cursor-pointer transition-transform hover:scale-110 z-10"
-                                    title="Remove file"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-
-                                  {/* Thumbnail preview */}
-                                  <div className="w-full h-20 bg-surface-container dark:bg-dark-surface-container rounded-lg overflow-hidden flex items-center justify-center border border-outline-variant dark:border-dark-outline-variant">
-                                    {isImg && url ? (
-                                      <img src={url} alt={file.name} className="w-full h-full object-cover" />
-                                    ) : isVid && url ? (
-                                      <video src={url} className="w-full h-full object-cover" />
-                                    ) : (
-                                      <FileText className="w-8 h-8 text-primary opacity-80" />
-                                    )}
-                                  </div>
-
-                                  {/* File detail info */}
-                                  <div className="w-full mt-1.5 px-0.5 text-center">
-                                    <p className="text-[11px] font-semibold text-on-surface dark:text-dark-on-surface truncate" title={file.name}>
-                                      {file.name}
-                                    </p>
-                                    <p className="text-[9px] text-outline">
-                                      {(file.size / 1024).toFixed(0)} KB
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
               </div>
             )}
 
@@ -1479,6 +1372,111 @@ export const TicketsView: React.FC = () => {
                 value={createForm.description} onChange={e => setCreateForm({ ...createForm, description: e.target.value })}
                 className="w-full text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary transition-all text-on-surface dark:text-dark-on-surface" />
             </div>
+            {(() => {
+              const selNature = natures.find(n => Number(n.nature_id) === Number(createForm.nature_id));
+              return selNature ? (selNature.media_required !== false) : true;
+            })() && (
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">
+                    Attach Issue Media (Before Repair) - <span className="text-red-500 font-bold">Minimum 2 Files Required *</span>
+                  </label>
+                  <div
+                    onDragOver={e => { e.preventDefault(); setIsDraggingMedia(true); }}
+                    onDragLeave={e => { e.preventDefault(); setIsDraggingMedia(false); }}
+                    onDrop={e => {
+                      e.preventDefault();
+                      setIsDraggingMedia(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        const newFiles = Array.from(e.dataTransfer.files);
+                        setCreateTicketFiles(prev => [...prev, ...newFiles]);
+                      }
+                    }}
+                    onClick={() => document.getElementById('ticket-create-media-input')?.click()}
+                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${isDraggingMedia
+                      ? 'border-primary bg-primary/10 dark:bg-primary/20'
+                      : 'border-outline-variant dark:border-dark-outline-variant hover:border-primary/50 bg-surface dark:bg-dark-surface'
+                      }`}
+                  >
+                    <input
+                      id="ticket-create-media-input"
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,.pdf"
+                      className="hidden"
+                      onChange={e => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          const newFiles = Array.from(e.target.files);
+                          setCreateTicketFiles(prev => [...prev, ...newFiles]);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                    <Camera className="w-6 h-6 text-primary mx-auto mb-1 opacity-80" />
+                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
+                      Drag & drop issue files here, or <span className="text-primary underline">click to browse</span>
+                    </p>
+                    <p className="text-[10px] text-outline mt-0.5">Photos, videos, or PDF documents (Minimum 2 required)</p>
+                  </div>
+
+                  {/* Selected Media Preview Grid */}
+                  {createTicketFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Selected Media ({createTicketFiles.length} file{createTicketFiles.length > 1 ? 's' : ''}):
+                        </p>
+                        {createTicketFiles.length < 2 && (
+                          <span className="text-[11px] font-semibold text-amber-500">
+                            (Need {2 - createTicketFiles.length} more file)
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                        {createTicketPreviews.map(({ file, isImg, isVid, url }, idx) => {
+                          return (
+                            <div key={idx} className="relative group bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-xl p-1.5 flex flex-col items-center">
+                              {/* Delete button overlay */}
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setCreateTicketFiles(prev => prev.filter((_, i) => i !== idx));
+                                }}
+                                className="absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 shadow-md cursor-pointer transition-transform hover:scale-110 z-10"
+                                title="Remove file"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+
+                              {/* Thumbnail preview */}
+                              <div className="w-full h-20 bg-surface-container dark:bg-dark-surface-container rounded-lg overflow-hidden flex items-center justify-center border border-outline-variant dark:border-dark-outline-variant">
+                                {isImg && url ? (
+                                  <img src={url} alt={file.name} className="w-full h-full object-cover" />
+                                ) : isVid && url ? (
+                                  <video src={url} className="w-full h-full object-cover" />
+                                ) : (
+                                  <FileText className="w-8 h-8 text-primary opacity-80" />
+                                )}
+                              </div>
+
+                              {/* File detail info */}
+                              <div className="w-full mt-1.5 px-0.5 text-center">
+                                <p className="text-[11px] font-semibold text-on-surface dark:text-dark-on-surface truncate" title={file.name}>
+                                  {file.name}
+                                </p>
+                                <p className="text-[9px] text-outline">
+                                  {(file.size / 1024).toFixed(0)} KB
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
             <div className="flex justify-end pt-3">
               <button type="submit" disabled={actionLoading}
@@ -1508,28 +1506,37 @@ export const TicketsView: React.FC = () => {
                 {stores.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
               </select>
 
-              <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-                disabled={!canCreateAllDepts}
-                className="text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 outline-none text-on-surface dark:text-dark-on-surface disabled:opacity-60 disabled:cursor-not-allowed">
-                {canCreateAllDepts && <option value="">All Departments</option>}
-                {availableDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-              </select>
+              <Can permission={'maintenance.create_ticket_all_departments'}>
 
-              <select
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                className="text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 outline-none text-on-surface dark:text-dark-on-surface"
-              >
-                <option value="">All Statuses</option>
+                <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
+                  disabled={!canCreateAllDepts}
+                  className="text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 outline-none text-on-surface dark:text-dark-on-surface disabled:opacity-60 disabled:cursor-not-allowed">
+                  {canCreateAllDepts && <option value="">All Departments</option>}
+                  {availableDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                </select>
 
-                {statuses
-                  .filter(st => canViewStatus(st.status_name || ""))
-                  .map(st => (
-                    <option key={st.status_id} value={st.status_name}>
-                      {st.status_name}
-                    </option>
-                  ))}
-              </select>
+              </Can>
+              <Can permission={getAllowedStatusPermissions(statuses) || []}>
+                <select
+                  value={filterStatus}
+                  onChange={e => setFilterStatus(e.target.value)}
+                  className="text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 outline-none text-on-surface dark:text-dark-on-surface"
+                >
+                  <option value="">All Statuses</option>
+
+                  {statuses
+                    .filter(st => canViewStatus(st.status_name || ""))
+                    .map(st => (
+                      <option key={st.status_id} value={st.status_name}>
+                        {st.status_name}
+                      </option>
+                    ))}
+
+
+                </select>
+
+              </Can>
+
 
               <Can permission={['maintenance.create_ticket', 'maintenance.add_ticket']} >
 
@@ -1721,8 +1728,9 @@ export const TicketsView: React.FC = () => {
                     {selectedTicket.status.status_name}
                   </span>
                   <div className="flex-1" />
-                  {selectedTicket.status.status_name === 'Open' && canApproveRejectTicket && (
-                    <>
+                  {selectedTicket.status.status_name === 'Open' &&
+
+                    <Can permission={['maintenance.approve_ticket', 'maintenance.reject_ticket']}>
                       <button onClick={() => handleMoveToNextStatus()}
                         disabled={actionLoading}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
@@ -1733,8 +1741,9 @@ export const TicketsView: React.FC = () => {
                         className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50">
                         Reject
                       </button>
-                    </>
-                  )}
+                    </Can>
+
+                  }
                   {selectedTicket.status.status_name === 'Approved' && (
                     <button onClick={() => handleMoveToNextStatus()}
                       disabled={actionLoading}
@@ -1742,13 +1751,16 @@ export const TicketsView: React.FC = () => {
                       {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />} Start Progress
                     </button>
                   )}
-                  {selectedTicket.status.status_name === 'In Progress' && canCompleteTicket && (
-                    <button onClick={() => handleMoveToNextStatus()}
-                      disabled={actionLoading}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
-                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Mark Completed
-                    </button>
-                  )}
+                  {selectedTicket.status.status_name === 'In Progress' &&
+
+                    <Can permission='maintenance.complete_ticket'>
+                      <button onClick={() => handleMoveToNextStatus()}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
+                        {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Mark Completed
+                      </button>
+                    </Can>
+                  }
                   {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-outline ml-1" />}
                 </div>
 
@@ -1786,17 +1798,18 @@ export const TicketsView: React.FC = () => {
                       <div className="flex items-center justify-between mb-3">
                         <SectionTitle icon={<Image className="w-4 h-4" />} label="Before Repair" />
 
-
-                        <Can permission={'maintenance.update_before_repair'}>
-                          <button
-                            type="button"
-                            onClick={() => setIsManageIssueMediaOpen(true)}
-                            className="flex items-center gap-1 text-xs font-bold text-primary hover:text-primary/80 transition-all cursor-pointer bg-primary/10 px-3 py-1.5 rounded-lg"
-                          >
-                            <Settings className="w-3.5 h-3.5" />
-                            Manage Media
-                          </button>
-                        </Can>
+                        {selectedTicket.status.status_name !== 'Rejected' &&
+                          <Can permission={'maintenance.update_before_repair'}>
+                            <button
+                              type="button"
+                              onClick={() => setIsManageIssueMediaOpen(true)}
+                              className="flex items-center gap-1 text-xs font-bold text-primary hover:text-primary/80 transition-all cursor-pointer bg-primary/10 px-3 py-1.5 rounded-lg"
+                            >
+                              <Settings className="w-3.5 h-3.5" />
+                              Manage Media
+                            </button>
+                          </Can>
+                        }
 
                       </div>
                       <MediaGrid
@@ -2119,7 +2132,6 @@ export const TicketsView: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* ── SUB-MODAL 1: ASSIGN WORKER ───────────────────────────────────────── */}
       <AnimatePresence>
         {isAssignModalOpen && selectedTicket && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">

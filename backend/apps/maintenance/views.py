@@ -1,5 +1,6 @@
-from django.utils import timezone
+from django.db.models import Q
 from rest_framework import viewsets, exceptions
+from rest_framework.pagination import PageNumberPagination
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
 from .serializers import (
     PrioritySerializer, StatusSerializer, WorkNatureSerializer,
@@ -8,6 +9,11 @@ from .serializers import (
     AllocationWriteSerializer, WorkLogWriteSerializer, TicketWriteSerializer
 )
 
+
+class TicketPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 class PriorityViewSet(viewsets.ModelViewSet):
     queryset = Priority.objects.all()
@@ -51,8 +57,9 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
 
 
 class TicketViewSet(viewsets.ModelViewSet):
-    queryset = Ticket.objects.all()
+    queryset = Ticket.objects.all().order_by('-created_date')
     serializer_class = TicketSerializer
+    pagination_class = TicketPagination
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -66,35 +73,78 @@ class TicketViewSet(viewsets.ModelViewSet):
             return Ticket.objects.none()
 
         if user.is_superuser:
-            return queryset
-
-        # Technicians only see tickets allocated to them
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        if role_name == 'technician':
-            return queryset.filter(allocations__worker=user).distinct()
-
-        # Filter non-superusers by accessible stores
-        accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
-        if accessible_store_ids:
-            queryset = queryset.filter(store_id__in=accessible_store_ids).distinct()
+            pass
         else:
-            return Ticket.objects.none()
+            # Filter by ticket status permissions.
+            disallowed_status_ids = []
+            for s in Status.objects.all():
+                codename = 'can_view_{}_ticket'.format(
+                    s.status_name.lower().replace(' ', '_')
+                )
+                perm = 'maintenance.{}'.format(codename)
+                if not user.has_perm(perm):
+                    disallowed_status_ids.append(s.status_id)
 
-        # Check department level restriction
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        can_view_all_depts = (
-            user.has_perm('maintenance.view_all_department_tickets') or
-            user.has_perm('maintenance.create_ticket_all_departments') or
-            'main_admin' in user_groups_lower or
-            'main administrator' in user_groups_lower
-        )
+            if disallowed_status_ids:
+                queryset = queryset.exclude(status_id__in=disallowed_status_ids)
 
-        if not can_view_all_depts:
-            user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
-            if user_dept_ids:
-                queryset = queryset.filter(department_id__in=user_dept_ids)
+            # Technicians only see tickets allocated to them
+            role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+            if role_name == 'technician':
+                queryset = queryset.filter(allocations__worker=user).distinct()
             else:
-                return Ticket.objects.none()
+                # Filter non-superusers by accessible stores
+                accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+                if accessible_store_ids:
+                    queryset = queryset.filter(store_id__in=accessible_store_ids).distinct()
+                else:
+                    return Ticket.objects.none()
+
+                # Check department level restriction
+                user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+                can_view_all_depts = (
+                    user.has_perm('maintenance.view_all_department_tickets') or
+                    user.has_perm('maintenance.create_ticket_all_departments') or
+                    'main_admin' in user_groups_lower or
+                    'main administrator' in user_groups_lower
+                )
+
+                if not can_view_all_depts:
+                    user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
+                    if user_dept_ids:
+                        queryset = queryset.filter(department_id__in=user_dept_ids)
+                    else:
+                        return Ticket.objects.none()
+
+        # Query parameter filters
+        params = self.request.query_params
+        search = params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) | Q(work_order_no__icontains=search)
+            )
+
+        store = params.get('store')
+        if store:
+            queryset = queryset.filter(store_id=store)
+
+        department = params.get('department')
+        if department:
+            queryset = queryset.filter(department_id=department)
+
+        status = params.get('status')
+        if status:
+            queryset = queryset.filter(status__status_name=status)
+
+        from_date = params.get('from_date')
+        if from_date:
+            queryset = queryset.filter(created_date__gte=from_date)
+
+        to_date = params.get('to_date')
+        if to_date:
+            if len(to_date) == 10:
+                to_date = f"{to_date} 23:59:59"
+            queryset = queryset.filter(created_date__lte=to_date)
 
         return queryset
 

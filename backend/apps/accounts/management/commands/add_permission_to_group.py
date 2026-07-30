@@ -187,11 +187,13 @@ class Command(BaseCommand):
                 f"Added '{codename}' to group '{group_name}'"
             )
         )
+
+
 # E:\Code\Maintenancde Tracker\backend>python manage.py add_permission_to_group technician can_change_my_log_time Ticket --app maintenance
 
 # can_change_others_log_time
 
-# can_chanage_my_log_time
+# can_change_my_log_time
 
 
 # change_others_expence
@@ -204,3 +206,44 @@ class Command(BaseCommand):
 # update_before_repair
 
 # update_after_repair
+
+
+# Technician
+
+# Maintenance | ticket | Can view open ticket
+# Maintenance | ticket | Can complete ticket
+
+
+# Area Manager
+
+# Maintenance | ticket | Can view open ticket
+
+# Maintenance | ticket | Can create ticket
+
+# Maintenance | ticket | Can create ticket under all departments
+
+# Maintenance | ticket | Can view all department tickets
+
+
+# Store Manager
+# Maintenance | ticket | Can view open ticket
+
+# Maintenance | ticket | Can create ticket
+
+
+# Office Administrator
+
+# Accounts | custom user | Can change others expense
+# Maintenance | ticket | Can approve ticket
+
+# Maintenance | ticket | Can can change others log time
+
+# Maintenance | ticket | Can view open ticket
+
+# Maintenance | ticket | Can view reconciled ticket
+
+# Maintenance | ticket | Can create ticket
+
+# Maintenance | ticket | Can reject ticket
+
+# Maintenance | ticket | Can view all department tickets

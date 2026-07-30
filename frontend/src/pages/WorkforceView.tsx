@@ -678,7 +678,7 @@ export const WorkforceView: React.FC = () => {
                       <th className="px-6 py-4">Hourly Rate</th>
                       <th className="px-6 py-4">Status</th>
 
-                      <Can permission='accounts.delete_customuser'>
+                      <Can permission='accounts.change_customuser'>
                         <th className="px-6 py-4 text-right">Actions</th>
                       </Can>
                     </>
@@ -765,56 +765,39 @@ export const WorkforceView: React.FC = () => {
                             )}
                           </td>
 
-                          <Can permission='accounts.delete_customuser'>
-                            <td className="px-6 py-4 text-right space-x-2">
+                          {/* <Can permission='accounts.delete_customuser'> */}
+                          <td className="px-6 py-4 text-right space-x-2">
 
-                              <Can permission={['accounts.change_customuser',]}>
-                                <>
-                                  {!item.active ? (
+                            <Can permission={['accounts.change_customuser',]}>
+                              <>
+                                {!item.active ? (
+                                  <button
+                                    onClick={() => handleOpenEditEmployee(item)}
+                                    className="px-2.5 py-1 inline-flex items-center gap-1 text-xs font-semibold rounded cursor-pointer transition-all bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 border border-amber-500/30"
+                                    title="Approve employee & fill details"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    <span>Approve & Edit</span>
+                                  </button>
+                                ) : (
+                                  <>
                                     <button
                                       onClick={() => handleOpenEditEmployee(item)}
-                                      className="px-2.5 py-1 inline-flex items-center gap-1 text-xs font-semibold rounded cursor-pointer transition-all bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 border border-amber-500/30"
-                                      title="Approve employee & fill details"
+                                      className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+                                      title="Edit Employee Profile"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
-                                      <span>Approve & Edit</span>
                                     </button>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => handleOpenEditEmployee(item)}
-                                        className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                                        title="Edit Employee Profile"
-                                      >
-                                        <Edit2 className="w-3.5 h-3.5" />
-                                      </button>
-                                      {/* {isOfficeStaffOrAdmin && (
-                                        <button
-                                          onClick={() => handleToggleDeactivateEmployee(item, false)}
-                                          className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-amber-500 rounded border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                                          title="Deactivate Account"
-                                        >
-                                          <UserX className="w-3.5 h-3.5" />
-                                        </button>
-                                      )} */}
-                                    </>
-                                  )}
-                                </>
-                              </Can>
+
+                                  </>
+                                )}
+                              </>
+                            </Can>
 
 
-                              {/* {hasPermission('accounts.delete_customuser') && (
-                                <button
-                                  onClick={() => handleDeleteEmployee(item.user_id)}
-                                  className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                                  title="Delete Account"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )} */}
-                            </td>
+                          </td>
 
-                          </Can>
+                          {/* </Can> */}
 
                         </>
                       ) : subpage === 'rates' ? (

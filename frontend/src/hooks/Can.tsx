@@ -1,17 +1,60 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePermission } from "./usePermission";
 import permissions from "./default_permissions.json";
 
-type PermissionKey = keyof typeof permissions.permission_definitions;
+export type PermissionKey = keyof typeof permissions.permission_definitions;
 
 interface CanProps {
     permission: PermissionKey | PermissionKey[] | boolean;
     children: React.ReactNode;
+
+    // Optional: yellow badge instead of red
+    isSuggestedPermission?: boolean;
 }
 
-function Can({ permission, children }: CanProps) {
+// Global developer mode state
+let permissionDebugEnabled = false;
+
+function Can({
+    permission,
+    children,
+    isSuggestedPermission = false,
+}: CanProps) {
     const { hasPermission } = usePermission();
+
     const [copied, setCopied] = useState(false);
+    const [showDebug, setShowDebug] = useState(permissionDebugEnabled);
+
+    // Ctrl + Shift + Z => Toggle permission debug mode
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z") {
+                permissionDebugEnabled = !permissionDebugEnabled;
+
+                window.dispatchEvent(
+                    new CustomEvent("permission-debug-toggle")
+                );
+            }
+        };
+
+        const handleToggle = () => {
+            setShowDebug(permissionDebugEnabled);
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        window.addEventListener(
+            "permission-debug-toggle",
+            handleToggle
+        );
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener(
+                "permission-debug-toggle",
+                handleToggle
+            );
+        };
+    }, []);
 
     let allowed = false;
 
@@ -25,54 +68,202 @@ function Can({ permission, children }: CanProps) {
         allowed = permissionsList.some((p) => hasPermission(p));
     }
 
-    if (!allowed) return null;
-
-    const permissionValue =
+    const displayValue =
         typeof permission === "boolean"
             ? permission.toString()
-            : (Array.isArray(permission) ? permission : [permission]).join(",");
+            : (Array.isArray(permission)
+                ? permission
+                : [permission]
+            ).join(",");
 
-    const copyPermission = async (e: React.MouseEvent) => {
+    const copyValue =
+        typeof permission === "boolean"
+            ? permission.toString()
+            : (Array.isArray(permission)
+                ? permission
+                : [permission]
+            )
+                .map((value) =>
+                    value.split(".").pop()!.replace(/_/g, " ")
+                )
+                .join(", ");
+
+    const copyPermission = async (
+        e: React.MouseEvent
+    ) => {
         e.stopPropagation();
 
-        await navigator.clipboard.writeText(permissionValue);
+        try {
+            await navigator.clipboard.writeText(copyValue);
 
-        setCopied(true);
+            setCopied(true);
 
-        setTimeout(() => {
-            setCopied(false);
-        }, 1500);
+            setTimeout(() => {
+                setCopied(false);
+            }, 1500);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
+    const badgeColor = isSuggestedPermission
+        ? "bg-yellow-400 text-black"
+        : "bg-red-600 text-white";
+
+    /**
+     * PRODUCTION MODE
+     * No permission => render nothing
+     */
+    if (!showDebug && !allowed) {
+        return null;
+    }
+
+    /**
+     * ALLOWED
+     */
+    if (allowed) {
+        return (
+            <div
+                className={`
+                    relative
+                    inline-block
+                    group
+                    ${showDebug
+                        ? "border-2 border-green-500"
+                        : ""
+                    }
+                `}
+                data-permission={displayValue}
+            >
+                {children}
+
+                {showDebug && (
+                    <>
+                        {/* Permission Badge */}
+                        <div
+                            onClick={copyPermission}
+                            className={`
+                                absolute
+                                -top-2
+                                -right-2
+                                w-5
+                                h-5
+                                rounded-full
+                                bg-green-600
+                                text-white
+                                text-xs
+                                font-bold
+                                flex
+                                items-center
+                                justify-center
+                                cursor-pointer
+                                z-[10001]
+                                shadow-md
+                            `}
+                            title="Permission"
+                        >
+                            ✓
+                        </div>
+
+                        {/* Tooltip */}
+                        <div
+                            onClick={copyPermission}
+                            className="
+                                absolute
+                                bottom-full
+                                left-1/2
+                                -translate-x-1/2
+                                mb-1
+                                hidden
+                                group-hover:block
+                                cursor-pointer
+                                rounded-md
+                                bg-black
+                                px-3
+                                py-1
+                                text-sm
+                                text-white
+                                whitespace-nowrap
+                                z-[10000]
+                            "
+                        >
+                            {copied
+                                ? "Copied!"
+                                : displayValue}
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    /**
+     * DENIED
+     * Only visible when developer mode is ON
+     */
     return (
         <div
-            className="relative inline-block group border-amber-700 border-2"
-            data-permission={permissionValue}
+            className="
+                relative
+                inline-block
+                group
+                opacity-50
+                border-2
+                border-red-500
+            "
         >
             {children}
 
+            {/* Permission Badge */}
+            <div
+                onClick={copyPermission}
+                className={`
+                    absolute
+                    -top-2
+                    -right-2
+                    w-5
+                    h-5
+                    rounded-full
+                    text-xs
+                    font-bold
+                    flex
+                    items-center
+                    justify-center
+                    cursor-pointer
+                    z-[10001]
+                    shadow-md
+                    ${badgeColor}
+                `}
+                title="Required Permission"
+            >
+                !
+            </div>
+
+            {/* Tooltip */}
             <div
                 onClick={copyPermission}
                 className="
-        absolute
-        bottom-full
-        left-1/2
-        -translate-x-1/2
-        mb-0
-        hidden
-        group-hover:block
-        cursor-pointer
-        rounded-md
-        bg-black
-        px-3
-        py-1
-        text-sm
-        text-white
-        whitespace-nowrap
-        z-[10000]
-    "
+                    absolute
+                    bottom-full
+                    left-1/2
+                    -translate-x-1/2
+                    mb-1
+                    hidden
+                    group-hover:block
+                    cursor-pointer
+                    rounded-md
+                    bg-black
+                    px-3
+                    py-1
+                    text-sm
+                    text-white
+                    whitespace-nowrap
+                    z-[10000]
+                "
             >
-                {copied ? "Copied!" : permissionValue}
+                {copied
+                    ? "Copied!"
+                    : `Required: ${displayValue}`}
             </div>
         </div>
     );

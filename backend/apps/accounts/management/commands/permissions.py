@@ -16,9 +16,41 @@ class Command(BaseCommand):
             type=str,
             help="Employee number to display details, role, and permissions"
         )
+        parser.add_argument(
+            "-c",
+            action="store_true",
+            help="Display only custom permissions across the system"
+        )
 
     def handle(self, *args, **options):
         employee_no = options.get("employee")
+        custom_only = options.get("custom_only")
+
+        # Standard Django action prefixes to filter out standard permissions
+        standard_prefixes = ("add_", "change_", "delete_", "view_")
+
+        # Fetch all permissions with content types
+        perms = (
+            Permission.objects.select_related("content_type")
+            .all()
+            .order_by("content_type__app_label", "codename")
+        )
+
+        # Handle custom permissions listing if requested or by default layout
+        custom_perms = [
+            p for p in perms
+            if not p.codename.startswith(standard_prefixes)
+        ]
+
+        if custom_only:
+            self.stdout.write(self.style.WARNING(
+                f"\n--- Custom Permissions List ({len(custom_perms)}) ---"))
+            for p in custom_perms:
+                self.stdout.write(
+                    f" - {p.content_type.app_label}.{p.codename} ({p.name})")
+            self.stdout.write("")
+            return
+
         if employee_no:
             from apps.accounts.models import CustomUser
             try:
@@ -34,11 +66,22 @@ class Command(BaseCommand):
                 self.stdout.write(f"Active: {user.active}")
 
                 # Fetch and print permissions
-                perms = sorted(list(user.get_all_permissions()))
+                perms_list = sorted(list(user.get_all_permissions()))
                 self.stdout.write(self.style.WARNING(
-                    f"\nActive Permissions ({len(perms)}):"))
-                for p in perms:
+                    f"\nActive Permissions ({len(perms_list)}):"))
+                for p in perms_list:
                     self.stdout.write(f" - {p}")
+
+                # Filter user's active custom permissions
+                user_custom_perms = [
+                    p for p in perms_list
+                    if not any(p.split('.')[-1].startswith(prefix) for prefix in standard_prefixes)
+                ]
+                self.stdout.write(self.style.WARNING(
+                    f"\nActive Custom Permissions for User ({len(user_custom_perms)}):"))
+                for cp in user_custom_perms:
+                    self.stdout.write(f" - {cp}")
+
                 self.stdout.write("")
                 return
             except CustomUser.DoesNotExist:
@@ -46,20 +89,18 @@ class Command(BaseCommand):
                     f"Error: User with employee number '{employee_no}' does not exist."))
                 return
 
-        # Get all permissions
-        perms = (
-            Permission.objects.select_related("content_type")
-            .all()
-            .order_by("content_type__app_label", "codename")
-        )
+        # Print system-wide custom permissions count & list on standard command run
+        self.stdout.write(self.style.SUCCESS(
+            f"\nFound {len(custom_perms)} custom permission(s):"))
+        for p in custom_perms:
+            self.stdout.write(
+                f" * {p.content_type.app_label}.{p.codename} -> {p.name}")
+        self.stdout.write("")
 
         # JSON file path
         root_dir = r"E:\Code\Maintenancde Tracker"
         file_path = os.path.join(root_dir, "frontend",
                                  "src", "hooks", "default_permissions.json")
-
-        # root_dir = os.path.dirname(settings.BASE_DIR)
-        # file_path = os.path.join(root_dir, "default_permissions.json")
 
         # Load existing JSON (to preserve descriptions/UI text)
         existing_data = {}
