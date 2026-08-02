@@ -8,7 +8,9 @@ interface DashboardLayoutProps {
 }
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    return typeof window !== 'undefined' && window.innerWidth >= 768;
+  });
   const location = useLocation();
 
   // Map pathnames to human readable page titles
@@ -66,12 +68,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       <div className="flex flex-col flex-1 min-w-0">
         {/* Top Header */}
         <Header
-          onToggleSidebar={() => setSidebarOpen(true)}
+          onToggleSidebar={() => setSidebarOpen(prev => !prev)}
           pageTitle={getPageTitle(location.pathname)}
+          isSidebarOpen={sidebarOpen}
         />
 
         {/* Scrollable Work Area */}
-        <main className="flex-1 overflow-y-auto px-6 py-8 md:px-8 .max-w-7xl w-full mx-auto">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 .max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>

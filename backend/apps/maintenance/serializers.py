@@ -33,10 +33,15 @@ class NatureWorkerSerializer(serializers.ModelSerializer):
 
 
 class TicketSerializer(serializers.ModelSerializer):
+    allocations = serializers.SerializerMethodField()
+
     class Meta:
         model = Ticket
         fields = '__all__'
         depth = 1
+
+    def get_allocations(self, obj):
+        return AllocationSerializer(obj.allocations.all(), many=True).data
 
     def validate(self, data):
         department = data.get('department')

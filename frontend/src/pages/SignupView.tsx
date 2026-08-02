@@ -15,6 +15,7 @@ export const SignupView: React.FC = () => {
   const roleParam = searchParams.get('role') || '';
   const departmentParam = searchParams.get('department') || '';
   const storeParam = searchParams.get('store') || '';
+  const natureParam = searchParams.get('nature') || '';
 
   const [employeeNo, setEmployeeNo] = useState('');
   const [fullName, setFullName] = useState('');
@@ -29,15 +30,18 @@ export const SignupView: React.FC = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [natures, setNatures] = useState<any[]>([]);
+
+  const isRoleLocked = Boolean(roleParam);
+  const isStoreLocked = Boolean(storeParam);
+  const isDepartmentLocked = Boolean(departmentParam);
+  const isNatureLocked = Boolean(natureParam);
 
   // Selected values
   const [selectedRole, setSelectedRole] = useState(roleParam);
   const [selectedStore, setSelectedStore] = useState(storeParam);
   const [selectedDepartment, setSelectedDepartment] = useState(departmentParam);
-
-  const isRoleLocked = Boolean(roleParam);
-  const isStoreLocked = Boolean(storeParam);
-  const isDepartmentLocked = Boolean(departmentParam);
+  const [selectedNatures, setSelectedNatures] = useState<string[]>(natureParam ? natureParam.split(',') : []);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -65,6 +69,7 @@ export const SignupView: React.FC = () => {
         if (data.roles) setRoles(data.roles);
         if (data.stores) setStores(data.stores);
         if (data.departments) setDepartments(data.departments);
+        if (data.natures) setNatures(data.natures);
       }
     } catch (err) {
       console.error('Failed to load metadata', err);
@@ -134,6 +139,11 @@ export const SignupView: React.FC = () => {
       return;
     }
 
+    if (isTechnician && selectedNatures.length === 0) {
+      setError('Please select at least one Work Nature for Technician role.');
+      return;
+    }
+
     if (phone.length !== 8) {
       setError('Phone number must be exactly 8 digits.');
       return;
@@ -159,6 +169,9 @@ export const SignupView: React.FC = () => {
     }
     if (isTechnician && selectedDepartment) {
       formData.append('department', selectedDepartment);
+    }
+    if (isTechnician && selectedNatures.length > 0) {
+      formData.append('nature', selectedNatures.join(','));
     }
 
     try {
@@ -285,6 +298,7 @@ export const SignupView: React.FC = () => {
                 setSelectedRole(e.target.value);
                 setSelectedStore('');
                 setSelectedDepartment('');
+                setSelectedNatures([]);
               }}
               className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
             >
@@ -316,24 +330,71 @@ export const SignupView: React.FC = () => {
             </div>
           )}
 
-          {/* Department Selection Dropdown for Technician */}
+          {/* Department and Work Nature Selection for Technician */}
           {isTechnician && (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
-                Department
-              </label>
-              <select
-                required
-                value={selectedDepartment}
-                disabled={isDepartmentLocked}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
-              >
-                {!isDepartmentLocked && <option value="">Select Department</option>}
-                {departments.map(d => (
-                  <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
-                ))}
-              </select>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                  Department
+                </label>
+                <select
+                  required
+                  value={selectedDepartment}
+                  disabled={isDepartmentLocked}
+                  onChange={(e) => {
+                    setSelectedDepartment(e.target.value);
+                    setSelectedNatures([]); // Reset natures when department changes
+                  }}
+                  className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+                >
+                  {!isDepartmentLocked && <option value="">Select Department</option>}
+                  {departments.map(d => (
+                    <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedDepartment && (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
+                    Work Natures / Skills (Multiple)
+                  </label>
+                  {(() => {
+                    const filteredNatures = natures.filter(n => String(n.department_id) === String(selectedDepartment));
+                    if (filteredNatures.length === 0) {
+                      return <p className="text-xs text-outline italic">No work natures found for this department.</p>;
+                    }
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-40 overflow-y-auto border border-outline-variant dark:border-dark-outline-variant rounded-lg p-4 bg-surface-container-low dark:bg-dark-surface-container-low">
+                        {filteredNatures.map(n => {
+                          const checked = selectedNatures.includes(String(n.nature_id));
+                          return (
+                            <label 
+                              key={n.nature_id} 
+                              className={`flex items-center gap-2.5 text-sm cursor-pointer select-none text-on-surface dark:text-dark-on-surface ${isNatureLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={isNatureLocked}
+                                onChange={() => {
+                                  if (checked) {
+                                    setSelectedNatures(prev => prev.filter(id => id !== String(n.nature_id)));
+                                  } else {
+                                    setSelectedNatures(prev => [...prev, String(n.nature_id)]);
+                                  }
+                                }}
+                                className="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                              />
+                              <span>{n.nature_name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 

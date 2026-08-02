@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
-    Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign
+    Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText
 } from 'lucide-react';
 import Can from '@/hooks/Can';
 import {
     API_URL, type Ticket, type Allocation, type WorkLog, type Expense, type MediaCategory, type Media,
     AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor
 } from './TicketsTypesAndComponents';
+import { VoiceRecorder } from '@/components/VoiceRecorder';
 
 interface TicketDetailModalProps {
     selectedTicket: Ticket | null;
@@ -42,7 +44,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [mediaList, setMediaList] = useState<Media[]>([]);
     const [mediaCategories, setMediaCategories] = useState<MediaCategory[]>([]);
-    const [, setNatureWorkers] = useState<any[]>([]);
+    const [natureWorkers, setNatureWorkers] = useState<any[]>([]);
 
     // UI / Action states
     const [modalLoading, setModalLoading] = useState(false);
@@ -73,7 +75,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [replacingMediaId, setReplacingMediaId] = useState<number | null>(null);
 
     const uploadAbortRef = useRef<AbortController | null>(null);
-
+    // const [natureWorkers, setNatureWorkers] = useState<any[]>([]);
     // Load ticket sub-data on mount
     useEffect(() => {
         uploadAbortRef.current?.abort();
@@ -660,7 +662,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     });
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
             {/* Hidden Media replacement input */}
             <input
                 id="media-replacement-input"
@@ -670,337 +672,518 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 onChange={handleMediaReplacementSelected}
             />
 
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={handleClose} className="absolute inset-0 bg-black" />
-
+            {/* Backdrop */}
             <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.6 }}
+                exit={{ opacity: 0 }}
+                onClick={handleClose}
+                className="absolute inset-0 bg-black touch-manipulation"
+            />
+
+            {/* Main Modal Panel / Mobile Bottom Sheet */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.98, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl scrollbar-thin"
+                exit={{ opacity: 0, scale: 0.98, y: 20 }}
+                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] flex flex-col rounded-t-xl sm:rounded shadow-2xl overflow-hidden"
             >
-                <div className="sticky top-0 z-10 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant px-6 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-mono text-xs text-outline shrink-0">{ticketDetails.work_order_no}</span>
+                {/* Header Toolbar Standard */}
+                <div className="sticky top-0 z-10 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant px-4 sm:px-5 py-2.5 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                        <span className="font-mono text-xs font-semibold text-outline shrink-0">{ticketDetails.work_order_no}</span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(ticketDetails.status.status_name)}`}>
                             {ticketDetails.status.status_name}
                         </span>
-                        <span className="text-sm font-bold text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.title}</span>
+                        <span className="text-xs sm:text-sm font-bold text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.title}</span>
                     </div>
-                    <button onClick={handleClose} className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high cursor-pointer shrink-0 ml-2">
+                    <button
+                        onClick={handleClose}
+                        className="p-2 rounded-lg text-outline hover:bg-surface-container-high active:scale-95 transition-transform shrink-0 ml-2 min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer touch-manipulation"
+                        aria-label="Close Modal"
+                    >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                {modalLoading && (
-                    <div className="absolute inset-0 z-20 bg-surface-container/80 dark:bg-dark-surface-container/80 flex items-center justify-center rounded-2xl">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                )}
-
-                <div className="p-6 space-y-6">
-                    {/* Creator card */}
-                    <div className="flex items-start gap-4 p-4 bg-surface dark:bg-dark-surface rounded-2xl border border-outline-variant dark:border-dark-outline-variant">
-                        <AvatarCircle user={ticketDetails.created_by} size="lg" />
-                        <div className="flex-1 min-w-0">
-                            <p className="font-bold text-base text-on-surface dark:text-dark-on-surface">{ticketDetails.created_by.full_name}</p>
-                            {ticketDetails.created_by.role && <p className="text-xs text-primary font-semibold mt-0.5">{ticketDetails.created_by.role.role_name}</p>}
-                            {ticketDetails.created_by.employee_no && <p className="text-xs text-outline mt-0.5">ID: {ticketDetails.created_by.employee_no}</p>}
-                            <p className="text-xs text-outline mt-1">Raised on {new Date(ticketDetails.created_date).toLocaleString()}</p>
-                        </div>
-                        <div className="flex flex-col gap-1.5 items-end shrink-0">
-                            <div className="flex items-center gap-1.5 text-[10px] text-outline"><Building2 className="w-3 h-3" /><span>{ticketDetails.store.store_name}</span></div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-outline"><Wrench className="w-3 h-3" /><span>{ticketDetails.department.department_name}</span></div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-outline"><AlertCircle className="w-3 h-3" /><span>{ticketDetails.nature.nature_name}</span></div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ticketDetails.priority.level >= 2 ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
-                                {ticketDetails.priority.priority_name} Priority
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Approved/Rejected info */}
-                    {(ticketDetails.approved_by || ticketDetails.rejected_by) && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {ticketDetails.approved_by && (
-                                <div className="flex items-center gap-3 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
-                                    <AvatarCircle user={ticketDetails.approved_by} size="sm" />
-                                    <div>
-                                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Approved by</p>
-                                        <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">{ticketDetails.approved_by.full_name}</p>
-                                        {ticketDetails.approved_date && <p className="text-[10px] text-outline">{new Date(ticketDetails.approved_date).toLocaleString()}</p>}
-                                    </div>
+                {/* Modal Body Container */}
+                <div className="p-4 sm:p-5 space-y-4 overflow-y-auto scrollbar-thin flex-1">
+                    {modalLoading ? (
+                        /* Structural Skeleton Loader for Data Fetching */
+                        <div className="space-y-4 animate-pulse">
+                            <div className="p-3 sm:p-4 bg-surface dark:bg-dark-surface rounded border border-outline-variant dark:border-dark-outline-variant flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-outline-variant/40 dark:bg-dark-outline-variant/40 shrink-0" />
+                                <div className="space-y-1.5 flex-1">
+                                    <div className="h-3.5 bg-outline-variant/40 dark:bg-dark-outline-variant/40 rounded w-1/3" />
+                                    <div className="h-2.5 bg-outline-variant/30 dark:bg-dark-outline-variant/30 rounded w-1/4" />
                                 </div>
-                            )}
-                            {ticketDetails.rejected_by && (
-                                <div className="flex items-center gap-3 p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
-                                    <AvatarCircle user={ticketDetails.rejected_by} size="sm" />
-                                    <div>
-                                        <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">Rejected by</p>
-                                        <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">{ticketDetails.rejected_by.full_name}</p>
-                                        {ticketDetails.reject_reason && <p className="text-[10px] text-outline mt-0.5 italic">"{ticketDetails.reject_reason}"</p>}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Status action bar */}
-                    <div className="p-3 bg-surface dark:bg-dark-surface-container-low rounded-xl border border-outline-variant dark:border-dark-outline-variant flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-semibold text-outline mr-1">Status:</span>
-                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${statusColor(ticketDetails.status.status_name)}`}>
-                            {ticketDetails.status.status_name}
-                        </span>
-                        <div className="flex-1" />
-
-                        {ticketDetails.status.status_name === 'Open' && (
-                            <Can permission={['maintenance.approve_ticket', 'maintenance.reject_ticket']}>
-                                <button onClick={handleMoveToNextStatus} disabled={actionLoading} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50">
-                                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Approve
-                                </button>
-                                <button onClick={() => setShowRejectForm(true)} disabled={actionLoading} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50">
-                                    Reject
-                                </button>
-                            </Can>
-                        )}
-
-                        {ticketDetails.status.status_name === 'Approved' && (
-                            <button onClick={handleMoveToNextStatus} disabled={actionLoading} className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50">
-                                {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />} Start Progress
-                            </button>
-                        )}
-
-                        {ticketDetails.status.status_name === 'In Progress' && (
-                            <Can permission="maintenance.complete_ticket">
-                                <button onClick={handleMoveToNextStatus} disabled={actionLoading} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50">
-                                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Mark Completed
-                                </button>
-                            </Can>
-                        )}
-                    </div>
-
-                    {/* Rejection Form */}
-                    {showRejectForm && (
-                        <div className="p-4 border border-red-500/20 bg-red-500/5 rounded-xl space-y-3">
-                            <h4 className="text-xs font-bold text-red-600 dark:text-red-400">Rejection Reason</h4>
-                            <textarea rows={2} className="w-full text-sm bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none text-on-surface dark:text-dark-on-surface" placeholder="Enter reason..." value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
-                            <div className="flex gap-2 justify-end">
-                                <button onClick={() => setShowRejectForm(false)} className="px-3 py-1 text-xs border border-outline-variant rounded cursor-pointer text-on-surface dark:text-dark-on-surface">Cancel</button>
-                                <button onClick={() => handleUpdateStatus('Rejected', { reject_reason: rejectReason })} disabled={actionLoading} className="px-3 py-1 text-xs bg-red-600 text-white rounded cursor-pointer flex items-center gap-1">
-                                    {actionLoading && <Loader2 className="w-3 h-3 animate-spin" />} Confirm Reject
-                                </button>
+                            </div>
+                            <div className="h-24 bg-surface dark:bg-dark-surface rounded border border-outline-variant dark:border-dark-outline-variant p-3 sm:p-4 space-y-2">
+                                <div className="h-2.5 bg-outline-variant/40 dark:bg-dark-outline-variant/40 rounded w-1/6" />
+                                <div className="h-2.5 bg-outline-variant/30 dark:bg-dark-outline-variant/30 rounded w-full" />
+                                <div className="h-2.5 bg-outline-variant/30 dark:bg-dark-outline-variant/30 rounded w-2/3" />
                             </div>
                         </div>
-                    )}
-
-                    {/* Description */}
-                    <div>
-                        <h4 className="text-xs font-bold text-outline uppercase tracking-wider mb-1.5">Issue Description</h4>
-                        <p className="text-sm text-on-surface dark:text-dark-on-surface leading-relaxed p-4 bg-surface dark:bg-dark-surface rounded-xl border border-outline-variant whitespace-pre-wrap">
-                            {ticketDetails.description}
-                        </p>
-                    </div>
-
-                    {/* Before Repair */}
-                    {(issueMedia.length > 0 || hasIssueCategoryForDept) && (
+                    ) : (
                         <>
-                            <div>
-                                <div className="flex items-center justify-between mb-3">
-                                    <SectionTitle icon={<Camera className="w-4 h-4" />} label="Before Repair" />
-                                    {ticketDetails.status.status_name !== 'Rejected' && (
-                                        <Can permission="maintenance.update_before_repair">
-                                            <button onClick={() => setIsManageIssueMediaOpen(true)} className="flex items-center gap-1 text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-primary/20 transition-colors">
-                                                <Settings className="w-3.5 h-3.5" /> Manage Media
-                                            </button>
-                                        </Can>
+                            {/* Creator Information Card */}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 p-3 sm:p-4 bg-surface dark:bg-dark-surface rounded border border-outline-variant dark:border-dark-outline-variant">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <AvatarCircle user={ticketDetails.created_by} size="md" />
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.created_by.full_name}</p>
+                                        {ticketDetails.created_by.role && <p className="text-xs text-primary font-semibold mt-0.5">{ticketDetails.created_by.role.role_name}</p>}
+                                        {ticketDetails.created_by.employee_no && <p className="text-xs text-outline mt-0.5">ID: {ticketDetails.created_by.employee_no}</p>}
+                                        <p className="text-[11px] text-outline mt-1">Raised on {new Date(ticketDetails.created_date).toLocaleString()}</p>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap sm:flex-col gap-1.5 items-start sm:items-end shrink-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-outline-variant dark:border-dark-outline-variant w-full sm:w-auto">
+                                    <div className="flex items-center gap-2 text-xs text-outline"><Building2 className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.store.store_name}</span></div>
+                                    <div className="flex items-center gap-2 text-xs text-outline"><Wrench className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.department.department_name}</span></div>
+                                    <div className="flex items-center gap-2 text-xs text-outline"><AlertCircle className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.nature.nature_name}</span></div>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ticketDetails.priority.level >= 2 ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                                        {ticketDetails.priority.priority_name} Priority
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Approved / Rejected Notifications */}
+                            {(ticketDetails.approved_by || ticketDetails.rejected_by) && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {ticketDetails.approved_by && (
+                                        <div className="flex items-center gap-3 p-2.5 sm:p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+                                            <AvatarCircle user={ticketDetails.approved_by} size="sm" />
+                                            <div>
+                                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Approved by</p>
+                                                <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">{ticketDetails.approved_by.full_name}</p>
+                                                {ticketDetails.approved_date && <p className="text-[10px] text-outline">{new Date(ticketDetails.approved_date).toLocaleString()}</p>}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {ticketDetails.rejected_by && (
+                                        <div className="flex items-center gap-3 p-2.5 sm:p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                                            <AvatarCircle user={ticketDetails.rejected_by} size="sm" />
+                                            <div>
+                                                <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">Rejected by</p>
+                                                <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">{ticketDetails.rejected_by.full_name}</p>
+                                                {ticketDetails.reject_reason && <p className="text-[10px] text-outline mt-0.5 italic">"{ticketDetails.reject_reason}"</p>}
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
-                                <MediaGrid items={issueMedia} emptyLabel="No Before Repair uploaded yet" />
-                            </div>
-                            <Divider />
-                        </>
-                    )}
+                            )}
 
-                    {/* Allocated Persons */}
-                    {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (
-                        <div>
-                            <SectionTitle icon={<User className="w-4 h-4" />} label="Allocated Persons" />
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant pb-2 mb-4 gap-3">
-                                {allocations.length > 0 ? (
-                                    <div className="flex gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin">
-                                        {allocations.map(a => (
-                                            <button
-                                                key={a.allocation_id}
-                                                type="button"
-                                                onClick={() => setActiveWorkerId(a.worker.user_id)}
-                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap border cursor-pointer transition-all ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface border-outline-variant text-outline'}`}
-                                            >
-                                                <AvatarCircle user={a.worker} size="sm" />
-                                                <span>{a.worker.full_name}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-outline italic">No workers allocated yet.</p>
-                                )}
-
-                                <Can permission="maintenance.add_allocation">
-                                    <button onClick={() => setIsAssignModalOpen(true)} className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2 rounded-xl cursor-pointer shadow-sm shrink-0 hover:bg-primary-hover transition-colors">
-                                        <Plus className="w-4 h-4" /> Assign Worker
-                                    </button>
-                                </Can>
+                            {/* Description Section */}
+                            <div>
+                                <h4 className="text-xs font-bold text-outline uppercase tracking-wider mb-2">Issue Description</h4>
+                                <p className="text-xs sm:text-sm text-on-surface dark:text-dark-on-surface leading-relaxed p-3 sm:p-4 bg-surface dark:bg-dark-surface rounded-lg border border-outline-variant dark:border-dark-outline-variant whitespace-pre-wrap">
+                                    {ticketDetails.description}
+                                </p>
                             </div>
 
-                            {/* Selected Worker Content */}
-                            {(() => {
-                                const a = allocations.find(alloc => alloc.worker.user_id === activeWorkerId);
-                                if (!a) return null;
-
-                                const workerLogs = workLogs.filter(wl => wl.worker?.user_id === a.worker.user_id);
-                                const workerExpenses = expenses.filter(exp => exp.worker?.user_id === a.worker.user_id);
-                                const isMyWorker = (user as any)?.user_id === a.worker.user_id;
-
-                                return (
-                                    <div className="bg-surface dark:bg-dark-surface rounded-2xl border border-outline-variant overflow-hidden">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-outline-variant">
-                                            <div className="flex items-center gap-3">
-                                                <AvatarCircle user={a.worker} size="md" />
-                                                <div>
-                                                    <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface">{a.worker.full_name}</p>
-                                                    <div className="flex items-center gap-2 text-[10px] text-outline">
-                                                        {a.worker.role && <span>{a.worker.role.role_name}</span>}
-                                                        {a.worker.employee_no && <span>· ID: {a.worker.employee_no}</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-1 rounded-lg">{a.planned_hours}h Planned</span>
-                                                <Can permission="maintenance.change_allocation">
-                                                    <button onClick={() => { setEditingAllocation(a); setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' }); }} className="p-1.5 rounded-lg border border-outline-variant hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface">
-                                                        <Edit2 className="w-3.5 h-3.5" />
+                            {/* Before Repair Media Section */}
+                            {(issueMedia.length > 0 || hasIssueCategoryForDept) && (
+                                <>
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <SectionTitle icon={<Camera className="w-[18px] h-[18px]" />} label="Before Repair" />
+                                            {ticketDetails.status.status_name !== 'Rejected' && (
+                                                <Can permission="maintenance.update_before_repair">
+                                                    <button
+                                                        onClick={() => setIsManageIssueMediaOpen(true)}
+                                                        className="min-h-[15px] px-3 py-2 flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded-lg cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
+                                                    >
+                                                        <Settings className="w-4 h-4" /> Manage Media
                                                     </button>
                                                 </Can>
-                                            </div>
+                                            )}
                                         </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant">
-                                            {/* Work Logs Panel */}
-                                            <div className="p-4 space-y-4 bg-surface-container dark:bg-dark-surface-container">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Work Logs</p>
-                                                    <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
-                                                        <button onClick={() => setIsLogHoursModalOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 border border-primary text-primary text-[10px] font-bold rounded-lg cursor-pointer hover:bg-primary/10 transition-colors">
-                                                            <Plus className="w-3.5 h-3.5" /> Log Hours
-                                                        </button>
-                                                    </Can>
-                                                </div>
-                                                {workerLogs.length === 0 ? <p className="text-xs text-outline italic py-2">No hours logged yet.</p> : (
-                                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                                                        {workerLogs.map(wl => (
-                                                            <div key={wl.worklog_id} className="flex items-start justify-between text-xs p-3 bg-surface dark:bg-dark-surface rounded-xl border border-outline-variant/50">
-                                                                <div>
-                                                                    <p className="font-medium text-on-surface dark:text-dark-on-surface">{wl.work_done}</p>
-                                                                    <p className="text-[10px] text-outline mt-0.5">{new Date(wl.work_date).toLocaleDateString()}</p>
-                                                                </div>
-                                                                <div className="text-right flex flex-col items-end gap-1">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="font-bold text-primary">{wl.hours}h</span>
-                                                                        <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
-                                                                            <button onClick={() => { setEditingWorkLog(wl); setEditWorkLogForm({ hours: wl.hours, work_done: wl.work_done }); }} className="p-1 text-outline hover:text-primary cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
-                                                                        </Can>
-                                                                    </div>
-                                                                    <span className="text-[10px] text-emerald-600 font-bold">{wl.labour_amount} KWD</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Expenses Panel */}
-                                            <div className="p-4 space-y-4 bg-surface-container-low dark:bg-dark-surface-container-low">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" /> Logged Expenses</p>
-                                                    <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
-                                                        <button onClick={() => setIsAddExpenseModalOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 border border-primary text-primary text-[10px] font-bold rounded-lg cursor-pointer hover:bg-primary/10 transition-colors">
-                                                            <Plus className="w-3.5 h-3.5" /> Add Expense
-                                                        </button>
-                                                    </Can>
-                                                </div>
-                                                {workerExpenses.length === 0 ? <p className="text-xs text-outline italic py-2">No expenses logged yet.</p> : (
-                                                    <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                                                        {workerExpenses.map(exp => (
-                                                            <div key={exp.expense_id} className="text-xs p-3 bg-surface dark:bg-dark-surface rounded-xl border border-outline-variant/50">
-                                                                <div className="flex items-start justify-between gap-2">
-                                                                    <div>
-                                                                        <p className="font-semibold text-on-surface dark:text-dark-on-surface">{exp.expense_type.expense_name}</p>
-                                                                        {exp.remarks && <p className="text-outline mt-0.5 italic">{exp.remarks}</p>}
-                                                                    </div>
-                                                                    <div className="flex flex-col items-end gap-1">
-                                                                        <span className="font-bold text-emerald-600">{exp.amount} KWD</span>
-                                                                        <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
-                                                                            <button onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }} className="p-1 text-outline hover:text-primary cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
-                                                                        </Can>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
+                                        <MediaGrid items={issueMedia} emptyLabel="No Before Repair media uploaded yet" />
                                     </div>
-                                );
-                            })()}
-                        </div>
-                    )}
+                                    <Divider />
+                                </>
+                            )}
 
-                    {/* After Repair */}
-                    {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (completedMedia.length > 0 || hasCompletedCategoryForDept) && (
-                        <div>
-                            <div className="flex items-center justify-between mb-3">
-                                <SectionTitle icon={<CheckCircle2 className="w-4 h-4" />} label="After Repair" />
-                                <Can permission="maintenance.update_after_repair">
-                                    <button onClick={() => setIsManageCompletedMediaOpen(true)} className="flex items-center gap-1 text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-primary/20 transition-colors">
-                                        <Settings className="w-3.5 h-3.5" /> Manage Media
-                                    </button>
-                                </Can>
-                            </div>
-                            <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" />
-                        </div>
+                            {/* Allocated Personnel Section */}
+                            {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (
+                                <div>
+                                    <SectionTitle icon={<User className="w-[18px] h-[18px]" />} label="Allocated" />
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-2.5 mb-3.5 gap-2.5">
+                                        {allocations.length > 0 ? (
+                                            <div className="flex gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin">
+                                                {allocations.map(a => (
+                                                    <button
+                                                        key={a.allocation_id}
+                                                        type="button"
+                                                        onClick={() => setActiveWorkerId(a.worker.user_id)}
+                                                        className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
+                                                    >
+                                                        <AvatarCircle user={a.worker} size="sm" />
+                                                        <span>{user.user_id === a.worker.user_id ? "You" : a.worker.full_name}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-outline italic">No personnel allocated to this ticket yet.</p>
+                                        )}
+
+                                        <Can permission="maintenance.add_allocation">
+                                            <button
+                                                onClick={() => setIsAssignModalOpen(true)}
+                                                className="min-h-[15px] flex items-center justify-center gap-2 bg-primary text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer shadow-xs shrink-0 hover:bg-primary-hover active:scale-95 transition-all touch-manipulation"
+                                            >
+                                                <Plus className="w-4 h-4" /> Assign Worker
+                                            </button>
+                                        </Can>
+                                    </div>
+
+                                    {/* Selected Worker Panel */}
+                                    {(() => {
+                                        const a = allocations.find(alloc => alloc.worker.user_id === activeWorkerId);
+                                        if (!a) return null;
+
+                                        const workerLogs = workLogs.filter(wl => wl.worker?.user_id === a.worker.user_id);
+                                        const workerExpenses = expenses.filter(exp => exp.worker?.user_id === a.worker.user_id);
+                                        const isMyWorker = (user as any)?.user_id === a.worker.user_id;
+
+                                        return (
+                                            <div className="bg-surface dark:bg-dark-surface rounded-2xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-outline-variant dark:border-dark-outline-variant">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <AvatarCircle user={a.worker} size="md" />
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">{a.worker.full_name}</p>
+                                                            <div className="flex items-center gap-2 text-[10px] text-outline">
+                                                                {a.worker.role && <span>{a.worker.role.role_name}</span>}
+                                                                {a.worker.employee_no && <span>· ID: {a.worker.employee_no}</span>}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] bg-primary/10 text-primary font-bold px-2.5 py-1.5 rounded-lg">{a.planned_hours}h Planned</span>
+                                                        <Can permission="maintenance.change_allocation">
+                                                            <button
+                                                                onClick={() => { setEditingAllocation(a); setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' }); }}
+                                                                className="min-h-[15px] min-w-[44px] flex items-center justify-center rounded border border-outline-variant dark:border-dark-outline-variant hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface active:scale-95 transition-transform"
+                                                                aria-label="Edit Allocation"
+                                                            >
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </button>
+                                                        </Can>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant dark:divide-dark-outline-variant">
+                                                    {/* Work Logs Sub-Panel */}
+                                                    <div className="p-4 space-y-4 bg-surface-container dark:bg-dark-surface-container">
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-2"><Clock className="w-4 h-4" /> Work Logs</p>
+                                                            <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
+                                                                <button
+                                                                    onClick={() => setIsLogHoursModalOpen(true)}
+                                                                    className="min-h-[15px] flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                >
+                                                                    <Plus className="w-4 h-4" /> Log Hours
+                                                                </button>
+                                                            </Can>
+                                                        </div>
+                                                        {workerLogs.length === 0 ? (
+                                                            <div className="p-4 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded">
+                                                                <Clock className="w-6 h-6 mx-auto text-outline mb-1" />
+                                                                <p className="text-xs text-outline italic">No work hours logged yet.</p>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-2 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                                                                {workerLogs.map(wl => (
+                                                                    <div key={wl.worklog_id} className="flex items-start justify-between text-xs p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
+                                                                        <div>
+                                                                            <p className="font-medium text-on-surface dark:text-dark-on-surface">{wl.work_done}</p>
+                                                                            <p className="text-[10px] text-outline mt-0.5">{new Date(wl.work_date).toLocaleDateString()}</p>
+                                                                        </div>
+                                                                        <div className="text-right flex flex-col items-end gap-1">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="font-bold text-primary">{wl.hours}h</span>
+                                                                                <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
+                                                                                    <button
+                                                                                        onClick={() => { setEditingWorkLog(wl); setEditWorkLogForm({ hours: wl.hours, work_done: wl.work_done }); }}
+                                                                                        className="p-1 rounded-lg text-outline hover:text-primary cursor-pointer active:scale-95"
+                                                                                        aria-label="Edit Work Log"
+                                                                                    >
+                                                                                        <Edit2 className="w-4 h-4" />
+                                                                                    </button>
+                                                                                </Can>
+                                                                            </div>
+                                                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">{wl.labour_amount} KWD</span>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Expenses Sub-Panel */}
+                                                    <div className="p-4 space-y-4 bg-surface-container-low dark:bg-dark-surface-container-low">
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-4 h-4" /> Logged Expenses</p>
+                                                            <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
+                                                                <button
+                                                                    onClick={() => setIsAddExpenseModalOpen(true)}
+                                                                    className="min-h-[15px] flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                >
+                                                                    <Plus className="w-4 h-4" /> Add Expense
+                                                                </button>
+                                                            </Can>
+                                                        </div>
+                                                        {workerExpenses.length === 0 ? (
+                                                            <div className="p-4 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded">
+                                                                <DollarSign className="w-6 h-6 mx-auto text-outline mb-1" />
+                                                                <p className="text-xs text-outline italic">No expenses logged yet.</p>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                                                                {workerExpenses.map(exp => (
+                                                                    <div key={exp.expense_id} className="text-xs p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
+                                                                        <div className="flex items-start justify-between gap-2">
+                                                                            <div>
+                                                                                <p className="font-semibold text-on-surface dark:text-dark-on-surface">{exp.expense_type.expense_name}</p>
+                                                                                {exp.remarks && <p className="text-outline mt-0.5 italic">{exp.remarks}</p>}
+                                                                            </div>
+                                                                            <div className="flex flex-col items-end gap-1">
+                                                                                <span className="font-bold text-emerald-600 dark:text-emerald-400">{exp.amount} KWD</span>
+                                                                                <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
+                                                                                    <button
+                                                                                        onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }}
+                                                                                        className="p-1 rounded-lg text-outline hover:text-primary cursor-pointer active:scale-95"
+                                                                                        aria-label="Edit Expense"
+                                                                                    >
+                                                                                        <Edit2 className="w-4 h-4" />
+                                                                                    </button>
+                                                                                </Can>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+
+                            {/* After Repair Media Section */}
+                            {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (completedMedia.length > 0 || hasCompletedCategoryForDept) && (
+                                <div>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <SectionTitle icon={<CheckCircle2 className="w-[18px] h-[18px]" />} label="After Repair" />
+                                        <Can permission="maintenance.update_after_repair">
+                                            <button
+                                                onClick={() => setIsManageCompletedMediaOpen(true)}
+                                                className="min-h-[15px] px-3 py-2 flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded-lg cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
+                                            >
+                                                <Settings className="w-4 h-4" /> Manage Media
+                                            </button>
+                                        </Can>
+                                    </div>
+                                    <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" />
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
+
+                {/* Status Workflow Action Bar - Sticky Footer */}
+                {(!modalLoading && (['Open', 'Approved', 'In Progress'].includes(ticketDetails.status.status_name) || showRejectForm)) && (
+                    <div className="sticky bottom-0 bg-surface-container border-t border-outline-variant px-4 sm:px-5 py-3 flex flex-col gap-2 shrink-0 z-20">
+                        {showRejectForm ? (
+                            <div className="p-2.5 border border-error/20 bg-error-container/10 rounded flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                <input
+                                    type="text"
+                                    className="flex-1 text-xs bg-surface border border-outline-variant p-2 rounded outline-none text-on-surface focus:border-error placeholder:text-on-surface-variant/60 min-h-[36px]"
+                                    placeholder="Provide specific reason for ticket rejection..."
+                                    value={rejectReason}
+                                    onChange={e => setRejectReason(e.target.value)}
+                                />
+                                <div className="flex items-center gap-2 shrink-0 justify-end">
+                                    <button
+                                        onClick={() => setShowRejectForm(false)}
+                                        className="min-h-[36px] px-3.5 py-2 text-xs border border-outline-variant rounded cursor-pointer text-on-surface hover:bg-surface-container-high transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => handleUpdateStatus('Rejected', { reject_reason: rejectReason })}
+                                        disabled={actionLoading}
+                                        className="min-h-[36px] px-4 py-2 text-xs bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded font-medium cursor-pointer flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                    >
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />} Confirm Reject
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-end gap-2">
+                                {ticketDetails.status.status_name === 'Open' && (
+                                    <div className="flex items-center gap-2">
+                                        <Can permission="maintenance.can_move_open_to_in_progress">
+                                            <button
+                                                onClick={handleMoveToNextStatus}
+                                                disabled={actionLoading}
+                                                className="min-h-[36px] px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                                            >
+                                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <CheckCircle2 className="w-4 h-4" />} Approve
+                                            </button>
+                                        </Can>
+                                        <Can permission="maintenance.can_move_open_to_rejected">
+                                            <button
+                                                onClick={() => setShowRejectForm(true)}
+                                                disabled={actionLoading}
+                                                className="min-h-[36px] px-4 py-2 bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                                            >
+                                                Reject
+                                            </button>
+                                        </Can>
+                                    </div>
+                                )}
+
+                                {ticketDetails.status.status_name === 'Approved' && (
+                                    <button
+                                        onClick={handleMoveToNextStatus}
+                                        disabled={actionLoading}
+                                        className="min-h-[36px] px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                                    >
+                                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Clock className="w-4 h-4" />} Start Progress
+                                    </button>
+                                )}
+
+                                {ticketDetails.status.status_name === 'In Progress' && (
+                                    <Can permission="maintenance.can_move_in_progress_to_completed">
+                                        <button
+                                            onClick={handleMoveToNextStatus}
+                                            disabled={actionLoading}
+                                            className="min-h-[36px] px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+                                        >
+                                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <CheckCircle2 className="w-4 h-4" />} Mark Completed
+                                        </button>
+                                    </Can>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </motion.div>
+
 
             {/* Popups & Sub-Modals */}
             <AnimatePresence>
                 {/* 1. ASSIGN WORKER MODAL */}
                 {isAssignModalOpen && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAssignModalOpen(false)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-6 rounded-2xl shadow-2xl">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAssignModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Assign Worker</h3>
-                                <button onClick={() => setIsAssignModalOpen(false)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setIsAssignModalOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
-                            <form onSubmit={handleAddAllocation} className="space-y-4">
+                            {/* <form onSubmit={handleAddAllocation} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Select Worker</label>
-                                    <select required value={newAllocation.worker_id} onChange={e => setNewAllocation({ ...newAllocation, worker_id: e.target.value })} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface">
+                                    <select required value={newAllocation.worker_id} onChange={e => setNewAllocation({ ...newAllocation, worker_id: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                         <option value="">Select Worker to Assign</option>
                                         {workers.map(w => <option key={w.user_id} value={w.user_id}>{w.full_name}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Planned Hours</label>
-                                    <input type="number" step="0.5" min="0.5" required value={newAllocation.planned_hours} onChange={e => setNewAllocation({ ...newAllocation, planned_hours: e.target.value })} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <input type="number" step="0.5" min="0.5" inputMode="decimal" required value={newAllocation.planned_hours} onChange={e => setNewAllocation({ ...newAllocation, planned_hours: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Assignment Remarks</label>
-                                    <input type="text" value={newAllocation.remarks} onChange={e => setNewAllocation({ ...newAllocation, remarks: e.target.value })} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" placeholder="Remarks (optional)" />
+                                    <input type="text" value={newAllocation.remarks} onChange={e => setNewAllocation({ ...newAllocation, remarks: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" placeholder="Remarks (optional)" />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
-                                    <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high">Cancel</button>
-                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-primary-hover">
-                                        {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Assign Worker
+                                    <button type="button" onClick={() => setIsAssignModalOpen(false)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                    <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Assign Worker
+                                    </button>
+                                </div>
+                            </form> */}
+
+
+
+                            <form onSubmit={handleAddAllocation} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-outline mb-1.5">Select Worker</label>
+                                    <select required value={newAllocation.worker_id}
+                                        disabled={actionLoading}
+                                        onChange={e => setNewAllocation({ ...newAllocation, worker_id: e.target.value })}
+                                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface">
+                                        <option value="">Select Worker to Assign</option>
+                                        {(() => {
+                                            const ticketDeptId = Number(selectedTicket.department?.department_id ?? selectedTicket.department);
+                                            const allocatedIds = new Set(allocations.map(a => a.worker.user_id));
+
+                                            const skilledList = natureWorkers
+                                                .filter((nw: any) => nw.worker && !allocatedIds.has(nw.worker.user_id) && isWorkerInDepartment(nw.worker, ticketDeptId))
+                                                .map((nw: any) => nw.worker);
+                                            const skilledMap = new Map(skilledList.map((w: any) => [w.user_id, w]));
+                                            const uniqueSkilledList = Array.from(skilledMap.values());
+                                            const skilledIds = new Set(uniqueSkilledList.map((w: any) => w.user_id));
+
+                                            const otherList = workers.filter(w => {
+                                                if (skilledIds.has(w.user_id) || allocatedIds.has(w.user_id)) return false;
+                                                return isWorkerInDepartment(w, ticketDeptId);
+                                            });
+
+                                            return (
+                                                <>
+                                                    {uniqueSkilledList.length > 0 && (
+                                                        <optgroup label={`⭐ Skilled — ${selectedTicket.nature.nature_name}`}>
+                                                            {uniqueSkilledList.map((w: any) => (
+                                                                <option key={w.user_id} value={w.user_id}>{w.full_name}</option>
+                                                            ))}
+                                                        </optgroup>
+                                                    )}
+                                                    {otherList.length > 0 && (
+                                                        <optgroup label="Other Workers in Department">
+                                                            {otherList.map(w => (
+                                                                <option key={w.user_id} value={w.user_id}>{w.full_name}</option>
+                                                            ))}
+                                                        </optgroup>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-outline mb-1.5">Planned Hours</label>
+                                        <input type="number" step="0.5" min="0.5" required value={newAllocation.planned_hours}
+                                            disabled={actionLoading}
+                                            onChange={e => setNewAllocation({ ...newAllocation, planned_hours: e.target.value })}
+                                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                                            placeholder="Planned hours" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-outline mb-1.5">Assignment Remarks</label>
+                                        <input type="text" value={newAllocation.remarks}
+                                            disabled={actionLoading}
+                                            onChange={e => setNewAllocation({ ...newAllocation, remarks: e.target.value })}
+                                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                                            placeholder="Assignment instructions (optional)" />
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high transition-colors cursor-pointer">
+                                        Cancel
+                                    </button>
+                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                                        {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                        Assign Worker
                                     </button>
                                 </div>
                             </form>
@@ -1010,12 +1193,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 2. LOG WORK HOURS MODAL */}
                 {isLogHoursModalOpen && activeWorkerId && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsLogHoursModalOpen(false)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-6 rounded-2xl shadow-2xl">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsLogHoursModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Log Work Hours</h3>
-                                <button onClick={() => setIsLogHoursModalOpen(false)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setIsLogHoursModalOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <p className="text-xs text-outline mb-4">
                                 Logging hours for:{' '}
@@ -1026,16 +1209,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <form onSubmit={e => handleAddWorkLog(e, activeWorkerId)} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Hours Worked</label>
-                                    <input required name="hours" type="number" step="0.5" min="0.5" placeholder="e.g. 3.5" disabled={actionLoading} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <input required name="hours" type="number" step="0.5" min="0.5" inputMode="decimal" placeholder="e.g. 3.5" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Work Description</label>
-                                    <textarea required name="work_done" rows={3} placeholder="Describe tasks completed..." disabled={actionLoading} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <textarea required name="work_done" rows={3} placeholder="Describe tasks completed..." disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
-                                    <button type="button" onClick={() => setIsLogHoursModalOpen(false)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high">Cancel</button>
-                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-primary-hover">
-                                        {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Submit Log
+                                    <button type="button" onClick={() => setIsLogHoursModalOpen(false)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                    <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Submit Log
                                     </button>
                                 </div>
                             </form>
@@ -1045,12 +1228,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 3. ADD EXPENSE MODAL */}
                 {isAddExpenseModalOpen && activeWorkerId && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAddExpenseModalOpen(false)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-6 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAddExpenseModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Add Expense</h3>
-                                <button onClick={() => setIsAddExpenseModalOpen(false)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setIsAddExpenseModalOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <p className="text-xs text-outline mb-4">
                                 Adding expense for:{' '}
@@ -1061,7 +1244,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <form onSubmit={e => handleAddExpense(e, activeWorkerId)} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                    <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => setSelectedExpenseTypeId(e.target.value)} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface">
+                                    <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => setSelectedExpenseTypeId(e.target.value)} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                         <option value="">Select Expense Type</option>
                                         {expenseTypes
                                             .filter(et => (et.department?.department_id ?? et.department) === ticketDetails.department.department_id)
@@ -1074,7 +1257,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                    <input required name="amount" type="number" step="0.01" min="0" placeholder="0.00" disabled={actionLoading} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <input required name="amount" type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 {(() => {
                                     const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(selectedExpenseTypeId));
@@ -1086,7 +1269,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <div>
                                             <label className="block text-xs font-semibold text-outline mb-1.5">Receipt Files</label>
                                             <div
-                                                className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-xl p-4 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
+                                                className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg p-4 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
                                                 onClick={() => !actionLoading && document.getElementById(`receipt-input-modal-${activeWorkerId}`)?.click()}
                                             >
                                                 <input
@@ -1110,9 +1293,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             {(expenseFiles[activeWorkerId] || []).length > 0 && (
                                                 <div className="flex flex-wrap gap-1.5 mt-2">
                                                     {(expenseFiles[activeWorkerId] || []).map((f, idx) => (
-                                                        <div key={idx} className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-medium">
+                                                        <div key={idx} className="flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-medium">
                                                             <span className="truncate max-w-[120px]">{f.name}</span>
-                                                            <button type="button" disabled={actionLoading} onClick={() => setExpenseFiles(prev => ({ ...prev, [activeWorkerId]: prev[activeWorkerId].filter((_, i) => i !== idx) }))} className="text-primary/60 hover:text-red-500 cursor-pointer">✕</button>
+                                                            <button type="button" disabled={actionLoading} onClick={() => setExpenseFiles(prev => ({ ...prev, [activeWorkerId]: prev[activeWorkerId].filter((_, i) => i !== idx) }))} className="text-primary/60 hover:text-red-500 cursor-pointer p-1">✕</button>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1122,12 +1305,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 })()}
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
-                                    <input name="remarks" type="text" placeholder="Remarks (optional)" disabled={actionLoading} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <input name="remarks" type="text" placeholder="Remarks (optional)" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
-                                    <button type="button" onClick={() => setIsAddExpenseModalOpen(false)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high">Cancel</button>
-                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-primary-hover">
-                                        {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Add Expense
+                                    <button type="button" onClick={() => setIsAddExpenseModalOpen(false)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                    <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Add Expense
                                     </button>
                                 </div>
                             </form>
@@ -1137,26 +1320,30 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 4. EDIT ALLOCATION MODAL */}
                 {editingAllocation && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingAllocation(null)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-6 rounded-2xl shadow-2xl">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingAllocation(null)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Allocation</h3>
-                                <button onClick={() => setEditingAllocation(null)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setEditingAllocation(null)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <form onSubmit={handleUpdateAllocation} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Planned Hours</label>
-                                    <input type="number" step="0.5" min="0.5" required className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" value={editAllocationForm.planned_hours} onChange={e => setEditAllocationForm({ ...editAllocationForm, planned_hours: e.target.value })} />
+                                    <input type="number" step="0.5" min="0.5" inputMode="decimal" required className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" value={editAllocationForm.planned_hours} onChange={e => setEditAllocationForm({ ...editAllocationForm, planned_hours: e.target.value })} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
-                                    <input type="text" className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" value={editAllocationForm.remarks} onChange={e => setEditAllocationForm({ ...editAllocationForm, remarks: e.target.value })} placeholder="Remarks (optional)" />
+                                    <input type="text" className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" value={editAllocationForm.remarks} onChange={e => setEditAllocationForm({ ...editAllocationForm, remarks: e.target.value })} placeholder="Remarks (optional)" />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
-                                    <button type="button" onClick={() => { if (window.confirm('Are you sure you want to remove this worker allocation?')) handleDeleteAllocation(editingAllocation.allocation_id); }} className="px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto">Remove</button>
-                                    <button type="button" onClick={() => setEditingAllocation(null)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high">Cancel</button>
-                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover">Save</button>
+                                    <button type="button" onClick={() => { if (window.confirm('Are you sure you want to remove this worker allocation?')) handleDeleteAllocation(editingAllocation.allocation_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto flex items-center gap-2">
+                                        <Trash2 className="w-4 h-4" /> Remove
+                                    </button>
+                                    <button type="button" onClick={() => setEditingAllocation(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                    <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
+                                    </button>
                                 </div>
                             </form>
                         </motion.div>
@@ -1165,26 +1352,30 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 5. EDIT WORK LOG MODAL */}
                 {editingWorkLog && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingWorkLog(null)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-6 rounded-2xl shadow-2xl">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingWorkLog(null)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Work Log</h3>
-                                <button onClick={() => setEditingWorkLog(null)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setEditingWorkLog(null)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <form onSubmit={handleUpdateWorkLog} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Hours Worked</label>
-                                    <input type="number" step="0.5" min="0.5" required className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" value={editWorkLogForm.hours} onChange={e => setEditWorkLogForm({ ...editWorkLogForm, hours: e.target.value })} />
+                                    <input type="number" step="0.5" min="0.5" inputMode="decimal" required className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" value={editWorkLogForm.hours} onChange={e => setEditWorkLogForm({ ...editWorkLogForm, hours: e.target.value })} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Description</label>
-                                    <textarea required rows={3} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" value={editWorkLogForm.work_done} onChange={e => setEditWorkLogForm({ ...editWorkLogForm, work_done: e.target.value })} />
+                                    <textarea required rows={3} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" value={editWorkLogForm.work_done} onChange={e => setEditWorkLogForm({ ...editWorkLogForm, work_done: e.target.value })} />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
-                                    <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this work log?')) handleDeleteWorkLog(editingWorkLog.worklog_id); }} className="px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto">Delete Log</button>
-                                    <button type="button" onClick={() => setEditingWorkLog(null)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high">Cancel</button>
-                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover">Save</button>
+                                    <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this work log?')) handleDeleteWorkLog(editingWorkLog.worklog_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto flex items-center gap-2">
+                                        <Trash2 className="w-4 h-4" /> Delete Log
+                                    </button>
+                                    <button type="button" onClick={() => setEditingWorkLog(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                    <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
+                                    </button>
                                 </div>
                             </form>
                         </motion.div>
@@ -1193,17 +1384,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 6. EDIT EXPENSE MODAL */}
                 {editingExpense && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingExpense(null)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-6 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingExpense(null)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Expense</h3>
-                                <button onClick={() => setEditingExpense(null)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setEditingExpense(null)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <form onSubmit={handleUpdateExpense} className="space-y-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                    <select required value={editExpenseForm.expense_type_id} onChange={e => setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value })} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface">
+                                    <select required value={editExpenseForm.expense_type_id} onChange={e => setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                         <option value="">Expense Type</option>
                                         {expenseTypes
                                             .filter(et => (et.department?.department_id ?? et.department) === ticketDetails.department.department_id)
@@ -1216,11 +1407,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                    <input type="number" step="0.01" min="0" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <input type="number" step="0.01" min="0" inputMode="decimal" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
-                                    <input type="text" value={editExpenseForm.remarks} onChange={e => setEditExpenseForm({ ...editExpenseForm, remarks: e.target.value })} placeholder="Remarks (optional)" className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
+                                    <input type="text" value={editExpenseForm.remarks} onChange={e => setEditExpenseForm({ ...editExpenseForm, remarks: e.target.value })} placeholder="Remarks (optional)" className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                 </div>
                                 <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
                                     <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Manage Receipt Attachments</h4>
@@ -1251,7 +1442,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                         return (
                                             <div
-                                                className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-xl p-3 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
+                                                className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
                                                 onClick={() => !actionLoading && document.getElementById(`receipt-edit-upload-${editingExpense.expense_id}`)?.click()}
                                             >
                                                 <input
@@ -1266,15 +1457,19 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         e.target.value = '';
                                                     }}
                                                 />
-                                                <p className="text-[11px] text-outline">📎 Tap to upload and attach a new receipt</p>
+                                                <p className="text-xs text-outline">📎 Tap to upload and attach a new receipt</p>
                                             </div>
                                         );
                                     })()}
                                 </div>
                                 <div className="flex justify-end gap-2 pt-4 border-t border-outline-variant dark:border-dark-outline-variant">
-                                    <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this expense?')) handleDeleteExpense(editingExpense.expense_id); }} className="px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto">Delete Expense</button>
-                                    <button type="button" onClick={() => setEditingExpense(null)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high">Cancel</button>
-                                    <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover">Save</button>
+                                    <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this expense?')) handleDeleteExpense(editingExpense.expense_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto flex items-center gap-2">
+                                        <Trash2 className="w-4 h-4" /> Delete Expense
+                                    </button>
+                                    <button type="button" onClick={() => setEditingExpense(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                    <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
+                                    </button>
                                 </div>
                             </form>
                         </motion.div>
@@ -1283,20 +1478,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 7. MANAGE BEFORE REPAIR MODAL */}
                 {isManageIssueMediaOpen && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageIssueMediaOpen(false)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-6 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageIssueMediaOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage Before Repair</h3>
-                                <button onClick={() => setIsManageIssueMediaOpen(false)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setIsManageIssueMediaOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <div className="space-y-4">
                                 <MediaGrid items={issueMedia} emptyLabel="No Before Repair uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
-                                <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant">
+                                <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
                                     <input type="file" accept="image/*,video/*" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" id="upload-issue-media-popup" />
-                                    <label htmlFor="upload-issue-media-popup" className={`w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-xl cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
-                                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />} Upload New Issue Photo / Video
+                                    <label htmlFor="upload-issue-media-popup" className={`w-full min-h-[48px] flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary active:scale-[0.99] transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
+                                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Camera className="w-4 h-4" />} Upload New Issue Photo / Video
                                     </label>
+                                    <VoiceRecorder 
+                                        onSave={(voiceFile) => uploadMedia(voiceFile, 'Before Repair')}
+                                        placeholderText="Record a voice note to attach (Before Repair)"
+                                    />
                                 </div>
                             </div>
                         </motion.div>
@@ -1305,20 +1504,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* 8. MANAGE AFTER REPAIR MODAL */}
                 {isManageCompletedMediaOpen && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageCompletedMediaOpen(false)} className="absolute inset-0 bg-black" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-6 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
+                    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageCompletedMediaOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage After Repair</h3>
-                                <button onClick={() => setIsManageCompletedMediaOpen(false)} className="p-1 rounded text-outline hover:bg-surface-container-high"><X className="w-4 h-4" /></button>
+                                <button onClick={() => setIsManageCompletedMediaOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                             </div>
                             <div className="space-y-4">
                                 <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
-                                <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant">
+                                <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
                                     <input type="file" accept="image/*,video/*" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" id="upload-completed-media-popup" />
-                                    <label htmlFor="upload-completed-media-popup" className={`w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-xl cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
-                                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />} Upload After Repair / Completion Photo
+                                    <label htmlFor="upload-completed-media-popup" className={`w-full min-h-[48px] flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary active:scale-[0.99] transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
+                                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Camera className="w-4 h-4" />} Upload After Repair / Completion Photo
                                     </label>
+                                    <VoiceRecorder 
+                                        onSave={(voiceFile) => uploadMedia(voiceFile, 'After Repair')}
+                                        placeholderText="Record a voice note to attach (After Repair)"
+                                    />
                                 </div>
                             </div>
                         </motion.div>

@@ -1,31 +1,98 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { motion } from 'framer-motion';
-import { Search, Plus, AlertTriangle, Eye, Loader2, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+    Search, Plus, AlertTriangle, FileText,
+    ChevronLeft, ChevronRight, RefreshCw, Download, Filter,
+    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User
+} from 'lucide-react';
 
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, type ColDef } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
+import type { ColDef } from 'ag-grid-community';
 
 import Can from '@/hooks/Can';
-
 import {
-    API_URL, type Ticket, statusColor
+    API_URL, statusColor, getMediaUrl
 } from './TicketsTypesAndComponents';
+import type { Ticket } from './TicketsTypesAndComponents';
 import { TicketDetailModal } from './TicketDetailModal';
+import { CreateTicketModal } from './RaiseSupportTicketForm';
 import { DateRangePickerCard } from './DateRangePickerCard';
 import { usePermission } from '@/hooks/usePermission';
 import type { RootState } from '@/store';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+// ─── AG Grid v36 Theming API ─────────────────────────────────────────────────
+const appTheme = themeQuartz.withParams({
+    fontFamily: 'Inter, sans-serif',
+    fontSize: 13,
+    rowHeight: 52,
+    headerHeight: 44,
+    cellHorizontalPaddingScale: 1.4,
+    backgroundColor: '#ffffff',
+    foregroundColor: '#191c1d',
+    headerBackgroundColor: '#f3f4f5',
+    headerTextColor: '#414754',
+    rowHoverColor: '#e7e8e9',
+    borderColor: '#E0E2E6',
+    accentColor: '#1A73E8',
+    spacing: 6,
+    wrapperBorderRadius: 0,
+});
+
+// ─── Skeleton loader — mirrors AG Grid header + rows ─────────────────────────
+const SkeletonGrid: React.FC = () => (
+    <div className="border border-outline-variant rounded overflow-hidden">
+        <div className="h-11 bg-surface-container-low border-b border-outline-variant flex items-center px-4 gap-6">
+            {[160, 140, 200, 130, 140, 140, 110].map((w, i) => (
+                <div key={i} className="h-3 bg-outline-variant rounded animate-pulse" style={{ width: w }} />
+            ))}
+        </div>
+        {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-[52px] border-b border-outline-variant flex items-center px-4 gap-6 bg-surface-container">
+                {[80, 120, 180, 70, 80, 90, 60].map((w, j) => (
+                    <div
+                        key={j}
+                        className="h-3 bg-surface-container-high rounded animate-pulse"
+                        style={{ width: w, animationDelay: `${i * 60 + j * 20}ms` }}
+                    />
+                ))}
+            </div>
+        ))}
+    </div>
+);
+
+// ─── Empty state ─────────────────────────────────────────────────────────────
+const EmptyState: React.FC<{ onClear: () => void }> = ({ onClear }) => (
+    <div className="flex flex-col items-center justify-center py-16 gap-3 border border-t-0 border-outline-variant rounded-b bg-surface-container">
+        <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center">
+            <FileText className="w-6 h-6 text-on-surface-variant" />
+        </div>
+        <div className="text-sm font-semibold text-on-surface">No Tickets Found</div>
+        <p className="text-xs text-on-surface-variant max-w-xs text-center">
+            Try adjusting your search or filters, or raise a new support ticket.
+        </p>
+        <button onClick={onClear} className="mt-1 text-xs font-semibold text-primary hover:underline">
+            Clear all filters
+        </button>
+    </div>
+);
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export const TicketsView: React.FC = () => {
     const { subpage } = useParams<{ subpage: string }>();
     const navigate = useNavigate();
     const { token, user } = useSelector((state: RootState) => state.auth);
     const { hasPermission } = usePermission();
 
-    // Primary Lists
+    const overflowRef = useRef<HTMLDivElement>(null);
+    const [overflowOpen, setOverflowOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+    // Data lists
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [stores, setStores] = useState<any[]>([]);
     const [departments, setDepartments] = useState<any[]>([]);
@@ -35,30 +102,155 @@ export const TicketsView: React.FC = () => {
     const [subDepartments, setSubDepartments] = useState<any[]>([]);
     const [expenseTypes, setExpenseTypes] = useState<any[]>([]);
 
-    // Filters & Pagination
+    // Helper: compute first and last day of current month
+    const getCurrentMonthRange = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const firstDay = `${year}-${month}-01`;
+        const lastDayObj = new Date(year, now.getMonth() + 1, 0);
+        const lastDayStr = String(lastDayObj.getDate()).padStart(2, '0');
+        const lastDay = `${year}-${month}-${lastDayStr}`;
+        return { fromDate: firstDay, toDate: lastDay };
+    };
+
+    // Filters & pagination
     const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [filterStore, setFilterStore] = useState('');
     const [filterDept, setFilterDept] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
-    const [fromDate, setFromDate] = useState('');
-    const [toDate, setToDate] = useState('');
+    const [fromDate, setFromDate] = useState<string>(() => {
+        const savedFrom = localStorage.getItem('ticket-filter-from-date');
+        if (savedFrom !== null) return savedFrom;
+        return getCurrentMonthRange().fromDate;
+    });
+    const [toDate, setToDate] = useState<string>(() => {
+        const savedTo = localStorage.getItem('ticket-filter-to-date');
+        if (savedTo !== null) return savedTo;
+        return getCurrentMonthRange().toDate;
+    });
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
+    const [pageSize, setPageSize] = useState(25);
     const [totalCount, setTotalCount] = useState(0);
 
-    // Ticket Selection State
+    // View mode (table or kanban) with localStorage persistence
+    const [viewMode, setViewMode] = useState<'table' | 'kanban'>(() => {
+        const saved = localStorage.getItem('ticket-view-mode');
+        return (saved === 'kanban' || saved === 'table') ? saved : 'table';
+    });
+
+    const handleViewModeChange = (mode: 'table' | 'kanban') => {
+        setViewMode(mode);
+        localStorage.setItem('ticket-view-mode', mode);
+    };
+
+    // Drag and Drop state
+    const [draggingTicketId, setDraggingTicketId] = useState<number | null>(null);
+    const [dragOverStatusId, setDragOverStatusId] = useState<number | null>(null);
+
+    // UI
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
-
-    // Creation Form State
-    const [createForm, setCreateForm] = useState({ store_id: '', department_id: '', nature_id: '', priority_id: '', title: '', description: '', work_order_no: 0 });
-    const [createTicketFiles, setCreateTicketFiles] = useState<File[]>([]);
-
-    // App UI states
+    const [lastOpenedTicketId, setLastOpenedTicketId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
-    const [actionLoading, setActionLoading] = useState(false);
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
     const canCreateAllDepts = hasPermission('create_ticket_all_departments');
+
+    const handleDropTicket = async (ticketId: number, targetStatus: any) => {
+        setDraggingTicketId(null);
+        setDragOverStatusId(null);
+
+        const ticket = tickets.find(t => t.ticket_id === ticketId);
+        if (!ticket) return;
+
+        const currentStatusName = ticket.status?.status_name;
+        if (currentStatusName?.toLowerCase() === targetStatus.status_name?.toLowerCase()) {
+            return;
+        }
+
+        // Dynamic permission check for status transition
+        if (!canMoveStatus(currentStatusName, targetStatus.status_name)) {
+            setMessage({
+                text: `You do not have permission to move ticket from "${currentStatusName}" to "${targetStatus.status_name}"`,
+                type: 'error'
+            });
+            return;
+        }
+
+        const ticketDeptId = Number(ticket.department?.department_id ?? ticket.department);
+        const targetStatusMatch = statuses.find(s => {
+            const sDeptId = Number(s.department?.department_id ?? s.department);
+            return s.status_name?.toLowerCase() === targetStatus.status_name?.toLowerCase() && (!sDeptId || sDeptId === ticketDeptId);
+        }) || targetStatus;
+
+        const targetStatusId = targetStatusMatch.status_id;
+        let extraData: Record<string, any> = {};
+
+        if (targetStatus.status_name?.toLowerCase() === 'rejected') {
+            const reason = window.prompt(`Please provide a reason for rejecting ticket ${ticket.work_order_no}:`);
+            if (reason === null) return;
+            extraData.reject_reason = reason;
+        } else if (targetStatus.status_name?.toLowerCase() === 'completed') {
+            if (!window.confirm(`Are you sure you want to mark ticket ${ticket.work_order_no} as COMPLETED?`)) return;
+        }
+
+        // Optimistic UI update
+        const previousTickets = [...tickets];
+        setTickets(prev => prev.map(t => {
+            if (t.ticket_id === ticketId) {
+                return {
+                    ...t,
+                    status: {
+                        ...t.status,
+                        status_id: targetStatusId,
+                        status_name: targetStatus.status_name
+                    }
+                };
+            }
+            return t;
+        }));
+
+        try {
+            const response = await fetch(`${API_URL}/maintenance/ticket/${ticketId}/`, {
+                method: 'PATCH',
+                headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: targetStatusId, ...extraData })
+            });
+
+            if (response.ok) {
+                const updatedData = await response.json();
+                setMessage({ text: `Ticket ${ticket.work_order_no} moved to ${targetStatus.status_name}`, type: 'success' });
+                setTickets(prev => prev.map(t => t.ticket_id === ticketId ? { ...t, ...updatedData } : t));
+                fetchTickets(true);
+            } else {
+                setTickets(previousTickets);
+                const err = await response.json();
+                setMessage({ text: `Failed to move status: ${JSON.stringify(err)}`, type: 'error' });
+            }
+        } catch (err) {
+            console.error(err);
+            setTickets(previousTickets);
+            setMessage({ text: 'Network error updating ticket status', type: 'error' });
+        }
+    };
+
+    // Handle subpage === 'create' route opening popup automatically
+    useEffect(() => {
+        if (subpage === 'create') {
+            setIsCreateModalOpen(true);
+        }
+    }, [subpage]);
+
+    // Close overflow on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (overflowRef.current && !overflowRef.current.contains(e.target as Node))
+                setOverflowOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     const userDepartmentIds = useMemo(() => {
         if (canCreateAllDepts) return null;
@@ -67,7 +259,10 @@ export const TicketsView: React.FC = () => {
         user.sub_departments.forEach((sd: any) => {
             let sdObj = sd;
             if (typeof sd === 'string' || typeof sd === 'number') {
-                sdObj = subDepartments.find(item => item.sub_department_id === Number(sd) || item.sub_department_name.toLowerCase() === String(sd).toLowerCase());
+                sdObj = subDepartments.find(item =>
+                    item.sub_department_id === Number(sd) ||
+                    item.sub_department_name.toLowerCase() === String(sd).toLowerCase()
+                );
             }
             if (sdObj) {
                 const parentDeptId = Number(sdObj.department?.department_id ?? sdObj.department);
@@ -95,7 +290,6 @@ export const TicketsView: React.FC = () => {
                 fetch(`${API_URL}/accounts/customuser/`, { headers }),
                 fetch(`${API_URL}/finance/expensetype/`, { headers }),
             ]);
-
             if (resStores.ok) setStores(await resStores.json());
             if (resDepts.ok) setDepartments(await resDepts.json());
             if (resSubDepts.ok) setSubDepartments(await resSubDepts.json());
@@ -114,20 +308,22 @@ export const TicketsView: React.FC = () => {
         }
     };
 
-    const fetchTickets = useCallback(async () => {
+    const fetchTickets = useCallback(async (silent = false) => {
         if (!token) return;
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
             const query = new URLSearchParams();
             query.set('page', String(page));
             query.set('page_size', String(pageSize));
-            if (search) query.set('search', search);
+            if (debouncedSearch) query.set('search', debouncedSearch);
             if (filterStore) query.set('store', filterStore);
             if (filterDept) query.set('department', filterDept);
             if (filterStatus) query.set('status', filterStatus);
-            if (fromDate) query.set('from_date', fromDate);
-            if (toDate) query.set('to_date', toDate);
-
+            // Skip date filters when searching so results span all dates
+            if (!debouncedSearch) {
+                if (fromDate) query.set('from_date', fromDate);
+                if (toDate) query.set('to_date', toDate);
+            }
             const response = await fetch(`${API_URL}/maintenance/ticket/?${query.toString()}`, {
                 headers: { Authorization: `Token ${token}` }
             });
@@ -144,92 +340,177 @@ export const TicketsView: React.FC = () => {
         } catch (err) {
             console.error('Failed to load tickets', err);
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
-    }, [token, page, pageSize, search, filterStore, filterDept, filterStatus, fromDate, toDate]);
+    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, fromDate, toDate]);
 
+    useEffect(() => { fetchMetadata(); }, [token]);
+    useEffect(() => { fetchTickets(); }, [fetchTickets]);
+
+    // Debounce search input: wait 400ms after user stops typing before querying API
     useEffect(() => {
-        fetchMetadata();
-    }, [token]);
+        const timer = setTimeout(() => {
+            setDebouncedSearch(search);
+            setPage(1);
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [search]);
 
+    // Auto-lock filterDept for restricted users
     useEffect(() => {
-        fetchTickets();
-    }, [fetchTickets]);
-
-    const handleCreateTicket = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const selectedNature = natures.find(n => Number(n.nature_id) === Number(createForm.nature_id));
-        const isMediaRequired = selectedNature ? (selectedNature.media_required !== false) : true;
-
-        if (isMediaRequired && createTicketFiles.length < 2) {
-            setMessage({ text: 'Please attach a minimum of 2 media files for the selected Work Nature.', type: 'error' });
-            return;
-        }
-
-        setActionLoading(true);
-        setMessage(null);
-        try {
-            const response = await fetch(`${API_URL}/maintenance/ticket/`, {
-                method: 'POST',
-                headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    store: createForm.store_id,
-                    department: createForm.department_id,
-                    nature: createForm.nature_id,
-                    title: createForm.title,
-                    description: createForm.description
-                })
-            });
-
-            if (response.ok) {
-                setMessage({ text: 'Support Ticket created successfully!', type: 'success' });
-                setCreateForm({ store_id: '', department_id: '', nature_id: '', priority_id: '', title: '', description: '', work_order_no: 0 });
-                setCreateTicketFiles([]);
-                await fetchTickets();
-                navigate('/tickets/all');
+        if (!canCreateAllDepts && availableDepartments.length > 0) {
+            const defaultDeptId = String(availableDepartments[0].department_id);
+            if (availableDepartments.length === 1 && filterDept !== defaultDeptId) {
+                setFilterDept(defaultDeptId);
+                setPage(1);
             }
-        } catch (err) {
-            setMessage({ text: 'Connection issue', type: 'error' });
-        } finally {
-            setActionLoading(false);
+        }
+    }, [canCreateAllDepts, availableDepartments, filterDept]);
+
+    // Auto-select filterStore if there is only one store
+    useEffect(() => {
+        if (stores.length === 1) {
+            const defaultStoreId = String(stores[0].store_id);
+            if (filterStore !== defaultStoreId) {
+                setFilterStore(defaultStoreId);
+                setPage(1);
+            }
+        }
+    }, [stores, filterStore]);
+
+    const handleCreateModalClose = () => {
+        setIsCreateModalOpen(false);
+        if (subpage === 'create') {
+            navigate('/tickets/all');
         }
     };
 
-    // AG Grid Column Definitions
+    const handleCreateModalSuccess = () => {
+        setMessage({ text: 'Support Ticket created successfully!', type: 'success' });
+        fetchTickets();
+    };
+
+    const handleDateRangeChange = (from: string, to: string) => {
+        setFromDate(from);
+        setToDate(to);
+        if (from) localStorage.setItem('ticket-filter-from-date', from);
+        else localStorage.removeItem('ticket-filter-from-date');
+
+        if (to) localStorage.setItem('ticket-filter-to-date', to);
+        else localStorage.removeItem('ticket-filter-to-date');
+
+        setPage(1);
+    };
+
+    const handleResetDates = () => {
+        const { fromDate: defaultFrom, toDate: defaultTo } = getCurrentMonthRange();
+        setFromDate(defaultFrom);
+        setToDate(defaultTo);
+        localStorage.setItem('ticket-filter-from-date', defaultFrom);
+        localStorage.setItem('ticket-filter-to-date', defaultTo);
+        setPage(1);
+    };
+
+    const clearFilters = () => {
+        setSearch(''); setFilterStore(''); setFilterDept('');
+        setFilterStatus('');
+        handleResetDates();
+    };
+
+    // Returns true if user has the 'can_view_<status>_ticket' permission
+    const canViewStatus = (statusName: string) => {
+        const permission = `can_view_${statusName.toLowerCase().replace(/\s+/g, '_')}_ticket`;
+        return hasPermission(permission);
+    };
+
+    // Returns true if user has permission to move a ticket from fromStatusName to toStatusName
+    const canMoveStatus = (fromStatusName?: string, toStatusName?: string): boolean => {
+        if (!fromStatusName || !toStatusName) return false;
+        if (fromStatusName.toLowerCase().trim() === toStatusName.toLowerCase().trim()) return false;
+
+        const fromSlug = fromStatusName.toLowerCase().trim().replace(/\s+/g, '_');
+        const toSlug = toStatusName.toLowerCase().trim().replace(/\s+/g, '_');
+        const permName = `can_move_${fromSlug}_to_${toSlug}`;
+
+        return hasPermission(permName) || hasPermission(`maintenance.${permName}`);
+    };
+
+    // Derived active dragged ticket
+    const draggingTicket = useMemo(() => {
+        if (!draggingTicketId) return null;
+        return tickets.find(t => t.ticket_id === draggingTicketId) || null;
+    }, [tickets, draggingTicketId]);
+
+    // Returns the list of status-view permissions the user actually has
+    const getAllowedStatusPermissions = (statusList: any[]): string[] => {
+        return statusList
+            .map(st => `can_view_${st.status_name.toLowerCase().replace(/\s+/g, '_')}_ticket`)
+            .filter(perm => hasPermission(perm));
+    };
+
+    // Group tickets by status for Kanban Board mode
+    const ticketsByStatus = useMemo(() => {
+        const map: Record<string, Ticket[]> = {};
+        statuses.forEach(s => {
+            map[s.status_name] = [];
+        });
+        tickets.forEach(ticket => {
+            const sName = ticket.status?.status_name;
+            if (sName) {
+                if (!map[sName]) map[sName] = [];
+                map[sName].push(ticket);
+            }
+        });
+        return map;
+    }, [tickets, statuses]);
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+    // Force table view mode on mobile devices (no card/kanban view support on mobile)
+    useEffect(() => {
+        if (isMobile && viewMode !== 'table') {
+            setViewMode('table');
+        }
+    }, [isMobile, viewMode]);
+
     const columnDefs = useMemo<ColDef<Ticket>[]>(() => [
         {
-            headerName: 'Work Order No',
+            headerName: 'Work Order',
             field: 'work_order_no',
-            width: 160,
+            width: 130,
+            minWidth: 100,
+            pinned: isMobile ? null : 'left',
             cellRenderer: (params: any) => (
-                <span className="font-mono text-xs font-bold text-primary">{params.value}</span>
+                <span className="font-mono text-xs font-semibold text-primary truncate block w-full">{params.value}</span>
             )
         },
         {
             headerName: 'Store',
             valueGetter: params => params.data?.store?.store_name || '',
             flex: 1,
-            minWidth: 140
+            minWidth: 120,
+            hide: isMobile,
         },
         {
             headerName: 'Title',
             field: 'title',
             flex: 2,
-            minWidth: 200,
+            minWidth: 160,
             cellRenderer: (params: any) => (
-                <span className="font-medium text-on-surface dark:text-dark-on-surface">{params.value}</span>
+                <span className="font-medium text-on-surface truncate block w-full" title={params.value}>{params.value}</span>
             )
         },
         {
             headerName: 'Priority',
             field: 'priority',
-            width: 130,
+            width: 110,
+            minWidth: 90,
+            hide: isMobile,
             cellRenderer: (params: any) => {
                 const p = params.data?.priority;
                 if (!p) return null;
                 const isHigh = p.level >= 2;
                 return (
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isHigh ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
                         {p.priority_name}
                     </span>
                 );
@@ -238,276 +519,558 @@ export const TicketsView: React.FC = () => {
         {
             headerName: 'Status',
             field: 'status',
-            width: 140,
+            width: 130,
+            minWidth: 110,
             cellRenderer: (params: any) => {
                 const statusName = params.data?.status?.status_name;
                 if (!statusName) return null;
                 return (
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${statusColor(statusName)}`}>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${statusColor(statusName)}`}>
                         {statusName}
                     </span>
                 );
             }
         },
         {
-            headerName: 'Created Date',
+            headerName: 'Created',
             valueGetter: params => {
                 if (!params.data?.created_date) return '';
                 return new Date(params.data.created_date).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
+                    year: 'numeric', month: 'short', day: 'numeric'
                 });
             },
-            width: 140
-        },
-        {
-            headerName: 'Actions',
-            width: 110,
-            sortable: false,
-            filter: false,
-            cellRenderer: (params: any) => (
-                <button
-                    type="button"
-                    onClick={() => setSelectedTicket(params.data)}
-                    className="inline-flex items-center gap-1 bg-surface-container-high dark:bg-dark-surface-container-high text-xs font-semibold px-3 py-1 rounded-lg border border-outline-variant dark:border-dark-outline-variant hover:bg-primary hover:text-white transition-colors"
-                >
-                    <Eye className="w-3.5 h-3.5" /> Manage
-                </button>
-            )
+            width: 120,
+            minWidth: 100,
+            hide: isMobile,
         }
-    ], []);
+    ], [isMobile]);
 
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
-        sortable: true
+        sortable: true,
+        filter: true,
+        suppressSizeToFit: false,
+        wrapText: false,
+        autoHeight: false,
+        cellStyle: {
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+        },
     }), []);
 
-    const handleDateRangeReset = () => {
-        setFromDate('');
-        setToDate('');
-        setPage(1);
-    };
-
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const defaultMonth = getCurrentMonthRange();
+    const isDefaultDateRange = fromDate === defaultMonth.fromDate && toDate === defaultMonth.toDate;
+    const hasActiveFilters = !!(search || filterStore || filterDept || filterStatus || !isDefaultDateRange);
+
+    const selectCls = 'text-xs bg-surface-container border border-outline-variant rounded px-2.5 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors min-h-[36px] max-w-[160px] truncate flex-shrink-0';
 
     return (
-        <div className="space-y-6">
-            {message && (
-                <div className={`p-4 rounded-xl border flex items-center gap-3 ${message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' : 'bg-red-500/10 border-red-500/30 text-red-600'}`}>
-                    <AlertTriangle className="w-5 h-5" />
-                    <span className="text-sm font-semibold">{message.text}</span>
-                </div>
-            )}
+        <div className="flex flex-col gap-4">
 
-            {subpage === 'create' ? (
-                /* ── Create Ticket Form ─────────────────────────────────────────── */
-                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="bg-surface-container dark:bg-dark-surface-container p-6 rounded-2xl border border-outline-variant dark:border-dark-outline-variant">
-                    <div className="flex items-center gap-3 mb-6">
-                        <FileText className="w-6 h-6 text-primary" />
-                        <h3 className="text-lg font-bold text-on-surface dark:text-dark-on-surface">Raise Support Ticket</h3>
-                    </div>
 
-                    <form onSubmit={handleCreateTicket} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-semibold mb-1.5 text-on-surface dark:text-dark-on-surface">Store</label>
-                                <select required value={createForm.store_id} onChange={e => setCreateForm({ ...createForm, store_id: e.target.value })} className="w-full text-sm bg-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface">
-                                    <option value="">Select Store</option>
-                                    {stores.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold mb-1.5 text-on-surface dark:text-dark-on-surface">Department</label>
-                                <select required disabled={!canCreateAllDepts} value={createForm.department_id} onChange={e => setCreateForm({ ...createForm, department_id: e.target.value, nature_id: '' })} className="w-full text-sm bg-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface">
-                                    <Can permission="maintenance.create_ticket_all_departments"><option value="">Select Department</option></Can>
-                                    {availableDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                                </select>
-                            </div>
-                        </div>
+            {/* Toast */}
+            <AnimatePresence>
+                {message && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className={`flex items-center gap-3 px-4 py-3 rounded border text-xs font-medium ${message.type === 'success'
+                            ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
+                            : 'bg-error-container border-error/20 text-on-error-container'}`}
+                    >
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        <span className="flex-1">{message.text}</span>
+                        <button onClick={() => setMessage(null)} className="ml-auto opacity-60 hover:opacity-100 transition-opacity">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-                        {Boolean(createForm.department_id) && (
-                            <div>
-                                <label className="block text-xs font-semibold mb-1.5 text-on-surface dark:text-dark-on-surface">Nature of Work</label>
-                                <select required value={createForm.nature_id} onChange={e => setCreateForm({ ...createForm, nature_id: e.target.value })} className="w-full text-sm bg-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface">
-                                    <option value="">Select Nature of Work</option>
-                                    {natures.filter(n => !n.department || Number(n.department) === Number(createForm.department_id)).map(n => (
-                                        <option key={n.nature_id} value={n.nature_id}>{n.nature_name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-
-                        <div>
-                            <label className="block text-xs font-semibold mb-1.5 text-on-surface dark:text-dark-on-surface">Issue Title</label>
-                            <input required type="text" placeholder="Title" value={createForm.title} onChange={e => setCreateForm({ ...createForm, title: e.target.value })} className="w-full text-sm bg-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
-                        </div>
-
-                        <div>
-                            <label className="block text-xs font-semibold mb-1.5 text-on-surface dark:text-dark-on-surface">Description</label>
-                            <textarea required rows={4} placeholder="Description" value={createForm.description} onChange={e => setCreateForm({ ...createForm, description: e.target.value })} className="w-full text-sm bg-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 text-on-surface dark:text-dark-on-surface" />
-                        </div>
-
-                        <div className="flex justify-end pt-3">
-                            <button type="submit" disabled={actionLoading} className="px-6 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold flex items-center gap-2 hover:bg-primary-hover transition-colors">
-                                {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />} Submit Ticket
-                            </button>
-                        </div>
-                    </form>
-                </motion.div>
-            ) : (
-                /* ── Ticket List with AG Grid & Filters ─────────────────────────── */
-                <>
-                    <div className="flex flex-col gap-4">
-                        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-                            {/* Search bar */}
-                            <div className="relative flex-1 max-w-md">
-                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
+            {/* Ticket List View */}
+            <div className="flex flex-col border border-outline-variant rounded overflow-hidden bg-surface-container">
+                {/* Toolbar */}
+                <div className="bg-surface-container-low border-b border-outline-variant px-4 py-3 flex flex-col gap-3">
+                    {/* Row 1: Search + Actions */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2 flex-1 max-w-md w-full">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant pointer-events-none" />
                                 <input
                                     type="text"
-                                    placeholder="Search work order no, title..."
+                                    placeholder="Search work order, title..."
                                     value={search}
-                                    onChange={e => {
-                                        setSearch(e.target.value);
-                                        setPage(1);
-                                    }}
-                                    className="w-full text-xs bg-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl pl-10 pr-4 py-2.5 text-on-surface dark:text-dark-on-surface"
+                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                    className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-8 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
                                 />
+                                {search && (
+                                    <button onClick={() => { setSearch(''); setPage(1); }}
+                                        className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors">
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
+                            <button onClick={() => fetchTickets()} disabled={loading}
+                                className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium p-2 sm:px-3 sm:py-2 rounded flex items-center gap-2 transition-colors disabled:opacity-50 flex-shrink-0"
+                                title="Refresh data">
+                                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                                <span className="hidden sm:inline">Refresh</span>
+                            </button>
+                        </div>
 
-                            {/* Filters & Actions */}
-                            <div className="flex flex-wrap items-center gap-2.5">
-                                <select
-                                    value={filterStore}
-                                    onChange={e => {
-                                        setFilterStore(e.target.value);
-                                        setPage(1);
-                                    }}
-                                    className="text-xs bg-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 text-on-surface dark:text-dark-on-surface"
-                                >
-                                    <option value="">All Stores</option>
-                                    {stores.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
-                                </select>
+                        <div className="hidden sm:flex items-center justify-end gap-3 w-auto flex-shrink-0">
+                            {/* View Mode Toggle: Table / Kanban */}
+                            <Can permission={['maintenance.switch_to_card_view']}>
+                                <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 flex-shrink-0">
+                                    <button
+                                        onClick={() => handleViewModeChange('table')}
+                                        className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'table'
+                                            ? 'bg-primary text-on-primary shadow-xs'
+                                            : 'text-on-surface-variant hover:text-on-surface'
+                                            }`}
+                                        title="Table View"
+                                    >
+                                        <LayoutList className="w-4 h-4" />
+                                        <span className="hidden sm:inline">Table</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleViewModeChange('kanban')}
+                                        className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'kanban'
+                                            ? 'bg-primary text-on-primary shadow-xs'
+                                            : 'text-on-surface-variant hover:text-on-surface'
+                                            }`}
+                                        title="Kanban Board View"
+                                    >
+                                        <LayoutGrid className="w-4 h-4" />
+                                        <span className="hidden sm:inline">Card</span>
+                                    </button>
+                                </div>
+                            </Can>
 
-                                <select
-                                    value={filterDept}
-                                    onChange={e => {
-                                        setFilterDept(e.target.value);
-                                        setPage(1);
-                                    }}
-                                    className="text-xs bg-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 text-on-surface dark:text-dark-on-surface"
-                                >
-                                    <option value="">All Departments</option>
-                                    {departments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                                </select>
-
-                                <select
-                                    value={filterStatus}
-                                    onChange={e => {
-                                        setFilterStatus(e.target.value);
-                                        setPage(1);
-                                    }}
-                                    className="text-xs bg-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl p-2.5 text-on-surface dark:text-dark-on-surface"
-                                >
-                                    <option value="">All Statuses</option>
-                                    {statuses.map(s => <option key={s.status_id} value={s.status_name}>{s.status_name}</option>)}
-                                </select>
-
-                                {/* Date Range Picker Card */}
-                                <DateRangePickerCard
-                                    fromDate={fromDate}
-                                    toDate={toDate}
-                                    onDateRangeChange={(from, to) => {
-                                        setFromDate(from);
-                                        setToDate(to);
-                                        setPage(1);
-                                    }}
-                                    onReset={handleDateRangeReset}
-                                />
-
+                            {/* Actions Group (Raise Ticket, More) - hidden on mobile */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
                                 <Can permission={['maintenance.create_ticket', 'maintenance.add_ticket']}>
                                     <button
-                                        onClick={() => navigate('/tickets/create')}
-                                        className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary-hover transition-colors"
+                                        onClick={() => {
+                                            setIsCreateModalOpen(true);
+                                            if (subpage !== 'create') navigate('/tickets/create');
+                                        }}
+                                        className="hidden sm:flex bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded items-center gap-2 transition-colors flex-shrink-0"
                                     >
-                                        <Plus className="w-4 h-4" /> Raise Ticket
+                                        <Plus className="w-4 h-4" />
+                                        <span>Raise Ticket</span>
                                     </button>
                                 </Can>
+
+                                <div className="relative flex-shrink-0 hidden sm:block" ref={overflowRef}>
+                                    <button onClick={() => setOverflowOpen(o => !o)}
+                                        className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface p-2 rounded flex items-center justify-center transition-colors"
+                                        title="More actions">
+                                        <MoreVertical className="w-4 h-4" />
+                                    </button>
+                                    <AnimatePresence>
+                                        {overflowOpen && (
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                                                transition={{ duration: 0.12 }}
+                                                className="absolute right-0 top-full mt-1 z-50 bg-surface-container border border-outline-variant rounded shadow-lg min-w-[160px] py-1"
+                                            >
+                                                <button className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                                    <Download className="w-4 h-4 text-on-surface-variant" /> Export CSV
+                                                </button>
+                                                <button className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                                    <Download className="w-4 h-4 text-on-surface-variant" /> Export Excel
+                                                </button>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* AG Grid Container */}
-                    {loading ? (
-                        <div className="space-y-3">
-                            {[1, 2, 3, 4, 5].map(i => (
-                                <div key={i} className="h-14 bg-surface-container dark:bg-dark-surface-container animate-pulse rounded-xl" />
-                            ))}
-                        </div>
-                    ) : (
-                        <div >
-                            <div className="ag-theme-alpine w-full h-[520px]">
-                                <AgGridReact
-                                    rowData={tickets}
-                                    columnDefs={columnDefs}
-                                    defaultColDef={defaultColDef}
-                                    animateRows={true}
-                                    rowHeight={52}
-                                    headerHeight={44}
-                                />
-                            </div>
+                    {/* Row 2: Filter dropdowns */}
+                    <div className="flex items-center gap-2 flex-wrap pb-0.5 w-full">
+                        <Filter className="w-3.5 h-3.5 text-on-surface-variant flex-shrink-0 hidden sm:block" />
 
-                            {/* Backend Pagination Bar */}
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
-                                <div className="text-xs text-outline dark:text-dark-outline-variant font-medium">
-                                    Showing {totalCount === 0 ? 0 : (page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalCount)} of {totalCount} tickets
-                                </div>
+                        <select value={filterStore} onChange={e => { setFilterStore(e.target.value); setPage(1); }} className={selectCls}>
+                            <option value="">All Stores</option>
+                            {stores.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
+                        </select>
 
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-1.5 text-xs text-outline dark:text-dark-outline-variant">
-                                        <span>Per page:</span>
-                                        <select
-                                            value={pageSize}
-                                            onChange={e => {
-                                                setPageSize(Number(e.target.value));
-                                                setPage(1);
+                        {canCreateAllDepts && (
+                            <select value={filterDept} onChange={e => { setFilterDept(e.target.value); setPage(1); }} className={selectCls}>
+                                <option value="">All Departments</option>
+                                {departments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                            </select>
+                        )}
+                        {!canCreateAllDepts && availableDepartments.length > 1 && (
+                            <select value={filterDept} onChange={e => { setFilterDept(e.target.value); setPage(1); }} className={selectCls}>
+                                {availableDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                            </select>
+                        )}
+
+                        <Can permission={getAllowedStatusPermissions(statuses) as any}>
+                            <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} className={selectCls}>
+                                <option value="">All Statuses</option>
+                                {statuses
+                                    .filter(s => canViewStatus(s.status_name || ''))
+                                    .map(s => <option key={s.status_id} value={s.status_name}>{s.status_name}</option>)}
+                            </select>
+                        </Can>
+
+                        <DateRangePickerCard
+                            fromDate={fromDate}
+                            toDate={toDate}
+                            onDateRangeChange={handleDateRangeChange}
+                            onReset={handleResetDates}
+                        />
+                    </div>
+                </div>
+
+                {/* AG Grid / Kanban Board / Skeleton / Empty State */}
+                {loading ? (
+                    <SkeletonGrid />
+                ) : tickets.length === 0 ? (
+                    <EmptyState onClear={clearFilters} />
+                ) : viewMode === 'kanban' ? (
+                    <div className="p-4 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
+                        <div className="flex gap-4 min-w-max items-start">
+                            {statuses
+                                .filter(s => canViewStatus(s.status_name))
+                                .map(status => {
+                                    const colTickets = ticketsByStatus[status.status_name] || [];
+                                    const isOver = dragOverStatusId === status.status_id;
+
+                                    const fromStatusName = draggingTicket?.status?.status_name;
+                                    const isSameColumn = !!fromStatusName && fromStatusName.toLowerCase() === status.status_name.toLowerCase();
+                                    const isMoveAllowed = !!fromStatusName && !isSameColumn && canMoveStatus(fromStatusName, status.status_name);
+
+                                    let columnBorderBgClass = 'border-outline-variant bg-surface-container';
+
+                                    if (draggingTicket) {
+                                        if (isSameColumn) {
+                                            columnBorderBgClass = 'border-outline-variant bg-surface-container/70 opacity-90';
+                                        } else if (isMoveAllowed) {
+                                            if (isOver) {
+                                                columnBorderBgClass = 'border-emerald-500 ring-2 ring-emerald-500/40 bg-emerald-500/15 shadow-md scale-[1.01]';
+                                            } else {
+                                                columnBorderBgClass = 'border-emerald-500/60 ring-1 ring-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10';
+                                            }
+                                        } else {
+                                            if (isOver) {
+                                                columnBorderBgClass = 'border-red-500 ring-2 ring-red-500/30 bg-red-500/10 cursor-not-allowed';
+                                            } else {
+                                                columnBorderBgClass = 'border-outline-variant/40 bg-surface-container-low/40 opacity-50 grayscale-25';
+                                            }
+                                        }
+                                    } else if (isOver) {
+                                        columnBorderBgClass = 'border-primary ring-2 ring-primary/20 bg-surface-container-high';
+                                    }
+
+                                    return (
+                                        <div
+                                            key={status.status_id}
+                                            onDragOver={(e) => {
+                                                e.preventDefault();
+                                                if (draggingTicket && !isSameColumn && !isMoveAllowed) {
+                                                    e.dataTransfer.dropEffect = 'none';
+                                                } else {
+                                                    e.dataTransfer.dropEffect = 'move';
+                                                }
+                                                if (dragOverStatusId !== status.status_id) {
+                                                    setDragOverStatusId(status.status_id);
+                                                }
                                             }}
-                                            className="bg-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg px-2 py-1 text-xs text-on-surface dark:text-dark-on-surface"
+                                            onDragLeave={(e) => {
+                                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                                    setDragOverStatusId(null);
+                                                }
+                                            }}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                setDragOverStatusId(null);
+                                                setDraggingTicketId(null);
+                                                const ticketIdStr = e.dataTransfer.getData('text/plain');
+                                                if (ticketIdStr) {
+                                                    handleDropTicket(Number(ticketIdStr), status);
+                                                }
+                                            }}
+                                            className={`w-72 sm:w-80 shrink-0 rounded-xl border flex flex-col max-h-[70vh] shadow-xs transition-all ${columnBorderBgClass}`}
                                         >
-                                            <option value={10}>10</option>
-                                            <option value={25}>25</option>
-                                            <option value={50}>50</option>
-                                            <option value={100}>100</option>
-                                        </select>
-                                    </div>
+                                            {/* Column Header */}
+                                            <div className="p-3 border-b border-outline-variant flex items-center justify-between bg-surface-container-high/50 rounded-t-xl sticky top-0 z-10 backdrop-blur-xs">
+                                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${statusColor(status.status_name)}`}>
+                                                    {status.status_name}
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                    {draggingTicket ? (
+                                                        isSameColumn ? (
+                                                            <span className="text-[10px] font-bold text-on-surface-variant/60 bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant/60">
+                                                                Current
+                                                            </span>
+                                                        ) : isMoveAllowed ? (
+                                                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                                                                ✓ Can move
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-medium text-on-surface-variant/40 bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant/40">
+                                                                ✕ Locked
+                                                            </span>
+                                                        )
+                                                    ) : (
+                                                        <span className="text-xs font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant">
+                                                            {colTickets.length}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
 
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            disabled={page <= 1 || loading}
-                                            onClick={() => setPage(p => Math.max(p - 1, 1))}
-                                            className="p-1.5 rounded-lg border border-outline-variant dark:border-dark-outline-variant text-xs disabled:opacity-40 hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors text-on-surface dark:text-dark-on-surface"
-                                        >
-                                            <ChevronLeft className="w-4 h-4" />
-                                        </button>
-                                        <span className="text-xs font-semibold px-2 text-on-surface dark:text-dark-on-surface">
-                                            Page {page} of {totalPages}
-                                        </span>
-                                        <button
-                                            disabled={page >= totalPages || loading}
-                                            onClick={() => setPage(p => p + 1)}
-                                            className="p-1.5 rounded-lg border border-outline-variant dark:border-dark-outline-variant text-xs disabled:opacity-40 hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors text-on-surface dark:text-dark-on-surface"
-                                        >
-                                            <ChevronRight className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
+                                            {/* Column Cards */}
+                                            <div className="p-2.5 overflow-y-auto space-y-2.5 flex-1 scrollbar-thin">
+                                                {colTickets.length === 0 ? (
+                                                    <div className="py-8 text-center border-2 border-dashed border-outline-variant/60 rounded-lg">
+                                                        <p className="text-xs text-on-surface-variant italic">No {status.status_name.toLowerCase()} tickets</p>
+                                                    </div>
+                                                ) : (
+                                                    colTickets.map(ticket => {
+                                                        const isHigh = ticket.priority?.level >= 2;
+                                                        const isDragging = draggingTicketId === ticket.ticket_id;
+                                                        const isLastOpened = lastOpenedTicketId === ticket.ticket_id;
+                                                        return (
+                                                            <motion.div
+                                                                key={ticket.ticket_id}
+                                                                draggable={true}
+                                                                onDragStart={(e: any) => {
+                                                                    e.stopPropagation();
+                                                                    e.dataTransfer.setData('text/plain', String(ticket.ticket_id));
+                                                                    e.dataTransfer.effectAllowed = 'move';
+                                                                    setDraggingTicketId(ticket.ticket_id);
+                                                                }}
+                                                                onDragEnd={(e: any) => {
+                                                                    setDraggingTicketId(null);
+                                                                    setDragOverStatusId(null);
+                                                                }}
+                                                                whileHover={{ scale: 1.01 }}
+                                                                whileTap={{ scale: 0.99 }}
+                                                                onClick={() => {
+                                                                    setSelectedTicket(ticket);
+                                                                    setLastOpenedTicketId(ticket.ticket_id);
+                                                                }}
+                                                                className={`p-3 bg-surface border rounded-lg shadow-2xs hover:shadow-md hover:border-primary/50 cursor-grab active:cursor-grabbing transition-all space-y-2 relative overflow-hidden ${
+                                                                    isDragging ? 'opacity-40 border-dashed border-primary' : 'border-outline-variant'
+                                                                } ${
+                                                                    isLastOpened ? 'border-primary ring-1 ring-primary/20 bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary' : ''
+                                                                }`}
+                                                            >
+                                                                {/* Header Row */}
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="font-mono text-xs font-bold text-primary truncate">
+                                                                        {ticket.work_order_no}
+                                                                    </span>
+                                                                    {ticket.priority && (
+                                                                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                                                                            {ticket.priority.priority_name}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Title */}
+                                                                <h4 className="text-xs font-bold text-on-surface line-clamp-2 leading-snug">
+                                                                    {ticket.title}
+                                                                </h4>
+
+                                                                {/* Description preview */}
+                                                                {ticket.description && (
+                                                                    <p className="text-[11px] text-on-surface-variant line-clamp-2 leading-normal">
+                                                                        {ticket.description}
+                                                                    </p>
+                                                                )}
+
+                                                                {/* Store & Dept Tag */}
+                                                                <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] text-on-surface-variant border-t border-outline-variant/50">
+                                                                    {ticket.store?.store_name && (
+                                                                        <span className="flex items-center gap-1 font-medium bg-surface-container px-1.5 py-0.5 rounded">
+                                                                            <Building2 className="w-3 h-3 text-on-surface-variant" />
+                                                                            {ticket.store.store_name}
+                                                                        </span>
+                                                                    )}
+                                                                    {ticket.department?.department_name && (
+                                                                        <span className="font-medium bg-surface-container px-1.5 py-0.5 rounded">
+                                                                            {ticket.department.department_name}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Card Footer */}
+                                                                <div className="flex items-center justify-between pt-2.5 text-[10px] text-on-surface-variant border-t border-outline-variant/30 mt-1">
+                                                                    {/* Creator (Left Side) */}
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center font-bold text-[9px] bg-primary/10 text-primary border border-primary/25 shadow-xs shrink-0" title={`Created by ${ticket.created_by?.full_name || 'System'}`}>
+                                                                            {ticket.created_by?.profile_image ? (
+                                                                                <img src={getMediaUrl(ticket.created_by.profile_image)} alt={ticket.created_by.full_name} className="w-full h-full object-cover" />
+                                                                            ) : (
+                                                                                <span>{ticket.created_by?.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex flex-col min-w-0 leading-tight">
+                                                                            <span className="font-semibold text-on-surface truncate max-w-[90px]">{ticket.created_by?.full_name?.split(' ')[0] || 'System'}</span>
+                                                                            <span className="text-[9px] text-outline mt-0.5">{new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Assigned Workers Stack (Right Side) */}
+                                                                    {(() => {
+                                                                        const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
+                                                                        if (assignedWorkers.length === 0) {
+                                                                            return <span className="text-[9px] text-outline italic">Unassigned</span>;
+                                                                        }
+                                                                        return (
+                                                                            <div className="flex items-center -space-x-2.5 overflow-hidden shrink-0">
+                                                                                {assignedWorkers.slice(0, 3).map((w: any, idx: number) => (
+                                                                                    <div 
+                                                                                        key={w.user_id} 
+                                                                                        className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center font-bold text-[9px] bg-surface dark:bg-dark-surface border border-outline-variant/60 shadow-xs shrink-0"
+                                                                                        title={`Assigned to ${w.full_name}`}
+                                                                                        style={{ zIndex: 10 - idx }}
+                                                                                    >
+                                                                                        {w.profile_image ? (
+                                                                                            <img src={getMediaUrl(w.profile_image)} alt={w.full_name} className="w-full h-full object-cover" />
+                                                                                        ) : (
+                                                                                            <span>{w.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ))}
+                                                                                {assignedWorkers.length > 3 && (
+                                                                                    <div 
+                                                                                        className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[8px] bg-surface-container-high border border-outline-variant/60 text-on-surface shadow-xs shrink-0 z-0"
+                                                                                        title={`${assignedWorkers.length - 3} more worker(s)`}
+                                                                                    >
+                                                                                        +{assignedWorkers.length - 3}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            </motion.div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="ag-theme-app w-full" style={{ height: 520 }}>
+                        <AgGridReact<Ticket>
+                            theme={appTheme}
+                            rowData={tickets}
+                            columnDefs={columnDefs}
+                            defaultColDef={defaultColDef}
+                            animateRows={true}
+                            rowHeight={52}
+                            headerHeight={44}
+                            suppressCellFocus={false}
+                            suppressRowClickSelection={true}
+                            enableCellTextSelection={true}
+                            suppressHorizontalScroll={false}
+                            onGridReady={(params) => params.api.sizeColumnsToFit()}
+                            onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
+                            onRowClicked={(event) => {
+                                if (event.data) {
+                                    setSelectedTicket(event.data);
+                                    setLastOpenedTicketId(event.data.ticket_id);
+                                }
+                            }}
+                            rowClass="cursor-pointer"
+                            rowClassRules={{
+                                'ag-row-last-opened': (params: any) => params.data?.ticket_id === lastOpenedTicketId
+                            }}
+                        />
+                    </div>
+                )}
+
+                {/* Pagination */}
+                {!loading && tickets.length > 0 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-outline-variant bg-surface-container-low">
+                        <span className="text-xs text-on-surface-variant font-medium">
+                            {'Showing '}
+                            <span className="text-on-surface font-semibold">
+                                {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, totalCount)}
+                            </span>
+                            {' of '}
+                            <span className="text-on-surface font-semibold">{totalCount.toLocaleString()}</span>
+                            {' tickets'}
+                        </span>
+
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                                <span>Per page:</span>
+                                <select value={pageSize}
+                                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                                    className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs text-on-surface focus:outline-none focus:border-primary">
+                                    <option value={25}>25</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button disabled={page <= 1 || loading} onClick={() => setPage(p => Math.max(p - 1, 1))}
+                                    className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors">
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                <span className="px-3 text-xs font-medium text-on-surface min-w-[80px] text-center">
+                                    Page {page} of {totalPages}
+                                </span>
+                                <button disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}
+                                    className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors">
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
                             </div>
                         </div>
-                    )}
-                </>
-            )}
+                    </div>
+                )}
+            </div>
 
-            {/* Detail Modal Component */}
+            {/* Floating Action Button (FAB) for Mobile Raise Ticket */}
+            <Can permission={['maintenance.create_ticket', 'maintenance.add_ticket']}>
+                <button
+                    onClick={() => {
+                        setIsCreateModalOpen(true);
+                        if (subpage !== 'create') navigate('/tickets/create');
+                    }}
+                    className="sm:hidden fixed bottom-6 right-6 z-40 bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
+                    title="Raise Ticket"
+                >
+                    <Plus className="w-6 h-6" />
+                </button>
+            </Can>
+
+            {/* Popup Create Ticket Modal */}
+            <CreateTicketModal
+                isOpen={isCreateModalOpen}
+                onClose={handleCreateModalClose}
+                onSuccess={handleCreateModalSuccess}
+                token={token}
+                user={user}
+                stores={stores}
+                departments={departments}
+                availableDepartments={availableDepartments}
+                natures={natures}
+                canCreateAllDepts={canCreateAllDepts}
+            />
+
+            {/* Ticket Detail Modal */}
             <TicketDetailModal
                 selectedTicket={selectedTicket}
                 token={token}
@@ -522,3 +1085,5 @@ export const TicketsView: React.FC = () => {
         </div>
     );
 };
+
+export default TicketsView;

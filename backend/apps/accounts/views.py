@@ -49,13 +49,24 @@ class SignupView(APIView):
 
     def get(self, request):
         from apps.stores.models import Store, Department
+        from apps.maintenance.models import WorkNature
         roles = Role.objects.exclude(pk=1).values('role_id', 'role_name')
         stores = Store.objects.all().values('store_id', 'store_name')
         departments = Department.objects.all().values('department_id', 'department_name')
+        
+        natures = []
+        for n in WorkNature.objects.filter(active=True).select_related('sub_department'):
+            natures.append({
+                'nature_id': n.nature_id,
+                'nature_name': n.nature_name,
+                'department_id': n.sub_department.department_id
+            })
+
         return Response({
             "roles": list(roles),
             "stores": list(stores),
-            "departments": list(departments)
+            "departments": list(departments),
+            "natures": natures
         })
 
     def post(self, request):
@@ -70,6 +81,7 @@ class SignupView(APIView):
         role_id = request.data.get('role')
         store_id = request.data.get('store')
         department_id = request.data.get('department')
+        nature_id = request.data.get('nature')
 
         # Validation checks
         if not all([employee_no, full_name, email, phone, whatsapp_number, password]) or not profile_image:
@@ -128,6 +140,16 @@ class SignupView(APIView):
             if department_id:
                 sub_depts = SubDepartment.objects.filter(department_id=department_id)
                 user.sub_departments.set(sub_depts)
+
+            if nature_id:
+                from apps.maintenance.models import WorkNature, NatureWorker
+                id_list = [nid.strip() for nid in str(nature_id).split(',') if nid.strip().isdigit()]
+                for nid in id_list:
+                    try:
+                        nature_obj = WorkNature.objects.get(pk=nid)
+                        NatureWorker.objects.get_or_create(nature=nature_obj, worker=user)
+                    except WorkNature.DoesNotExist:
+                        pass
 
             return Response(
                 {"message": "Waiting for the approval.", "approved": False},

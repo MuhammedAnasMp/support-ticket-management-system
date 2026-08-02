@@ -162,9 +162,15 @@
     "maintenance.add_tickethistory": "Allows can add ticket history.",
     "maintenance.add_worklog": "Allows can add work log.",
     "maintenance.add_worknature": "Allows can add work nature.",
-    "maintenance.approve_ticket": "Allows can approve ticket.",
     "maintenance.can_change_my_log_time": "Allows can can change my log time.",
     "maintenance.can_change_others_log_time": "Allows can can change others log time.",
+    "maintenance.can_move_blocked_to_completed": "Allows can can move blocked to completed.",
+    "maintenance.can_move_blocked_to_in_progress": "Allows can can move blocked to in progress.",
+    "maintenance.can_move_completed_to_reconciled": "Allows can can move completed to reconciled.",
+    "maintenance.can_move_in_progress_to_blocked": "Allows can can move in progress to blocked.",
+    "maintenance.can_move_in_progress_to_completed": "Allows can can move in progress to completed.",
+    "maintenance.can_move_open_to_in_progress": "Allows can can move open to in progress.",
+    "maintenance.can_move_open_to_rejected": "Allows can can move open to rejected.",
     "maintenance.can_view_blocked_ticket": "Allows can view blocked ticket.",
     "maintenance.can_view_completed_ticket": "Allows can view completed ticket.",
     "maintenance.can_view_in_progress_ticket": "Allows can view in progress ticket.",
@@ -211,7 +217,6 @@
     "maintenance.change_worker": "Allows can change worker.",
     "maintenance.change_worklog": "Allows can change work log.",
     "maintenance.change_worknature": "Allows can change work nature.",
-    "maintenance.complete_ticket": "Allows can complete ticket.",
     "maintenance.create_ticket": "Allows can create ticket.",
     "maintenance.create_ticket_all_departments": "Allows can create ticket under all departments.",
     "maintenance.delete_allocation": "Allows can delete allocation.",
@@ -222,7 +227,7 @@
     "maintenance.delete_tickethistory": "Allows can delete ticket history.",
     "maintenance.delete_worklog": "Allows can delete work log.",
     "maintenance.delete_worknature": "Allows can delete work nature.",
-    "maintenance.reject_ticket": "Allows can reject ticket.",
+    "maintenance.switch_to_card_view": "Allows switch to card view.",
     "maintenance.update_after_repair": "Allows can update after repair.",
     "maintenance.update_before_repair": "Allows can update before repair.",
     "maintenance.view_active": "Allows can view active.",
@@ -453,9 +458,15 @@
         "maintenance.add_tickethistory",
         "maintenance.add_worklog",
         "maintenance.add_worknature",
-        "maintenance.approve_ticket",
         "maintenance.can_change_my_log_time",
         "maintenance.can_change_others_log_time",
+        "maintenance.can_move_blocked_to_completed",
+        "maintenance.can_move_blocked_to_in_progress",
+        "maintenance.can_move_completed_to_reconciled",
+        "maintenance.can_move_in_progress_to_blocked",
+        "maintenance.can_move_in_progress_to_completed",
+        "maintenance.can_move_open_to_in_progress",
+        "maintenance.can_move_open_to_rejected",
         "maintenance.can_view_blocked_ticket",
         "maintenance.can_view_completed_ticket",
         "maintenance.can_view_in_progress_ticket",
@@ -502,7 +513,6 @@
         "maintenance.change_worker",
         "maintenance.change_worklog",
         "maintenance.change_worknature",
-        "maintenance.complete_ticket",
         "maintenance.create_ticket",
         "maintenance.create_ticket_all_departments",
         "maintenance.delete_allocation",
@@ -513,7 +523,7 @@
         "maintenance.delete_tickethistory",
         "maintenance.delete_worklog",
         "maintenance.delete_worknature",
-        "maintenance.reject_ticket",
+        "maintenance.switch_to_card_view",
         "maintenance.update_after_repair",
         "maintenance.update_before_repair",
         "maintenance.view_active",
@@ -581,24 +591,70 @@
     "area_manager": {
       "display_name": "Area Manager",
       "ui_privileges": "",
-      "permissions": []
+      "permissions": [
+        "maintenance.create_ticket",
+        "maintenance.create_ticket_all_departments",
+        "maintenance.switch_to_card_view"
+      ]
     },
     "office_admin": {
       "display_name": "Office Admin",
       "ui_privileges": "",
       "permissions": [
-        "maintenance.complete_ticket"
+        "accounts.change_customuser",
+        "accounts.change_others_expence",
+        "accounts.view_customuser",
+        "maintenance.add_allocation",
+        "maintenance.can_change_others_log_time",
+        "maintenance.can_move_blocked_to_completed",
+        "maintenance.can_move_blocked_to_in_progress",
+        "maintenance.can_move_completed_to_reconciled",
+        "maintenance.can_move_in_progress_to_blocked",
+        "maintenance.can_move_in_progress_to_completed",
+        "maintenance.can_move_open_to_in_progress",
+        "maintenance.can_move_open_to_rejected",
+        "maintenance.can_view_blocked_ticket",
+        "maintenance.can_view_completed_ticket",
+        "maintenance.can_view_in_progress_ticket",
+        "maintenance.can_view_open_ticket",
+        "maintenance.can_view_reconciled_ticket",
+        "maintenance.can_view_rejected_ticket",
+        "maintenance.change_allocation",
+        "maintenance.create_ticket",
+        "maintenance.switch_to_card_view",
+        "maintenance.update_after_repair",
+        "maintenance.update_before_repair",
+        "maintenance.view_ticket"
       ]
     },
     "store_manager": {
       "display_name": "Store Manager",
       "ui_privileges": "",
-      "permissions": []
+      "permissions": [
+        "maintenance.can_view_blocked_ticket",
+        "maintenance.can_view_in_progress_ticket",
+        "maintenance.can_view_open_ticket",
+        "maintenance.can_view_rejected_ticket",
+        "maintenance.create_ticket",
+        "maintenance.create_ticket_all_departments",
+        "maintenance.switch_to_card_view",
+        "maintenance.update_before_repair",
+        "maintenance.view_ticket"
+      ]
     },
     "technician": {
       "display_name": "Technician",
       "ui_privileges": "",
-      "permissions": []
+      "permissions": [
+        "maintenance.can_change_my_log_time",
+        "maintenance.can_move_open_to_in_progress",
+        "maintenance.can_view_completed_ticket",
+        "maintenance.can_view_in_progress_ticket",
+        "maintenance.change_my_expence",
+        "maintenance.create_ticket",
+        "maintenance.update_after_repair",
+        "maintenance.view_ticket"
+      ]
     }
   }
 }

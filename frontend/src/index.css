@@ -3,28 +3,113 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --surface: #f8f9fa;
+  --surface-dim: #d9dadb;
+  --surface-bright: #f8f9fa;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f3f4f5;
+  --surface-container: #ffffff;
+  --surface-container-high: #e7e8e9;
+  --surface-container-highest: #e1e3e4;
+  --surface-variant: #e1e3e4;
+  --on-surface: #191c1d;
+  --on-surface-variant: #414754;
+  --inverse-surface: #2e3132;
+  --inverse-on-surface: #f0f1f2;
+  --outline: #727785;
+  --outline-variant: #E0E2E6;
+
+  --primary: #005bbf;
+  --on-primary: #ffffff;
+  --primary-container: #1a73e8;
+  --on-primary-container: #ffffff;
+  --primary-hover: #004ba4;
+
+  --secondary: #3f6377;
+  --on-secondary: #ffffff;
+  --secondary-container: #c0e5fd;
+  --on-secondary-container: #43677b;
+
+  --tertiary: #9e4300;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #ffdbcb;
+  --on-tertiary-container: #341100;
+
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #93000a;
+}
+
+.dark {
+  --surface: #131416;
+  --surface-dim: #131416;
+  --surface-bright: #131416;
+  --surface-container-lowest: #18191b;
+  --surface-container-low: #232427;
+  --surface-container: #1c1d1f;
+  --surface-container-high: #2a2b2e;
+  --surface-container-highest: #323438;
+  --surface-variant: #2a2b2e;
+  --on-surface: #e3e3e4;
+  --on-surface-variant: #c4c7c5;
+  --inverse-surface: #e3e3e4;
+  --inverse-on-surface: #131416;
+  --outline: #8c919d;
+  --outline-variant: #2e3033;
+
+  --primary: #1A73E8;
+  --on-primary: #ffffff;
+  --primary-container: #1557b0;
+  --on-primary-container: #ffffff;
+  --primary-hover: #1765ce;
+}
+
 @theme {
   --font-sans: 'Inter', sans-serif;
 
-  /* Brand colors matching DESIGN.md */
-  --color-primary: #1A73E8;
-  --color-primary-hover: #1557b0;
+  /* Surface and content tokens */
+  --color-surface: var(--surface);
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-bright: var(--surface-bright);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-surface-variant: var(--surface-variant);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+
+  /* Primary / Secondary / Tertiary / Error roles */
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-focus: rgba(26, 115, 232, 0.25);
 
-  /* Neutral tiers - Light mode */
-  --color-surface: #f8f9fa;
-  --color-surface-dim: #d9dadb;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f3f4f5;
-  --color-surface-container: #ffffff;
-  --color-surface-container-high: #e7e8e9;
-  --color-surface-container-highest: #e1e3e4;
-  --color-on-surface: #191c1d;
-  --color-on-surface-variant: #414754;
-  --color-outline: #727785;
-  --color-outline-variant: #E0E2E6;
+  --color-secondary: var(--secondary);
+  --color-on-secondary: var(--on-secondary);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
 
-  /* Neutral tiers - Dark mode */
+  --color-tertiary: var(--tertiary);
+  --color-on-tertiary: var(--on-tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+
+  /* Backwards compatibility dark aliases */
   --color-dark-surface: #131416;
   --color-dark-surface-container: #1c1d1f;
   --color-dark-surface-container-low: #232427;
@@ -35,7 +120,6 @@
 
   /* Accents */
   --color-accent-light: #c2e7ff;
-  --color-error: #ba1a1a;
   --color-warning: #9e4300;
   --color-info: #3f6377;
 }
@@ -83,8 +167,282 @@ body {
   color: #ffffff;
 }
 
-/* AG Grid & react-date-range styles */
-@import "ag-grid-community/styles/ag-grid.css";
-@import "ag-grid-community/styles/ag-theme-alpine.css";
+/* react-date-range styles */
 @import "react-date-range/dist/styles.css";
 @import "react-date-range/dist/theme/default.css";
+
+/* ─── AG Grid v36 — Custom Theme Overrides ──────────────────────────────────
+   AG Grid v36 uses the Theming API (themeQuartz / themeAlpine from ag-grid-community).
+   The .ag-theme-app class below targets the wrapper when using a custom params theme.
+   It bridges our design tokens into AG Grid's CSS variables.
+────────────────────────────────────────────────────────────────────────────── */
+.ag-theme-app {
+  /* Layout & spacing */
+  --ag-grid-size: 6px;
+  --ag-list-item-height: 32px;
+  --ag-row-height: 52px;
+  --ag-header-height: 44px;
+  --ag-cell-horizontal-padding: 16px;
+
+  /* Typography */
+  --ag-font-size: 13px;
+  --ag-font-family: 'Inter', sans-serif;
+
+  /* Surface colors — light mode */
+  --ag-background-color: #ffffff;
+  --ag-foreground-color: #191c1d;
+  --ag-secondary-foreground-color: #727785;
+  --ag-header-background-color: #f3f4f5;
+  --ag-header-foreground-color: #414754;
+  --ag-odd-row-background-color: #ffffff;
+  --ag-row-hover-color: #e7e8e9;
+  --ag-selected-row-background-color: rgba(26, 115, 232, 0.08);
+  --ag-range-selection-background-color: rgba(26, 115, 232, 0.12);
+
+  /* Borders */
+  --ag-border-color: #E0E2E6;
+  --ag-row-border-color: #E0E2E6;
+  --ag-header-column-separator-color: #E0E2E6;
+  --ag-header-column-resize-handle-color: #E0E2E6;
+
+  /* Input / Chrome */
+  --ag-input-focus-border-color: #1A73E8;
+  --ag-checkbox-checked-color: #1A73E8;
+  --ag-range-selection-border-color: #1A73E8;
+
+  /* Sidebar & panel */
+  --ag-panel-background-color: #f3f4f5;
+  --ag-tool-panel-background-color: #f3f4f5;
+
+  /* Pagination */
+  --ag-control-panel-background-color: #f3f4f5;
+
+  /* Border radius */
+  --ag-border-radius: 0px;
+
+  /* Shadows */
+  --ag-card-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.08);
+
+  font-family: 'Inter', sans-serif;
+}
+
+/* Dark mode overrides */
+.dark .ag-theme-app {
+  --ag-background-color: #1c1d1f;
+  --ag-foreground-color: #e3e3e4;
+  --ag-secondary-foreground-color: #c4c7c5;
+  --ag-header-background-color: #232427;
+  --ag-header-foreground-color: #c4c7c5;
+  --ag-odd-row-background-color: #1c1d1f;
+  --ag-row-hover-color: #2a2b2e;
+  --ag-selected-row-background-color: rgba(26, 115, 232, 0.15);
+  --ag-border-color: #2e3033;
+  --ag-row-border-color: #2e3033;
+  --ag-header-column-separator-color: #2e3033;
+  --ag-header-column-resize-handle-color: #2e3033;
+  --ag-panel-background-color: #232427;
+  --ag-tool-panel-background-color: #232427;
+  --ag-control-panel-background-color: #232427;
+}
+
+/* Cell alignment — vertically center content, clip overflow */
+.ag-theme-app .ag-cell {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* Ensure cell inner content clips and shows ellipsis */
+.ag-theme-app .ag-cell-value,
+.ag-theme-app .ag-cell .ag-cell-wrapper {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Header text styling */
+.ag-theme-app .ag-header-cell-text {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ag-header-foreground-color);
+}
+
+/* Remove default focus outline on cells */
+.ag-theme-app .ag-cell:focus-within {
+  border: 1px solid var(--ag-input-focus-border-color) !important;
+  outline: none !important;
+}
+
+/* Pagination bar */
+.ag-theme-app .ag-paging-panel {
+  border-top: 1px solid var(--ag-border-color);
+  background-color: var(--ag-header-background-color);
+  font-size: 12px;
+  color: var(--ag-secondary-foreground-color);
+}
+
+/* ─── react-date-range: Light mode base ─────────────────────────────────────── */
+.date-range-inner .rdrCalendarWrapper {
+  background: transparent;
+  font-size: 12px;
+  width: 100%;
+}
+
+.date-range-inner .rdrDateRangeWrapper,
+.date-range-inner .rdrDateDisplay {
+  width: 100%;
+}
+
+.date-range-inner .rdrMonth {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.date-range-inner .rdrMonthAndYearPickers select,
+.date-range-inner .rdrWeekDay,
+.date-range-inner .rdrDayNumber span {
+  color: #191c1d;
+}
+
+.date-range-inner .rdrDayToday .rdrDayNumber span:after {
+  background: #1A73E8;
+}
+
+.date-range-inner .rdrStartEdge,
+.date-range-inner .rdrEndEdge,
+.date-range-inner .rdrSelected {
+  background: #1A73E8;
+}
+
+.date-range-inner .rdrInRange {
+  background: rgba(26, 115, 232, 0.15);
+  color: #1A73E8;
+}
+
+.date-range-inner .rdrDayStartPreview,
+.date-range-inner .rdrDayEndPreview,
+.date-range-inner .rdrDayInPreview {
+  border-color: #1A73E8;
+}
+
+.date-range-inner .rdrMonthAndYearPickers select {
+  background: transparent;
+  border: 1px solid #E0E2E6;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.date-range-inner .rdrNextPrevButton {
+  background: #f3f4f5;
+  border-radius: 6px;
+}
+
+.date-range-inner .rdrNextPrevButton:hover {
+  background: #e7e8e9;
+}
+
+.date-range-inner .rdrPprevButton i {
+  border-right-color: #414754;
+}
+
+.date-range-inner .rdrNextButton i {
+  border-left-color: #414754;
+}
+
+/* ─── react-date-range: Dark mode overrides ─────────────────────────────────── */
+.dark .date-range-inner .rdrCalendarWrapper,
+.dark .date-range-inner .rdrDateDisplayWrapper {
+  background: transparent;
+}
+
+.dark .date-range-inner .rdrDateDisplay {
+  background: transparent;
+}
+
+.dark .date-range-inner .rdrDateDisplayItem input {
+  background: #232427;
+  color: #e3e3e4;
+  border-color: #2e3033;
+}
+
+.dark .date-range-inner .rdrMonthAndYearPickers select {
+  background: #232427;
+  color: #e3e3e4;
+  border-color: #2e3033;
+}
+
+.dark .date-range-inner .rdrWeekDay {
+  color: #c4c7c5;
+}
+
+.dark .date-range-inner .rdrDayNumber span {
+  color: #e3e3e4;
+}
+
+.dark .date-range-inner .rdrDayDisabled {
+  background: transparent;
+}
+
+.dark .date-range-inner .rdrDayDisabled .rdrDayNumber span {
+  color: #414754;
+}
+
+.dark .date-range-inner .rdrDayPassive .rdrDayNumber span {
+  color: #414754;
+}
+
+.dark .date-range-inner .rdrInRange {
+  background: rgba(26, 115, 232, 0.20);
+}
+
+.dark .date-range-inner .rdrInRange~.rdrDayNumber span {
+  color: #93c5fd;
+}
+
+.dark .date-range-inner .rdrStartEdge~.rdrDayNumber span,
+.dark .date-range-inner .rdrEndEdge~.rdrDayNumber span {
+  color: #ffffff;
+}
+
+.dark .date-range-inner .rdrDayToday:not(.rdrDayPassive) .rdrStartEdge~.rdrDayNumber span:after,
+.dark .date-range-inner .rdrDayToday .rdrDayNumber span:after {
+  background: #60a5fa;
+}
+
+.dark .date-range-inner .rdrNextPrevButton {
+  background: #2a2b2e;
+}
+
+.dark .date-range-inner .rdrNextPrevButton:hover {
+  background: #323438;
+}
+
+.dark .date-range-inner .rdrPprevButton i {
+  border-right-color: #c4c7c5;
+}
+
+.dark .date-range-inner .rdrNextButton i {
+  border-left-color: #c4c7c5;
+}
+
+.dark .date-range-inner .rdrMonthAndYearWrapper {
+  color: #e3e3e4;
+}
+
+.dark .date-range-inner .rdrMonthPicker,
+.dark .date-range-inner .rdrYearPicker {
+  color: #e3e3e4;
+}
+
+/* Highlight last opened ticket row in table */
+.ag-row.ag-row-last-opened {
+  background-color: rgba(0, 91, 191, 0.08) !important;
+  border-left: 4px solid var(--primary) !important;
+}
+.dark .ag-row.ag-row-last-opened {
+  background-color: rgba(26, 115, 232, 0.15) !important;
+}

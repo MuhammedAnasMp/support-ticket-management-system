@@ -22,6 +22,55 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'hourly_rate', 'skills', 'effective_from', 'effective_to'
         ]
 
+    def validate(self, attrs):
+        active = attrs.get('active', self.instance.active if self.instance else True)
+        if active:
+            # 1. Role is required
+            role = attrs.get('role', self.instance.role if self.instance else None)
+            if not role:
+                raise serializers.ValidationError(
+                    {"role": "Role is required to approve this employee."}
+                )
+
+            # 2. Accessible store is required
+            stores = attrs.get('accessible_stores', [])
+            if self.instance and 'accessible_stores' not in attrs:
+                stores = list(self.instance.accessible_stores.all())
+            if not stores:
+                raise serializers.ValidationError(
+                    {"accessible_stores": "To approve this employee, you must assign at least one store allocation."}
+                )
+
+            # 3. Check if Office employee based on sub-departments
+            sub_depts = attrs.get('sub_departments', [])
+            if self.instance and 'sub_departments' not in attrs:
+                sub_depts = list(self.instance.sub_departments.all())
+            
+            sd_names = [sd.sub_department_name.strip().lower() for sd in sub_depts]
+            is_office = 'office' in sd_names
+
+            if not is_office:
+                # Skills required
+                skills = attrs.get('skills', None)
+                if skills is None and self.instance:
+                    skills = list(self.instance.skilled_natures.all())
+                if not skills:
+                    raise serializers.ValidationError(
+                        {"skills": "To approve this employee, you must assign at least one technical skill."}
+                    )
+
+                # Hourly rate required
+                hourly_rate = attrs.get('hourly_rate', None)
+                if hourly_rate is None and self.instance:
+                    latest_rate = self.instance.rates.order_by('-effective_from', '-rate_id').first()
+                    hourly_rate = latest_rate.hourly_rate if latest_rate else None
+                if hourly_rate in [None, '']:
+                    raise serializers.ValidationError(
+                        {"hourly_rate": "Hourly wage rate is required to approve this employee."}
+                    )
+
+        return attrs
+
     def create(self, validated_data):
         hourly_rate = validated_data.pop('hourly_rate', None)
         skills = validated_data.pop('skills', None)

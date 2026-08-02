@@ -1,5 +1,6 @@
 from django.db.models import Q
 from rest_framework import viewsets, exceptions
+from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
 from .serializers import (
@@ -14,6 +15,7 @@ class TicketPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
+
 
 class PriorityViewSet(viewsets.ModelViewSet):
     queryset = Priority.objects.all()
@@ -43,6 +45,13 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
     queryset = WorkNature.objects.all()
     serializer_class = WorkNatureSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        department = self.request.query_params.get('department')
+        if department:
+            queryset = queryset.filter(sub_department__department_id=department)
+        return queryset
+
 
 class NatureWorkerViewSet(viewsets.ModelViewSet):
     queryset = NatureWorker.objects.all()
@@ -57,7 +66,7 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
 
 
 class TicketViewSet(viewsets.ModelViewSet):
-    queryset = Ticket.objects.all().order_by('-created_date')
+    queryset = Ticket.objects.all().order_by('-created_date').prefetch_related('allocations', 'allocations__worker')
     serializer_class = TicketSerializer
     pagination_class = TicketPagination
 
@@ -86,22 +95,27 @@ class TicketViewSet(viewsets.ModelViewSet):
                     disallowed_status_ids.append(s.status_id)
 
             if disallowed_status_ids:
-                queryset = queryset.exclude(status_id__in=disallowed_status_ids)
+                queryset = queryset.exclude(
+                    status_id__in=disallowed_status_ids)
 
             # Technicians only see tickets allocated to them
-            role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+            role_name = (user.role.role_name.lower() if hasattr(
+                user, 'role') and user.role else '')
             if role_name == 'technician':
                 queryset = queryset.filter(allocations__worker=user).distinct()
             else:
                 # Filter non-superusers by accessible stores
-                accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+                accessible_store_ids = list(
+                    user.accessible_stores.values_list('store_id', flat=True))
                 if accessible_store_ids:
-                    queryset = queryset.filter(store_id__in=accessible_store_ids).distinct()
+                    queryset = queryset.filter(
+                        store_id__in=accessible_store_ids).distinct()
                 else:
                     return Ticket.objects.none()
 
                 # Check department level restriction
-                user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+                user_groups_lower = [
+                    g.lower().strip() for g in user.groups.values_list('name', flat=True)]
                 can_view_all_depts = (
                     user.has_perm('maintenance.view_all_department_tickets') or
                     user.has_perm('maintenance.create_ticket_all_departments') or
@@ -110,9 +124,11 @@ class TicketViewSet(viewsets.ModelViewSet):
                 )
 
                 if not can_view_all_depts:
-                    user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
+                    user_dept_ids = list(user.sub_departments.values_list(
+                        'department_id', flat=True))
                     if user_dept_ids:
-                        queryset = queryset.filter(department_id__in=user_dept_ids)
+                        queryset = queryset.filter(
+                            department_id__in=user_dept_ids)
                     else:
                         return Ticket.objects.none()
 
@@ -163,25 +179,30 @@ class TicketViewSet(viewsets.ModelViewSet):
             if status_name in ['approved', 'rejected']:
                 can_approve_reject = (
                     user.is_superuser or
-                    user.has_perm('maintenance.approve_ticket') or
-                    user.has_perm('maintenance.reject_ticket')
+                    user.has_perm('maintenance.can_move_open_to_rejected') or
+                    user.has_perm('maintenance.can_move_open_to_in_progress')
                 )
                 if not can_approve_reject:
-                    raise exceptions.PermissionDenied("You do not have permission to approve or reject tickets.")
+                    raise exceptions.PermissionDenied(
+                        "You do not have permission to approve or reject tickets.")
 
                 if status_name == 'approved':
-                    serializer.save(approved_by=user, approved_date=timezone.now())
+                    serializer.save(approved_by=user,
+                                    approved_date=timezone.now())
                     return
                 elif status_name == 'rejected':
-                    serializer.save(rejected_by=user, rejected_date=timezone.now())
+                    serializer.save(rejected_by=user,
+                                    rejected_date=timezone.now())
                     return
             elif status_name == 'completed':
                 can_complete = (
                     user.is_superuser or
-                    user.has_perm('maintenance.complete_ticket')
+                    user.has_perm(
+                        'maintenance.can_move_in_progress_to_completed')
                 )
                 if not can_complete:
-                    raise exceptions.PermissionDenied("You do not have permission to mark tickets as completed.")
+                    raise exceptions.PermissionDenied(
+                        "You do not have permission to mark tickets as completed.")
                 serializer.save(closed_by=user, closed_date=timezone.now())
                 return
 
@@ -202,11 +223,13 @@ class AllocationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or user.is_anonymous:
             return Allocation.objects.none()
-        
+
         if not user.is_superuser:
-            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            accessible_store_ids = list(
+                user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
-                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+                queryset = queryset.filter(
+                    ticket__store_id__in=accessible_store_ids)
 
         ticket = self.request.query_params.get("ticket")
         if ticket:
@@ -243,11 +266,13 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or user.is_anonymous:
             return WorkLog.objects.none()
-            
+
         if not user.is_superuser:
-            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            accessible_store_ids = list(
+                user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
-                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+                queryset = queryset.filter(
+                    ticket__store_id__in=accessible_store_ids)
 
         ticket = self.request.query_params.get("ticket")
         if ticket:
@@ -265,11 +290,13 @@ class TicketHistoryViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or user.is_anonymous:
             return TicketHistory.objects.none()
-            
+
         if not user.is_superuser:
-            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            accessible_store_ids = list(
+                user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
-                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+                queryset = queryset.filter(
+                    ticket__store_id__in=accessible_store_ids)
 
         ticket = self.request.query_params.get("ticket")
         if ticket:

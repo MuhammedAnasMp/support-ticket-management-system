@@ -12,9 +12,10 @@ import { clearCredentials } from '../store/authSlice';
 interface HeaderProps {
   onToggleSidebar: () => void;
   pageTitle: string;
+  isSidebarOpen: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSidebarOpen }) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -59,18 +60,19 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle }) =>
   };
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant shadow-sm transition-colors duration-200">
+    <header className="sticky top-0 z-20 flex items-center justify-between px-2 py-1.5 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant shadow-sm transition-colors duration-200">
       {/* Left section: Hamburger & Breadcrumbs */}
       <div className="flex items-center gap-4">
-        <button
-          onClick={onToggleSidebar}
-          className="md:hidden p-2 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer transition-colors"
-          aria-label="Toggle Sidebar"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-        <div>
-
+        {!isSidebarOpen && (
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer transition-colors"
+            aria-label="Toggle Sidebar"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <div className={isSidebarOpen ? "pl-2" : ""}>
           <h2 className="text-lg font-bold text-on-surface dark:text-dark-on-surface tracking-tight leading-tight md:text-xl">
             {pageTitle}
           </h2>

@@ -3,14 +3,13 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
-  Home, Ticket, Store, Wrench, Users, Receipt,
-  BarChart3, Settings, ChevronDown, X, User, Shield
+  Home, Ticket, Store, Wrench, Users,
+  ChevronDown, X, User, Shield
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
 import type { PermissionKey } from '@/hooks/Can';
 import Can from '@/hooks/Can';
-
 
 interface SubItem {
   title: string;
@@ -46,16 +45,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  // Define sidebar menu structure mapping to ERD and design guidelines
+  // Define sidebar menu structure
   const menuItems: MenuItem[] = [
     {
       title: 'Dashboard',
-      icon: <Home className="w-5 h-5" />,
+      icon: <Home className="w-4 h-4" />,
       path: '/',
     },
     {
       title: 'Tickets',
-      icon: <Ticket className="w-5 h-5" />,
+      icon: <Ticket className="w-4 h-4" />,
       subItems: [
         { title: 'All Tickets', path: '/tickets/all', permission: 'maintenance.view_ticket' },
         { title: 'Create Ticket', path: '/tickets/create', permission: 'maintenance.create_ticket' },
@@ -63,17 +62,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     },
     {
       title: 'Stores',
-      icon: <Store className="w-5 h-5" />,
+      icon: <Store className="w-4 h-4" />,
       subItems: [
         { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
         { title: 'Areas', path: '/stores/areas', permission: 'stores.view_area' },
-        // { title: 'Departments', path: '/stores/departments', permission: 'stores.view_department' },
         { title: 'Sub Departments', path: '/stores/sub-departments', permission: 'stores.view_subdepartment' },
       ],
     },
     {
       title: 'Maintenance',
-      icon: <Wrench className="w-5 h-5" />,
+      icon: <Wrench className="w-4 h-4" />,
       subItems: [
         { title: 'Maintenance Nature', path: '/maintenance/natures', permission: 'maintenance.view_worknature' },
         { title: 'Default Assignments', path: '/maintenance/worker-assignments', permission: 'maintenance.view_natureworker' },
@@ -84,11 +82,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     },
     {
       title: 'Workforce',
-      icon: <Users className="w-5 h-5" />,
+      icon: <Users className="w-4 h-4" />,
       subItems: [
         { title: 'Employees', path: '/workforce/employees', permission: 'accounts.view_customuser' },
         { title: 'Employee Rates', path: '/workforce/rates', permission: 'finance.view_employeerate' },
-        // { title: 'Worker Skills', path: '/workforce/skills', permission: 'maintenance.view_natureworker' },
       ],
     }
   ];
@@ -102,29 +99,40 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     return false;
   };
 
-
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-surface-container dark:bg-dark-surface-container border-r border-outline-variant dark:border-dark-outline-variant w-64 md:w-72">
+    <div className="flex flex-col h-full bg-surface-container border-r border-outline-variant w-60 select-none">
       {/* Brand Header */}
-      <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant dark:border-dark-outline-variant">
-        <div className="flex items-center gap-2">
-          <Wrench className="w-6 h-6 text-primary" />
-          <span className="font-bold text-lg text-on-surface dark:text-dark-on-surface tracking-tight">
-            FixMngr
-          </span>
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-outline-variant bg-surface-container-low shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-primary-container text-on-primary-container rounded flex items-center justify-center">
+            <Wrench className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-semibold text-sm text-on-surface tracking-tight block leading-none">
+              Ticket Manager
+            </span>
+            <span className="text-[10px] text-on-surface-variant font-medium mt-0.5 block leading-none">
+              v1
+            </span>
+          </div>
         </div>
-        {/* Mobile Close Button */}
+
+        {/* Close / Collapse Button */}
         <button
           onClick={onClose}
-          className="md:hidden p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer"
-          aria-label="Close Sidebar"
+          className="p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+          aria-label="Collapse Sidebar"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Menu List */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 scrollbar-thin">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant/70 px-3 pb-1">
+          Navigation
+        </div>
+
         {menuItems
           .map(item => {
             const filteredSubItems = item.subItems?.filter(sub => hasPermission(sub.permission));
@@ -139,27 +147,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           .map((item, idx) => {
             const hasSubItems = item.subItems && item.subItems.length > 0;
             const active = isPathActive(item.path, item.subItems);
-            const expanded = expandedMenus[item.title] || (active && expandedMenus[item.title] !== false);
+            const expanded = expandedMenus[item.title] ?? active;
 
             return (
-              <div key={idx} className="space-y-1">
+              <div key={idx} className="space-y-0.5">
                 {hasSubItems ? (
                   <div>
                     <button
                       onClick={() => toggleExpand(item.title)}
-                      className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${active
-                        ? 'text-primary bg-primary/5 dark:bg-primary/10'
-                        : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-medium transition-colors ${active
+                        ? 'text-primary bg-primary/10 font-semibold'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                         }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className={active ? 'text-primary' : 'text-outline dark:text-dark-on-surface-variant'}>
+                      <div className="flex items-center gap-2.5">
+                        <span className={active ? 'text-primary' : 'text-on-surface-variant'}>
                           {item.icon}
                         </span>
                         <span>{item.title}</span>
                       </div>
                       <ChevronDown
-                        className={`w-4 h-4 text-outline transition-transform duration-200 ${expanded ? 'transform rotate-180' : ''
+                        className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${expanded ? 'transform rotate-180' : ''
                           }`}
                       />
                     </button>
@@ -171,22 +179,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2, ease: 'easeInOut' }}
-                          className="overflow-hidden pl-11 pr-2 space-y-1"
+                          transition={{ duration: 0.15, ease: 'easeInOut' }}
+                          className="overflow-hidden ml-4 pl-3 border-l border-outline-variant space-y-0.5 my-1"
                         >
                           {item.subItems?.map((sub, subIdx) => {
                             const subActive = location.pathname === sub.path;
                             return (
-
                               <Link
                                 key={subIdx}
                                 to={sub.path}
                                 onClick={() => {
                                   if (window.innerWidth < 768) onClose();
                                 }}
-                                className={`block px-3 py-2 rounded-md text-xs font-medium transition-all ${subActive
-                                  ? 'text-primary bg-accent-light/40 dark:bg-primary/20'
-                                  : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface dark:hover:text-dark-on-surface hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
+                                className={`block px-2.5 py-1.5 rounded text-xs transition-colors ${subActive
+                                  ? 'text-primary bg-primary/10 font-semibold'
+                                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                                   }`}
                               >
                                 <Can permission={sub.permission ?? false}>
@@ -206,12 +213,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     onClick={() => {
                       if (window.innerWidth < 768) onClose();
                     }}
-                    className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${active
-                      ? 'text-primary bg-accent-light/40 dark:bg-primary/20'
-                      : 'text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low'
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${active
+                      ? 'text-primary bg-primary/10 font-semibold'
+                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                       }`}
                   >
-                    <span className={active ? 'text-primary' : 'text-outline dark:text-dark-on-surface-variant'}>
+                    <span className={active ? 'text-primary' : 'text-on-surface-variant'}>
                       {item.icon}
                     </span>
                     <span>{item.title}</span>
@@ -224,29 +231,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
       {/* Footer / User Profile Card */}
       {user && (
-        <div className="p-4 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low transition-all duration-200 shrink-0">
+        <div className="p-3 border-t border-outline-variant bg-surface-container-low shrink-0">
           <button
             onClick={() => setProfileExpanded(!profileExpanded)}
-            className="w-full flex items-center justify-between text-left focus:outline-none hover:opacity-90 transition-opacity cursor-pointer"
+            className="w-full flex items-center justify-between text-left focus:outline-none hover:bg-surface-container-high p-1.5 rounded transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full overflow-hidden border border-outline-variant dark:border-dark-outline-variant bg-surface flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-outline-variant bg-surface-container flex items-center justify-center shrink-0">
                 {user.profile_image ? (
                   <img src={user.profile_image} alt={user.full_name} className="w-full h-full object-cover" />
                 ) : (
-                  <User className="w-4 h-4 text-outline" />
+                  <User className="w-4 h-4 text-on-surface-variant" />
                 )}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface truncate leading-tight">
+                <p className="text-xs font-semibold text-on-surface truncate leading-tight">
                   {user.full_name}
                 </p>
-                <p className="text-[10px] text-on-surface-variant dark:text-dark-on-surface-variant truncate font-semibold uppercase tracking-wider leading-tight mt-0.5">
-                  {user.role || 'No Role'}
+                <p className="text-[10px] text-on-surface-variant truncate font-medium uppercase tracking-wider leading-tight mt-0.5">
+                  {user.role || 'User'}
                 </p>
               </div>
             </div>
-            <ChevronDown className={`w-4 h-4 text-outline transition-transform duration-200 ${profileExpanded ? 'transform rotate-180' : ''}`} />
+            <ChevronDown className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${profileExpanded ? 'transform rotate-180' : ''}`} />
           </button>
 
           <AnimatePresence initial={false}>
@@ -255,22 +262,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: 'easeInOut' }}
-                className="overflow-hidden space-y-3 pt-3 mt-3 border-t border-outline-variant/50 dark:border-dark-outline-variant/30 text-xs text-on-surface-variant dark:text-dark-on-surface-variant"
+                transition={{ duration: 0.15, ease: 'easeInOut' }}
+                className="overflow-hidden space-y-2 pt-2 mt-2 border-t border-outline-variant text-xs text-on-surface-variant"
               >
                 <div className="flex items-center gap-2 font-mono text-[10px]">
                   <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
-                  <span>Emp ID: <span className="font-semibold text-on-surface dark:text-dark-on-surface">{user.employee_no}</span></span>
+                  <span>Emp ID: <span className="font-semibold text-on-surface">{user.employee_no}</span></span>
                 </div>
-
-
 
                 {user.sub_departments && user.sub_departments.length > 0 && (
                   <div className="flex items-start gap-2">
                     <Wrench className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
-                      <span className="text-[10px] text-outline block leading-none">Assigned Departments</span>
-                      <span className="font-medium text-on-surface dark:text-dark-on-surface block mt-0.5">
+                      <span className="text-[10px] text-on-surface-variant/70 block leading-none">Assigned Departments</span>
+                      <span className="font-medium text-on-surface block mt-0.5 text-[11px]">
                         {user.sub_departments.join(', ')}
                       </span>
                     </div>
@@ -281,35 +286,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                   <div className="flex items-start gap-2">
                     <Wrench className="w-3.5 h-3.5 text-tertiary shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
-                      <span className="text-[10px] text-outline block leading-none">Work Skills / Natures</span>
-                      <span className="font-medium text-on-surface dark:text-dark-on-surface block mt-0.5">
+                      <span className="text-[10px] text-on-surface-variant/70 block leading-none">Work Skills</span>
+                      <span className="font-medium text-on-surface block mt-0.5 text-[11px]">
                         {user.natures.join(', ')}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {(user.tickets_created_count !== undefined || user.tickets_assigned_count !== undefined) && (
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    {user.tickets_created_count !== undefined && (
-                      <div className="p-2 rounded bg-surface-container-high dark:bg-dark-surface-container-low text-center">
-                        <span className="text-[9px] text-outline block uppercase tracking-wider">Created</span>
-                        <span className="text-xs font-bold text-on-surface dark:text-dark-on-surface">{user.tickets_created_count}</span>
-                      </div>
-                    )}
-                    {user.tickets_assigned_count !== undefined && (
-                      <div className="p-2 rounded bg-surface-container-high dark:bg-dark-surface-container-low text-center">
-                        <span className="text-[9px] text-outline block uppercase tracking-wider">Assigned</span>
-                        <span className="text-xs font-bold text-on-surface dark:text-dark-on-surface">{user.tickets_assigned_count}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {accessibleStores && accessibleStores.length > 0 && (
-                  <div className="pt-2 border-t border-outline-variant/30 dark:border-dark-outline-variant/20">
-                    <span className="text-[9px] text-outline block uppercase tracking-wider mb-1">Accessible Stores ({accessibleStores.length})</span>
-                    <p className="text-[10px] leading-tight font-medium text-on-surface dark:text-dark-on-surface">
+                  <div className="pt-2 border-t border-outline-variant">
+                    <span className="text-[9px] text-on-surface-variant/70 block uppercase tracking-wider mb-0.5">Accessible Stores ({accessibleStores.length})</span>
+                    <p className="text-[10px] leading-tight font-medium text-on-surface">
                       {accessibleStores.map(s => s.store_name).join(', ')}
                     </p>
                   </div>
@@ -324,8 +312,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   return (
     <>
-      {/* Desktop Sidebar (Permanent) */}
-      <div className="hidden md:flex shrink-0 h-screen sticky top-0 z-30">
+      {/* Desktop Sidebar (Permanent toggleable) */}
+      <div className={`hidden md:flex shrink-0 h-screen sticky top-0 z-30 transition-all duration-300 ${isOpen ? 'w-60' : 'w-0 overflow-hidden border-r-0'}`}>
         {sidebarContent}
       </div>
 
@@ -357,3 +345,5 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     </>
   );
 };
+
+export default Sidebar;

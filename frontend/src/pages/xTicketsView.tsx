@@ -150,7 +150,7 @@ const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDele
               )}
               {!onEdit && !onDelete && (
                 <div className="absolute inset-0 bg-black/10 hover:bg-black/30 transition-all flex items-center justify-center">
-                  <Eye className="w-4 h-4 text-white opacity-60 hover:opacity-100 transition-opacity" />
+                  <Eye className="w-6 h-6 text-white opacity-60 hover:opacity-100 transition-opacity" />
                 </div>
               )}
             </a>
@@ -1730,7 +1730,8 @@ export const TicketsView: React.FC = () => {
                   <div className="flex-1" />
                   {selectedTicket.status.status_name === 'Open' &&
 
-                    <Can permission={['maintenance.approve_ticket', 'maintenance.reject_ticket']}>
+                    <Can permission={['maintenance.can_move_open_to_rejected', 'maintenance.can_move_open_to_in_progress']}>
+
                       <button onClick={() => handleMoveToNextStatus()}
                         disabled={actionLoading}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
@@ -1753,7 +1754,7 @@ export const TicketsView: React.FC = () => {
                   )}
                   {selectedTicket.status.status_name === 'In Progress' &&
 
-                    <Can permission='maintenance.complete_ticket'>
+                    <Can permission='maintenance.can_move_in_progress_to_completed'>
                       <button onClick={() => handleMoveToNextStatus()}
                         disabled={actionLoading}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">

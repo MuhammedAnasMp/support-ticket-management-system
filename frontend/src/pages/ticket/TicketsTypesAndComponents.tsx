@@ -1,5 +1,6 @@
-import React from 'react';
-import { Eye, FileText, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Eye, FileText, Trash2, Headphones, X, Download } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 export const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || 'http://localhost:8000';
@@ -33,6 +34,7 @@ export interface Ticket {
     reject_reason?: string | null;
     closed_by?: UserStub | null;
     closed_date?: string | null;
+    allocations?: Allocation[];
 }
 
 export interface Allocation {
@@ -90,7 +92,8 @@ export const getMediaUrl = (url: string) => {
 };
 
 export const isImage = (name: string) => /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(name);
-export const isVideo = (name: string) => /\.(mp4|mov|avi|mkv|webm)$/i.test(name);
+export const isAudio = (name: string) => name.toLowerCase().includes('voice_note') || name.toLowerCase().includes('recording') || /\.(mp3|wav|ogg|m4a|aac)$/i.test(name);
+export const isVideo = (name: string) => !isAudio(name) && /\.(mp4|mov|avi|mkv|webm)$/i.test(name);
 
 // ─── Reusable Components ──────────────────────────────────────────────────────
 
@@ -116,6 +119,8 @@ interface MediaGridProps {
 }
 
 export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete }) => {
+    const [previewItem, setPreviewItem] = useState<{ url: string; name: string } | null>(null);
+
     if (items.length === 0) {
         return (
             <div className="py-6 text-center text-xs text-outline border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-xl">
@@ -129,9 +134,34 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                 const url = getMediaUrl(m.file_url);
                 return (
                     <div key={m.media_id} className="relative aspect-video bg-surface dark:bg-dark-surface rounded-lg overflow-hidden border border-outline-variant dark:border-dark-outline-variant group">
-                        <a href={url} target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer">
+                        {/* Uploader Profile Image Overlay (Top Left) */}
+                        {m.uploaded_by && (
+                            <div className="absolute top-1 left-1 z-20 pointer-events-none" title={`Uploaded by ${m.uploaded_by.full_name}`}>
+                                <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center font-bold text-[8px] bg-black/70 text-white border border-white/40 shadow-xs">
+                                    {m.uploaded_by.profile_image ? (
+                                        <img src={getMediaUrl(m.uploaded_by.profile_image)} alt={m.uploaded_by.full_name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span>{m.uploaded_by.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <div 
+                            onClick={() => {
+                                if (!isAudio(m.file_name)) {
+                                    setPreviewItem({ url, name: m.file_name });
+                                }
+                            }}
+                            className="block w-full h-full cursor-pointer relative"
+                        >
                             {isImage(m.file_name) ? (
                                 <img src={url} alt={m.file_name} className="w-full h-full object-cover" />
+                            ) : isAudio(m.file_name) ? (
+                                <div className="flex flex-col items-center justify-center w-full h-full p-1 bg-surface-container-low" onClick={e => e.stopPropagation()}>
+                                    <Headphones className="w-5 h-5 text-primary mb-1 animate-pulse" />
+                                    <audio src={url} controls className="w-full h-4 scale-[0.8] origin-center opacity-90" />
+                                </div>
                             ) : isVideo(m.file_name) ? (
                                 <video src={url} className="w-full h-full object-cover" muted />
                             ) : (
@@ -139,12 +169,12 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                     <FileText className="w-6 h-6 text-outline" />
                                 </div>
                             )}
-                            {!onEdit && !onDelete && (
+                            {!onEdit && !onDelete && !isAudio(m.file_name) && (
                                 <div className="absolute inset-0 bg-black/10 hover:bg-black/30 transition-all flex items-center justify-center">
-                                    <Eye className="w-4 h-4 text-white opacity-60 hover:opacity-100 transition-opacity" />
+                                    <Eye className="w-6 h-6 text-white opacity-60 hover:opacity-100 transition-opacity" />
                                 </div>
                             )}
-                        </a>
+                        </div>
 
                         {(onEdit || onDelete) && (
                             <div className="absolute top-1 right-1 flex gap-1 z-10">
@@ -168,6 +198,88 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                     </div>
                 );
             })}
+
+            {/* Media Preview Modal Overlay */}
+            <AnimatePresence>
+                {previewItem && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.85 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setPreviewItem(null)}
+                            className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
+                        />
+
+                        {/* Modal Box */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="relative max-w-4xl max-h-[85vh] w-full flex flex-col items-center justify-center z-10"
+                        >
+                            {/* Close & Action Buttons */}
+                            <div className="absolute -top-12 right-0 flex items-center gap-3">
+                                <a 
+                                    href={previewItem.url} 
+                                    download={previewItem.name} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                    title="Download File"
+                                >
+                                    <Download className="w-5 h-5" />
+                                </a>
+                                <button
+                                    onClick={() => setPreviewItem(null)}
+                                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                    title="Close"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Media Display Container */}
+                            <div className="w-full flex justify-center items-center overflow-hidden rounded-lg bg-black/35 shadow-2xl p-1">
+                                {isImage(previewItem.name) ? (
+                                    <img 
+                                        src={previewItem.url} 
+                                        alt={previewItem.name} 
+                                        className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none" 
+                                    />
+                                ) : isVideo(previewItem.name) ? (
+                                    <video 
+                                        src={previewItem.url} 
+                                        controls 
+                                        autoPlay 
+                                        className="max-w-full max-h-[75vh] object-contain rounded-md" 
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
+                                        <FileText className="w-12 h-12 text-primary mb-3 animate-pulse" />
+                                        <p className="text-xs font-bold text-on-surface uppercase tracking-wider mb-1">{previewItem.name}</p>
+                                        <p className="text-[11px] text-outline mb-4">Preview not supported for this file format.</p>
+                                        <a 
+                                            href={previewItem.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded hover:bg-primary-hover active:scale-95 transition-all"
+                                        >
+                                            Open in New Tab
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Caption/Filename */}
+                            <div className="absolute -bottom-10 inset-x-0 text-center text-xs font-medium text-white/80 select-none truncate px-4">
+                                {previewItem.name}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

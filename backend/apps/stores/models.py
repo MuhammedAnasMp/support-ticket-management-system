@@ -21,9 +21,25 @@ class Area(models.Model):
         return self.area_name
 
 
+class StoreType(models.TextChoices):
+    SUPER_MARKET = "SUPER_MARKET", "Super Market"
+    HYPER_MARKET = "HYPER_MARKET", "Hyper Market"
+    WAREHOUSE = "WAREHOUSE", "Warehouse"
+    FRESH = "FRESH", "Fresh"
+    COSTO = "COSTO", "Costo"
+    CAMP = "CAMP", "Camp"
+
+
 class Store(models.Model):
     store_id = models.CharField(max_length=20, primary_key=True)
     store_name = models.CharField(max_length=255)
+
+    type = models.CharField(
+        max_length=20,
+        choices=StoreType.choices,
+        null=True,
+        blank=True,
+    )
     area = models.ForeignKey(
         Area,
         on_delete=models.SET_NULL,
@@ -50,7 +66,16 @@ class Store(models.Model):
     active = models.BooleanField(default=True)
 
     def __str__(self):
-        return self.store_name
+        abbreviation_map = {
+            StoreType.FRESH: "FR",
+            StoreType.HYPER_MARKET: "HM",
+            StoreType.SUPER_MARKET: "SM",
+            StoreType.CAMP: "CM",
+            StoreType.WAREHOUSE: "WH",
+            StoreType.COSTO: "CS",
+        }
+        suffix = f" ({abbreviation_map[self.type]})" if self.type in abbreviation_map else ""
+        return f"{self.store_name}{suffix}"
 
 
 class Department(models.Model):

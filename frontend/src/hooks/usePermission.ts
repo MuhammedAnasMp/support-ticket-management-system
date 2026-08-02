@@ -8,7 +8,7 @@ export const usePermission = () => {
 
 
     // console.log("Permission checked:", perm);
-    console.trace("Permission checked:", perm);
+    // console.trace("Permission checked:", perm);
 
     if (!perm) return true;
     const roleName = (user?.role as any)?.role_name?.toLowerCase() || (user?.role as string)?.toLowerCase();

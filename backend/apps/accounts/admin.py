@@ -1,4 +1,4 @@
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Permission, Group
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import Role, CustomUser, PasswordResetOTP, WhatsAppLog
@@ -49,4 +49,21 @@ class WhatsAppLogAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at',)
 
 
-admin.site.register(Permission)
+@admin.register(Permission)
+class PermissionAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "codename", "content_type")
+    list_filter = ("content_type",)
+    search_fields = ("name", "codename")
+    ordering = ("content_type", "codename")
+    list_select_related = ("content_type",)
+
+
+# admin.site.unregister(Group)
+
+
+# @admin.register(Group)
+# class GroupAdmin(admin.ModelAdmin):
+#     list_display = ("id", "name")
+#     search_fields = ("name",)
+#     ordering = ("name",)
+#     filter_horizontal = ("permissions",)
