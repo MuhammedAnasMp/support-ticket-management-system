@@ -3,9 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
-    Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText
+    Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
+    UserPlus, Image, XCircle, Menu
 } from 'lucide-react';
 import Can from '@/hooks/Can';
+import { usePermission } from '@/hooks/usePermission';
 import {
     API_URL, type Ticket, type Allocation, type WorkLog, type Expense, type MediaCategory, type Media,
     AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor
@@ -66,6 +68,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     // Form states
     const [newAllocation, setNewAllocation] = useState({ worker_id: '', planned_hours: '4.0', remarks: '' });
+    const [hourlyRateToCreate, setHourlyRateToCreate] = useState('');
     const [rejectReason, setRejectReason] = useState('');
     const [showRejectForm, setShowRejectForm] = useState(false);
     const [editWorkLogForm, setEditWorkLogForm] = useState({ hours: '', work_done: '' });
@@ -73,6 +76,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [editAllocationForm, setEditAllocationForm] = useState({ planned_hours: '', remarks: '' });
     const [expenseFiles, setExpenseFiles] = useState<Record<number, File[]>>({});
     const [replacingMediaId, setReplacingMediaId] = useState<number | null>(null);
+    const [isFabOpen, setIsFabOpen] = useState(false);
+
+    const { hasPermission } = usePermission();
 
     const uploadAbortRef = useRef<AbortController | null>(null);
     // const [natureWorkers, setNatureWorkers] = useState<any[]>([]);
@@ -399,6 +405,36 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         e.preventDefault();
         setActionLoading(true);
         try {
+            const selectedWorkerObj = workers.find(w => String(w.user_id) === String(newAllocation.worker_id));
+            const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
+
+            if (newAllocation.worker_id && !hasRate) {
+                if (!hourlyRateToCreate) {
+                    alert("Please specify the hourly rate.");
+                    setActionLoading(false);
+                    return;
+                }
+                const rateResponse = await fetch(`${API_URL}/finance/employeerate/`, {
+                    method: 'POST',
+                    headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        worker: newAllocation.worker_id,
+                        hourly_rate: hourlyRateToCreate,
+                        effective_from: new Date().toISOString().split('T')[0]
+                    })
+                });
+                if (!rateResponse.ok) {
+                    const errData = await rateResponse.json();
+                    alert(Object.values(errData).flat().join(', ') || 'Failed to save employee rate.');
+                    setActionLoading(false);
+                    return;
+                }
+                // Update local worker hourly rate so hasRate checks pass if reused
+                if (selectedWorkerObj) {
+                    selectedWorkerObj.hourly_rate = hourlyRateToCreate;
+                }
+            }
+
             const response = await fetch(`${API_URL}/maintenance/allocation/`, {
                 method: 'POST',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -412,6 +448,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             if (response.ok) {
                 const freshAlloc = await response.json();
                 setNewAllocation({ worker_id: '', planned_hours: '4.0', remarks: '' });
+                setHourlyRateToCreate('');
                 setIsAssignModalOpen(false);
                 setActiveWorkerId(freshAlloc.worker?.user_id || Number(newAllocation.worker_id));
                 await refreshTicketData();
@@ -553,9 +590,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleUpdateStatus = async (targetStatus: string | number | undefined, extra: Record<string, any> = {}) => {
         if (!targetStatus) return;
         let targetStatusId: number | undefined;
+        let targetStatusName: string | undefined;
 
         if (typeof targetStatus === 'number') {
             targetStatusId = targetStatus;
+            const matched = statuses.find(s => s.status_id === targetStatus);
+            targetStatusName = matched?.status_name;
         } else {
             const ticketDeptId = Number(ticketDetails.department?.department_id ?? ticketDetails.department);
             let match = statuses.find(s => {
@@ -564,10 +604,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             }) || statuses.find(s => s.status_name?.toLowerCase() === targetStatus.toLowerCase());
 
             targetStatusId = match?.status_id;
+            targetStatusName = match?.status_name;
         }
 
         if (!targetStatusId) {
             alert(`Error: Status '${targetStatus}' is not configured in the database.`);
+            return;
+        }
+
+        // Guard: Require at least one allocated worker before moving to 'In Progress'
+        if (targetStatusName?.toLowerCase() === 'in progress' && allocations.length === 0) {
+            alert('Cannot start progress: At least one worker must be allocated to this ticket before it can be moved to In Progress.');
             return;
         }
 
@@ -791,7 +838,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <Can permission="maintenance.update_before_repair">
                                                     <button
                                                         onClick={() => setIsManageIssueMediaOpen(true)}
-                                                        className="min-h-[15px] px-3 py-2 flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded-lg cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
+                                                        className="min-h-[15px] px-3 py-2 hidden sm:flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded-lg cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
                                                     >
                                                         <Settings className="w-4 h-4" /> Manage Media
                                                     </button>
@@ -805,7 +852,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             )}
 
                             {/* Allocated Personnel Section */}
-                            {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (
+                            {ticketDetails.status.status_name.toLowerCase() !== 'rejected' && (
                                 <div>
                                     <SectionTitle icon={<User className="w-[18px] h-[18px]" />} label="Allocated" />
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-2.5 mb-3.5 gap-2.5">
@@ -830,7 +877,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <Can permission="maintenance.add_allocation">
                                             <button
                                                 onClick={() => setIsAssignModalOpen(true)}
-                                                className="min-h-[15px] flex items-center justify-center gap-2 bg-primary text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer shadow-xs shrink-0 hover:bg-primary-hover active:scale-95 transition-all touch-manipulation"
+                                                className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 bg-primary text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer shadow-xs shrink-0 hover:bg-primary-hover active:scale-95 transition-all touch-manipulation"
                                             >
                                                 <Plus className="w-4 h-4" /> Assign Worker
                                             </button>
@@ -881,7 +928,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
                                                                 <button
                                                                     onClick={() => setIsLogHoursModalOpen(true)}
-                                                                    className="min-h-[15px] flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
                                                                 >
                                                                     <Plus className="w-4 h-4" /> Log Hours
                                                                 </button>
@@ -928,7 +975,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
                                                                 <button
                                                                     onClick={() => setIsAddExpenseModalOpen(true)}
-                                                                    className="min-h-[15px] flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
                                                                 >
                                                                     <Plus className="w-4 h-4" /> Add Expense
                                                                 </button>
@@ -981,7 +1028,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <Can permission="maintenance.update_after_repair">
                                             <button
                                                 onClick={() => setIsManageCompletedMediaOpen(true)}
-                                                className="min-h-[15px] px-3 py-2 flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded-lg cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
+                                                className="min-h-[15px] px-3 py-2 hidden sm:flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded-lg cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
                                             >
                                                 <Settings className="w-4 h-4" /> Manage Media
                                             </button>
@@ -994,83 +1041,208 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     )}
                 </div>
 
-                {/* Status Workflow Action Bar - Sticky Footer */}
-                {(!modalLoading && (['Open', 'Approved', 'In Progress'].includes(ticketDetails.status.status_name) || showRejectForm)) && (
-                    <div className="sticky bottom-0 bg-surface-container border-t border-outline-variant px-4 sm:px-5 py-3 flex flex-col gap-2 shrink-0 z-20">
-                        {showRejectForm ? (
-                            <div className="p-2.5 border border-error/20 bg-error-container/10 rounded flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                <input
-                                    type="text"
-                                    className="flex-1 text-xs bg-surface border border-outline-variant p-2 rounded outline-none text-on-surface focus:border-error placeholder:text-on-surface-variant/60 min-h-[36px]"
-                                    placeholder="Provide specific reason for ticket rejection..."
-                                    value={rejectReason}
-                                    onChange={e => setRejectReason(e.target.value)}
-                                />
-                                <div className="flex items-center gap-2 shrink-0 justify-end">
-                                    <button
-                                        onClick={() => setShowRejectForm(false)}
-                                        className="min-h-[36px] px-3.5 py-2 text-xs border border-outline-variant rounded cursor-pointer text-on-surface hover:bg-surface-container-high transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={() => handleUpdateStatus('Rejected', { reject_reason: rejectReason })}
-                                        disabled={actionLoading}
-                                        className="min-h-[36px] px-4 py-2 text-xs bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded font-medium cursor-pointer flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                    >
-                                        {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />} Confirm Reject
-                                    </button>
-                                </div>
+                {/* Reject reason inline form - shown above FAB when active */}
+                {showRejectForm && (
+                    <div className="sticky bottom-0 z-30 bg-surface-container border-t border-outline-variant px-4 sm:px-5 py-3 shrink-0">
+                        <div className="p-2.5 border border-error/20 bg-error-container/10 rounded flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <input
+                                type="text"
+                                className="flex-1 text-xs bg-surface border border-outline-variant p-2 rounded outline-none text-on-surface focus:border-error placeholder:text-on-surface-variant/60 min-h-[36px]"
+                                placeholder="Provide specific reason for ticket rejection..."
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                autoFocus
+                            />
+                            <div className="flex items-center gap-2 shrink-0 justify-end">
+                                <button
+                                    onClick={() => setShowRejectForm(false)}
+                                    className="min-h-[36px] px-3.5 py-2 text-xs border border-outline-variant rounded cursor-pointer text-on-surface hover:bg-surface-container-high transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => { handleUpdateStatus('Rejected', { reject_reason: rejectReason }); setShowRejectForm(false); }}
+                                    disabled={actionLoading}
+                                    className="min-h-[36px] px-4 py-2 text-xs bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded font-medium cursor-pointer flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                >
+                                    {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />} Confirm Reject
+                                </button>
                             </div>
-                        ) : (
-                            <div className="flex items-center justify-end gap-2">
-                                {ticketDetails.status.status_name === 'Open' && (
-                                    <div className="flex items-center gap-2">
-                                        <Can permission="maintenance.can_move_open_to_in_progress">
-                                            <button
-                                                onClick={handleMoveToNextStatus}
-                                                disabled={actionLoading}
-                                                className="min-h-[36px] px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
-                                            >
-                                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <CheckCircle2 className="w-4 h-4" />} Approve
-                                            </button>
-                                        </Can>
-                                        <Can permission="maintenance.can_move_open_to_rejected">
-                                            <button
-                                                onClick={() => setShowRejectForm(true)}
-                                                disabled={actionLoading}
-                                                className="min-h-[36px] px-4 py-2 bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
-                                            >
-                                                Reject
-                                            </button>
-                                        </Can>
-                                    </div>
-                                )}
-
-                                {ticketDetails.status.status_name === 'Approved' && (
-                                    <button
-                                        onClick={handleMoveToNextStatus}
-                                        disabled={actionLoading}
-                                        className="min-h-[36px] px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
-                                    >
-                                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Clock className="w-4 h-4" />} Start Progress
-                                    </button>
-                                )}
-
-                                {ticketDetails.status.status_name === 'In Progress' && (
-                                    <Can permission="maintenance.can_move_in_progress_to_completed">
-                                        <button
-                                            onClick={handleMoveToNextStatus}
-                                            disabled={actionLoading}
-                                            className="min-h-[36px] px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
-                                        >
-                                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <CheckCircle2 className="w-4 h-4" />} Mark Completed
-                                        </button>
-                                    </Can>
-                                )}
-                            </div>
-                        )}
+                        </div>
                     </div>
+                )}
+
+                {/* Floating Action Button Speed-Dial — mobile only */}
+                {!modalLoading && (
+                    <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2">
+                        {/* Speed-dial actions */}
+                        <AnimatePresence>
+                            {isFabOpen && (() => {
+                                const statusName = ticketDetails.status.status_name;
+                                const isOpen = statusName === 'Open';
+                                const isApproved = statusName === 'Approved';
+                                const isInProgress = statusName === 'In Progress';
+                                const isActive = isOpen || isApproved || isInProgress;
+                                const hasAlloc = allocations.length > 0;
+
+                                type FabAction = {
+                                    key: string;
+                                    label: string;
+                                    icon: React.ReactNode;
+                                    color: string;
+                                    onClick: () => void;
+                                    permission?: string;
+                                    show: boolean;
+                                };
+
+                                const actions: FabAction[] = [
+                                    // Before Repair Media
+                                    {
+                                        key: 'before-media',
+                                        label: 'Before Repair Media',
+                                        icon: <Camera className="w-4 h-4" />,
+                                        color: 'bg-indigo-500 hover:bg-indigo-600 text-white',
+                                        onClick: () => { setIsManageIssueMediaOpen(true); setIsFabOpen(false); },
+                                        permission: 'maintenance.update_before_repair',
+                                        show: isActive,
+                                    },
+                                    // Assign Worker
+                                    {
+                                        key: 'assign',
+                                        label: 'Assign Worker',
+                                        icon: <UserPlus className="w-4 h-4" />,
+                                        color: 'bg-primary hover:bg-primary/90 text-white',
+                                        onClick: () => { setIsAssignModalOpen(true); setIsFabOpen(false); },
+                                        permission: 'maintenance.add_allocation',
+                                        show: isActive,
+                                    },
+                                    // Approve
+                                    {
+                                        key: 'approve',
+                                        label: 'Approve',
+                                        icon: <CheckCircle2 className="w-4 h-4" />,
+                                        color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+                                        onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
+                                        permission: 'maintenance.can_move_open_to_in_progress',
+                                        show: isOpen,
+                                    },
+                                    // Reject
+                                    {
+                                        key: 'reject',
+                                        label: 'Reject',
+                                        icon: <XCircle className="w-4 h-4" />,
+                                        color: 'bg-error hover:bg-red-700 text-white',
+                                        onClick: () => { setShowRejectForm(true); setIsFabOpen(false); },
+                                        permission: 'maintenance.can_move_open_to_rejected',
+                                        show: isOpen,
+                                    },
+                                    // Start Progress
+                                    {
+                                        key: 'start-progress',
+                                        label: 'Start Progress',
+                                        icon: <Clock className="w-4 h-4" />,
+                                        color: 'bg-blue-600 hover:bg-blue-700 text-white',
+                                        onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
+                                        show: isApproved,
+                                    },
+                                    // Log Hours
+                                    {
+                                        key: 'log-hours',
+                                        label: 'Log Hours',
+                                        icon: <Clock className="w-4 h-4" />,
+                                        color: 'bg-amber-500 hover:bg-amber-600 text-white',
+                                        onClick: () => { setIsLogHoursModalOpen(true); setIsFabOpen(false); },
+                                        permission: 'maintenance.add_worklog',
+                                        show: isInProgress && hasAlloc,
+                                    },
+                                    // Log Expense
+                                    {
+                                        key: 'log-expense',
+                                        label: 'Log Expense',
+                                        icon: <DollarSign className="w-4 h-4" />,
+                                        color: 'bg-teal-600 hover:bg-teal-700 text-white',
+                                        onClick: () => { setIsAddExpenseModalOpen(true); setIsFabOpen(false); },
+                                        permission: 'maintenance.change_my_expence',
+                                        show: isInProgress && hasAlloc,
+                                    },
+                                    // After Repair Media
+                                    {
+                                        key: 'after-media',
+                                        label: 'After Repair Media',
+                                        icon: <Image className="w-4 h-4" />,
+                                        color: 'bg-violet-600 hover:bg-violet-700 text-white',
+                                        onClick: () => { setIsManageCompletedMediaOpen(true); setIsFabOpen(false); },
+                                        permission: 'maintenance.update_after_repair',
+                                        show: isInProgress,
+                                    },
+                                    // Mark Completed
+                                    {
+                                        key: 'complete',
+                                        label: 'Mark Completed',
+                                        icon: <CheckCircle2 className="w-4 h-4" />,
+                                        color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+                                        onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
+                                        permission: 'maintenance.can_move_in_progress_to_completed',
+                                        show: isInProgress,
+                                    },
+                                ];
+
+                                const visibleActions = actions.filter(a =>
+                                    a.show && (!a.permission || hasPermission(a.permission))
+                                );
+
+                                return visibleActions.map((action, idx) => (
+                                    <motion.button
+                                        key={action.key}
+                                        initial={{ opacity: 0, y: 12, scale: 0.85 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 8, scale: 0.85 }}
+                                        transition={{ delay: (visibleActions.length - 1 - idx) * 0.04, duration: 0.18 }}
+                                        onClick={action.onClick}
+                                        disabled={actionLoading}
+                                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full text-xs font-semibold shadow-lg cursor-pointer active:scale-95 transition-all disabled:opacity-50 whitespace-nowrap ${action.color}`}
+                                    >
+                                        {action.icon}
+                                        <span>{action.label}</span>
+                                    </motion.button>
+                                ));
+                            })()}
+                        </AnimatePresence>
+
+                        {/* Main FAB toggle button */}
+                        <motion.button
+                            onClick={() => setIsFabOpen(prev => !prev)}
+                            whileTap={{ scale: 0.9 }}
+                            transition={{ duration: 0.2 }}
+                            disabled={actionLoading}
+                            className="w-14 h-14 rounded-full bg-primary text-white shadow-xl flex items-center justify-center cursor-pointer hover:bg-primary/90 active:scale-95 transition-colors disabled:opacity-50"
+                            aria-label={isFabOpen ? 'Close actions' : 'Open actions'}
+                        >
+                            <AnimatePresence mode="wait" initial={false}>
+                                {actionLoading ? (
+                                    <motion.span key="loading" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}>
+                                        <Loader2 className="w-6 h-6 animate-spin" />
+                                    </motion.span>
+                                ) : isFabOpen ? (
+                                    <motion.span key="close" initial={{ opacity: 0, rotate: -90, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 90, scale: 0.7 }} transition={{ duration: 0.15 }}>
+                                        <X className="w-6 h-6" />
+                                    </motion.span>
+                                ) : (
+                                    <motion.span key="menu" initial={{ opacity: 0, rotate: 90, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: -90, scale: 0.7 }} transition={{ duration: 0.15 }}>
+                                        <Menu className="w-6 h-6" />
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
+                        </motion.button>
+                    </div>
+                )}
+
+                {/* FAB backdrop (close on outside click) */}
+                {isFabOpen && (
+                    <div
+                        className="absolute inset-0 z-20"
+                        onClick={() => setIsFabOpen(false)}
+                    />
                 )}
             </motion.div>
 
@@ -1117,7 +1289,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     <label className="block text-xs font-semibold text-outline mb-1.5">Select Worker</label>
                                     <select required value={newAllocation.worker_id}
                                         disabled={actionLoading}
-                                        onChange={e => setNewAllocation({ ...newAllocation, worker_id: e.target.value })}
+                                        onChange={e => {
+                                            setNewAllocation({ ...newAllocation, worker_id: e.target.value });
+                                            setHourlyRateToCreate('');
+                                        }}
                                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface">
                                         <option value="">Select Worker to Assign</option>
                                         {(() => {
@@ -1157,6 +1332,34 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         })()}
                                     </select>
                                 </div>
+
+                                {(() => {
+                                    if (!newAllocation.worker_id) return null;
+                                    const selectedWorkerObj = workers.find(w => String(w.user_id) === String(newAllocation.worker_id));
+                                    const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
+                                    if (hasRate) return null;
+                                    return (
+                                        <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 rounded-lg space-y-2 animate-fadeIn">
+                                            <div className="flex items-start gap-1.5 text-xs font-bold">
+                                                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+                                                <span>Employee rate required to add "{selectedWorkerObj?.full_name}"</span>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-semibold uppercase text-outline mb-1">Hourly Rate (KWD)</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0.01"
+                                                    required
+                                                    value={hourlyRateToCreate}
+                                                    onChange={e => setHourlyRateToCreate(e.target.value)}
+                                                    className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                                                    placeholder="e.g. 5.00"
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="grid grid-cols-1 gap-4">
                                     <div>

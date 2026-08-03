@@ -7,7 +7,7 @@ import {
   User, DollarSign, Award, Calendar, Building2, Wrench,
   UserCheck, UserX, CheckCircle2, UserLock, ChevronLeft, ChevronRight,
   Link as LinkIcon, Copy, Check, RefreshCw, FileText, Filter, Users,
-  LayoutList, LayoutGrid
+  LayoutList, LayoutGrid, Menu
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
@@ -177,6 +177,7 @@ export const WorkforceView: React.FC = () => {
 
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [editEmployeeItem, setEditEmployeeItem] = useState<any | null>(null);
+  const [isFabOpen, setIsFabOpen] = useState(false);
 
   // Forms segmented tab state
   const [activeFormTab, setActiveFormTab] = useState<'basic' | 'access' | 'skills' | 'payroll'>('basic');
@@ -470,20 +471,28 @@ export const WorkforceView: React.FC = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const formRoleObj = roles.find(r => String(r.role_id) === String(employeeForm.role));
-  const formRoleName = (formRoleObj?.role_name || '').toLowerCase();
-  const isFormTechnician = formRoleName === 'technician';
-  const isFormStoreManager = formRoleName === 'store manager';
-  const isFormAreaManager = formRoleName === 'area manager';
+  const selectedRolePermissions = (formRoleObj?.permissions || []) as string[];
+  const isFormTechnician = selectedRolePermissions.includes('complete_ticket') || (formRoleObj?.role_name || '').toLowerCase() === 'technician';
+  const isFormStoreManager = (selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'store manager';
+  const isFormAreaManager = (selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'area manager';
   const needsWorkingDepartments = !isFormStoreManager && !isFormAreaManager;
 
+  const selectedSubDepts = subDepartments.filter(sd =>
+    employeeForm.sub_departments.map(Number).includes(Number(sd.sub_department_id))
+  );
+  const hasTechnicalSubDept = selectedSubDepts.some(sd =>
+    sd.sub_department_name.trim().toLowerCase() !== 'office'
+  );
+  const isTechnicianForForm = isFormTechnician || hasTechnicalSubDept;
+
   useEffect(() => {
-    if (!isFormTechnician && activeFormTab === 'payroll') {
+    if (!isTechnicianForForm && activeFormTab === 'payroll') {
       setActiveFormTab('basic');
     }
     if (!needsWorkingDepartments && activeFormTab === 'skills') {
       setActiveFormTab('access');
     }
-  }, [isFormTechnician, needsWorkingDepartments, activeFormTab]);
+  }, [isTechnicianForForm, needsWorkingDepartments, activeFormTab]);
 
   useEffect(() => {
     fetchData();
@@ -721,17 +730,10 @@ export const WorkforceView: React.FC = () => {
         return;
       }
 
-      // 3. Check if Office employee based on sub-departments
-      const selectedSubDepts = subDepartments.filter(sd =>
-        employeeForm.sub_departments.map(Number).includes(Number(sd.sub_department_id))
-      );
-      const isOfficeEmployee = selectedSubDepts.some(sd =>
-        sd.sub_department_name.trim().toLowerCase() === 'office'
-      );
-
-      if (!isOfficeEmployee) {
+      // 3. Technical validation if user acts as a technician
+      if (isTechnicianForForm) {
         if (employeeForm.skills.length === 0) {
-          setErrorMsg("To approve this employee, you must assign at least one technical skill under the 'Store Access & Skills' tab.");
+          setErrorMsg("To approve this employee, you must assign at least one technical skill under the 'Departments & Skills' tab.");
           setActionLoading(false);
           return;
         }
@@ -904,61 +906,31 @@ export const WorkforceView: React.FC = () => {
               )}
 
               {(subpage === 'employees' || !subpage) && (
-                <div className="flex items-center gap-2">
-                  {/* View Mode Switcher */}
-                  <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 flex-shrink-0">
+                <Can permission="accounts.add_customuser">
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setViewMode('table')}
-                      className={`p-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer ${
-                        viewMode === 'table'
-                          ? 'bg-primary text-on-primary shadow-xs'
-                          : 'text-on-surface-variant hover:text-on-surface'
-                      }`}
-                      title="Table View"
+                      onClick={() => {
+                        setGenRole('');
+                        setGenStore('');
+                        setGenSubDepartment('');
+                        setGenNaturesList([]);
+                        setCopiedToast(false);
+                        setShowLinkModal(true);
+                      }}
+                      className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      <LayoutList className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Table</span>
+                      <LinkIcon className="w-4 h-4 text-primary" />
+                      <span className="hidden sm:inline">Registration Link</span>
                     </button>
                     <button
-                      onClick={() => setViewMode('card')}
-                      className={`p-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer ${
-                        viewMode === 'card'
-                          ? 'bg-primary text-on-primary shadow-xs'
-                          : 'text-on-surface-variant hover:text-on-surface'
-                      }`}
-                      title="Card View"
+                      onClick={handleOpenCreateEmployee}
+                      className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
                     >
-                      <LayoutGrid className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Card</span>
+                      <Plus className="w-4 h-4" />
+                      <span>Add Employee</span>
                     </button>
                   </div>
-
-                  <Can permission="accounts.add_customuser">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setGenRole('');
-                          setGenStore('');
-                          setGenSubDepartment('');
-                          setGenNaturesList([]);
-                          setCopiedToast(false);
-                          setShowLinkModal(true);
-                        }}
-                        className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <LinkIcon className="w-4 h-4 text-primary" />
-                        <span className="hidden sm:inline">Registration Link</span>
-                      </button>
-                      <button
-                        onClick={handleOpenCreateEmployee}
-                        className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Add Employee</span>
-                      </button>
-                    </div>
-                  </Can>
-                </div>
+                </Can>
               )}
             </div>
           </div>
@@ -1012,74 +984,93 @@ export const WorkforceView: React.FC = () => {
           <SkeletonGrid />
         ) : filteredData.length === 0 ? (
           <EmptyState onClear={() => setSearch('')} />
-        ) : viewMode === 'card' && (subpage === 'employees' || !subpage) ? (() => {
-          const totalItems = filteredData.length;
-          const startIndex = (currentPage - 1) * itemsPerPage;
-          const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
-          const paginatedData = filteredData.slice(startIndex, endIndex);
+        ) : (subpage === 'employees' || !subpage) ? (
+          <>
+            {/* Mobile View: Stacked Card Rows */}
+            <div className="sm:hidden flex flex-col gap-2.5 p-3">
+              {(() => {
+                const totalItems = filteredData.length;
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+                const paginatedData = filteredData.slice(startIndex, endIndex);
 
-          return (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4 bg-surface-container-low">
-              {paginatedData.map(item => {
-                const canChangeUser = hasPermission('accounts.change_customuser');
-                return (
-                  <div
-                    key={item.user_id}
-                    onClick={canChangeUser ? () => handleOpenEditEmployee(item) : undefined}
-                    className={`flex flex-col border border-outline-variant rounded-xl bg-surface-container transition-all duration-200 p-4 relative shadow-sm ${
-                      canChangeUser ? 'cursor-pointer hover:bg-surface-container-high/50 hover:shadow-md' : ''
-                    }`}
-                  >
-                    <div className="flex justify-between items-center gap-2 mb-3 shrink-0">
-                      <span className="font-mono text-xs font-semibold text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10">{item.employee_no}</span>
-                      <span className="text-[10px] font-bold text-primary uppercase tracking-wide">
-                        {item.role?.role_name || item.role || 'No Role'}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center text-center flex-1 min-w-0">
+                return paginatedData.map(item => {
+                  const canChangeUser = hasPermission('accounts.change_customuser');
+                  return (
+                    <button
+                      key={item.user_id}
+                      type="button"
+                      onClick={canChangeUser ? () => handleOpenEditEmployee(item) : undefined}
+                      className={`w-full text-left flex items-center gap-3 p-3.5 rounded-xl border transition-all cursor-pointer shadow-xs bg-surface border-outline-variant ${
+                        canChangeUser ? 'active:scale-[0.98]' : ''
+                      }`}
+                    >
+                      {/* Avatar */}
                       {item.profile_image ? (
-                        <img src={item.profile_image} alt="" className="w-16 h-16 rounded-full object-cover border border-outline-variant mb-2.5 shadow-xs shrink-0" />
+                        <img src={item.profile_image} alt="" className="w-12 h-12 rounded-full object-cover border border-outline-variant shrink-0" />
                       ) : (
-                        <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg mb-2.5 border border-primary/20 shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-base border border-primary/20 shrink-0">
                           {item.full_name ? item.full_name.charAt(0).toUpperCase() : (item.username?.charAt(0).toUpperCase() || '?')}
                         </div>
                       )}
-                      <h4 className="font-bold text-on-surface text-sm mb-0.5 truncate w-full">{item.full_name}</h4>
-                      <p className="text-[11px] text-on-surface-variant truncate w-full mb-3">{item.email}</p>
-                      {item.phone && (
-                        <div className="text-[10px] text-on-surface-variant/80 mb-4 leading-relaxed font-medium bg-surface-container-low p-2 rounded-lg border border-outline-variant/60 w-full text-left">
-                          <div className="truncate">📞 Phone: <span className="font-mono">{item.phone}</span></div>
-                          {item.whatsapp_number && <div className="truncate">💬 WhatsApp: <span className="font-mono">{item.whatsapp_number}</span></div>}
-                        </div>
-                      )}
 
-                      <div className="w-full text-left space-y-3 mt-auto pt-2 border-t border-outline-variant/40">
-                        <div>
-                          <span className="text-[9px] font-bold text-on-surface-variant/60 uppercase tracking-widest block mb-0.5">Department</span>
-                          <p className="text-xs text-on-surface font-medium truncate">{item.sub_departments?.map((sd: any) => sd.sub_department_name).join(', ') || '-'}</p>
+                      {/* Details */}
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.full_name}</h4>
+                          <span className="text-[10px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10 uppercase tracking-wide shrink-0">
+                            {item.role?.role_name || item.role || 'No Role'}
+                          </span>
+                        </div>
+                        
+                        <p className="text-xs text-on-surface-variant truncate">{item.email}</p>
+                        
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-outline pt-0.5">
+                          {item.phone && <span className="font-mono">📞 {item.phone}</span>}
+                          {item.employee_no && <span>· ID: {item.employee_no}</span>}
+                          {item.hourly_rate && <span className="font-semibold text-emerald-600 dark:text-emerald-400">· {item.hourly_rate} KWD/hr</span>}
                         </div>
 
-                        <div>
-                          <span className="text-[9px] font-bold text-on-surface-variant/60 uppercase tracking-widest block mb-0.5">Skills</span>
-                          <p className="text-xs text-on-surface font-medium truncate">
-                            {item.skills?.map((sk: any) => sk.nature_name).join(', ') || '-'}
-                          </p>
-                        </div>
+                        {item.sub_departments && item.sub_departments.length > 0 && (
+                          <div className="text-[10px] text-outline truncate pt-0.5">
+                            🏢 {item.sub_departments.map((sd: any) => sd.sub_department_name).join(', ')}
+                          </div>
+                        )}
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-outline-variant/60 w-full shrink-0">
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-xs">
-                        {item.hourly_rate ? `${item.hourly_rate} KWD/hr` : '-'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                    </button>
+                  );
+                });
+              })()}
             </div>
-          );
-        })() : (
-          <div className="ag-theme-app w-full" style={{ height: 520 }}>
+
+            {/* Desktop View: Table */}
+            <div className="hidden sm:block">
+              <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10 }}>
+                <AgGridReact
+                  theme={appTheme}
+                  rowData={filteredData}
+                  columnDefs={columnDefs}
+                  defaultColDef={defaultColDef}
+                  pagination={true}
+                  paginationPageSize={itemsPerPage}
+                  suppressPaginationPanel={true}
+                  onGridReady={onGridReady}
+                  onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
+                  rowHeight={52}
+                  headerHeight={44}
+                  rowClass="cursor-pointer"
+                  onRowClicked={(event) => {
+                    const canChangeUser = hasPermission('accounts.change_customuser');
+                    if (event.data) {
+                      if (canChangeUser) handleOpenEditEmployee(event.data);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10 }}>
             <AgGridReact
               theme={appTheme}
               rowData={filteredData}
@@ -1094,13 +1085,8 @@ export const WorkforceView: React.FC = () => {
               headerHeight={44}
               rowClass="cursor-pointer"
               onRowClicked={(event) => {
-                const canChangeUser = hasPermission('accounts.change_customuser');
-                if (event.data) {
-                  if (subpage === 'employees' || !subpage) {
-                    if (canChangeUser) handleOpenEditEmployee(event.data);
-                  } else if (subpage === 'rates') {
-                    handleOpenEdit(event.data);
-                  }
+                if (event.data && subpage === 'rates') {
+                  handleOpenEdit(event.data);
                 }
               }}
             />
@@ -1115,15 +1101,12 @@ export const WorkforceView: React.FC = () => {
           const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
 
           return (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-outline-variant bg-surface-container-low text-xs">
-              <span className="text-on-surface-variant font-medium">
-                Showing <strong className="text-on-surface font-semibold">{totalItems > 0 ? startIndex + 1 : 0}</strong> to{' '}
-                <strong className="text-on-surface font-semibold">{endIndex}</strong> of{' '}
-                <strong className="text-on-surface font-semibold">{totalItems}</strong> entries
-              </span>
-
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-outline-variant bg-surface-container-low">
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 text-on-surface-variant">
+                <span className="text-[11px] text-outline">
+                  {startIndex + 1}–{endIndex} of {totalItems.toLocaleString()}
+                </span>
+                <div className="flex items-center gap-1.5 text-[11px] text-outline">
                   <span>Per page:</span>
                   <select
                     value={itemsPerPage}
@@ -1131,7 +1114,7 @@ export const WorkforceView: React.FC = () => {
                       setItemsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                    className="bg-surface border border-outline-variant rounded px-1.5 py-0.5 text-[11px] text-on-surface focus:outline-none focus:border-primary cursor-pointer"
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>
@@ -1139,32 +1122,25 @@ export const WorkforceView: React.FC = () => {
                     <option value={100}>100</option>
                   </select>
                 </div>
-
-                {totalPages > 1 && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                      className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-
-                    <span className="px-3 text-xs font-medium text-on-surface min-w-[80px] text-center">
-                      Page {currentPage} of {totalPages}
-                    </span>
-
-                    <button
-                      type="button"
-                      disabled={currentPage >= totalPages}
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] text-on-surface font-medium px-2">{currentPage} / {totalPages}</span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           );
@@ -1361,7 +1337,7 @@ export const WorkforceView: React.FC = () => {
                     Departments & Skills
                   </button>
                 )}
-                {isFormTechnician && (
+                {isTechnicianForForm && (
                   <button
                     type="button"
                     onClick={() => setActiveFormTab('payroll')}
@@ -1722,7 +1698,7 @@ export const WorkforceView: React.FC = () => {
                     </div>
 
                     {/* Technician Technical Skills */}
-                    {isFormTechnician && (
+                    {isTechnicianForForm && (
                       <div className="flex flex-col h-[340px]">
                         <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
                           <Award className="w-4 h-4" />
@@ -2039,6 +2015,81 @@ export const WorkforceView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+      {/* Floating Action Button (FAB) for Mobile Add Employee / Registration Link Speed-Dial */}
+      {(subpage === 'employees' || !subpage) && (
+        <Can permission="accounts.add_customuser">
+          <div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+            {/* Speed-dial options */}
+            <AnimatePresence>
+              {isFabOpen && (
+                <div className="flex flex-col items-end gap-2 mb-1">
+                  <motion.button
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                    onClick={() => {
+                      setGenRole('');
+                      setGenStore('');
+                      setGenSubDepartment('');
+                      setGenNaturesList([]);
+                      setCopiedToast(false);
+                      setShowLinkModal(true);
+                      setIsFabOpen(false);
+                    }}
+                    className="flex items-center gap-2 px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-full text-xs font-semibold shadow-md text-on-surface cursor-pointer active:scale-95 transition-transform"
+                  >
+                    <LinkIcon className="w-4 h-4 text-primary" />
+                    <span>Registration Link</span>
+                  </motion.button>
+
+                  <motion.button
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                    onClick={() => {
+                      handleOpenCreateEmployee();
+                      setIsFabOpen(false);
+                    }}
+                    className="flex items-center gap-2 px-3.5 py-2.5 bg-primary text-white rounded-full text-xs font-semibold shadow-md cursor-pointer active:scale-95 transition-transform"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Employee</span>
+                  </motion.button>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Main FAB toggle button */}
+            <motion.button
+              onClick={() => setIsFabOpen(prev => !prev)}
+              whileTap={{ scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+              className="w-14 h-14 rounded-full bg-primary text-white shadow-xl flex items-center justify-center cursor-pointer hover:bg-primary-hover active:scale-95"
+              aria-label={isFabOpen ? 'Close actions' : 'Open actions'}
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {isFabOpen ? (
+                  <motion.span key="close" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }} transition={{ duration: 0.15 }}>
+                    <X className="w-6 h-6" />
+                  </motion.span>
+                ) : (
+                  <motion.span key="menu" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }} transition={{ duration: 0.15 }}>
+                    <Menu className="w-6 h-6" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
+          </div>
+        </Can>
+      )}
+
+      {/* FAB backdrop (close on outside click) */}
+      {isFabOpen && (
+        <div
+          className="sm:hidden fixed inset-0 z-30 bg-black/20"
+          onClick={() => setIsFabOpen(false)}
+        />
+      )}
     </div>
   );
 };

@@ -2,9 +2,19 @@ from rest_framework import serializers
 from .models import Role, CustomUser
 
 class RoleSerializer(serializers.ModelSerializer):
+    permissions = serializers.SerializerMethodField()
+
     class Meta:
         model = Role
-        fields = '__all__'
+        fields = ['role_id', 'role_name', 'permissions']
+
+    def get_permissions(self, obj):
+        from django.contrib.auth.models import Group
+        try:
+            group = Group.objects.get(name=obj.role_name)
+            return list(group.permissions.values_list('codename', flat=True))
+        except Group.DoesNotExist:
+            return []
 
 class CustomUserSerializer(serializers.ModelSerializer):
     hourly_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, write_only=True, allow_null=True)
@@ -41,15 +51,28 @@ class CustomUserSerializer(serializers.ModelSerializer):
                     {"accessible_stores": "To approve this employee, you must assign at least one store allocation."}
                 )
 
-            # 3. Check if Office employee based on sub-departments
+            # 3. Check if Office vs Technical employee
             sub_depts = attrs.get('sub_departments', [])
             if self.instance and 'sub_departments' not in attrs:
                 sub_depts = list(self.instance.sub_departments.all())
             
             sd_names = [sd.sub_department_name.strip().lower() for sd in sub_depts]
-            is_office = 'office' in sd_names
+            has_technical_dept = any(name != 'office' for name in sd_names)
 
-            if not is_office:
+            # Check if role has technician permissions
+            from django.contrib.auth.models import Group
+            group_perms = []
+            if role:
+                try:
+                    group = Group.objects.get(name=role.role_name)
+                    group_perms = list(group.permissions.values_list('codename', flat=True))
+                except Group.DoesNotExist:
+                    pass
+            is_tech_role = 'complete_ticket' in group_perms or 'technician' in (role.role_name or '').lower()
+
+            acts_as_tech = is_tech_role or has_technical_dept
+
+            if acts_as_tech:
                 # Skills required
                 skills = attrs.get('skills', None)
                 if skills is None and self.instance:

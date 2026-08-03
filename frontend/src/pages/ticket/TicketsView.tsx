@@ -193,6 +193,25 @@ export const TicketsView: React.FC = () => {
             extraData.reject_reason = reason;
         } else if (targetStatus.status_name?.toLowerCase() === 'completed') {
             if (!window.confirm(`Are you sure you want to mark ticket ${ticket.work_order_no} as COMPLETED?`)) return;
+        } else if (targetStatus.status_name?.toLowerCase() === 'in progress') {
+            // Fetch allocations on-demand to validate at least one worker is assigned
+            try {
+                const res = await fetch(`${API_URL}/maintenance/allocation/?ticket=${ticketId}`, {
+                    headers: { Authorization: `Token ${token}` }
+                });
+                if (res.ok) {
+                    const allocs = await res.json();
+                    if (!Array.isArray(allocs) || allocs.length === 0) {
+                        setMessage({
+                            text: `Cannot move to In Progress: At least one worker must be allocated to ticket ${ticket.work_order_no} first.`,
+                            type: 'error'
+                        });
+                        return;
+                    }
+                }
+            } catch {
+                // If check fails, allow through (backend will be the final guard)
+            }
         }
 
         // Optimistic UI update
@@ -297,9 +316,16 @@ export const TicketsView: React.FC = () => {
             if (resNat.ok) setNatures(await resNat.json());
             if (resWork.ok) {
                 const uList = await resWork.json();
+                // Include users who are technicians by role OR who have at least one
+                // non-office sub-department assigned (hybrid office staff / technicians)
                 setWorkers(uList.filter((u: any) => {
                     const roleName = u.role?.role_name?.toLowerCase() ?? '';
-                    return roleName === 'technician' || roleName === 'worker';
+                    const isTechnicianRole = roleName === 'technician' || roleName === 'worker';
+                    const hasTechnicalSubDept = Array.isArray(u.sub_departments) && u.sub_departments.some((sd: any) => {
+                        const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
+                        return name !== '' && name !== 'office';
+                    });
+                    return isTechnicianRole || hasTechnicalSubDept;
                 }));
             }
             if (resExp.ok) setExpenseTypes(await resExp.json());
@@ -740,7 +766,84 @@ export const TicketsView: React.FC = () => {
                     <SkeletonGrid />
                 ) : tickets.length === 0 ? (
                     <EmptyState onClear={clearFilters} />
-                ) : viewMode === 'kanban' ? (
+                ) : (
+                <>
+                    {/* ── Mobile-only card grid ──────────────────────────────── */}
+                    <div className="sm:hidden p-3 grid grid-cols-1 gap-2.5">
+                        {tickets.map(ticket => {
+                            const isHigh = ticket.priority?.level >= 2;
+                            const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
+                            return (
+                                <button
+                                    key={ticket.ticket_id}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedTicket(ticket);
+                                        setLastOpenedTicketId(ticket.ticket_id);
+                                    }}
+                                    className={`text-left flex flex-col gap-2 p-3 rounded-xl border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${
+                                        lastOpenedTicketId === ticket.ticket_id
+                                            ? 'bg-primary/5 border-primary'
+                                            : 'bg-surface border-outline-variant'
+                                    }`}
+                                >
+                                    {/* Status + Priority row */}
+                                    <div className="flex items-center justify-between gap-1 flex-wrap">
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(ticket.status?.status_name)}`}>
+                                            {ticket.status?.status_name}
+                                        </span>
+                                        {ticket.priority && (
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                                                {ticket.priority.priority_name}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Title */}
+                                    <p className="text-xs font-semibold text-on-surface leading-snug line-clamp-2 flex-1">{ticket.title}</p>
+
+                                    {/* Work order */}
+                                    <span className="font-mono text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
+
+                                    {/* Footer: store + assignees */}
+                                    <div className="flex items-center justify-between gap-1 pt-1 border-t border-outline-variant/40">
+                                        <span className="text-[10px] text-outline truncate flex-1">
+                                            {ticket.store?.store_name || new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                        </span>
+                                        {/* Assignee avatar stack */}
+                                        {assignedWorkers.length > 0 ? (
+                                            <div className="flex -space-x-1.5 shrink-0">
+                                                {assignedWorkers.slice(0, 3).map((w: any, idx: number) => (
+                                                    <div
+                                                        key={w.user_id}
+                                                        className="w-5 h-5 rounded-full overflow-hidden border border-surface bg-primary/10 flex items-center justify-center text-[8px] font-bold text-primary shrink-0"
+                                                        style={{ zIndex: 10 - idx }}
+                                                        title={w.full_name}
+                                                    >
+                                                        {w.profile_image
+                                                            ? <img src={getMediaUrl(w.profile_image)} alt={w.full_name} className="w-full h-full object-cover" />
+                                                            : w.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
+                                                        }
+                                                    </div>
+                                                ))}
+                                                {assignedWorkers.length > 3 && (
+                                                    <div className="w-5 h-5 rounded-full bg-surface-container border border-outline-variant/60 flex items-center justify-center text-[8px] font-bold text-outline shrink-0">
+                                                        +{assignedWorkers.length - 3}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-[9px] text-outline/60 italic shrink-0">—</span>
+                                        )}
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* ── Desktop: kanban or grid ───────────────────────────────── */}
+                    <div className={`hidden sm:block`}>
+                    {viewMode === 'kanban' ? (
                     <div className="p-4 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
                         <div className="flex gap-4 min-w-max items-start">
                             {statuses
@@ -971,7 +1074,7 @@ export const TicketsView: React.FC = () => {
                         </div>
                     </div>
                 ) : (
-                    <div className="ag-theme-app w-full" style={{ height: 520 }}>
+                    <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(pageSize, tickets.length)) * 52 + 10 }}>
                         <AgGridReact<Ticket>
                             theme={appTheme}
                             rowData={tickets}
@@ -999,44 +1102,46 @@ export const TicketsView: React.FC = () => {
                         />
                     </div>
                 )}
+                    </div>{/* end sm:block desktop wrapper */}
+                </>
+                )}{/* end outer ternary branch */}
 
-                {/* Pagination */}
+                {/* Pagination — minimal */}
                 {!loading && tickets.length > 0 && (
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-outline-variant bg-surface-container-low">
-                        <span className="text-xs text-on-surface-variant font-medium">
-                            {'Showing '}
-                            <span className="text-on-surface font-semibold">
-                                {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, totalCount)}
-                            </span>
-                            {' of '}
-                            <span className="text-on-surface font-semibold">{totalCount.toLocaleString()}</span>
-                            {' tickets'}
-                        </span>
-
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-outline-variant bg-surface-container-low">
                         <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                            <span className="text-[11px] text-outline">
+                                {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount.toLocaleString()}
+                            </span>
+                            <div className="flex items-center gap-1.5 text-[11px] text-outline">
                                 <span>Per page:</span>
-                                <select value={pageSize}
+                                <select
+                                    value={pageSize}
                                     onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                                    className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs text-on-surface focus:outline-none focus:border-primary">
+                                    className="bg-surface border border-outline-variant rounded px-1.5 py-0.5 text-[11px] text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                                >
                                     <option value={25}>25</option>
                                     <option value={50}>50</option>
                                     <option value={100}>100</option>
                                 </select>
                             </div>
-                            <div className="flex items-center gap-1">
-                                <button disabled={page <= 1 || loading} onClick={() => setPage(p => Math.max(p - 1, 1))}
-                                    className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors">
-                                    <ChevronLeft className="w-4 h-4" />
-                                </button>
-                                <span className="px-3 text-xs font-medium text-on-surface min-w-[80px] text-center">
-                                    Page {page} of {totalPages}
-                                </span>
-                                <button disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}
-                                    className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors">
-                                    <ChevronRight className="w-4 h-4" />
-                                </button>
-                            </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <button
+                                disabled={page <= 1 || loading}
+                                onClick={() => setPage(p => Math.max(p - 1, 1))}
+                                className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors"
+                            >
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="text-[11px] text-on-surface font-medium px-2">{page} / {totalPages}</span>
+                            <button
+                                disabled={page >= totalPages || loading}
+                                onClick={() => setPage(p => p + 1)}
+                                className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors"
+                            >
+                                <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
                         </div>
                     </div>
                 )}

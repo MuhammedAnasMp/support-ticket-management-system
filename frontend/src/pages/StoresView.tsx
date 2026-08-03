@@ -1,12 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, MapPin, Store,
-  Building, ChevronRight, X, Loader2, AlertCircle
+  Building, ChevronRight, ChevronLeft, X, Loader2, AlertCircle
 } from 'lucide-react';
 import type { RootState } from '../store';
+import { AgGridReact } from 'ag-grid-react';
+import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
+import type { ColDef } from 'ag-grid-community';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+// ─── AG Grid v36 Theming API ─────────────────────────────────────────────────
+const appTheme = themeQuartz.withParams({
+    fontFamily: 'Inter, sans-serif',
+    fontSize: 13,
+    rowHeight: 52,
+    headerHeight: 44,
+    cellHorizontalPaddingScale: 1.4,
+    backgroundColor: '#ffffff',
+    foregroundColor: '#191c1d',
+    headerBackgroundColor: '#f3f4f5',
+    headerTextColor: '#414754',
+    rowHoverColor: '#e7e8e9',
+    borderColor: '#E0E2E6',
+    accentColor: '#1A73E8',
+    spacing: 6,
+    wrapperBorderRadius: 0,
+});
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -23,9 +46,106 @@ export const StoresView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [gridApi, setGridApi] = useState<any>(null);
+
+  const onGridReady = (params: any) => {
+    setGridApi(params.api);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, subpage]);
+
+  useEffect(() => {
+    if (gridApi) {
+      gridApi.paginationGoToPage(currentPage - 1);
+    }
+  }, [currentPage, gridApi]);
+
+  useEffect(() => {
+    if (gridApi) {
+      gridApi.setGridOption('paginationPageSize', itemsPerPage);
+    }
+  }, [itemsPerPage, gridApi]);
+
   // Modals state
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
+
+  const columnDefs = useMemo<ColDef[]>(() => {
+    const editActionCellRenderer = (params: any) => {
+      const item = params.data;
+      if (!item) return null;
+      return (
+        <div className="flex items-center gap-1.5 h-full">
+          <button
+            onClick={() => handleOpenEdit(item)}
+            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => handleDelete(item.store_id || item.area_id || item.department_id || item.sub_department_id)}
+            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      );
+    };
+
+    if (subpage === 'all' || !subpage) {
+      return [
+        { headerName: 'Store Code/ID', field: 'store_id', width: 130, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Name', field: 'store_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Area', field: 'area.area_name', flex: 1, minWidth: 130, valueGetter: p => p.data?.area?.area_name || 'N/A' },
+        { headerName: 'Manager', field: 'manager.full_name', flex: 1.2, minWidth: 150, valueGetter: p => p.data?.manager?.full_name || 'N/A' },
+        { headerName: 'GPS Coord', field: 'latitude', flex: 1.2, minWidth: 160, cellClass: 'font-mono text-xs text-outline', valueGetter: p => p.data?.latitude && p.data?.longitude ? `${p.data.latitude}, ${p.data.longitude}` : 'No Coordinates' },
+        {
+          headerName: 'Status',
+          field: 'active',
+          width: 110,
+          cellRenderer: (params: any) => (
+            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+              params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+            }`}>
+              {params.value ? 'Active' : 'Inactive'}
+            </span>
+          )
+        },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'areas') {
+      return [
+        { headerName: 'Area ID', field: 'area_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Area Name', field: 'area_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'departments') {
+      return [
+        { headerName: 'Department ID', field: 'department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Department Name', field: 'department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else {
+      // sub-departments
+      return [
+        { headerName: 'Sub Dept ID', field: 'sub_department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    }
+  }, [subpage]);
+
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    filter: true,
+    resizable: true,
+  }), []);
 
   // Form fields
   const [storeForm, setStoreForm] = useState({
@@ -209,6 +329,12 @@ export const StoresView: React.FC = () => {
     return text.includes(search.toLowerCase());
   });
 
+  const totalItems = filteredData.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const paginatedData = filteredData.slice(startIndex, endIndex);
+
   return (
     <div className="space-y-6">
       {errorMsg && (
@@ -233,7 +359,7 @@ export const StoresView: React.FC = () => {
 
         <button
           onClick={handleOpenCreate}
-          className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
+          className="hidden sm:flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
         >
           <Plus className="w-4 h-4" />
           Add New {subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : subpage === 'sub-departments' ? 'Sub Department' : 'Store'}
@@ -248,97 +374,137 @@ export const StoresView: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div className="bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-2xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-surface-container-high dark:bg-dark-surface-container-high border-b border-outline-variant dark:border-dark-outline-variant text-[10px] uppercase font-bold text-outline tracking-wider">
-                  {subpage === 'all' || !subpage ? (
-                    <>
-                      <th className="px-6 py-4">Store Code/ID</th>
-                      <th className="px-6 py-4">Name</th>
-                      <th className="px-6 py-4">Area</th>
-                      <th className="px-6 py-4">Manager</th>
-                      <th className="px-6 py-4">GPS Coord</th>
-                      <th className="px-6 py-4">Status</th>
-                    </>
-                  ) : subpage === 'areas' ? (
-                    <>
-                      <th className="px-6 py-4">Area ID</th>
-                      <th className="px-6 py-4">Area Name</th>
-                    </>
-                  ) : subpage === 'departments' ? (
-                    <>
-                      <th className="px-6 py-4">Department ID</th>
-                      <th className="px-6 py-4">Department Name</th>
-                    </>
-                  ) : (
-                    <>
-                      <th className="px-6 py-4">Sub Dept ID</th>
-                      <th className="px-6 py-4">Sub Department Name</th>
-                      <th className="px-6 py-4">Parent Department</th>
-                    </>
-                  )}
-                  <th className="px-6 py-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant dark:divide-dark-outline-variant text-sm">
-                {filteredData.map(item => (
-                  <tr key={item.store_id || item.area_id || item.department_id || item.sub_department_id} className="hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low transition-all">
+        <>
+          {/* Mobile View: Stacked Card Rows */}
+          <div className="sm:hidden divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface">
+            {paginatedData.map(item => {
+              const itemId = item.store_id || item.area_id || item.department_id || item.sub_department_id;
+              return (
+                <button
+                  key={itemId}
+                  type="button"
+                  onClick={() => handleOpenEdit(item)}
+                  className="w-full text-left px-4 py-3.5 flex items-start gap-3 bg-surface active:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <div className="flex-1 min-w-0 space-y-0.5">
                     {subpage === 'all' || !subpage ? (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.store_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.store_name}</td>
-                        <td className="px-6 py-4">{item.area?.area_name || 'N/A'}</td>
-                        <td className="px-6 py-4">{item.manager?.full_name || 'N/A'}</td>
-                        <td className="px-6 py-4 text-xs font-mono text-outline">
-                          {item.latitude && item.longitude ? `${item.latitude}, ${item.longitude}` : 'No Coordinates'}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            item.active ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.store_name}</h4>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
                           }`}>
                             {item.active ? 'Active' : 'Inactive'}
                           </span>
-                        </td>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-outline">
+                          <span className="font-mono text-[10px] font-semibold">Code: {item.store_id}</span>
+                          <span>·</span>
+                          <span>📍 {item.area?.area_name || 'No Area'}</span>
+                          {item.manager && (
+                            <>
+                              <span>·</span>
+                              <span>👤 {item.manager.full_name}</span>
+                            </>
+                          )}
+                        </div>
                       </>
                     ) : subpage === 'areas' ? (
-                      <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.area_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.area_name}</td>
-                      </>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-on-surface text-sm truncate">{item.area_name}</span>
+                        <span className="font-mono text-[10px] text-outline">ID: {item.area_id}</span>
+                      </div>
                     ) : subpage === 'departments' ? (
-                      <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.department_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.department_name}</td>
-                      </>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-on-surface text-sm truncate">{item.department_name}</span>
+                        <span className="font-mono text-[10px] text-outline">ID: {item.department_id}</span>
+                      </div>
                     ) : (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.sub_department_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.sub_department_name}</td>
-                        <td className="px-6 py-4">{item.department?.department_name || 'N/A'}</td>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-on-surface text-sm truncate">{item.sub_department_name}</span>
+                          <span className="font-mono text-[10px] text-outline">ID: {item.sub_department_id}</span>
+                        </div>
+                        <p className="text-[11px] text-outline pt-0.5">🏢 Parent: {item.department?.department_name || 'N/A'}</p>
                       </>
                     )}
-                    <td className="px-6 py-4 text-right space-x-2">
-                      <button
-                        onClick={() => handleOpenEdit(item)}
-                        className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.store_id || item.area_id || item.department_id || item.sub_department_id)}
-                        className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        </div>
+
+          {/* Desktop View: Table */}
+          <div className="hidden sm:block">
+            <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10 }}>
+              <AgGridReact
+                theme={appTheme}
+                rowData={filteredData}
+                columnDefs={columnDefs}
+                defaultColDef={defaultColDef}
+                pagination={true}
+                paginationPageSize={itemsPerPage}
+                suppressPaginationPanel={true}
+                onGridReady={onGridReady}
+                onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
+                rowHeight={52}
+                headerHeight={44}
+                rowClass="cursor-pointer"
+                onRowClicked={(event) => {
+                  if (event.data) {
+                    handleOpenEdit(event.data);
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Custom Pagination Footer */}
+          {!loading && filteredData.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border border-t-0 border-outline-variant rounded-b-2xl bg-surface-container-low">
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-outline">
+                  {startIndex + 1}–{endIndex} of {totalItems.toLocaleString()}
+                </span>
+                <div className="flex items-center gap-1.5 text-[11px] text-outline">
+                  <span>Per page:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={e => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="bg-surface border border-outline-variant rounded px-1.5 py-0.5 text-[11px] text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] text-on-surface font-medium px-2">{currentPage} / {totalPages}</span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Creation/Edit Form Modal */}
@@ -572,6 +738,14 @@ export const StoresView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+      {/* Floating Action Button (FAB) for Mobile Add Store/Area/Dept */}
+      <button
+        onClick={handleOpenCreate}
+        className="sm:hidden fixed bottom-6 right-6 z-40 bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
+        title={`Add New ${subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : subpage === 'sub-departments' ? 'Sub Department' : 'Store'}`}
+      >
+        <Plus className="w-6 h-6" />
+      </button>
     </div>
   );
 };

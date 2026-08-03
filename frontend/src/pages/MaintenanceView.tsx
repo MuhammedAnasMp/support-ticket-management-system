@@ -1,18 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, Settings, Wrench,
-  Shield, CheckSquare, Layers, X, Loader2, AlertCircle
+  Shield, CheckSquare, Layers, X, Loader2, AlertCircle,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import type { RootState } from '../store';
+import { AgGridReact } from 'ag-grid-react';
+import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
+import type { ColDef } from 'ag-grid-community';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+// ─── AG Grid v36 Theming API ─────────────────────────────────────────────────
+const appTheme = themeQuartz.withParams({
+  fontFamily: 'Inter, sans-serif',
+  fontSize: 13,
+  rowHeight: 52,
+  headerHeight: 44,
+  cellHorizontalPaddingScale: 1.4,
+  backgroundColor: '#ffffff',
+  foregroundColor: '#191c1d',
+  headerBackgroundColor: '#f3f4f5',
+  headerTextColor: '#414754',
+  rowHoverColor: '#e7e8e9',
+  borderColor: '#E0E2E6',
+  accentColor: '#1A73E8',
+  spacing: 6,
+  wrapperBorderRadius: 0,
+});
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const MaintenanceView: React.FC = () => {
   const { subpage } = useParams<{ subpage: string }>();
-  const { token } = useSelector((state: RootState) => state.auth);
+  const { token, user } = useSelector((state: RootState) => state.auth);
 
   // States
   const [data, setData] = useState<any[]>([]);
@@ -26,9 +50,114 @@ export const MaintenanceView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [gridApi, setGridApi] = useState<any>(null);
+
+  const onGridReady = (params: any) => {
+    setGridApi(params.api);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, subpage]);
+
+  useEffect(() => {
+    if (gridApi) {
+      gridApi.paginationGoToPage(currentPage - 1);
+    }
+  }, [currentPage, gridApi]);
+
+  useEffect(() => {
+    if (gridApi) {
+      gridApi.setGridOption('paginationPageSize', itemsPerPage);
+    }
+  }, [itemsPerPage, gridApi]);
+
   // Modals state
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
+
+  const columnDefs = useMemo<ColDef[]>(() => {
+    const editActionCellRenderer = (params: any) => {
+      const item = params.data;
+      if (!item) return null;
+      return (
+        <div className="flex items-center gap-1.5 h-full">
+          <button
+            onClick={() => handleOpenEdit(item)}
+            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id)}
+            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      );
+    };
+
+    if (subpage === 'natures') {
+      return [
+        { headerName: 'Nature ID', field: 'nature_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Nature Name', field: 'nature_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
+        { headerName: 'Default Priority', field: 'default_priority.priority_name', flex: 1, minWidth: 150, cellClass: 'font-semibold text-primary', valueGetter: p => p.data?.default_priority?.priority_name || 'N/A' },
+        {
+          headerName: 'Status',
+          field: 'active',
+          width: 110,
+          cellRenderer: (params: any) => (
+            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+              }`}>
+              {params.value ? 'Active' : 'Inactive'}
+            </span>
+          )
+        },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'worker-assignments') {
+      return [
+        { headerName: 'Assignment ID', field: 'nature_worker_id', width: 150, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Nature of Work', field: 'nature.nature_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface', valueGetter: p => p.data?.nature?.nature_name || 'N/A' },
+        { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'priorities') {
+      return [
+        { headerName: 'Priority ID', field: 'priority_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Priority Label', field: 'priority_name', flex: 2, minWidth: 160, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Level', field: 'level', width: 100, cellClass: 'font-mono text-xs', valueGetter: p => `LVL ${p.data?.level}` },
+        { headerName: 'Department', field: 'department.department_name', flex: 1.5, minWidth: 150, valueGetter: p => p.data?.department?.department_name || 'N/A' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'statuses') {
+      return [
+        { headerName: 'Status ID', field: 'status_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Status Name', field: 'status_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Department', field: 'department.department_name', flex: 1.5, minWidth: 150, valueGetter: p => p.data?.department?.department_name || 'N/A' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else {
+      // media-categories
+      return [
+        { headerName: 'Category ID', field: 'category_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Category Name', field: 'category_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Department Scope', field: 'department.department_name', flex: 1.5, minWidth: 150, valueGetter: p => p.data?.department?.department_name || 'Global' },
+        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    }
+  }, [subpage]);
+
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    filter: true,
+    resizable: true,
+  }), []);
 
   // Forms state
   const [natureForm, setNatureForm] = useState({
@@ -64,8 +193,12 @@ export const MaintenanceView: React.FC = () => {
     setErrorMsg('');
     try {
       const headers = { Authorization: `Token ${token}` };
-      const resDepts = await fetch(`${API_URL}/stores/department/`, { headers });
+      const [resDepts, resSubs] = await Promise.all([
+        fetch(`${API_URL}/stores/department/`, { headers }),
+        fetch(`${API_URL}/stores/subdepartment/`, { headers })
+      ]);
       if (resDepts.ok) setExtraDepts(await resDepts.json());
+      if (resSubs.ok) setExtraSubs(await resSubs.json());
 
       if (subpage === 'natures') {
         const [resNat, resSub, resPri] = await Promise.all([
@@ -227,10 +360,51 @@ export const MaintenanceView: React.FC = () => {
     }
   };
 
+  const getLoggedInUserDepartmentIds = (): Set<number> | null => {
+    const roleName = (user?.role as any)?.role_name?.toLowerCase() || (user?.role as string)?.toLowerCase();
+    if (roleName === 'admin' || roleName === 'administrator') return null;
+    if (!user?.sub_departments || user.sub_departments.length === 0) return null;
+    const deptIds = new Set<number>();
+    user.sub_departments.forEach((sd: any) => {
+      let sdObj = sd;
+      if (typeof sd === 'string' || typeof sd === 'number') {
+        sdObj = extraSubs.find(item =>
+          item.sub_department_id === Number(sd) ||
+          item.sub_department_name.toLowerCase() === String(sd).toLowerCase()
+        );
+      }
+      if (sdObj) {
+        const parentDeptId = Number(sdObj.department?.department_id ?? sdObj.department);
+        if (parentDeptId) {
+          deptIds.add(parentDeptId);
+        }
+      }
+    });
+    return deptIds;
+  };
+
+  const userDeptIds = getLoggedInUserDepartmentIds();
+  const allowedDepts = userDeptIds
+    ? extraDepts.filter(d => userDeptIds.has(Number(d.department_id)))
+    : extraDepts;
+
+  const allowedSubs = userDeptIds
+    ? extraSubs.filter(s => {
+      const sDeptId = Number(s.department?.department_id ?? s.department);
+      return userDeptIds.has(sDeptId);
+    })
+    : extraSubs;
+
   const filteredData = data.filter(item => {
     const text = (item.nature_name || item.priority_name || item.status_name || item.category_name || item.worker?.full_name || '').toLowerCase();
     return text.includes(search.toLowerCase());
   });
+
+  const totalItems = filteredData.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const paginatedData = filteredData.slice(startIndex, endIndex);
 
   return (
     <div className="space-y-6">
@@ -256,7 +430,7 @@ export const MaintenanceView: React.FC = () => {
 
         <button
           onClick={handleOpenCreate}
-          className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
+          className="hidden sm:flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
         >
           <Plus className="w-4 h-4" />
           Add Configuration
@@ -271,111 +445,151 @@ export const MaintenanceView: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div className="bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-2xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-surface-container-high dark:bg-dark-surface-container-high border-b border-outline-variant dark:border-dark-outline-variant text-[10px] uppercase font-bold text-outline tracking-wider">
-                  {subpage === 'natures' ? (
-                    <>
-                      <th className="px-6 py-4">Nature ID</th>
-                      <th className="px-6 py-4">Nature Name</th>
-                      <th className="px-6 py-4">Sub Department</th>
-                      <th className="px-6 py-4">Default Priority</th>
-                      <th className="px-6 py-4">Status</th>
-                    </>
-                  ) : subpage === 'worker-assignments' ? (
-                    <>
-                      <th className="px-6 py-4">Assignment ID</th>
-                      <th className="px-6 py-4">Nature of Work</th>
-                      <th className="px-6 py-4">Assigned Technician</th>
-                    </>
-                  ) : subpage === 'priorities' ? (
-                    <>
-                      <th className="px-6 py-4">Priority ID</th>
-                      <th className="px-6 py-4">Priority Label</th>
-                      <th className="px-6 py-4">Level</th>
-                      <th className="px-6 py-4">Department</th>
-                    </>
-                  ) : subpage === 'statuses' ? (
-                    <>
-                      <th className="px-6 py-4">Status ID</th>
-                      <th className="px-6 py-4">Status Name</th>
-                      <th className="px-6 py-4">Department</th>
-                    </>
-                  ) : (
-                    <>
-                      <th className="px-6 py-4">Category ID</th>
-                      <th className="px-6 py-4">Category Name</th>
-                      <th className="px-6 py-4">Department Scope</th>
-                    </>
-                  )}
-                  <th className="px-6 py-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant dark:divide-dark-outline-variant text-sm">
-                {filteredData.map(item => (
-                  <tr key={item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id} className="hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low transition-all">
+        <>
+          {/* Mobile View: Stacked Card Rows */}
+          <div className="sm:hidden divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface">
+            {paginatedData.map(item => {
+              const itemId = item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id;
+              return (
+                <button
+                  key={itemId}
+                  type="button"
+                  onClick={() => handleOpenEdit(item)}
+                  className="w-full text-left px-4 py-3.5 flex items-start gap-3 bg-surface active:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <div className="flex-1 min-w-0 space-y-0.5">
                     {subpage === 'natures' ? (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.nature_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.nature_name}</td>
-                        <td className="px-6 py-4">{item.sub_department?.sub_department_name || 'N/A'}</td>
-                        <td className="px-6 py-4 font-semibold text-primary">{item.default_priority?.priority_name || 'N/A'}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            item.active ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.nature_name}</h4>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
                           }`}>
                             {item.active ? 'Active' : 'Inactive'}
                           </span>
-                        </td>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-outline">
+                          <span className="font-mono text-[10px] font-semibold">ID: {item.nature_id}</span>
+                          <span>·</span>
+                          <span>🏢 {item.sub_department?.sub_department_name || 'No Dept'}</span>
+                          <span>·</span>
+                          <span className="text-primary font-medium">⚠️ {item.default_priority?.priority_name || 'No Priority'}</span>
+                        </div>
                       </>
                     ) : subpage === 'worker-assignments' ? (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.nature_worker_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.nature?.nature_name}</td>
-                        <td className="px-6 py-4">{item.worker?.full_name}</td>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.nature?.nature_name}</h4>
+                          <span className="font-mono text-[10px] text-outline">ID: {item.nature_worker_id}</span>
+                        </div>
+                        <p className="text-[11px] text-outline">👤 Technician: <span className="text-on-surface font-medium">{item.worker?.full_name}</span></p>
                       </>
                     ) : subpage === 'priorities' ? (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.priority_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.priority_name}</td>
-                        <td className="px-6 py-4 font-mono text-xs">LVL {item.level}</td>
-                        <td className="px-6 py-4">{item.department?.department_name || 'N/A'}</td>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.priority_name}</h4>
+                          <span className="text-[9px] font-bold bg-primary/5 px-2 py-0.5 rounded border border-primary/10 text-primary">LVL {item.level}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-outline">
+                          <span className="font-mono text-[10px] text-outline">ID: {item.priority_id}</span>
+                          <span>·</span>
+                          <span>🏢 Department: {item.department?.department_name || 'N/A'}</span>
+                        </div>
                       </>
                     ) : subpage === 'statuses' ? (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.status_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.status_name}</td>
-                        <td className="px-6 py-4">{item.department?.department_name || 'N/A'}</td>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.status_name}</h4>
+                          <span className="font-mono text-[10px] text-outline">ID: {item.status_id}</span>
+                        </div>
+                        <p className="text-[11px] text-outline">🏢 Department: {item.department?.department_name || 'N/A'}</p>
                       </>
                     ) : (
                       <>
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{item.category_id}</td>
-                        <td className="px-6 py-4 font-medium text-on-surface dark:text-dark-on-surface">{item.category_name}</td>
-                        <td className="px-6 py-4">{item.department?.department_name || 'Global'}</td>
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="font-bold text-on-surface text-sm truncate">{item.category_name}</h4>
+                          <span className="font-mono text-[10px] text-outline">ID: {item.category_id}</span>
+                        </div>
+                        <p className="text-[11px] text-outline">🏢 Department Scope: {item.department?.department_name || 'Global'}</p>
                       </>
                     )}
-                    <td className="px-6 py-4 text-right space-x-2">
-                      <button
-                        onClick={() => handleOpenEdit(item)}
-                        className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id)}
-                        className="p-1.5 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        </div>
+
+          {/* Desktop View: Table */}
+          <div className="hidden sm:block">
+            <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10 }}>
+              <AgGridReact
+                theme={appTheme}
+                rowData={filteredData}
+                columnDefs={columnDefs}
+                defaultColDef={defaultColDef}
+                pagination={true}
+                paginationPageSize={itemsPerPage}
+                suppressPaginationPanel={true}
+                onGridReady={onGridReady}
+                onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
+                rowHeight={52}
+                headerHeight={44}
+                rowClass="cursor-pointer"
+                onRowClicked={(event) => {
+                  if (event.data) {
+                    handleOpenEdit(event.data);
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Custom Pagination Footer */}
+          {!loading && filteredData.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border border-t-0 border-outline-variant rounded-b-2xl bg-surface-container-low">
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-outline">
+                  {startIndex + 1}–{endIndex} of {totalItems.toLocaleString()}
+                </span>
+                <div className="flex items-center gap-1.5 text-[11px] text-outline">
+                  <span>Per page:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={e => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="bg-surface border border-outline-variant rounded px-1.5 py-0.5 text-[11px] text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] text-on-surface font-medium px-2">{currentPage} / {totalPages}</span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Form Modal */}
@@ -389,7 +603,7 @@ export const MaintenanceView: React.FC = () => {
               onClick={() => setShowModal(false)}
               className="absolute inset-0 bg-black"
             />
-            
+
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -432,7 +646,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Sub Department</option>
-                        {extraSubs.map(s => <option key={s.sub_department_id} value={s.sub_department_id}>{s.sub_department_name}</option>)}
+                        {allowedSubs.map(s => <option key={s.sub_department_id} value={s.sub_department_id}>{s.sub_department_name}</option>)}
                       </select>
                     </div>
 
@@ -500,7 +714,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Department</option>
-                        {extraDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                        {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                       </select>
                     </div>
 
@@ -540,7 +754,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Department</option>
-                        {extraDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                        {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                       </select>
                     </div>
 
@@ -567,7 +781,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Department</option>
-                        {extraDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                        {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                       </select>
                     </div>
 
@@ -607,6 +821,14 @@ export const MaintenanceView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+      {/* Floating Action Button (FAB) for Mobile Add Config */}
+      <button
+        onClick={handleOpenCreate}
+        className="sm:hidden fixed bottom-6 right-6 z-40 bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
+        title="Add Configuration"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
     </div>
   );
 };

@@ -137,10 +137,7 @@ class SignupView(APIView):
                 user.profile_image = profile_image
             user.save()
 
-            if department_id:
-                sub_depts = SubDepartment.objects.filter(department_id=department_id)
-                user.sub_departments.set(sub_depts)
-
+            selected_sub_depts = set()
             if nature_id:
                 from apps.maintenance.models import WorkNature, NatureWorker
                 id_list = [nid.strip() for nid in str(nature_id).split(',') if nid.strip().isdigit()]
@@ -148,8 +145,28 @@ class SignupView(APIView):
                     try:
                         nature_obj = WorkNature.objects.get(pk=nid)
                         NatureWorker.objects.get_or_create(nature=nature_obj, worker=user)
+                        if nature_obj.sub_department:
+                            selected_sub_depts.add(nature_obj.sub_department)
                     except WorkNature.DoesNotExist:
                         pass
+
+            role_name = (role.role_name or '').lower() if role else ''
+            is_tech = 'technician' in role_name or str(role_id) == '5'
+
+            # Disconnect the m2m_changed signal temporarily to prevent auto-activation of the user
+            from django.db.models.signals import m2m_changed
+            from apps.accounts.models import update_user_approval
+            m2m_changed.disconnect(update_user_approval, sender=CustomUser.sub_departments.through)
+
+            try:
+                if is_tech and selected_sub_depts:
+                    user.sub_departments.set(list(selected_sub_depts))
+                elif department_id:
+                    sub_depts = SubDepartment.objects.filter(department_id=department_id)
+                    user.sub_departments.set(sub_depts)
+            finally:
+                # Reconnect the signal
+                m2m_changed.connect(update_user_approval, sender=CustomUser.sub_departments.through)
 
             return Response(
                 {"message": "Waiting for the approval.", "approved": False},

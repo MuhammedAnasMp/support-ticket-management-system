@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import ExpenseType, EmployeeRate, Expense, Reconciliation
 from apps.common.serializers import MediaSerializer
+from apps.accounts.models import CustomUser
 
 
 class ExpenseTypeSerializer(serializers.ModelSerializer):
@@ -35,10 +36,23 @@ class ExpenseTypeWriteSerializer(serializers.ModelSerializer):
 
 
 class EmployeeRateSerializer(serializers.ModelSerializer):
+    worker = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.all()
+    )
+
     class Meta:
         model = EmployeeRate
         fields = '__all__'
         depth = 1
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        if instance.worker:
+            from apps.accounts.serializers import CustomUserSerializer
+            rep['worker'] = CustomUserSerializer(instance.worker).data
+        else:
+            rep['worker'] = None
+        return rep
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
