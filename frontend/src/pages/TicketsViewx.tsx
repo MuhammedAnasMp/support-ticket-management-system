@@ -207,7 +207,7 @@ const Divider = () => <div className="border-t border-outline-variant dark:borde
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export const TicketsView: React.FC = () => {
+export const TicketsViewx: React.FC = () => {
   const { subpage } = useParams<{ subpage: string }>();
   const navigate = useNavigate();
   const { token, user } = useSelector((state: RootState) => state.auth);
@@ -1221,20 +1221,23 @@ export const TicketsView: React.FC = () => {
   };
 
 
-  const filteredTickets = tickets.filter(t => {
-    const statusName = (t.status?.status_name || '').toLowerCase();
-    // if (statusName === 'open' && !canViewOpenTicket) return false;
-    // if (statusName === 'reconciled' && !canViewReconciledTicket) return false;
+  const filteredTickets =
+    tickets
 
-    const matchesSearch =
-      t.title.toLowerCase().includes(search.toLowerCase()) ||
-      t.work_order_no.toLowerCase().includes(search.toLowerCase()) ||
-      t.description.toLowerCase().includes(search.toLowerCase());
-    const matchesStore = filterStore ? t.store.store_id === filterStore : true;
-    const matchesDept = filterDept ? t.department.department_id === Number(filterDept) : true;
-    const matchesStatus = filterStatus ? t.status.status_name === filterStatus : true;
-    return matchesSearch && matchesStore && matchesDept && matchesStatus;
-  });
+  // .filter(t => {
+  //   const statusName = (t.status?.status_name || '').toLowerCase();
+  //   // if (statusName === 'open' && !canViewOpenTicket) return false;
+  //   // if (statusName === 'reconciled' && !canViewReconciledTicket) return false;
+
+  //   const matchesSearch =
+  //     t.title.toLowerCase().includes(search.toLowerCase()) ||
+  //     t.work_order_no.toLowerCase().includes(search.toLowerCase()) ||
+  //     t.description.toLowerCase().includes(search.toLowerCase());
+  //   const matchesStore = filterStore ? t.store.store_id === filterStore : true;
+  //   const matchesDept = filterDept ? t.department.department_id === Number(filterDept) : true;
+  //   const matchesStatus = filterStatus ? t.status.status_name === filterStatus : true;
+  //   return matchesSearch && matchesStore && matchesDept && matchesStatus;
+  // });
 
   const ticketDeptId = Number(selectedTicket?.department?.department_id ?? selectedTicket?.department);
 

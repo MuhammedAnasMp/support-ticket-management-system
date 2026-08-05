@@ -1,3 +1,4 @@
+from django.dispatch import receiver
 from django.db import models
 from django.core.validators import RegexValidator
 from django.conf import settings
@@ -94,3 +95,34 @@ class SubDepartment(models.Model):
 
     def __str__(self):
         return f"{self.department.department_name} - {self.sub_department_name}"
+
+
+@receiver(models.signals.post_save, sender=SubDepartment)
+def sync_subdepartment_to_worknature(sender, instance, created, **kwargs):
+    from apps.maintenance.models import WorkNature, Priority
+
+    priority_medium, _ = Priority.objects.get_or_create(
+        department=instance.department,
+        priority_name="Medium",
+        defaults={"level": 3},
+    )
+
+    if created:
+        WorkNature.objects.create(
+            nature_name=f"{instance.sub_department_name} Related",
+            sub_department=instance,
+            default_priority=priority_medium,
+            media_required=True,
+            active=True,
+        )
+
+    else:
+        # Check if at least one WorkNature exists
+        if not WorkNature.objects.filter(sub_department=instance).exists():
+            WorkNature.objects.create(
+                nature_name=f"{instance.sub_department_name} Related",
+                sub_department=instance,
+                default_priority=priority_medium,
+                media_required=True,
+                active=True,
+            )

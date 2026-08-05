@@ -15,20 +15,20 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 // ─── AG Grid v36 Theming API ─────────────────────────────────────────────────
 const appTheme = themeQuartz.withParams({
-    fontFamily: 'Inter, sans-serif',
-    fontSize: 13,
-    rowHeight: 52,
-    headerHeight: 44,
-    cellHorizontalPaddingScale: 1.4,
-    backgroundColor: '#ffffff',
-    foregroundColor: '#191c1d',
-    headerBackgroundColor: '#f3f4f5',
-    headerTextColor: '#414754',
-    rowHoverColor: '#e7e8e9',
-    borderColor: '#E0E2E6',
-    accentColor: '#1A73E8',
-    spacing: 6,
-    wrapperBorderRadius: 0,
+  fontFamily: 'Inter, sans-serif',
+  fontSize: 13,
+  rowHeight: 52,
+  headerHeight: 44,
+  cellHorizontalPaddingScale: 1.4,
+  backgroundColor: '#ffffff',
+  foregroundColor: '#191c1d',
+  headerBackgroundColor: '#f3f4f5',
+  headerTextColor: '#414754',
+  rowHoverColor: '#e7e8e9',
+  borderColor: '#E0E2E6',
+  accentColor: '#1A73E8',
+  spacing: 6,
+  wrapperBorderRadius: 0,
 });
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -81,15 +81,15 @@ export const StoresView: React.FC = () => {
       if (!item) return null;
       return (
         <div className="flex items-center gap-1.5 h-full">
-          <button
+          {/* <button
             onClick={() => handleOpenEdit(item)}
             className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
           >
             <Edit2 className="w-3.5 h-3.5" />
-          </button>
+          </button> */}
           <button
             onClick={() => handleDelete(item.store_id || item.area_id || item.department_id || item.sub_department_id)}
-            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+            className="p-1.5 border border-error/30 bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -109,9 +109,8 @@ export const StoresView: React.FC = () => {
           field: 'active',
           width: 110,
           cellRenderer: (params: any) => (
-            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-              params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
-            }`}>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+              }`}>
               {params.value ? 'Active' : 'Inactive'}
             </span>
           )
@@ -391,9 +390,8 @@ export const StoresView: React.FC = () => {
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-bold text-on-surface text-sm truncate">{item.store_name}</h4>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                            item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
-                          }`}>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                            }`}>
                             {item.active ? 'Active' : 'Inactive'}
                           </span>
                         </div>
@@ -518,7 +516,7 @@ export const StoresView: React.FC = () => {
               onClick={() => setShowModal(false)}
               className="absolute inset-0 bg-black"
             />
-            
+
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

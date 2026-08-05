@@ -85,15 +85,15 @@ export const MaintenanceView: React.FC = () => {
       if (!item) return null;
       return (
         <div className="flex items-center gap-1.5 h-full">
-          <button
+          {/* <button
             onClick={() => handleOpenEdit(item)}
             className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
           >
             <Edit2 className="w-3.5 h-3.5" />
-          </button>
+          </button> */}
           <button
             onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id)}
-            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+            className="p-1.5 border border-error/30 bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -112,8 +112,9 @@ export const MaintenanceView: React.FC = () => {
           field: 'active',
           width: 110,
           cellRenderer: (params: any) => (
-            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
               }`}>
+
               {params.value ? 'Active' : 'Inactive'}
             </span>
           )
@@ -462,9 +463,8 @@ export const MaintenanceView: React.FC = () => {
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-bold text-on-surface text-sm truncate">{item.nature_name}</h4>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                            item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
-                          }`}>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                            }`}>
                             {item.active ? 'Active' : 'Inactive'}
                           </span>
                         </div>

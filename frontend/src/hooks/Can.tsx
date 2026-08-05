@@ -13,7 +13,18 @@ interface CanProps {
 }
 
 // Global developer mode state
-let permissionDebugEnabled = false;
+export let permissionDebugEnabled = false;
+
+// 1. Move the keydown listener to the global module scope
+// This ensures it only runs ONCE, no matter how many <Can> components are rendered.
+if (typeof window !== "undefined") {
+    window.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z") {
+            permissionDebugEnabled = !permissionDebugEnabled;
+            window.dispatchEvent(new CustomEvent("permission-debug-toggle"));
+        }
+    });
+}
 
 function Can({
     permission,
@@ -25,34 +36,16 @@ function Can({
     const [copied, setCopied] = useState(false);
     const [showDebug, setShowDebug] = useState(permissionDebugEnabled);
 
-    // Ctrl + Shift + Z => Toggle permission debug mode
+    // 2. Only listen for the custom toggle event inside the component
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z") {
-                permissionDebugEnabled = !permissionDebugEnabled;
-
-                window.dispatchEvent(
-                    new CustomEvent("permission-debug-toggle")
-                );
-            }
-        };
-
         const handleToggle = () => {
             setShowDebug(permissionDebugEnabled);
         };
 
-        window.addEventListener("keydown", handleKeyDown);
-        window.addEventListener(
-            "permission-debug-toggle",
-            handleToggle
-        );
+        window.addEventListener("permission-debug-toggle", handleToggle);
 
         return () => {
-            window.removeEventListener("keydown", handleKeyDown);
-            window.removeEventListener(
-                "permission-debug-toggle",
-                handleToggle
-            );
+            window.removeEventListener("permission-debug-toggle", handleToggle);
         };
     }, []);
 
@@ -88,9 +81,7 @@ function Can({
                 )
                 .join(", ");
 
-    const copyPermission = async (
-        e: React.MouseEvent
-    ) => {
+    const copyPermission = async (e: React.MouseEvent) => {
         e.stopPropagation();
 
         try {
@@ -187,9 +178,7 @@ function Can({
                                 z-[10000]
                             "
                         >
-                            {copied
-                                ? "Copied!"
-                                : displayValue}
+                            {copied ? "Copied!" : displayValue}
                         </div>
                     </>
                 )}
@@ -261,9 +250,7 @@ function Can({
                     z-[10000]
                 "
             >
-                {copied
-                    ? "Copied!"
-                    : `Required: ${displayValue}`}
+                {copied ? "Copied!" : `Required: ${displayValue}`}
             </div>
         </div>
     );

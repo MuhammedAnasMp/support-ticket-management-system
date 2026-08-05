@@ -147,7 +147,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                             </div>
                         )}
 
-                        <div 
+                        <div
                             onClick={() => {
                                 if (!isAudio(m.file_name)) {
                                     setPreviewItem({ url, name: m.file_name });
@@ -158,9 +158,31 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                             {isImage(m.file_name) ? (
                                 <img src={url} alt={m.file_name} className="w-full h-full object-cover" />
                             ) : isAudio(m.file_name) ? (
-                                <div className="flex flex-col items-center justify-center w-full h-full p-1 bg-surface-container-low" onClick={e => e.stopPropagation()}>
-                                    <Headphones className="w-5 h-5 text-primary mb-1 animate-pulse" />
-                                    <audio src={url} controls className="w-full h-4 scale-[0.8] origin-center opacity-90" />
+                                <div
+                                    className="flex flex-col items-center justify-center w-full h-full p-3 
+                                        bg-surface-container-low rounded-xl border border-outline/20 
+                                        shadow-sm"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10">
+                                            <Headphones className="w-4 h-4 text-primary animate-pulse" />
+                                        </div>
+
+                                        <span className="text-sm font-medium text-on-surface">
+                                            Voice message
+                                        </span>
+                                    </div>
+                                    <audio
+                                        src={url}
+                                        controls
+                                        className="
+                                            w-full h-10
+                                            rounded-lg
+                                            [&::-webkit-media-controls-panel]:bg-surface-container
+                                            [&::-webkit-media-controls-play-button]:text-primary
+                                            "
+                                    />
                                 </div>
                             ) : isVideo(m.file_name) ? (
                                 <video src={url} className="w-full h-full object-cover" muted />
@@ -221,10 +243,10 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                         >
                             {/* Close & Action Buttons */}
                             <div className="absolute -top-12 right-0 flex items-center gap-3">
-                                <a 
-                                    href={previewItem.url} 
-                                    download={previewItem.name} 
-                                    target="_blank" 
+                                <a
+                                    href={previewItem.url}
+                                    download={previewItem.name}
+                                    target="_blank"
                                     rel="noopener noreferrer"
                                     className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
                                     title="Download File"
@@ -243,27 +265,27 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                             {/* Media Display Container */}
                             <div className="w-full flex justify-center items-center overflow-hidden rounded-lg bg-black/35 shadow-2xl p-1">
                                 {isImage(previewItem.name) ? (
-                                    <img 
-                                        src={previewItem.url} 
-                                        alt={previewItem.name} 
-                                        className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none" 
+                                    <img
+                                        src={previewItem.url}
+                                        alt={previewItem.name}
+                                        className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none"
                                     />
                                 ) : isVideo(previewItem.name) ? (
-                                    <video 
-                                        src={previewItem.url} 
-                                        controls 
-                                        autoPlay 
-                                        className="max-w-full max-h-[75vh] object-contain rounded-md" 
+                                    <video
+                                        src={previewItem.url}
+                                        controls
+                                        autoPlay
+                                        className="max-w-full max-h-[75vh] object-contain rounded-md"
                                     />
                                 ) : (
                                     <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
                                         <FileText className="w-12 h-12 text-primary mb-3 animate-pulse" />
                                         <p className="text-xs font-bold text-on-surface uppercase tracking-wider mb-1">{previewItem.name}</p>
                                         <p className="text-[11px] text-outline mb-4">Preview not supported for this file format.</p>
-                                        <a 
-                                            href={previewItem.url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
+                                        <a
+                                            href={previewItem.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
                                             className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded hover:bg-primary-hover active:scale-95 transition-all"
                                         >
                                             Open in New Tab

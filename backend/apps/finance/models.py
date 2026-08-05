@@ -11,6 +11,7 @@ class ExpenseType(models.Model):
     parent = models.ForeignKey(
         'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_types')
     required = models.BooleanField(default=True)
+    approve_required = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
@@ -115,6 +116,11 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"Expense {self.expense_id} - {self.amount}"
+
+    def save(self, *args, **kwargs):
+        if self.expense_type and not self.expense_type.approve_required:
+            self.approved = True
+        super().save(*args, **kwargs)
 
 
 class Reconciliation(models.Model):

@@ -4,13 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu
+    UserPlus, Image, XCircle, Menu, Download
 } from 'lucide-react';
-import Can from '@/hooks/Can';
+import Can, { permissionDebugEnabled } from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
 import {
     API_URL, type Ticket, type Allocation, type WorkLog, type Expense, type MediaCategory, type Media,
-    AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor
+    AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo
 } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 
@@ -53,6 +53,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [actionLoading, setActionLoading] = useState(false);
     const [activeWorkerId, setActiveWorkerId] = useState<number | null>(null);
     const [selectedExpenseTypeId, setSelectedExpenseTypeId] = useState<string>('');
+    const [previewItem, setPreviewItem] = useState<{ url: string; name: string } | null>(null);
 
     // Sub-Modals Open/Close States
     const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -234,10 +235,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         if (!editingWorkLog) return;
         setActionLoading(true);
         try {
+            const rawHours = parseFloat(editWorkLogForm.hours);
+            const formattedHours = isNaN(rawHours) ? editWorkLogForm.hours : rawHours.toFixed(2);
             const response = await fetch(`${API_URL}/maintenance/worklog/${editingWorkLog.worklog_id}/`, {
                 method: 'PATCH',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hours: editWorkLogForm.hours, work_done: editWorkLogForm.work_done })
+                body: JSON.stringify({ hours: formattedHours, work_done: editWorkLogForm.work_done })
             });
             if (response.ok) {
                 setEditingWorkLog(null);
@@ -247,6 +250,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             console.error(err);
         } finally {
             setActionLoading(false);
+            setEditingWorkLog(null);
         }
     };
 
@@ -271,12 +275,33 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleUpdateExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingExpense) return;
+
+        const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
+        const isReceiptRequiredInEdit = currentEditExpTypeObj ? currentEditExpTypeObj.required !== false : true;
+
+        const receiptsList: any[] = [];
+        if (editingExpense.receipt) receiptsList.push(editingExpense.receipt);
+        if (editingExpense.receipts) {
+            editingExpense.receipts.forEach(r => {
+                if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
+                    receiptsList.push(r);
+                }
+            });
+        }
+
+        if (isReceiptRequiredInEdit && receiptsList.length === 0) {
+            alert("Receipt attachment is required for this expense category.");
+            return;
+        }
+
         setActionLoading(true);
         try {
+            const rawAmount = parseFloat(editExpenseForm.amount);
+            const formattedAmount = isNaN(rawAmount) ? editExpenseForm.amount : rawAmount.toFixed(2);
             const response = await fetch(`${API_URL}/finance/expense/${editingExpense.expense_id}/`, {
                 method: 'PATCH',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: editExpenseForm.amount, remarks: editExpenseForm.remarks, expense_type: editExpenseForm.expense_type_id })
+                body: JSON.stringify({ amount: formattedAmount, remarks: editExpenseForm.remarks, expense_type: editExpenseForm.expense_type_id })
             });
             if (response.ok) {
                 setEditingExpense(null);
@@ -286,6 +311,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             console.error(err);
         } finally {
             setActionLoading(false);
+            setEditingExpense(null);
         }
     };
 
@@ -466,13 +492,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         setActionLoading(true);
         const formData = new FormData(form);
         try {
+            const rawHoursStr = formData.get('hours') as string;
+            const rawHoursVal = parseFloat(rawHoursStr);
+            const hoursToSend = isNaN(rawHoursVal) ? rawHoursStr : rawHoursVal.toFixed(2);
             const response = await fetch(`${API_URL}/maintenance/worklog/`, {
                 method: 'POST',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ticket: ticketDetails.ticket_id,
                     worker: workerId,
-                    hours: formData.get('hours'),
+                    hours: hoursToSend,
                     work_done: formData.get('work_done'),
                     work_date: new Date().toISOString().split('T')[0]
                 })
@@ -549,12 +578,22 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>, workerId: number) => {
         e.preventDefault();
-        setActionLoading(true);
         const formData = new FormData(e.currentTarget);
+        const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(formData.get('expense_type_id')));
+        const isReceiptRequiredForType = selectedExpTypeObj ? selectedExpTypeObj.required !== false : true;
         const validFiles = (expenseFiles[workerId] || []).filter(f => f.size > 0);
 
+        if (isReceiptRequiredForType && validFiles.length === 0) {
+            alert("Receipt attachment is required for this expense category.");
+            return;
+        }
+
+        setActionLoading(true);
         try {
             const signal = uploadAbortRef.current?.signal;
+            const rawAmountStr = formData.get('amount') as string;
+            const rawAmountVal = parseFloat(rawAmountStr);
+            const amountToSend = isNaN(rawAmountVal) ? rawAmountStr : rawAmountVal.toFixed(2);
             const response = await fetch(`${API_URL}/finance/expense/`, {
                 method: 'POST',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -562,7 +601,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     ticket: ticketDetails.ticket_id,
                     worker: workerId,
                     expense_type: formData.get('expense_type_id'),
-                    amount: formData.get('amount'),
+                    amount: amountToSend,
                     remarks: formData.get('remarks'),
                     expense_date: new Date().toISOString().split('T')[0]
                 }),
@@ -744,6 +783,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         </span>
                         <span className="text-xs sm:text-sm font-bold text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.title}</span>
                     </div>
+
+
                     <button
                         onClick={handleClose}
                         className="p-2 rounded-lg text-outline hover:bg-surface-container-high active:scale-95 transition-transform shrink-0 ml-2 min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer touch-manipulation"
@@ -855,20 +896,26 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             {ticketDetails.status.status_name.toLowerCase() !== 'rejected' && (
                                 <div>
                                     <SectionTitle icon={<User className="w-[18px] h-[18px]" />} label="Allocated" />
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-2.5 mb-3.5 gap-2.5">
+                                    <div className="flex flex-col sm:flex-row sm:items-center  justify-start border-b border-outline-variant dark:border-dark-outline-variant pb-2.5 mb-3.5 gap-2.5">
                                         {allocations.length > 0 ? (
                                             <div className="flex gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin">
-                                                {allocations.map(a => (
-                                                    <button
-                                                        key={a.allocation_id}
-                                                        type="button"
-                                                        onClick={() => setActiveWorkerId(a.worker.user_id)}
-                                                        className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
-                                                    >
-                                                        <AvatarCircle user={a.worker} size="sm" />
-                                                        <span>{user.user_id === a.worker.user_id ? "You" : a.worker.full_name}</span>
-                                                    </button>
-                                                ))}
+                                                {[...allocations]
+                                                    .sort((a, b) => {
+                                                        const isA = (user as any)?.user_id === a.worker.user_id;
+                                                        const isB = (user as any)?.user_id === b.worker.user_id;
+                                                        return isA === isB ? 0 : isA ? -1 : 1;
+                                                    })
+                                                    .map(a => (
+                                                        <button
+                                                            key={a.allocation_id}
+                                                            type="button"
+                                                            onClick={() => setActiveWorkerId(a.worker.user_id)}
+                                                            className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
+                                                        >
+                                                            <AvatarCircle user={a.worker} size="sm" />
+                                                            <span>{(user as any)?.user_id === a.worker.user_id ? "You" : a.worker.full_name}</span>
+                                                        </button>
+                                                    ))}
                                             </div>
                                         ) : (
                                             <p className="text-xs text-outline italic">No personnel allocated to this ticket yet.</p>
@@ -895,8 +942,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                         return (
                                             <div className="bg-surface dark:bg-dark-surface rounded-2xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden">
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-outline-variant dark:border-dark-outline-variant">
-                                                    <div className="flex items-center gap-3 min-w-0">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b border-outline-variant dark:border-dark-outline-variant">
+                                                    <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
                                                         <AvatarCircle user={a.worker} size="md" />
                                                         <div className="min-w-0">
                                                             <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">{a.worker.full_name}</p>
@@ -907,14 +954,14 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] bg-primary/10 text-primary font-bold px-2.5 py-1.5 rounded-lg">{a.planned_hours}h Planned</span>
+                                                        <span className="text-xs bg-primary/10 text-primary font-bold px-2.5 py-1.5 rounded-lg">{a.planned_hours}h Planned</span>
                                                         <Can permission="maintenance.change_allocation">
                                                             <button
                                                                 onClick={() => { setEditingAllocation(a); setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' }); }}
                                                                 className="min-h-[15px] min-w-[44px] flex items-center justify-center rounded border border-outline-variant dark:border-dark-outline-variant hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface active:scale-95 transition-transform"
                                                                 aria-label="Edit Allocation"
                                                             >
-                                                                <Edit2 className="w-4 h-4" />
+                                                                <span className='text-md'>Edit</span>
                                                             </button>
                                                         </Can>
                                                     </div>
@@ -922,13 +969,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant dark:divide-dark-outline-variant">
                                                     {/* Work Logs Sub-Panel */}
-                                                    <div className="p-4 space-y-4 bg-surface-container dark:bg-dark-surface-container">
+                                                    <div className="p-2 space-y-2 bg-surface-container dark:bg-dark-surface-container">
                                                         <div className="flex items-center justify-between">
                                                             <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-2"><Clock className="w-4 h-4" /> Work Logs</p>
                                                             <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
                                                                 <button
                                                                     onClick={() => setIsLogHoursModalOpen(true)}
-                                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
                                                                 >
                                                                     <Plus className="w-4 h-4" /> Log Hours
                                                                 </button>
@@ -940,7 +987,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                 <p className="text-xs text-outline italic">No work hours logged yet.</p>
                                                             </div>
                                                         ) : (
-                                                            <div className="space-y-2 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                                                            <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin">
                                                                 {workerLogs.map(wl => (
                                                                     <div key={wl.worklog_id} className="flex items-start justify-between text-xs p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
                                                                         <div>
@@ -969,13 +1016,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     </div>
 
                                                     {/* Expenses Sub-Panel */}
-                                                    <div className="p-4 space-y-4 bg-surface-container-low dark:bg-dark-surface-container-low">
+                                                    <div className="p-2 space-y-2 bg-surface-container-low dark:bg-dark-surface-container-low">
                                                         <div className="flex items-center justify-between">
                                                             <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-2"><DollarSign className="w-4 h-4" /> Logged Expenses</p>
                                                             <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
                                                                 <button
                                                                     onClick={() => setIsAddExpenseModalOpen(true)}
-                                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 px-3 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
                                                                 >
                                                                     <Plus className="w-4 h-4" /> Add Expense
                                                                 </button>
@@ -988,28 +1035,72 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             </div>
                                                         ) : (
                                                             <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                                                                {workerExpenses.map(exp => (
-                                                                    <div key={exp.expense_id} className="text-xs p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
-                                                                        <div className="flex items-start justify-between gap-2">
-                                                                            <div>
-                                                                                <p className="font-semibold text-on-surface dark:text-dark-on-surface">{exp.expense_type.expense_name}</p>
-                                                                                {exp.remarks && <p className="text-outline mt-0.5 italic">{exp.remarks}</p>}
-                                                                            </div>
-                                                                            <div className="flex flex-col items-end gap-1">
-                                                                                <span className="font-bold text-emerald-600 dark:text-emerald-400">{exp.amount} KWD</span>
-                                                                                <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
-                                                                                    <button
-                                                                                        onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }}
-                                                                                        className="p-1 rounded-lg text-outline hover:text-primary cursor-pointer active:scale-95"
-                                                                                        aria-label="Edit Expense"
-                                                                                    >
-                                                                                        <Edit2 className="w-4 h-4" />
-                                                                                    </button>
-                                                                                </Can>
+                                                                {workerExpenses.map(exp => {
+                                                                    const receiptsList: Media[] = [];
+                                                                    if (exp.receipt) receiptsList.push(exp.receipt);
+                                                                    if (exp.receipts) {
+                                                                        exp.receipts.forEach(r => {
+                                                                            if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
+                                                                                receiptsList.push(r);
+                                                                            }
+                                                                        });
+                                                                    }
+
+                                                                    return (
+                                                                        <div key={exp.expense_id} className="text-xs p-2 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
+                                                                            <div className="flex items-start justify-between gap-2">
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="font-semibold text-on-surface dark:text-dark-on-surface">{exp.expense_type.expense_name}</p>
+                                                                                    {exp.remarks && <p className="text-outline mt-0.5 italic break-words">{exp.remarks}</p>}
+                                                                                    {receiptsList.length > 0 && (
+                                                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                                                            {receiptsList.map(r => {
+                                                                                                const url = getMediaUrl(r.file_url);
+                                                                                                const isImg = isImage(r.file_name);
+                                                                                                return (
+                                                                                                    <a
+                                                                                                        key={r.media_id}
+                                                                                                        href={url}
+                                                                                                        onClick={(e) => {
+                                                                                                            e.preventDefault();
+                                                                                                            setPreviewItem({ url, name: r.file_name });
+                                                                                                        }}
+                                                                                                        className="relative w-12 h-12 rounded border border-outline-variant bg-surface dark:bg-dark-surface overflow-hidden flex items-center justify-center cursor-pointer hover:border-primary transition-colors shrink-0 group shadow-xs"
+                                                                                                        title={r.file_name}
+                                                                                                    >
+                                                                                                        {isImg ? (
+                                                                                                            <img src={url} alt={r.file_name} className="w-full h-full object-cover" />
+                                                                                                        ) : (
+                                                                                                            <div className="flex flex-col items-center justify-center text-center p-0.5">
+                                                                                                                <FileText className="w-5 h-5 text-outline group-hover:text-primary transition-colors" />
+                                                                                                                <span className="text-[7px] text-outline truncate w-10 mt-0.5">{r.file_name.split('.').pop()?.toUpperCase()}</span>
+                                                                                                            </div>
+                                                                                                        )}
+                                                                                                    </a>
+                                                                                                );
+                                                                                            })}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                                                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{exp.amount} KWD</span>
+                                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${exp.approved ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                                                                                        {exp.approved ? 'Approved' : 'Pending Approval'}
+                                                                                    </span>
+                                                                                    <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
+                                                                                        <button
+                                                                                            onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }}
+                                                                                            className="p-1 rounded-lg text-outline hover:text-primary cursor-pointer active:scale-95"
+                                                                                            aria-label="Edit Expense"
+                                                                                        >
+                                                                                            <Edit2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    </Can>
+                                                                                </div>
                                                                             </div>
                                                                         </div>
-                                                                    </div>
-                                                                ))}
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
                                                     </div>
@@ -1019,6 +1110,43 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     })()}
                                 </div>
                             )}
+
+
+                            {/* Desktop Action Buttons — hidden on mobile (FAB handles those) */}
+                            {!showRejectForm && <>  {!modalLoading && ticketDetails.status.status_name === 'Open' && (
+                                <div className="hidden sm:flex items-center gap-2 shrink-0 ml-3 justify-end">
+                                    <Can permission="maintenance.can_move_open_to_in_progress">
+                                        <button
+                                            onClick={handleMoveToNextStatus}
+                                            disabled={actionLoading}
+                                            className=" min-h-[36px] flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer disabled:opacity-50 active:scale-95"
+                                            aria-label="Approve Ticket"
+                                        >
+                                            {actionLoading
+                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                : <CheckCircle2 className="w-3.5 h-3.5" />
+                                            }
+                                            Approve
+                                        </button>
+                                    </Can>
+                                    <Can permission="maintenance.can_move_open_to_rejected">
+                                        <button
+                                            onClick={() => setShowRejectForm(true)}
+                                            disabled={actionLoading}
+                                            className="min-h-[36px] flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-error hover:bg-red-700 text-white transition-colors cursor-pointer disabled:opacity-50 active:scale-95"
+                                            aria-label="Reject Ticket"
+                                        >
+                                            <XCircle className="w-3.5 h-3.5" />
+                                            Reject
+                                        </button>
+                                    </Can>
+                                </div>
+                            )}
+
+                            </>
+                            }
+
+
 
                             {/* After Repair Media Section */}
                             {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (completedMedia.length > 0 || hasCompletedCategoryForDept) && (
@@ -1043,199 +1171,206 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* Reject reason inline form - shown above FAB when active */}
                 {showRejectForm && (
-                    <div className="sticky bottom-0 z-30 bg-surface-container border-t border-outline-variant px-4 sm:px-5 py-3 shrink-0">
-                        <div className="p-2.5 border border-error/20 bg-error-container/10 rounded flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                            <input
-                                type="text"
-                                className="flex-1 text-xs bg-surface border border-outline-variant p-2 rounded outline-none text-on-surface focus:border-error placeholder:text-on-surface-variant/60 min-h-[36px]"
-                                placeholder="Provide specific reason for ticket rejection..."
-                                value={rejectReason}
-                                onChange={e => setRejectReason(e.target.value)}
-                                autoFocus
-                            />
-                            <div className="flex items-center gap-2 shrink-0 justify-end">
-                                <button
-                                    onClick={() => setShowRejectForm(false)}
-                                    className="min-h-[36px] px-3.5 py-2 text-xs border border-outline-variant rounded cursor-pointer text-on-surface hover:bg-surface-container-high transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => { handleUpdateStatus('Rejected', { reject_reason: rejectReason }); setShowRejectForm(false); }}
-                                    disabled={actionLoading}
-                                    className="min-h-[36px] px-4 py-2 text-xs bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded font-medium cursor-pointer flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                >
-                                    {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />} Confirm Reject
-                                </button>
-                            </div>
+                    // <div className="sticky bottom-0 z-30 bg-surface-container border-t border-outline-variant px-4 sm:px-5 py-3 shrink-0">
+                    <div className="p-2.5 border border-error/20 bg-error-container/10 rounded flex flex-col sm:flex-row items-stretch sm:items-center gap-2 m-4 mt-0">
+                        <input
+                            type="text"
+                            className="flex-1 text-xs bg-surface border border-outline-variant p-2 rounded outline-none text-on-surface focus:border-error placeholder:text-on-surface-variant/60 min-h-[36px]"
+                            placeholder="Provide specific reason for ticket rejection..."
+                            value={rejectReason}
+                            onChange={e => setRejectReason(e.target.value)}
+                            autoFocus
+                        />
+                        <div className="flex items-center gap-2 shrink-0 justify-end">
+                            <button
+                                onClick={() => setShowRejectForm(false)}
+                                className="min-h-[36px] px-3.5 py-2 text-xs border border-outline-variant rounded cursor-pointer text-on-surface hover:bg-surface-container-high transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => { handleUpdateStatus('Rejected', { reject_reason: rejectReason }); setShowRejectForm(false); }}
+                                disabled={actionLoading}
+                                className="min-h-[36px] px-4 py-2 text-xs bg-error hover:bg-error-container text-on-error hover:text-on-error-container rounded font-medium cursor-pointer flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                            >
+                                {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />} Confirm Reject
+                            </button>
                         </div>
                     </div>
+                    // </div>
                 )}
 
                 {/* Floating Action Button Speed-Dial — mobile only */}
-                {!modalLoading && (
-                    <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2">
-                        {/* Speed-dial actions */}
-                        <AnimatePresence>
-                            {isFabOpen && (() => {
-                                const statusName = ticketDetails.status.status_name;
-                                const isOpen = statusName === 'Open';
-                                const isApproved = statusName === 'Approved';
-                                const isInProgress = statusName === 'In Progress';
-                                const isActive = isOpen || isApproved || isInProgress;
-                                const hasAlloc = allocations.length > 0;
+                {!modalLoading && (() => {
+                    const statusName = ticketDetails.status.status_name;
+                    const isOpen = statusName === 'Open';
+                    const isApproved = statusName === 'Approved';
+                    const isInProgress = statusName === 'In Progress';
+                    const isActive = isOpen || isApproved || isInProgress;
+                    const hasAlloc = allocations.length > 0;
+                    const isMyWorker = (user as any)?.user_id === activeWorkerId;
 
-                                type FabAction = {
-                                    key: string;
-                                    label: string;
-                                    icon: React.ReactNode;
-                                    color: string;
-                                    onClick: () => void;
-                                    permission?: string;
-                                    show: boolean;
-                                };
+                    type FabAction = {
+                        key: string;
+                        label: string;
+                        icon: React.ReactNode;
+                        color: string;
+                        onClick: () => void;
+                        permission?: string;
+                        show: boolean;
+                    };
 
-                                const actions: FabAction[] = [
-                                    // Before Repair Media
-                                    {
-                                        key: 'before-media',
-                                        label: 'Before Repair Media',
-                                        icon: <Camera className="w-4 h-4" />,
-                                        color: 'bg-indigo-500 hover:bg-indigo-600 text-white',
-                                        onClick: () => { setIsManageIssueMediaOpen(true); setIsFabOpen(false); },
-                                        permission: 'maintenance.update_before_repair',
-                                        show: isActive,
-                                    },
-                                    // Assign Worker
-                                    {
-                                        key: 'assign',
-                                        label: 'Assign Worker',
-                                        icon: <UserPlus className="w-4 h-4" />,
-                                        color: 'bg-primary hover:bg-primary/90 text-white',
-                                        onClick: () => { setIsAssignModalOpen(true); setIsFabOpen(false); },
-                                        permission: 'maintenance.add_allocation',
-                                        show: isActive,
-                                    },
-                                    // Approve
-                                    {
-                                        key: 'approve',
-                                        label: 'Approve',
-                                        icon: <CheckCircle2 className="w-4 h-4" />,
-                                        color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
-                                        onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
-                                        permission: 'maintenance.can_move_open_to_in_progress',
-                                        show: isOpen,
-                                    },
-                                    // Reject
-                                    {
-                                        key: 'reject',
-                                        label: 'Reject',
-                                        icon: <XCircle className="w-4 h-4" />,
-                                        color: 'bg-error hover:bg-red-700 text-white',
-                                        onClick: () => { setShowRejectForm(true); setIsFabOpen(false); },
-                                        permission: 'maintenance.can_move_open_to_rejected',
-                                        show: isOpen,
-                                    },
-                                    // Start Progress
-                                    {
-                                        key: 'start-progress',
-                                        label: 'Start Progress',
-                                        icon: <Clock className="w-4 h-4" />,
-                                        color: 'bg-blue-600 hover:bg-blue-700 text-white',
-                                        onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
-                                        show: isApproved,
-                                    },
-                                    // Log Hours
-                                    {
-                                        key: 'log-hours',
-                                        label: 'Log Hours',
-                                        icon: <Clock className="w-4 h-4" />,
-                                        color: 'bg-amber-500 hover:bg-amber-600 text-white',
-                                        onClick: () => { setIsLogHoursModalOpen(true); setIsFabOpen(false); },
-                                        permission: 'maintenance.add_worklog',
-                                        show: isInProgress && hasAlloc,
-                                    },
-                                    // Log Expense
-                                    {
-                                        key: 'log-expense',
-                                        label: 'Log Expense',
-                                        icon: <DollarSign className="w-4 h-4" />,
-                                        color: 'bg-teal-600 hover:bg-teal-700 text-white',
-                                        onClick: () => { setIsAddExpenseModalOpen(true); setIsFabOpen(false); },
-                                        permission: 'maintenance.change_my_expence',
-                                        show: isInProgress && hasAlloc,
-                                    },
-                                    // After Repair Media
-                                    {
-                                        key: 'after-media',
-                                        label: 'After Repair Media',
-                                        icon: <Image className="w-4 h-4" />,
-                                        color: 'bg-violet-600 hover:bg-violet-700 text-white',
-                                        onClick: () => { setIsManageCompletedMediaOpen(true); setIsFabOpen(false); },
-                                        permission: 'maintenance.update_after_repair',
-                                        show: isInProgress,
-                                    },
-                                    // Mark Completed
-                                    {
-                                        key: 'complete',
-                                        label: 'Mark Completed',
-                                        icon: <CheckCircle2 className="w-4 h-4" />,
-                                        color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
-                                        onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
-                                        permission: 'maintenance.can_move_in_progress_to_completed',
-                                        show: isInProgress,
-                                    },
-                                ];
+                    const actions: FabAction[] = [
+                        // Before Repair Media
+                        {
+                            key: 'before-media',
+                            label: 'Before Repair Media',
+                            icon: <Camera className="w-4 h-4" />,
+                            color: 'bg-indigo-500 hover:bg-indigo-600 text-white',
+                            onClick: () => { setIsManageIssueMediaOpen(true); setIsFabOpen(false); },
+                            permission: 'maintenance.update_before_repair',
+                            show: isActive,
+                        },
+                        // Assign Worker
+                        {
+                            key: 'assign',
+                            label: 'Assign Worker',
+                            icon: <UserPlus className="w-4 h-4" />,
+                            color: 'bg-primary hover:bg-primary/90 text-white',
+                            onClick: () => { setIsAssignModalOpen(true); setIsFabOpen(false); },
+                            permission: 'maintenance.add_allocation',
+                            show: isActive,
+                        },
+                        // Approve
+                        {
+                            key: 'approve',
+                            label: 'Approve',
+                            icon: <CheckCircle2 className="w-4 h-4" />,
+                            color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+                            onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
+                            permission: 'maintenance.can_move_open_to_in_progress',
+                            show: isOpen,
+                        },
+                        // Reject
+                        {
+                            key: 'reject',
+                            label: 'Reject',
+                            icon: <XCircle className="w-4 h-4" />,
+                            color: 'bg-error hover:bg-red-700 text-white',
+                            onClick: () => { setShowRejectForm(true); setIsFabOpen(false); },
+                            permission: 'maintenance.can_move_open_to_rejected',
+                            show: isOpen,
+                        },
+                        // Start Progress
+                        {
+                            key: 'start-progress',
+                            label: 'Start Progress',
+                            icon: <Clock className="w-4 h-4" />,
+                            color: 'bg-blue-600 hover:bg-blue-700 text-white',
+                            onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
+                            show: isApproved,
+                        },
+                        // Log Hours
+                        {
+                            key: 'log-hours',
+                            label: 'Log Hours',
+                            icon: <Clock className="w-4 h-4" />,
+                            color: 'bg-amber-500 hover:bg-amber-600 text-white',
+                            onClick: () => { setIsLogHoursModalOpen(true); setIsFabOpen(false); },
+                            permission: isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time',
+                            show: (isInProgress || statusName === 'Completed') && hasAlloc,
+                        },
+                        // Log Expense
+                        {
+                            key: 'log-expense',
+                            label: 'Log Expense',
+                            icon: <DollarSign className="w-4 h-4" />,
+                            color: 'bg-teal-600 hover:bg-teal-700 text-white',
+                            onClick: () => { setIsAddExpenseModalOpen(true); setIsFabOpen(false); },
+                            permission: isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence',
+                            show: (isInProgress || statusName === 'Completed') && hasAlloc,
+                        },
+                        // After Repair Media
+                        {
+                            key: 'after-media',
+                            label: 'After Repair Media',
+                            icon: <Image className="w-4 h-4" />,
+                            color: 'bg-violet-600 hover:bg-violet-700 text-white',
+                            onClick: () => { setIsManageCompletedMediaOpen(true); setIsFabOpen(false); },
+                            permission: 'maintenance.update_after_repair',
+                            show: isInProgress || statusName === 'Completed',
+                        },
+                        // Mark Completed
+                        {
+                            key: 'complete',
+                            label: 'Mark Completed',
+                            icon: <CheckCircle2 className="w-4 h-4" />,
+                            color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+                            onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
+                            permission: 'maintenance.can_move_in_progress_to_completed',
+                            show: isInProgress,
+                        },
+                    ];
 
-                                const visibleActions = actions.filter(a =>
-                                    a.show && (!a.permission || hasPermission(a.permission))
-                                );
+                    const visibleActions = actions.filter(a => {
+                        if (permissionDebugEnabled) {
+                            return a.show;
+                        }
+                        return a.show && (!a.permission || hasPermission(a.permission));
+                    });
 
-                                return visibleActions.map((action, idx) => (
-                                    <motion.button
-                                        key={action.key}
-                                        initial={{ opacity: 0, y: 12, scale: 0.85 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        exit={{ opacity: 0, y: 8, scale: 0.85 }}
-                                        transition={{ delay: (visibleActions.length - 1 - idx) * 0.04, duration: 0.18 }}
-                                        onClick={action.onClick}
-                                        disabled={actionLoading}
-                                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full text-xs font-semibold shadow-lg cursor-pointer active:scale-95 transition-all disabled:opacity-50 whitespace-nowrap ${action.color}`}
-                                    >
-                                        {action.icon}
-                                        <span>{action.label}</span>
-                                    </motion.button>
-                                ));
-                            })()}
-                        </AnimatePresence>
+                    if (visibleActions.length === 0) return null;
 
-                        {/* Main FAB toggle button */}
-                        <motion.button
-                            onClick={() => setIsFabOpen(prev => !prev)}
-                            whileTap={{ scale: 0.9 }}
-                            transition={{ duration: 0.2 }}
-                            disabled={actionLoading}
-                            className="w-14 h-14 rounded-full bg-primary text-white shadow-xl flex items-center justify-center cursor-pointer hover:bg-primary/90 active:scale-95 transition-colors disabled:opacity-50"
-                            aria-label={isFabOpen ? 'Close actions' : 'Open actions'}
-                        >
-                            <AnimatePresence mode="wait" initial={false}>
-                                {actionLoading ? (
-                                    <motion.span key="loading" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}>
-                                        <Loader2 className="w-6 h-6 animate-spin" />
-                                    </motion.span>
-                                ) : isFabOpen ? (
-                                    <motion.span key="close" initial={{ opacity: 0, rotate: -90, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 90, scale: 0.7 }} transition={{ duration: 0.15 }}>
-                                        <X className="w-6 h-6" />
-                                    </motion.span>
-                                ) : (
-                                    <motion.span key="menu" initial={{ opacity: 0, rotate: 90, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: -90, scale: 0.7 }} transition={{ duration: 0.15 }}>
-                                        <Menu className="w-6 h-6" />
-                                    </motion.span>
-                                )}
+                    return (
+                        <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2">
+                            {/* Speed-dial actions */}
+                            <AnimatePresence>
+                                {isFabOpen && visibleActions.map((action, idx) => (
+                                    <Can key={action.key} permission={action.permission ? (action.permission as any) : true}>
+                                        <motion.button
+                                            initial={{ opacity: 0, y: 12, scale: 0.85 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 8, scale: 0.85 }}
+                                            transition={{ delay: (visibleActions.length - 1 - idx) * 0.04, duration: 0.18 }}
+                                            onClick={action.onClick}
+                                            disabled={actionLoading}
+                                            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full text-xs font-semibold shadow-lg cursor-pointer active:scale-95 transition-all disabled:opacity-50 whitespace-nowrap ${action.color}`}
+                                        >
+                                            {action.icon}
+                                            <span>{action.label}</span>
+                                        </motion.button>
+                                    </Can>
+                                ))}
                             </AnimatePresence>
-                        </motion.button>
-                    </div>
-                )}
+
+                            {/* Main FAB toggle button */}
+                            <motion.button
+                                onClick={() => setIsFabOpen(prev => !prev)}
+                                whileTap={{ scale: 0.9 }}
+                                transition={{ duration: 0.2 }}
+                                disabled={actionLoading}
+                                className="w-14 h-14 rounded-full bg-primary text-white shadow-xl flex items-center justify-center cursor-pointer hover:bg-primary/90 active:scale-95 transition-colors disabled:opacity-50"
+                                aria-label={isFabOpen ? 'Close actions' : 'Open actions'}
+                            >
+                                <AnimatePresence mode="wait" initial={false}>
+                                    {actionLoading ? (
+                                        <motion.span key="loading" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}>
+                                            <Loader2 className="w-6 h-6 animate-spin" />
+                                        </motion.span>
+                                    ) : isFabOpen ? (
+                                        <motion.span key="close" initial={{ opacity: 0, rotate: -90, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 90, scale: 0.7 }} transition={{ duration: 0.15 }}>
+                                            <X className="w-6 h-6" />
+                                        </motion.span>
+                                    ) : (
+                                        <motion.span key="menu" initial={{ opacity: 0, rotate: 90, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: -90, scale: 0.7 }} transition={{ duration: 0.15 }}>
+                                            <Menu className="w-6 h-6" />
+                                        </motion.span>
+                                    )}
+                                </AnimatePresence>
+                            </motion.button>
+                        </div>
+                    );
+                })()}
 
                 {/* FAB backdrop (close on outside click) */}
                 {isFabOpen && (
@@ -1695,7 +1830,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     <label htmlFor="upload-issue-media-popup" className={`w-full min-h-[48px] flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary active:scale-[0.99] transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
                                         {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Camera className="w-4 h-4" />} Upload New Issue Photo / Video
                                     </label>
-                                    <VoiceRecorder 
+                                    <VoiceRecorder
                                         onSave={(voiceFile) => uploadMedia(voiceFile, 'Before Repair')}
                                         placeholderText="Record a voice note to attach (Before Repair)"
                                     />
@@ -1721,11 +1856,86 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     <label htmlFor="upload-completed-media-popup" className={`w-full min-h-[48px] flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary active:scale-[0.99] transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
                                         {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Camera className="w-4 h-4" />} Upload After Repair / Completion Photo
                                     </label>
-                                    <VoiceRecorder 
+                                    <VoiceRecorder
                                         onSave={(voiceFile) => uploadMedia(voiceFile, 'After Repair')}
                                         placeholderText="Record a voice note to attach (After Repair)"
                                     />
                                 </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+
+                {/* 9. MEDIA PREVIEW MODAL OVERLAY (FOR EXPENSE RECEIPTS) */}
+                {previewItem && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.85 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setPreviewItem(null)}
+                            className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
+                        />
+
+                        {/* Modal Box */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="relative max-w-4xl max-h-[85vh] w-full flex flex-col items-center justify-center z-10"
+                        >
+                            {/* Close & Action Buttons */}
+                            <div className="absolute -top-12 right-0 flex items-center gap-3">
+                                <a
+                                    href={previewItem.url}
+                                    download={previewItem.name}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                    title="Download File"
+                                >
+                                    <Download className="w-5 h-5" />
+                                </a>
+                                <button
+                                    onClick={() => setPreviewItem(null)}
+                                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                    title="Close"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Media Display Container */}
+                            <div className="w-full flex justify-center items-center overflow-hidden rounded-lg bg-black/35 shadow-2xl p-1">
+                                {isImage(previewItem.name) ? (
+                                    <img
+                                        src={previewItem.url}
+                                        alt={previewItem.name}
+                                        className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none"
+                                    />
+                                ) : isVideo(previewItem.name) ? (
+                                    <video
+                                        src={previewItem.url}
+                                        controls
+                                        autoPlay
+                                        className="max-w-full max-h-[75vh] object-contain rounded-md"
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
+                                        <FileText className="w-12 h-12 text-primary mb-3 animate-pulse" />
+                                        <p className="text-xs font-bold text-on-surface uppercase tracking-wider mb-1 text-white">{previewItem.name}</p>
+                                        <p className="text-[11px] text-outline mb-4">Preview not supported for this file format.</p>
+                                        <a
+                                            href={previewItem.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded hover:bg-primary-hover active:scale-95 transition-all"
+                                        >
+                                            Open in New Tab
+                                        </a>
+                                    </div>
+                                )}
                             </div>
                         </motion.div>
                     </div>

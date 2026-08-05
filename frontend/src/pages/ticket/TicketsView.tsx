@@ -5,7 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Plus, AlertTriangle, FileText,
     ChevronLeft, ChevronRight, RefreshCw, Download, Filter,
-    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User
+    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User,
+    Loader2,
+    CheckCircle2
 } from 'lucide-react';
 
 import { AgGridReact } from 'ag-grid-react';
@@ -152,8 +154,18 @@ export const TicketsView: React.FC = () => {
     // UI
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
     const [lastOpenedTicketId, setLastOpenedTicketId] = useState<number | null>(null);
+    const modalWasOpen = useRef(false);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+    useEffect(() => {
+        if (message) {
+            const timer = setTimeout(() => {
+                setMessage(null);
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [message]);
 
     const canCreateAllDepts = hasPermission('create_ticket_all_departments');
 
@@ -403,7 +415,63 @@ export const TicketsView: React.FC = () => {
             }
         }
     }, [stores, filterStore]);
+    // Sync selectedTicket to URL query parameters silently
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryTicketId = urlParams.get('ticket_id');
+        if (selectedTicket) {
+            modalWasOpen.current = true;
+            if (queryTicketId !== String(selectedTicket.ticket_id)) {
+                urlParams.set('ticket_id', String(selectedTicket.ticket_id));
+                const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+                window.history.replaceState(null, '', newUrl);
+            }
+        } else {
+            if (modalWasOpen.current && queryTicketId) {
+                urlParams.delete('ticket_id');
+                const nextQuery = urlParams.toString();
+                const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+                window.history.replaceState(null, '', newUrl);
+            }
+        }
+    }, [selectedTicket]);
 
+    // Load ticket from URL query parameter on refresh/load
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryTicketId = urlParams.get('ticket_id');
+        if (!queryTicketId) {
+            if (selectedTicket) setSelectedTicket(null);
+            return;
+        }
+
+        const ticketIdNum = Number(queryTicketId);
+        if (selectedTicket && selectedTicket.ticket_id === ticketIdNum) {
+            return;
+        }
+
+        // Try to find in current tickets list
+        const found = tickets.find(t => t.ticket_id === ticketIdNum);
+        if (found) {
+            setSelectedTicket(found);
+        } else if (token) {
+            // Fetch directly from backend if not found in list (e.g. on direct navigation/refresh)
+            const fetchSingleTicket = async () => {
+                try {
+                    const res = await fetch(`${API_URL}/maintenance/ticket/${ticketIdNum}/`, {
+                        headers: { Authorization: `Token ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setSelectedTicket(data);
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch ticket from URL', err);
+                }
+            };
+            fetchSingleTicket();
+        }
+    }, [tickets, token, selectedTicket]);
     const handleCreateModalClose = () => {
         setIsCreateModalOpen(false);
         if (subpage === 'create') {
@@ -767,343 +835,340 @@ export const TicketsView: React.FC = () => {
                 ) : tickets.length === 0 ? (
                     <EmptyState onClear={clearFilters} />
                 ) : (
-                <>
-                    {/* ── Mobile-only card grid ──────────────────────────────── */}
-                    <div className="sm:hidden p-3 grid grid-cols-1 gap-2.5">
-                        {tickets.map(ticket => {
-                            const isHigh = ticket.priority?.level >= 2;
-                            const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
-                            return (
-                                <button
-                                    key={ticket.ticket_id}
-                                    type="button"
-                                    onClick={() => {
-                                        setSelectedTicket(ticket);
-                                        setLastOpenedTicketId(ticket.ticket_id);
-                                    }}
-                                    className={`text-left flex flex-col gap-2 p-3 rounded-xl border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${
-                                        lastOpenedTicketId === ticket.ticket_id
+                    <>
+                        {/* ── Mobile-only card grid ──────────────────────────────── */}
+                        <div className="sm:hidden p-3 grid grid-cols-1 gap-2.5">
+                            {tickets.map(ticket => {
+                                const isHigh = ticket.priority?.level >= 2;
+                                const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
+                                return (
+                                    <button
+                                        key={ticket.ticket_id}
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedTicket(ticket);
+                                            setLastOpenedTicketId(ticket.ticket_id);
+                                        }}
+                                        className={`text-left flex flex-col gap-2 p-3 rounded-xl border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${lastOpenedTicketId === ticket.ticket_id
                                             ? 'bg-primary/5 border-primary'
                                             : 'bg-surface border-outline-variant'
-                                    }`}
-                                >
-                                    {/* Status + Priority row */}
-                                    <div className="flex items-center justify-between gap-1 flex-wrap">
-                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(ticket.status?.status_name)}`}>
-                                            {ticket.status?.status_name}
-                                        </span>
-                                        {ticket.priority && (
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
-                                                {ticket.priority.priority_name}
+                                            }`}
+                                    >
+                                        {/* Status + Priority row */}
+                                        <div className="flex items-center justify-between gap-1 flex-wrap">
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(ticket.status?.status_name)}`}>
+                                                {ticket.status?.status_name}
                                             </span>
-                                        )}
-                                    </div>
-
-                                    {/* Title */}
-                                    <p className="text-xs font-semibold text-on-surface leading-snug line-clamp-2 flex-1">{ticket.title}</p>
-
-                                    {/* Work order */}
-                                    <span className="font-mono text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
-
-                                    {/* Footer: store + assignees */}
-                                    <div className="flex items-center justify-between gap-1 pt-1 border-t border-outline-variant/40">
-                                        <span className="text-[10px] text-outline truncate flex-1">
-                                            {ticket.store?.store_name || new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                        </span>
-                                        {/* Assignee avatar stack */}
-                                        {assignedWorkers.length > 0 ? (
-                                            <div className="flex -space-x-1.5 shrink-0">
-                                                {assignedWorkers.slice(0, 3).map((w: any, idx: number) => (
-                                                    <div
-                                                        key={w.user_id}
-                                                        className="w-5 h-5 rounded-full overflow-hidden border border-surface bg-primary/10 flex items-center justify-center text-[8px] font-bold text-primary shrink-0"
-                                                        style={{ zIndex: 10 - idx }}
-                                                        title={w.full_name}
-                                                    >
-                                                        {w.profile_image
-                                                            ? <img src={getMediaUrl(w.profile_image)} alt={w.full_name} className="w-full h-full object-cover" />
-                                                            : w.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
-                                                        }
-                                                    </div>
-                                                ))}
-                                                {assignedWorkers.length > 3 && (
-                                                    <div className="w-5 h-5 rounded-full bg-surface-container border border-outline-variant/60 flex items-center justify-center text-[8px] font-bold text-outline shrink-0">
-                                                        +{assignedWorkers.length - 3}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <span className="text-[9px] text-outline/60 italic shrink-0">—</span>
-                                        )}
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* ── Desktop: kanban or grid ───────────────────────────────── */}
-                    <div className={`hidden sm:block`}>
-                    {viewMode === 'kanban' ? (
-                    <div className="p-4 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
-                        <div className="flex gap-4 min-w-max items-start">
-                            {statuses
-                                .filter(s => canViewStatus(s.status_name))
-                                .map(status => {
-                                    const colTickets = ticketsByStatus[status.status_name] || [];
-                                    const isOver = dragOverStatusId === status.status_id;
-
-                                    const fromStatusName = draggingTicket?.status?.status_name;
-                                    const isSameColumn = !!fromStatusName && fromStatusName.toLowerCase() === status.status_name.toLowerCase();
-                                    const isMoveAllowed = !!fromStatusName && !isSameColumn && canMoveStatus(fromStatusName, status.status_name);
-
-                                    let columnBorderBgClass = 'border-outline-variant bg-surface-container';
-
-                                    if (draggingTicket) {
-                                        if (isSameColumn) {
-                                            columnBorderBgClass = 'border-outline-variant bg-surface-container/70 opacity-90';
-                                        } else if (isMoveAllowed) {
-                                            if (isOver) {
-                                                columnBorderBgClass = 'border-emerald-500 ring-2 ring-emerald-500/40 bg-emerald-500/15 shadow-md scale-[1.01]';
-                                            } else {
-                                                columnBorderBgClass = 'border-emerald-500/60 ring-1 ring-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10';
-                                            }
-                                        } else {
-                                            if (isOver) {
-                                                columnBorderBgClass = 'border-red-500 ring-2 ring-red-500/30 bg-red-500/10 cursor-not-allowed';
-                                            } else {
-                                                columnBorderBgClass = 'border-outline-variant/40 bg-surface-container-low/40 opacity-50 grayscale-25';
-                                            }
-                                        }
-                                    } else if (isOver) {
-                                        columnBorderBgClass = 'border-primary ring-2 ring-primary/20 bg-surface-container-high';
-                                    }
-
-                                    return (
-                                        <div
-                                            key={status.status_id}
-                                            onDragOver={(e) => {
-                                                e.preventDefault();
-                                                if (draggingTicket && !isSameColumn && !isMoveAllowed) {
-                                                    e.dataTransfer.dropEffect = 'none';
-                                                } else {
-                                                    e.dataTransfer.dropEffect = 'move';
-                                                }
-                                                if (dragOverStatusId !== status.status_id) {
-                                                    setDragOverStatusId(status.status_id);
-                                                }
-                                            }}
-                                            onDragLeave={(e) => {
-                                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                                                    setDragOverStatusId(null);
-                                                }
-                                            }}
-                                            onDrop={(e) => {
-                                                e.preventDefault();
-                                                setDragOverStatusId(null);
-                                                setDraggingTicketId(null);
-                                                const ticketIdStr = e.dataTransfer.getData('text/plain');
-                                                if (ticketIdStr) {
-                                                    handleDropTicket(Number(ticketIdStr), status);
-                                                }
-                                            }}
-                                            className={`w-72 sm:w-80 shrink-0 rounded-xl border flex flex-col max-h-[70vh] shadow-xs transition-all ${columnBorderBgClass}`}
-                                        >
-                                            {/* Column Header */}
-                                            <div className="p-3 border-b border-outline-variant flex items-center justify-between bg-surface-container-high/50 rounded-t-xl sticky top-0 z-10 backdrop-blur-xs">
-                                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${statusColor(status.status_name)}`}>
-                                                    {status.status_name}
+                                            {ticket.priority && (
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                                                    {ticket.priority.priority_name}
                                                 </span>
-                                                <div className="flex items-center gap-1.5">
-                                                    {draggingTicket ? (
-                                                        isSameColumn ? (
-                                                            <span className="text-[10px] font-bold text-on-surface-variant/60 bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant/60">
-                                                                Current
-                                                            </span>
-                                                        ) : isMoveAllowed ? (
-                                                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
-                                                                ✓ Can move
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-[10px] font-medium text-on-surface-variant/40 bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant/40">
-                                                                ✕ Locked
-                                                            </span>
-                                                        )
-                                                    ) : (
-                                                        <span className="text-xs font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant">
-                                                            {colTickets.length}
-                                                        </span>
+                                            )}
+                                        </div>
+
+                                        {/* Title */}
+                                        <p className="text-xs font-semibold text-on-surface leading-snug line-clamp-2 flex-1">{ticket.title}</p>
+
+                                        {/* Work order */}
+                                        <span className="font-mono text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
+
+                                        {/* Footer: store + assignees */}
+                                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-outline-variant/40">
+                                            <span className="text-[10px] text-outline truncate flex-1">
+                                                {ticket.store?.store_name || new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            </span>
+                                            {/* Assignee avatar stack */}
+                                            {assignedWorkers.length > 0 ? (
+                                                <div className="flex -space-x-1.5 shrink-0">
+                                                    {assignedWorkers.slice(0, 3).map((w: any, idx: number) => (
+                                                        <div
+                                                            key={w.user_id}
+                                                            className="w-5 h-5 rounded-full overflow-hidden border border-surface bg-primary/10 flex items-center justify-center text-[8px] font-bold text-primary shrink-0"
+                                                            style={{ zIndex: 10 - idx }}
+                                                            title={w.full_name}
+                                                        >
+                                                            {w.profile_image
+                                                                ? <img src={getMediaUrl(w.profile_image)} alt={w.full_name} className="w-full h-full object-cover" />
+                                                                : w.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
+                                                            }
+                                                        </div>
+                                                    ))}
+                                                    {assignedWorkers.length > 3 && (
+                                                        <div className="w-5 h-5 rounded-full bg-surface-container border border-outline-variant/60 flex items-center justify-center text-[8px] font-bold text-outline shrink-0">
+                                                            +{assignedWorkers.length - 3}
+                                                        </div>
                                                     )}
                                                 </div>
-                                            </div>
+                                            ) : (
+                                                <span className="text-[9px] text-outline/60 italic shrink-0">—</span>
+                                            )}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
 
-                                            {/* Column Cards */}
-                                            <div className="p-2.5 overflow-y-auto space-y-2.5 flex-1 scrollbar-thin">
-                                                {colTickets.length === 0 ? (
-                                                    <div className="py-8 text-center border-2 border-dashed border-outline-variant/60 rounded-lg">
-                                                        <p className="text-xs text-on-surface-variant italic">No {status.status_name.toLowerCase()} tickets</p>
-                                                    </div>
-                                                ) : (
-                                                    colTickets.map(ticket => {
-                                                        const isHigh = ticket.priority?.level >= 2;
-                                                        const isDragging = draggingTicketId === ticket.ticket_id;
-                                                        const isLastOpened = lastOpenedTicketId === ticket.ticket_id;
-                                                        return (
-                                                            <motion.div
-                                                                key={ticket.ticket_id}
-                                                                draggable={true}
-                                                                onDragStart={(e: any) => {
-                                                                    e.stopPropagation();
-                                                                    e.dataTransfer.setData('text/plain', String(ticket.ticket_id));
-                                                                    e.dataTransfer.effectAllowed = 'move';
-                                                                    setDraggingTicketId(ticket.ticket_id);
-                                                                }}
-                                                                onDragEnd={(e: any) => {
-                                                                    setDraggingTicketId(null);
-                                                                    setDragOverStatusId(null);
-                                                                }}
-                                                                whileHover={{ scale: 1.01 }}
-                                                                whileTap={{ scale: 0.99 }}
-                                                                onClick={() => {
-                                                                    setSelectedTicket(ticket);
-                                                                    setLastOpenedTicketId(ticket.ticket_id);
-                                                                }}
-                                                                className={`p-3 bg-surface border rounded-lg shadow-2xs hover:shadow-md hover:border-primary/50 cursor-grab active:cursor-grabbing transition-all space-y-2 relative overflow-hidden ${
-                                                                    isDragging ? 'opacity-40 border-dashed border-primary' : 'border-outline-variant'
-                                                                } ${
-                                                                    isLastOpened ? 'border-primary ring-1 ring-primary/20 bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary' : ''
-                                                                }`}
-                                                            >
-                                                                {/* Header Row */}
-                                                                <div className="flex items-center justify-between gap-2">
-                                                                    <span className="font-mono text-xs font-bold text-primary truncate">
-                                                                        {ticket.work_order_no}
+                        {/* ── Desktop: kanban or grid ───────────────────────────────── */}
+                        <div className={`hidden sm:block`}>
+                            {viewMode === 'kanban' ? (
+                                <div className="p-4 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
+                                    <div className="flex gap-4 min-w-max items-start">
+                                        {statuses
+                                            .filter(s => canViewStatus(s.status_name))
+                                            .map(status => {
+                                                const colTickets = ticketsByStatus[status.status_name] || [];
+                                                const isOver = dragOverStatusId === status.status_id;
+
+                                                const fromStatusName = draggingTicket?.status?.status_name;
+                                                const isSameColumn = !!fromStatusName && fromStatusName.toLowerCase() === status.status_name.toLowerCase();
+                                                const isMoveAllowed = !!fromStatusName && !isSameColumn && canMoveStatus(fromStatusName, status.status_name);
+
+                                                let columnBorderBgClass = 'border-outline-variant bg-surface-container';
+
+                                                if (draggingTicket) {
+                                                    if (isSameColumn) {
+                                                        columnBorderBgClass = 'border-outline-variant bg-surface-container/70 opacity-90';
+                                                    } else if (isMoveAllowed) {
+                                                        if (isOver) {
+                                                            columnBorderBgClass = 'border-emerald-500 ring-2 ring-emerald-500/40 bg-emerald-500/15 shadow-md scale-[1.01]';
+                                                        } else {
+                                                            columnBorderBgClass = 'border-emerald-500/60 ring-1 ring-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10';
+                                                        }
+                                                    } else {
+                                                        if (isOver) {
+                                                            columnBorderBgClass = 'border-red-500 ring-2 ring-red-500/30 bg-red-500/10 cursor-not-allowed';
+                                                        } else {
+                                                            columnBorderBgClass = 'border-outline-variant/40 bg-surface-container-low/40 opacity-50 grayscale-25';
+                                                        }
+                                                    }
+                                                } else if (isOver) {
+                                                    columnBorderBgClass = 'border-primary ring-2 ring-primary/20 bg-surface-container-high';
+                                                }
+
+                                                return (
+                                                    <div
+                                                        key={status.status_id}
+                                                        onDragOver={(e) => {
+                                                            e.preventDefault();
+                                                            if (draggingTicket && !isSameColumn && !isMoveAllowed) {
+                                                                e.dataTransfer.dropEffect = 'none';
+                                                            } else {
+                                                                e.dataTransfer.dropEffect = 'move';
+                                                            }
+                                                            if (dragOverStatusId !== status.status_id) {
+                                                                setDragOverStatusId(status.status_id);
+                                                            }
+                                                        }}
+                                                        onDragLeave={(e) => {
+                                                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                                                setDragOverStatusId(null);
+                                                            }
+                                                        }}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            setDragOverStatusId(null);
+                                                            setDraggingTicketId(null);
+                                                            const ticketIdStr = e.dataTransfer.getData('text/plain');
+                                                            if (ticketIdStr) {
+                                                                handleDropTicket(Number(ticketIdStr), status);
+                                                            }
+                                                        }}
+                                                        className={`w-72 sm:w-80 shrink-0 rounded-xl border flex flex-col max-h-[70vh] shadow-xs transition-all ${columnBorderBgClass}`}
+                                                    >
+                                                        {/* Column Header */}
+                                                        <div className="p-3 border-b border-outline-variant flex items-center justify-between bg-surface-container-high/50 rounded-t-xl sticky top-0 z-10 backdrop-blur-xs">
+                                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${statusColor(status.status_name)}`}>
+                                                                {status.status_name}
+                                                            </span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                {draggingTicket ? (
+                                                                    isSameColumn ? (
+                                                                        <span className="text-[10px] font-bold text-on-surface-variant/60 bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant/60">
+                                                                            Current
+                                                                        </span>
+                                                                    ) : isMoveAllowed ? (
+                                                                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                                                                            ✓ Can move
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-medium text-on-surface-variant/40 bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant/40">
+                                                                            ✕ Locked
+                                                                        </span>
+                                                                    )
+                                                                ) : (
+                                                                    <span className="text-xs font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full border border-outline-variant">
+                                                                        {colTickets.length}
                                                                     </span>
-                                                                    {ticket.priority && (
-                                                                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
-                                                                            {ticket.priority.priority_name}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-
-                                                                {/* Title */}
-                                                                <h4 className="text-xs font-bold text-on-surface line-clamp-2 leading-snug">
-                                                                    {ticket.title}
-                                                                </h4>
-
-                                                                {/* Description preview */}
-                                                                {ticket.description && (
-                                                                    <p className="text-[11px] text-on-surface-variant line-clamp-2 leading-normal">
-                                                                        {ticket.description}
-                                                                    </p>
                                                                 )}
+                                                            </div>
+                                                        </div>
 
-                                                                {/* Store & Dept Tag */}
-                                                                <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] text-on-surface-variant border-t border-outline-variant/50">
-                                                                    {ticket.store?.store_name && (
-                                                                        <span className="flex items-center gap-1 font-medium bg-surface-container px-1.5 py-0.5 rounded">
-                                                                            <Building2 className="w-3 h-3 text-on-surface-variant" />
-                                                                            {ticket.store.store_name}
-                                                                        </span>
-                                                                    )}
-                                                                    {ticket.department?.department_name && (
-                                                                        <span className="font-medium bg-surface-container px-1.5 py-0.5 rounded">
-                                                                            {ticket.department.department_name}
-                                                                        </span>
-                                                                    )}
+                                                        {/* Column Cards */}
+                                                        <div className="p-2.5 overflow-y-auto space-y-2.5 flex-1 scrollbar-thin">
+                                                            {colTickets.length === 0 ? (
+                                                                <div className="py-8 text-center border-2 border-dashed border-outline-variant/60 rounded-lg">
+                                                                    <p className="text-xs text-on-surface-variant italic">No {status.status_name.toLowerCase()} tickets</p>
                                                                 </div>
-
-                                                                {/* Card Footer */}
-                                                                <div className="flex items-center justify-between pt-2.5 text-[10px] text-on-surface-variant border-t border-outline-variant/30 mt-1">
-                                                                    {/* Creator (Left Side) */}
-                                                                    <div className="flex items-center gap-2 min-w-0">
-                                                                        <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center font-bold text-[9px] bg-primary/10 text-primary border border-primary/25 shadow-xs shrink-0" title={`Created by ${ticket.created_by?.full_name || 'System'}`}>
-                                                                            {ticket.created_by?.profile_image ? (
-                                                                                <img src={getMediaUrl(ticket.created_by.profile_image)} alt={ticket.created_by.full_name} className="w-full h-full object-cover" />
-                                                                            ) : (
-                                                                                <span>{ticket.created_by?.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="flex flex-col min-w-0 leading-tight">
-                                                                            <span className="font-semibold text-on-surface truncate max-w-[90px]">{ticket.created_by?.full_name?.split(' ')[0] || 'System'}</span>
-                                                                            <span className="text-[9px] text-outline mt-0.5">{new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Assigned Workers Stack (Right Side) */}
-                                                                    {(() => {
-                                                                        const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
-                                                                        if (assignedWorkers.length === 0) {
-                                                                            return <span className="text-[9px] text-outline italic">Unassigned</span>;
-                                                                        }
-                                                                        return (
-                                                                            <div className="flex items-center -space-x-2.5 overflow-hidden shrink-0">
-                                                                                {assignedWorkers.slice(0, 3).map((w: any, idx: number) => (
-                                                                                    <div 
-                                                                                        key={w.user_id} 
-                                                                                        className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center font-bold text-[9px] bg-surface dark:bg-dark-surface border border-outline-variant/60 shadow-xs shrink-0"
-                                                                                        title={`Assigned to ${w.full_name}`}
-                                                                                        style={{ zIndex: 10 - idx }}
-                                                                                    >
-                                                                                        {w.profile_image ? (
-                                                                                            <img src={getMediaUrl(w.profile_image)} alt={w.full_name} className="w-full h-full object-cover" />
-                                                                                        ) : (
-                                                                                            <span>{w.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                ))}
-                                                                                {assignedWorkers.length > 3 && (
-                                                                                    <div 
-                                                                                        className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[8px] bg-surface-container-high border border-outline-variant/60 text-on-surface shadow-xs shrink-0 z-0"
-                                                                                        title={`${assignedWorkers.length - 3} more worker(s)`}
-                                                                                    >
-                                                                                        +{assignedWorkers.length - 3}
-                                                                                    </div>
+                                                            ) : (
+                                                                colTickets.map(ticket => {
+                                                                    const isHigh = ticket.priority?.level >= 2;
+                                                                    const isDragging = draggingTicketId === ticket.ticket_id;
+                                                                    const isLastOpened = lastOpenedTicketId === ticket.ticket_id;
+                                                                    return (
+                                                                        <motion.div
+                                                                            key={ticket.ticket_id}
+                                                                            draggable={true}
+                                                                            onDragStart={(e: any) => {
+                                                                                e.stopPropagation();
+                                                                                e.dataTransfer.setData('text/plain', String(ticket.ticket_id));
+                                                                                e.dataTransfer.effectAllowed = 'move';
+                                                                                setDraggingTicketId(ticket.ticket_id);
+                                                                            }}
+                                                                            onDragEnd={(e: any) => {
+                                                                                setDraggingTicketId(null);
+                                                                                setDragOverStatusId(null);
+                                                                            }}
+                                                                            whileHover={{ scale: 1.01 }}
+                                                                            whileTap={{ scale: 0.99 }}
+                                                                            onClick={() => {
+                                                                                setSelectedTicket(ticket);
+                                                                                setLastOpenedTicketId(ticket.ticket_id);
+                                                                            }}
+                                                                            className={`p-3 bg-surface border rounded-lg shadow-2xs hover:shadow-md hover:border-primary/50 cursor-grab active:cursor-grabbing transition-all space-y-2 relative overflow-hidden ${isDragging ? 'opacity-40 border-dashed border-primary' : 'border-outline-variant'
+                                                                                } ${isLastOpened ? 'border-primary ring-1 ring-primary/20 bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary' : ''
+                                                                                }`}
+                                                                        >
+                                                                            {/* Header Row */}
+                                                                            <div className="flex items-center justify-between gap-2">
+                                                                                <span className="font-mono text-xs font-bold text-primary truncate">
+                                                                                    {ticket.work_order_no}
+                                                                                </span>
+                                                                                {ticket.priority && (
+                                                                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                                                                                        {ticket.priority.priority_name}
+                                                                                    </span>
                                                                                 )}
                                                                             </div>
-                                                                        );
-                                                                    })()}
-                                                                </div>
-                                                            </motion.div>
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(pageSize, tickets.length)) * 52 + 10 }}>
-                        <AgGridReact<Ticket>
-                            theme={appTheme}
-                            rowData={tickets}
-                            columnDefs={columnDefs}
-                            defaultColDef={defaultColDef}
-                            animateRows={true}
-                            rowHeight={52}
-                            headerHeight={44}
-                            suppressCellFocus={false}
-                            suppressRowClickSelection={true}
-                            enableCellTextSelection={true}
-                            suppressHorizontalScroll={false}
-                            onGridReady={(params) => params.api.sizeColumnsToFit()}
-                            onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
-                            onRowClicked={(event) => {
-                                if (event.data) {
-                                    setSelectedTicket(event.data);
-                                    setLastOpenedTicketId(event.data.ticket_id);
-                                }
-                            }}
-                            rowClass="cursor-pointer"
-                            rowClassRules={{
-                                'ag-row-last-opened': (params: any) => params.data?.ticket_id === lastOpenedTicketId
-                            }}
-                        />
-                    </div>
-                )}
-                    </div>{/* end sm:block desktop wrapper */}
-                </>
+
+                                                                            {/* Title */}
+                                                                            <h4 className="text-xs font-bold text-on-surface line-clamp-2 leading-snug">
+                                                                                {ticket.title}
+                                                                            </h4>
+
+                                                                            {/* Description preview */}
+                                                                            {ticket.description && (
+                                                                                <p className="text-[11px] text-on-surface-variant line-clamp-2 leading-normal">
+                                                                                    {ticket.description}
+                                                                                </p>
+                                                                            )}
+
+                                                                            {/* Store & Dept Tag */}
+                                                                            <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] text-on-surface-variant border-t border-outline-variant/50">
+                                                                                {ticket.store?.store_name && (
+                                                                                    <span className="flex items-center gap-1 font-medium bg-surface-container px-1.5 py-0.5 rounded">
+                                                                                        <Building2 className="w-3 h-3 text-on-surface-variant" />
+                                                                                        {ticket.store.store_name}
+                                                                                    </span>
+                                                                                )}
+                                                                                {ticket.department?.department_name && (
+                                                                                    <span className="font-medium bg-surface-container px-1.5 py-0.5 rounded">
+                                                                                        {ticket.department.department_name}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* Card Footer */}
+                                                                            <div className="flex items-center justify-between pt-2.5 text-[10px] text-on-surface-variant border-t border-outline-variant/30 mt-1">
+                                                                                {/* Creator (Left Side) */}
+                                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                                    <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center font-bold text-[9px] bg-primary/10 text-primary border border-primary/25 shadow-xs shrink-0" title={`Created by ${ticket.created_by?.full_name || 'System'}`}>
+                                                                                        {ticket.created_by?.profile_image ? (
+                                                                                            <img src={getMediaUrl(ticket.created_by.profile_image)} alt={ticket.created_by.full_name} className="w-full h-full object-cover" />
+                                                                                        ) : (
+                                                                                            <span>{ticket.created_by?.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="flex flex-col min-w-0 leading-tight">
+                                                                                        <span className="font-semibold text-on-surface truncate max-w-[90px]">{ticket.created_by?.full_name?.split(' ')[0] || 'System'}</span>
+                                                                                        <span className="text-[9px] text-outline mt-0.5">{new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Assigned Workers Stack (Right Side) */}
+                                                                                {(() => {
+                                                                                    const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
+                                                                                    if (assignedWorkers.length === 0) {
+                                                                                        return <span className="text-[9px] text-outline italic">Unassigned</span>;
+                                                                                    }
+                                                                                    return (
+                                                                                        <div className="flex items-center -space-x-2.5 overflow-hidden shrink-0">
+                                                                                            {assignedWorkers.slice(0, 3).map((w: any, idx: number) => (
+                                                                                                <div
+                                                                                                    key={w.user_id}
+                                                                                                    className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center font-bold text-[9px] bg-surface dark:bg-dark-surface border border-outline-variant/60 shadow-xs shrink-0"
+                                                                                                    title={`Assigned to ${w.full_name}`}
+                                                                                                    style={{ zIndex: 10 - idx }}
+                                                                                                >
+                                                                                                    {w.profile_image ? (
+                                                                                                        <img src={getMediaUrl(w.profile_image)} alt={w.full_name} className="w-full h-full object-cover" />
+                                                                                                    ) : (
+                                                                                                        <span>{w.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            ))}
+                                                                                            {assignedWorkers.length > 3 && (
+                                                                                                <div
+                                                                                                    className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[8px] bg-surface-container-high border border-outline-variant/60 text-on-surface shadow-xs shrink-0 z-0"
+                                                                                                    title={`${assignedWorkers.length - 3} more worker(s)`}
+                                                                                                >
+                                                                                                    +{assignedWorkers.length - 3}
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })()}
+                                                                            </div>
+                                                                        </motion.div>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(pageSize, tickets.length)) * 52 + 10 }}>
+                                    <AgGridReact<Ticket>
+                                        theme={appTheme}
+                                        rowData={tickets}
+                                        columnDefs={columnDefs}
+                                        defaultColDef={defaultColDef}
+                                        animateRows={true}
+                                        rowHeight={52}
+                                        headerHeight={44}
+                                        suppressCellFocus={false}
+                                        suppressRowClickSelection={true}
+                                        enableCellTextSelection={true}
+                                        suppressHorizontalScroll={false}
+                                        onGridReady={(params) => params.api.sizeColumnsToFit()}
+                                        onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
+                                        onRowClicked={(event) => {
+                                            if (event.data) {
+                                                setSelectedTicket(event.data);
+                                                setLastOpenedTicketId(event.data.ticket_id);
+                                            }
+                                        }}
+                                        rowClass="cursor-pointer"
+                                        rowClassRules={{
+                                            'ag-row-last-opened': (params: any) => params.data?.ticket_id === lastOpenedTicketId
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </div>{/* end sm:block desktop wrapper */}
+                    </>
                 )}{/* end outer ternary branch */}
 
                 {/* Pagination — minimal */}
@@ -1160,7 +1225,17 @@ export const TicketsView: React.FC = () => {
                     <Plus className="w-6 h-6" />
                 </button>
             </Can>
+            {/* {selectedTicket.status.status_name === 'In Progress' &&
 
+                <Can permission='maintenance.can_move_in_progress_to_completed'>
+                    <button onClick={() => handleMoveToNextStatus()}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
+                        {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Mark Completed
+                    </button>
+
+                </Can>
+            } */}
             {/* Popup Create Ticket Modal */}
             <CreateTicketModal
                 isOpen={isCreateModalOpen}

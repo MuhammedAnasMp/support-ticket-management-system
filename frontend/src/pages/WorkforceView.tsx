@@ -21,60 +21,60 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 // ─── AG Grid v36 Theming API ─────────────────────────────────────────────────
 const appTheme = themeQuartz.withParams({
-    fontFamily: 'Inter, sans-serif',
-    fontSize: 13,
-    rowHeight: 52,
-    headerHeight: 44,
-    cellHorizontalPaddingScale: 1.4,
-    backgroundColor: '#ffffff',
-    foregroundColor: '#191c1d',
-    headerBackgroundColor: '#f3f4f5',
-    headerTextColor: '#414754',
-    rowHoverColor: '#e7e8e9',
-    borderColor: '#E0E2E6',
-    accentColor: '#1A73E8',
-    spacing: 6,
-    wrapperBorderRadius: 0,
+  fontFamily: 'Inter, sans-serif',
+  fontSize: 13,
+  rowHeight: 52,
+  headerHeight: 44,
+  cellHorizontalPaddingScale: 1.4,
+  backgroundColor: '#ffffff',
+  foregroundColor: '#191c1d',
+  headerBackgroundColor: '#f3f4f5',
+  headerTextColor: '#414754',
+  rowHoverColor: '#e7e8e9',
+  borderColor: '#E0E2E6',
+  accentColor: '#1A73E8',
+  spacing: 6,
+  wrapperBorderRadius: 0,
 });
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // ─── Skeleton loader ─────────────────────────────────────────────────────────
 const SkeletonGrid: React.FC = () => (
-    <div className="border border-outline-variant rounded overflow-hidden">
-        <div className="h-11 bg-surface-container-low border-b border-outline-variant flex items-center px-4 gap-6 animate-pulse">
-            {[160, 140, 200, 130, 140, 140, 110].map((w, i) => (
-                <div key={i} className="h-3 bg-outline-variant rounded" style={{ width: w }} />
-            ))}
-        </div>
-        {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-[52px] border-b border-outline-variant flex items-center px-4 gap-6 bg-surface-container">
-                {[80, 120, 180, 70, 80, 90, 60].map((w, j) => (
-                    <div
-                        key={j}
-                        className="h-3 bg-surface-container-high rounded animate-pulse"
-                        style={{ width: w, animationDelay: `${i * 60 + j * 20}ms` }}
-                    />
-                ))}
-            </div>
-        ))}
+  <div className="border border-outline-variant rounded overflow-hidden">
+    <div className="h-11 bg-surface-container-low border-b border-outline-variant flex items-center px-4 gap-6 animate-pulse">
+      {[160, 140, 200, 130, 140, 140, 110].map((w, i) => (
+        <div key={i} className="h-3 bg-outline-variant rounded" style={{ width: w }} />
+      ))}
     </div>
+    {Array.from({ length: 8 }).map((_, i) => (
+      <div key={i} className="h-[52px] border-b border-outline-variant flex items-center px-4 gap-6 bg-surface-container">
+        {[80, 120, 180, 70, 80, 90, 60].map((w, j) => (
+          <div
+            key={j}
+            className="h-3 bg-surface-container-high rounded animate-pulse"
+            style={{ width: w, animationDelay: `${i * 60 + j * 20}ms` }}
+          />
+        ))}
+      </div>
+    ))}
+  </div>
 );
 
 // ─── Empty state ─────────────────────────────────────────────────────────────
 const EmptyState: React.FC<{ onClear: () => void }> = ({ onClear }) => (
-    <div className="flex flex-col items-center justify-center py-16 gap-3 border border-outline-variant rounded bg-surface-container">
-        <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center">
-            <FileText className="w-6 h-6 text-on-surface-variant" />
-        </div>
-        <div className="text-sm font-semibold text-on-surface">No Workforce Records Found</div>
-        <p className="text-xs text-on-surface-variant max-w-xs text-center">
-            Try adjusting your search criteria or clear filters to start over.
-        </p>
-        <button onClick={onClear} className="mt-1 text-xs font-semibold text-primary hover:underline cursor-pointer">
-            Clear all filters
-        </button>
+  <div className="flex flex-col items-center justify-center py-16 gap-3 border border-outline-variant rounded bg-surface-container">
+    <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center">
+      <FileText className="w-6 h-6 text-on-surface-variant" />
     </div>
+    <div className="text-sm font-semibold text-on-surface">No Workforce Records Found</div>
+    <p className="text-xs text-on-surface-variant max-w-xs text-center">
+      Try adjusting your search criteria or clear filters to start over.
+    </p>
+    <button onClick={onClear} className="mt-1 text-xs font-semibold text-primary hover:underline cursor-pointer">
+      Clear all filters
+    </button>
+  </div>
 );
 
 export const WorkforceView: React.FC = () => {
@@ -245,6 +245,26 @@ export const WorkforceView: React.FC = () => {
       return sSubDeptId === subDeptId;
     });
   }, [genSubDepartment, skills]);
+
+  const groupedDepartments = useMemo(() => {
+    const userDeptIds = getLoggedInUserDepartmentIds();
+    const filteredSubDepts = userDeptIds
+      ? subDepartments.filter(sd => {
+        const deptId = sd.department?.department_id ?? sd.department;
+        return userDeptIds.has(Number(deptId));
+      })
+      : subDepartments;
+
+    const groups: Record<string, typeof subDepartments> = {};
+    filteredSubDepts.forEach(sd => {
+      const deptName = sd.department?.department_name || 'General';
+      if (!groups[deptName]) {
+        groups[deptName] = [];
+      }
+      groups[deptName].push(sd);
+    });
+    return groups;
+  }, [subDepartments, user]);
 
   const columnDefs = useMemo<ColDef[]>(() => {
     if (subpage === 'employees' || !subpage) {
@@ -452,6 +472,7 @@ export const WorkforceView: React.FC = () => {
 
   const [employeeForm, setEmployeeForm] = useState({
     employee_no: '',
+    username: '',
     full_name: '',
     email: '',
     phone: '',
@@ -473,8 +494,8 @@ export const WorkforceView: React.FC = () => {
   const formRoleObj = roles.find(r => String(r.role_id) === String(employeeForm.role));
   const selectedRolePermissions = (formRoleObj?.permissions || []) as string[];
   const isFormTechnician = selectedRolePermissions.includes('complete_ticket') || (formRoleObj?.role_name || '').toLowerCase() === 'technician';
-  const isFormStoreManager = (selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'store manager';
-  const isFormAreaManager = (selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'area manager';
+  const isFormStoreManager = !isFormTechnician && ((selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'store manager');
+  const isFormAreaManager = !isFormTechnician && ((selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'area manager');
   const needsWorkingDepartments = !isFormStoreManager && !isFormAreaManager;
 
   const selectedSubDepts = subDepartments.filter(sd =>
@@ -652,6 +673,7 @@ export const WorkforceView: React.FC = () => {
     setEmployeeForm({
       employee_no: '',
       full_name: '',
+      username: '',
       email: '',
       phone: '',
       whatsapp_number: '',
@@ -683,6 +705,7 @@ export const WorkforceView: React.FC = () => {
       full_name: item.full_name || '',
       email: item.email || '',
       phone: item.phone || '',
+      username: item.username || '',
       whatsapp_number: item.whatsapp_number || '',
       password: '',
       role: item.role?.role_id || item.role || '',
@@ -753,7 +776,7 @@ export const WorkforceView: React.FC = () => {
 
     const formData = new FormData();
     formData.append('employee_no', employeeForm.employee_no);
-    formData.append('username', employeeForm.employee_no);
+    formData.append('username', employeeForm.username);
     formData.append('full_name', employeeForm.full_name);
     formData.append('email', employeeForm.email);
     formData.append('phone', employeeForm.phone);
@@ -942,8 +965,8 @@ export const WorkforceView: React.FC = () => {
                 type="button"
                 onClick={() => setEmployeeTab('approved')}
                 className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${employeeTab === 'approved'
-                    ? 'bg-primary text-on-primary font-semibold shadow-xs'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                  ? 'bg-primary text-on-primary font-semibold shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                   }`}
               >
                 <UserCheck className="w-3.5 h-3.5" />
@@ -958,8 +981,8 @@ export const WorkforceView: React.FC = () => {
                 type="button"
                 onClick={() => setEmployeeTab('unapproved')}
                 className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${employeeTab === 'unapproved'
-                    ? 'bg-tertiary-container text-on-tertiary-container font-semibold shadow-xs'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                  ? 'bg-tertiary-container text-on-tertiary-container font-semibold shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                   }`}
               >
                 <UserLock className="w-3.5 h-3.5" />
@@ -1001,9 +1024,8 @@ export const WorkforceView: React.FC = () => {
                       key={item.user_id}
                       type="button"
                       onClick={canChangeUser ? () => handleOpenEditEmployee(item) : undefined}
-                      className={`w-full text-left flex items-center gap-3 p-3.5 rounded-xl border transition-all cursor-pointer shadow-xs bg-surface border-outline-variant ${
-                        canChangeUser ? 'active:scale-[0.98]' : ''
-                      }`}
+                      className={`w-full text-left flex items-center gap-3 p-3.5 rounded-xl border transition-all cursor-pointer shadow-xs bg-surface border-outline-variant ${canChangeUser ? 'active:scale-[0.98]' : ''
+                        }`}
                     >
                       {/* Avatar */}
                       {item.profile_image ? (
@@ -1022,9 +1044,9 @@ export const WorkforceView: React.FC = () => {
                             {item.role?.role_name || item.role || 'No Role'}
                           </span>
                         </div>
-                        
+
                         <p className="text-xs text-on-surface-variant truncate">{item.email}</p>
-                        
+
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-outline pt-0.5">
                           {item.phone && <span className="font-mono">📞 {item.phone}</span>}
                           {item.employee_no && <span>· ID: {item.employee_no}</span>}
@@ -1306,8 +1328,8 @@ export const WorkforceView: React.FC = () => {
                   type="button"
                   onClick={() => setActiveFormTab('basic')}
                   className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-[1px] flex items-center gap-1.5 cursor-pointer ${activeFormTab === 'basic'
-                      ? 'border-primary text-primary font-semibold'
-                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                    ? 'border-primary text-primary font-semibold'
+                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
                     }`}
                 >
                   <User className="w-3.5 h-3.5" />
@@ -1317,8 +1339,8 @@ export const WorkforceView: React.FC = () => {
                   type="button"
                   onClick={() => setActiveFormTab('access')}
                   className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-[1px] flex items-center gap-1.5 cursor-pointer ${activeFormTab === 'access'
-                      ? 'border-primary text-primary font-semibold'
-                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                    ? 'border-primary text-primary font-semibold'
+                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
                     }`}
                 >
                   <Building2 className="w-3.5 h-3.5" />
@@ -1329,8 +1351,8 @@ export const WorkforceView: React.FC = () => {
                     type="button"
                     onClick={() => setActiveFormTab('skills')}
                     className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-[1px] flex items-center gap-1.5 cursor-pointer ${activeFormTab === 'skills'
-                        ? 'border-primary text-primary font-semibold'
-                        : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                      ? 'border-primary text-primary font-semibold'
+                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
                       }`}
                   >
                     <Wrench className="w-3.5 h-3.5" />
@@ -1342,8 +1364,8 @@ export const WorkforceView: React.FC = () => {
                     type="button"
                     onClick={() => setActiveFormTab('payroll')}
                     className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-[1px] flex items-center gap-1.5 cursor-pointer ${activeFormTab === 'payroll'
-                        ? 'border-primary text-primary font-semibold'
-                        : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                      ? 'border-primary text-primary font-semibold'
+                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
                       }`}
                   >
                     <DollarSign className="w-3.5 h-3.5" />
@@ -1400,13 +1422,24 @@ export const WorkforceView: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Employee ID (Username) *</label>
+                        <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Employee ID</label>
+                        <input
+                          // required
+                          type="text"
+                          placeholder="e.g. 10402"
+                          value={employeeForm.employee_no}
+                          onChange={e => setEmployeeForm({ ...employeeForm, employee_no: e.target.value })}
+                          className="w-full text-xs bg-surface-container border border-outline-variant p-2.5 rounded text-on-surface focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Username(Login)*</label>
                         <input
                           required
                           type="text"
-                          placeholder="e.g. EMP-1002"
-                          value={employeeForm.employee_no}
-                          onChange={e => setEmployeeForm({ ...employeeForm, employee_no: e.target.value })}
+                          placeholder="EMP-ME"
+                          value={employeeForm.username}
+                          onChange={e => setEmployeeForm({ ...employeeForm, username: e.target.value })}
                           className="w-full text-xs bg-surface-container border border-outline-variant p-2.5 rounded text-on-surface focus:outline-none focus:border-primary"
                         />
                       </div>
@@ -1629,128 +1662,140 @@ export const WorkforceView: React.FC = () => {
 
                 {/* TAB 3: Departments & Skills */}
                 {activeFormTab === 'skills' && needsWorkingDepartments && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 h-full min-h-0">
-                    {/* Working Departments */}
-                    <div className="flex flex-col h-[340px]">
-                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
+                  <div className="flex flex-col h-[480px] min-h-0 border border-outline-variant rounded bg-surface-container-low overflow-hidden">
+                    {/* Header with combined search */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant p-3 bg-surface-container shrink-0 gap-2">
+                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
                         <Wrench className="w-4 h-4" />
-                        Working Departments ({employeeForm.sub_departments.length})
+                        Departments & Skills Setup ({employeeForm.sub_departments.length} Depts, {employeeForm.skills.length} Skills)
                       </h4>
-                      <div className="relative mb-2 shrink-0">
+                      <div className="relative w-48 sm:w-64">
                         <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
                         <input
                           type="text"
-                          placeholder="Filter departments..."
+                          placeholder="Search departments or skills..."
                           value={deptFilter}
                           onChange={e => setDeptFilter(e.target.value)}
-                          className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-3 py-1.5 text-on-surface focus:outline-none focus:border-primary"
+                          className="w-full text-xs bg-surface border border-outline-variant rounded pl-8 pr-3 py-1.5 text-on-surface focus:outline-none focus:border-primary"
                         />
-                      </div>
-                      <div className="flex-1 overflow-y-auto border border-outline-variant rounded p-2.5 space-y-1.5 bg-surface-container-low min-h-[220px] max-h-[300px]">
-                        {(() => {
-                          const userDeptIds = getLoggedInUserDepartmentIds();
-                          const filteredSubDepts = userDeptIds
-                            ? subDepartments.filter(sd => {
-                              const deptId = sd.department?.department_id ?? sd.department;
-                              return userDeptIds.has(Number(deptId));
-                            })
-                            : subDepartments;
-
-                          return filteredSubDepts
-                            .filter(d => d.sub_department_name.toLowerCase().includes(deptFilter.toLowerCase()))
-                            .map(d => {
-                              const checked = employeeForm.sub_departments.includes(d.sub_department_id);
-                              return (
-                                <label key={d.sub_department_id} className="flex items-center gap-2 text-xs text-on-surface cursor-pointer hover:text-primary py-0.5 select-none">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={e => {
-                                      const newList = e.target.checked
-                                        ? [...employeeForm.sub_departments, d.sub_department_id]
-                                        : employeeForm.sub_departments.filter(id => id !== d.sub_department_id);
-                                      
-                                      let updatedSkills = employeeForm.skills;
-                                      if (!e.target.checked) {
-                                        const remainingSubDeptIds = newList.map(Number);
-                                        updatedSkills = employeeForm.skills.filter(skillId => {
-                                          const skObj = skills.find(s => s.nature_id === skillId);
-                                          if (!skObj) return false;
-                                          const skSubDeptId = Number(skObj.sub_department?.sub_department_id ?? skObj.sub_department);
-                                          return remainingSubDeptIds.includes(skSubDeptId);
-                                        });
-                                      }
-
-                                      setEmployeeForm({
-                                        ...employeeForm,
-                                        sub_departments: newList,
-                                        skills: updatedSkills
-                                      });
-                                    }}
-                                    className="w-3.5 h-3.5 text-primary border-outline-variant rounded focus:ring-primary cursor-pointer"
-                                  />
-                                  {d.sub_department_name}
-                                </label>
-                              );
-                            });
-                        })()}
                       </div>
                     </div>
 
-                    {/* Technician Technical Skills */}
-                    {isTechnicianForForm && (
-                      <div className="flex flex-col h-[340px]">
-                        <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
-                          <Award className="w-4 h-4" />
-                          Worker Technical Skills ({employeeForm.skills.length})
-                        </h4>
-                        <div className="relative mb-2 shrink-0">
-                          <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
-                          <input
-                            type="text"
-                            placeholder="Filter skills..."
-                            value={skillFilter}
-                            onChange={e => setSkillFilter(e.target.value)}
-                            className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-3 py-1.5 text-on-surface focus:outline-none focus:border-primary"
-                          />
-                        </div>
-                        <div className="flex-1 overflow-y-auto border border-outline-variant rounded p-2.5 grid grid-cols-1 gap-2 bg-surface-container-low min-h-[220px] max-h-[300px]">
-                          {(() => {
-                            const selectedSubDeptIds = employeeForm.sub_departments.map(Number);
-                            const filteredEmployeeSkills = skills.filter(sk => {
+                    {/* Scrollable Tree List */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[440px]">
+                      {(() => {
+                        const deptKeys = Object.keys(groupedDepartments).sort();
+                        if (deptKeys.length === 0) {
+                          return <p className="text-xs text-outline italic text-center py-4">No departments found.</p>;
+                        }
+
+                        let renderedCount = 0;
+
+                        const content = deptKeys.map(deptName => {
+                          const subDepts = groupedDepartments[deptName];
+
+                          // Filter sub-departments and skills matching the search text
+                          const matchedSubDepts = subDepts.filter(sd => {
+                            const subDeptMatches = sd.sub_department_name.toLowerCase().includes(deptFilter.toLowerCase());
+                            const hasMatchingSkills = isTechnicianForForm && skills.some(sk => {
                               const skSubDeptId = Number(sk.sub_department?.sub_department_id ?? sk.sub_department);
-                              return selectedSubDeptIds.includes(skSubDeptId);
+                              return skSubDeptId === sd.sub_department_id && sk.nature_name.toLowerCase().includes(deptFilter.toLowerCase());
                             });
+                            return subDeptMatches || hasMatchingSkills;
+                          });
 
-                            if (selectedSubDeptIds.length === 0) {
-                              return <p className="text-xs text-outline italic col-span-2">Please select working sub-department(s) first to assign skills.</p>;
-                            }
+                          if (matchedSubDepts.length === 0) return null;
+                          renderedCount += 1;
 
-                            return filteredEmployeeSkills
-                              .filter(sk => sk.nature_name.toLowerCase().includes(skillFilter.toLowerCase()))
-                              .map(sk => {
-                                const checked = employeeForm.skills.includes(sk.nature_id);
-                                return (
-                                  <label key={sk.nature_id} className="flex items-center gap-2 text-xs text-on-surface cursor-pointer hover:text-primary select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={e => {
-                                        const newList = e.target.checked
-                                          ? [...employeeForm.skills, sk.nature_id]
-                                          : employeeForm.skills.filter(id => id !== sk.nature_id);
-                                        setEmployeeForm({ ...employeeForm, skills: newList });
-                                      }}
-                                      className="w-3.5 h-3.5 text-primary border-outline-variant rounded focus:ring-primary cursor-pointer"
-                                    />
-                                    {sk.nature_name}
-                                  </label>
-                                );
-                              });
-                          })()}
-                        </div>
-                      </div>
-                    )}
+                          return (
+                            <div key={deptName} className="space-y-2 pb-2 border-b border-outline-variant/30 last:border-b-0">
+                              <h5 className="text-[10px] font-bold text-outline uppercase tracking-wider">{deptName}</h5>
+
+                              <div className="space-y-3 pl-2">
+                                {matchedSubDepts.map(sd => {
+                                  // Get technical skills for this sub-department
+                                  const subDeptSkills = skills.filter(sk => {
+                                    const skSubDeptId = Number(sk.sub_department?.sub_department_id ?? sk.sub_department);
+                                    return skSubDeptId === sd.sub_department_id;
+                                  });
+
+                                  // Only show sub-department if it has at least one skill/work nature in the system
+                                  if (subDeptSkills.length === 0) return null;
+
+                                  const filteredSubDeptSkills = subDeptSkills.filter(sk =>
+                                    sk.nature_name.toLowerCase().includes(deptFilter.toLowerCase())
+                                  );
+
+                                  if (filteredSubDeptSkills.length === 0) return null;
+
+                                  const isSubDeptChecked = employeeForm.sub_departments.includes(sd.sub_department_id);
+
+                                  return (
+                                    <div key={sd.sub_department_id} className="space-y-1.5 pb-1">
+                                      {/* Sub-department Header (No Checkbox) */}
+                                      <div className="text-xs font-semibold text-on-surface py-0.5 select-none">
+                                        {sd.sub_department_name}
+                                      </div>
+
+                                      {/* Indented Technical Skills List (Vertical stack / Down to Down) */}
+                                      {isTechnicianForForm && (
+                                        <div className="pl-4 flex flex-col gap-1.5 border-l border-outline-variant/40 ml-1.5 py-0.5">
+                                          {filteredSubDeptSkills.map(sk => {
+                                            const isSkillChecked = employeeForm.skills.includes(sk.nature_id);
+                                            return (
+                                              <label key={sk.nature_id} className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer hover:text-primary select-none py-0.5 w-fit">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isSkillChecked}
+                                                  onChange={e => {
+                                                    let newSkills = e.target.checked
+                                                      ? [...employeeForm.skills, sk.nature_id]
+                                                      : employeeForm.skills.filter(id => id !== sk.nature_id);
+
+                                                    let newSubDepts = [...employeeForm.sub_departments];
+                                                    if (e.target.checked) {
+                                                      // Auto-check parent sub-department if not checked
+                                                      if (!newSubDepts.includes(sd.sub_department_id)) {
+                                                        newSubDepts.push(sd.sub_department_id);
+                                                      }
+                                                    } else {
+                                                      // If unchecking, see if any other skills of this sub-department are still checked
+                                                      const otherCheckedSkills = newSkills.filter(id =>
+                                                        subDeptSkills.some(s => s.nature_id === id)
+                                                      );
+                                                      if (otherCheckedSkills.length === 0) {
+                                                        // No more skills checked for this sub-department -> remove the sub-department association
+                                                        newSubDepts = newSubDepts.filter(id => id !== sd.sub_department_id);
+                                                      }
+                                                    }
+
+                                                    setEmployeeForm({
+                                                      ...employeeForm,
+                                                      sub_departments: newSubDepts,
+                                                      skills: newSkills
+                                                    });
+                                                  }}
+                                                  className="w-3.5 h-3.5 text-primary border-outline-variant rounded focus:ring-primary cursor-pointer"
+                                                />
+                                                <span>{sk.nature_name}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        });
+
+                        return renderedCount === 0
+                          ? <p className="text-xs text-outline italic text-center py-4">No matching departments or skills found.</p>
+                          : content;
+                      })()}
+                    </div>
                   </div>
                 )}
 

@@ -1,3 +1,5 @@
+from django.db.models import Q
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -36,7 +38,8 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         if can_view_all:
             return CustomUser.objects.all()
 
-        user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
+        user_dept_ids = list(user.sub_departments.values_list(
+            'department_id', flat=True))
         if user_dept_ids:
             return CustomUser.objects.filter(sub_departments__department_id__in=user_dept_ids).distinct()
 
@@ -52,8 +55,9 @@ class SignupView(APIView):
         from apps.maintenance.models import WorkNature
         roles = Role.objects.exclude(pk=1).values('role_id', 'role_name')
         stores = Store.objects.all().values('store_id', 'store_name')
-        departments = Department.objects.all().values('department_id', 'department_name')
-        
+        departments = Department.objects.all().values(
+            'department_id', 'department_name')
+
         natures = []
         for n in WorkNature.objects.filter(active=True).select_related('sub_department'):
             natures.append({
@@ -140,11 +144,13 @@ class SignupView(APIView):
             selected_sub_depts = set()
             if nature_id:
                 from apps.maintenance.models import WorkNature, NatureWorker
-                id_list = [nid.strip() for nid in str(nature_id).split(',') if nid.strip().isdigit()]
+                id_list = [nid.strip() for nid in str(
+                    nature_id).split(',') if nid.strip().isdigit()]
                 for nid in id_list:
                     try:
                         nature_obj = WorkNature.objects.get(pk=nid)
-                        NatureWorker.objects.get_or_create(nature=nature_obj, worker=user)
+                        NatureWorker.objects.get_or_create(
+                            nature=nature_obj, worker=user)
                         if nature_obj.sub_department:
                             selected_sub_depts.add(nature_obj.sub_department)
                     except WorkNature.DoesNotExist:
@@ -156,17 +162,20 @@ class SignupView(APIView):
             # Disconnect the m2m_changed signal temporarily to prevent auto-activation of the user
             from django.db.models.signals import m2m_changed
             from apps.accounts.models import update_user_approval
-            m2m_changed.disconnect(update_user_approval, sender=CustomUser.sub_departments.through)
+            m2m_changed.disconnect(update_user_approval,
+                                   sender=CustomUser.sub_departments.through)
 
             try:
                 if is_tech and selected_sub_depts:
                     user.sub_departments.set(list(selected_sub_depts))
                 elif department_id:
-                    sub_depts = SubDepartment.objects.filter(department_id=department_id)
+                    sub_depts = SubDepartment.objects.filter(
+                        department_id=department_id)
                     user.sub_departments.set(sub_depts)
             finally:
                 # Reconnect the signal
-                m2m_changed.connect(update_user_approval, sender=CustomUser.sub_departments.through)
+                m2m_changed.connect(update_user_approval,
+                                    sender=CustomUser.sub_departments.through)
 
             return Response(
                 {"message": "Waiting for the approval.", "approved": False},
@@ -179,32 +188,54 @@ class SignupView(APIView):
             )
 
 
+User = get_user_model()
+
+
 class LoginView(APIView):
     authentication_classes = []
     permission_classes = []
 
     def post(self, request):
-        employee_no = request.data.get('employee_no')
+        # accepts username or employee_no
+        login_value = request.data.get('employee_no')
         password = request.data.get('password')
 
-        if not employee_no or not password:
+        if not login_value or not password:
             return Response(
-                {"error": "Please provide both employee number and password."},
+                {"error": "Please provide username/employee number and password."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user = authenticate(username=employee_no, password=password)
+        # Find user using username OR employee number
+        try:
+            user_obj = User.objects.get(
+                Q(username=login_value) | Q(employee_no=login_value)
+            )
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Invalid username/employee number or password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Authenticate using Django's username field
+        user = authenticate(
+            username=user_obj.username,
+            password=password
+        )
 
         if user is None:
             return Response(
-                {"error": "Invalid employee number or password."},
+                {"error": "Invalid username/employee number or password."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Check active status
         if not user.active:
             return Response(
-                {"error": "Waiting for the approval.", "approved": False},
+                {
+                    "error": "Waiting for the approval.",
+                    "approved": False
+                },
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -213,10 +244,12 @@ class LoginView(APIView):
 
         # Build image URL if it exists
         profile_image_url = None
+
         if user.profile_image:
             try:
                 profile_image_url = request.build_absolute_uri(
-                    user.profile_image.url)
+                    user.profile_image.url
+                )
             except Exception:
                 profile_image_url = user.profile_image.url
 
