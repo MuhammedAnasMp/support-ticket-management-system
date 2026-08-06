@@ -12,6 +12,7 @@ from apps.maintenance.serializers import TicketWriteSerializer
 from apps.common.serializers import MediaWriteSerializer
 from apps.finance.serializers import ExpenseWriteSerializer, ExpenseTypeWriteSerializer
 from rest_framework.exceptions import ValidationError
+from apps.maintenance.utils import validate_ticket_required_fields, clear_ticket_fields
 
 class DepartmentWiseValidationTestCase(TestCase):
     def setUp(self):
@@ -308,4 +309,312 @@ class TicketStatusFilteringAPITests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 3)
+
+
+from apps.maintenance.forms import StatusRequiredFieldForm
+from apps.maintenance.models import StatusRequiredField
+
+class StatusRequiredFieldFormTestCase(TestCase):
+    def setUp(self):
+        self.status = Status.objects.create(status_name="In Progress")
+        self.status_to = Status.objects.create(status_name="Completed")
+
+    def test_empty_form(self):
+        form = StatusRequiredFieldForm()
+        self.assertIn("target", form.fields)
+        self.assertIn("optional_key", form.fields)
+        self.assertTrue(len(form.fields["target"].choices) > 0)
+        self.assertEqual(form.fields["optional_key"].choices, [("", "---------")])
+
+    def test_bound_form_relation_target(self):
+        data = {
+            "from_status": self.status.pk,
+            "to_status": self.status_to.pk,
+            "target": "relation:created_by",
+            "optional_key": "full_name",
+            "can_or_cant": "can"
+        }
+        form = StatusRequiredFieldForm(data=data)
+        choices_keys = [c[0] for c in form.fields["optional_key"].choices]
+        self.assertIn("full_name", choices_keys)
+        self.assertIn("username", choices_keys)
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_bound_form_field_target(self):
+        data = {
+            "from_status": self.status.pk,
+            "to_status": self.status_to.pk,
+            "target": "field:title",
+            "optional_key": "",
+            "can_or_cant": "can"
+        }
+        form = StatusRequiredFieldForm(data=data)
+        self.assertEqual(form.fields["optional_key"].choices, [("", "---------")])
+        self.assertTrue(form.is_valid(), form.errors)
+        instance = form.save(commit=False)
+        self.assertEqual(instance.target_type, "field")
+        self.assertEqual(instance.target_name, "title")
+        self.assertIsNone(instance.optional_key)
+
+    def test_bound_form_foreign_key_field_target(self):
+        data = {
+            "from_status": self.status.pk,
+            "to_status": self.status_to.pk,
+            "target": "field:store",
+            "optional_key": "",
+            "can_or_cant": "can"
+        }
+        form = StatusRequiredFieldForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+        instance = form.save(commit=False)
+        self.assertEqual(instance.target_type, "field")
+        self.assertEqual(instance.target_name, "store")
+        self.assertIsNone(instance.optional_key)
+
+    def test_bound_form_foreign_key_field_target_with_optional_value(self):
+        data = {
+            "from_status": self.status.pk,
+            "to_status": self.status_to.pk,
+            "target": "field:store",
+            "optional_key": "store_name",
+            "can_or_cant": "can"
+        }
+        form = StatusRequiredFieldForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+        instance = form.save(commit=False)
+        self.assertEqual(instance.target_type, "relation")
+        self.assertEqual(instance.target_name, "store")
+        self.assertEqual(instance.optional_key, "store_name")
+
+
+from apps.maintenance.forms import StatusClearFieldForm
+from apps.maintenance.models import StatusClearField
+
+class StatusClearFieldFormTestCase(TestCase):
+    def setUp(self):
+        self.status1 = Status.objects.create(status_name="In Progress")
+        self.status2 = Status.objects.create(status_name="Completed")
+
+    def test_empty_form(self):
+        form = StatusClearFieldForm()
+        self.assertIn("target", form.fields)
+        self.assertTrue(len(form.fields["target"].choices) > 0)
+
+    def test_bound_form(self):
+        data = {
+            "from_status": self.status1.pk,
+            "to_status": self.status2.pk,
+            "target": "field:title",
+            "can_or_cant": "can"
+        }
+        form = StatusClearFieldForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+        instance = form.save(commit=False)
+        self.assertEqual(instance.target_type, "field")
+        self.assertEqual(instance.target_name, "title")
+
+
+class StatusRequiredFieldValidationTestCase(TestCase):
+    def setUp(self):
+        self.status = Status.objects.create(status_name="In Progress")
+        self.area = Area.objects.create(area_name="Capital Area")
+        self.store = Store.objects.create(store_id="M1", store_name="Main Store", area=self.area)
+        self.dept = Department.objects.create(department_name="IT")
+        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="Software Systems")
+        self.user = CustomUser.objects.create(username="testuser", full_name="Test User", active=True)
+        self.priority = Priority.objects.create(department=self.dept, priority_name="High", level=2)
+        self.nature = WorkNature.objects.create(
+            nature_name="Hardware",
+            sub_department=self.subdept,
+            default_priority=self.priority
+        )
+        self.ticket = Ticket.objects.create(
+            work_order_no="WO123",
+            store=self.store,
+            department=self.dept,
+            nature=self.nature,
+            priority=self.priority,
+            status=self.status,
+            title="Fix Router",
+            description="Router is broken",
+            created_by=self.user,
+        )
+
+    def test_simple_field_validation_success(self):
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="field",
+            target_name="title",
+        )
+        self.assertIsNone(req.validate_ticket(self.ticket))
+
+    def test_simple_field_validation_failure(self):
+        # approved_by is None initially on the ticket
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="field",
+            target_name="approved_by",
+            message="Ticket must be approved before moving to this status."
+        )
+        error = req.validate_ticket(self.ticket)
+        self.assertEqual(error, "Ticket must be approved before moving to this status.")
+
+    def test_relation_key_validation_success(self):
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="relation",
+            target_name="created_by",
+            optional_key="full_name",
+        )
+        self.assertIsNone(req.validate_ticket(self.ticket))
+
+    def test_relation_key_validation_failure(self):
+        self.user.full_name = ""
+        self.user.save()
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="relation",
+            target_name="created_by",
+            optional_key="full_name",
+        )
+        self.assertIsNotNone(req.validate_ticket(self.ticket))
+
+    def test_option_value_match_success(self):
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="relation",
+            target_name="created_by",
+            optional_key="username",
+            option_value="testuser"
+        )
+        self.assertIsNone(req.validate_ticket(self.ticket))
+
+    def test_option_value_match_failure(self):
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="relation",
+            target_name="created_by",
+            optional_key="username",
+            option_value="differentuser"
+        )
+        self.assertIsNotNone(req.validate_ticket(self.ticket))
+
+    def test_cant_condition_validation(self):
+        # ticket.title is "Fix Router" (available)
+        # can_or_cant="cant" and only target -> should fail because it IS available!
+        req = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="field",
+            target_name="title",
+            can_or_cant="cant",
+            message="Title must be blank"
+        )
+        error = req.validate_ticket(self.ticket)
+        self.assertEqual(error, "Title must be blank")
+
+        # approved_by is None (not available). can_or_cant="cant" -> should pass!
+        req2 = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status,
+            target_type="field",
+            target_name="approved_by",
+            can_or_cant="cant"
+        )
+        self.assertIsNone(req2.validate_ticket(self.ticket))
+
+
+class StatusClearFieldValidationTestCase(TestCase):
+    def setUp(self):
+        self.status = Status.objects.create(status_name="In Progress")
+        self.status_to = Status.objects.create(status_name="Completed")
+        self.area = Area.objects.create(area_name="Capital Area")
+        self.store = Store.objects.create(store_id="M1", store_name="Main Store", area=self.area)
+        self.dept = Department.objects.create(department_name="IT")
+        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="Software Systems")
+        self.user = CustomUser.objects.create(username="testuser", full_name="Test User", active=True)
+        self.priority = Priority.objects.create(department=self.dept, priority_name="High", level=2)
+        self.nature = WorkNature.objects.create(
+            nature_name="Hardware",
+            sub_department=self.subdept,
+            default_priority=self.priority
+        )
+        self.ticket = Ticket.objects.create(
+            work_order_no="WO123",
+            store=self.store,
+            department=self.dept,
+            nature=self.nature,
+            priority=self.priority,
+            status=self.status,
+            title="Fix Router",
+            description="Router is broken",
+            created_by=self.user,
+        )
+
+    def test_clear_field_can_available(self):
+        # can_or_cant="can" and target title is available -> should clear!
+        rule = StatusClearField.objects.create(
+            from_status=self.status,
+            to_status=self.status_to,
+            target_type="field",
+            target_name="title",
+            can_or_cant="can"
+        )
+        self.assertTrue(rule.should_clear(self.ticket))
+        success, msg = rule.clear_ticket_field(self.ticket)
+        self.assertTrue(success)
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.title, "")
+
+    def test_clear_field_cant_available(self):
+        # can_or_cant="cant" and target title is available -> should NOT clear!
+        rule = StatusClearField.objects.create(
+            from_status=self.status,
+            to_status=self.status_to,
+            target_type="field",
+            target_name="title",
+            can_or_cant="cant"
+        )
+        self.assertFalse(rule.should_clear(self.ticket))
+        success, msg = rule.clear_ticket_field(self.ticket)
+        self.assertFalse(success)
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.title, "Fix Router")
+
+    def test_validate_ticket_required_fields_utility(self):
+        # 1. Create a validation rule: when status goes from self.status to self.status_to,
+        # 'approved_by' field is required.
+        rule = StatusRequiredField.objects.create(
+            from_status=self.status,
+            to_status=self.status_to,
+            target_type="field",
+            target_name="approved_by",
+            can_or_cant="can",
+            message="Required approved_by"
+        )
+        # Ticket approved_by is None, so it should return the error message
+        errors = validate_ticket_required_fields(self.ticket, self.status, self.status_to)
+        self.assertEqual(errors, ["Required approved_by"])
+
+    def test_clear_ticket_fields_utility(self):
+        # 1. Create a clear field rule
+        rule = StatusClearField.objects.create(
+            from_status=self.status,
+            to_status=self.status_to,
+            target_type="field",
+            target_name="title",
+            can_or_cant="can",
+            message="Cleared title"
+        )
+        messages = clear_ticket_fields(self.ticket, self.status, self.status_to)
+        self.assertEqual(messages, ["Cleared title"])
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.title, "")
+
 

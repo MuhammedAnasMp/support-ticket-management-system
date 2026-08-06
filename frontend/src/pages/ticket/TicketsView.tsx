@@ -5,9 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Plus, AlertTriangle, FileText,
     ChevronLeft, ChevronRight, RefreshCw, Download, Filter,
-    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User,
-    Loader2,
-    CheckCircle2
+    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User
 } from 'lucide-react';
 
 import { AgGridReact } from 'ag-grid-react';
@@ -850,8 +848,8 @@ export const TicketsView: React.FC = () => {
                                             setLastOpenedTicketId(ticket.ticket_id);
                                         }}
                                         className={`text-left flex flex-col gap-2 p-3 rounded-xl border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${lastOpenedTicketId === ticket.ticket_id
-                                            ? 'bg-primary/5 border-primary'
-                                            : 'bg-surface border-outline-variant'
+                                                ? 'bg-primary/5 border-primary'
+                                                : 'bg-surface border-outline-variant'
                                             }`}
                                     >
                                         {/* Status + Priority row */}
@@ -1225,17 +1223,7 @@ export const TicketsView: React.FC = () => {
                     <Plus className="w-6 h-6" />
                 </button>
             </Can>
-            {/* {selectedTicket.status.status_name === 'In Progress' &&
 
-                <Can permission='maintenance.can_move_in_progress_to_completed'>
-                    <button onClick={() => handleMoveToNextStatus()}
-                        disabled={actionLoading}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
-                        {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Mark Completed
-                    </button>
-
-                </Can>
-            } */}
             {/* Popup Create Ticket Modal */}
             <CreateTicketModal
                 isOpen={isCreateModalOpen}

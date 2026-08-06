@@ -27,21 +27,53 @@ class Priority(models.Model):
 
 class Status(models.Model):
     status_id = models.AutoField(primary_key=True)
-    # department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='statuses')
     status_name = models.CharField(max_length=50)
+    active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=1)
 
     class Meta:
+        ordering = ["order"]
         constraints = [
             models.UniqueConstraint(
-                fields=['status_name'], name='unique_department_status_name')
-        ]
-        permissions = [
-            ("view_status_name", "Can view status name"),
-            ("change_status_name", "Can change status name"),
+                fields=["status_name"],
+                name="unique_status_name"
+            )
         ]
 
     def __str__(self):
         return self.status_name
+
+
+class StatusChangeRule(models.Model):
+    TYPE_CHOICES = [("field", "Field"), ("related", "Related"),]
+
+    MODE_CHOICES = [("check", "Check"), ("delete", "Delete"),]
+
+    from_status = models.ForeignKey(
+        "maintenance.Status", on_delete=models.CASCADE, related_name="from_rules",)
+    to_status = models.ForeignKey(
+        "maintenance.Status", on_delete=models.CASCADE, related_name="to_rules",)
+
+    type = models.CharField(
+        max_length=10, choices=TYPE_CHOICES, default="field",)
+    path = models.CharField(
+        max_length=255,
+        help_text=(
+            "Examples:\n" "store.name\n" "created_by.username\n" "attachments.file_name\n" "allocations.name"
+        ),
+    )
+    value = models.CharField(max_length=255, blank=True,
+                             null=True, help_text="Expected value.", )
+    mode = models.CharField(
+        max_length=10,    choices=MODE_CHOICES,    default="check",)
+    message = models.TextField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "status_change_rule"
+
+    def __str__(self):
+        return f"{self.from_status} → {self.to_status}"
 
 
 class WorkNature(models.Model):
@@ -252,12 +284,41 @@ class TicketHistory(models.Model):
     history_id = models.AutoField(primary_key=True)
     ticket = models.ForeignKey(
         Ticket, on_delete=models.CASCADE, related_name='history')
+
+    # Snapshot of Ticket fields
+    store = models.ForeignKey(
+        'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_store')
+    department = models.ForeignKey(
+        'stores.Department', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_department')
+    nature = models.ForeignKey(
+        WorkNature, on_delete=models.SET_NULL, null=True, blank=True, related_name='history_nature')
+    priority = models.ForeignKey(
+        Priority, on_delete=models.SET_NULL, null=True, blank=True, related_name='history_priority')
     status = models.ForeignKey(
-        Status, on_delete=models.PROTECT, related_name='history')
+        Status, on_delete=models.SET_NULL, null=True, blank=True, related_name='history_status')
+    title = models.CharField(max_length=255, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_created_tickets')
+    created_date = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_approved_tickets')
+    approved_date = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_rejected_tickets')
+    rejected_date = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.TextField(null=True, blank=True)
+    closed_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_closed_tickets')
+    closed_date = models.DateTimeField(null=True, blank=True)
+
+    # History metadata fields
     changed_by = models.ForeignKey(
-        'accounts.CustomUser', on_delete=models.PROTECT, related_name='ticket_history_changes')
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='ticket_history_changes')
     changed_date = models.DateTimeField(auto_now_add=True)
     remarks = models.TextField(null=True, blank=True)
+    age_days = models.DecimalField(
+        max_digits=10, decimal_places=4, default=0.0)
 
     class Meta:
         permissions = [
@@ -273,3 +334,79 @@ class TicketHistory(models.Model):
 
     def __str__(self):
         return f"History {self.history_id} - Ticket {self.ticket.work_order_no}"
+
+
+@receiver(models.signals.post_save, sender=Ticket)
+def create_ticket_history_on_save(sender, instance, created, **kwargs):
+    from django.utils import timezone
+
+    # 1. Try to find the last history record for this ticket
+    last_history = TicketHistory.objects.filter(
+        ticket=instance).order_by('-changed_date').first()
+
+    is_new_status = False
+    if created or not last_history or last_history.status != instance.status:
+        is_new_status = True
+
+    # 2. If leaving a status, update its age_days
+    if last_history and last_history.status != instance.status:
+        now = timezone.now()
+        duration = now - last_history.changed_date
+        session_days = duration.total_seconds() / 86400.0
+
+        # Calculate sum of all previous completed durations for this status
+        previous_history = TicketHistory.objects.filter(
+            ticket=instance,
+            status=last_history.status
+        ).exclude(pk=last_history.pk)
+
+        previous_days_sum = sum(
+            h.age_days for h in previous_history if h.age_days is not None)
+
+        # Update the last_history record with the accumulated age_days
+        last_history.age_days = float(previous_days_sum) + float(session_days)
+        last_history.save(update_fields=['age_days'])
+
+    # 3. Create a new history entry as a snapshot
+    if is_new_status:
+        changed_by = getattr(instance, '_changed_by', None)
+        if not changed_by:
+            # Pick the most specific actor available on the ticket, in priority order.
+            # No status names are hardcoded — purely field-based.
+            for actor_field in ('closed_by', 'rejected_by', 'approved_by', 'created_by'):
+                actor = getattr(instance, actor_field, None)
+                if actor:
+                    changed_by = actor
+                    break
+
+        remarks = getattr(instance, '_remarks', '')
+        if not remarks:
+            if instance.reject_reason:
+                remarks = instance.reject_reason
+            elif instance.status:
+                remarks = f"Status changed to {instance.status.status_name}"
+            else:
+                remarks = "Ticket saved"
+
+        TicketHistory.objects.create(
+            ticket=instance,
+            store=instance.store,
+            department=instance.department,
+            nature=instance.nature,
+            priority=instance.priority,
+            status=instance.status,
+            title=instance.title,
+            description=instance.description,
+            created_by=instance.created_by,
+            created_date=instance.created_date,
+            approved_by=instance.approved_by,
+            approved_date=instance.approved_date,
+            rejected_by=instance.rejected_by,
+            rejected_date=instance.rejected_date,
+            reject_reason=instance.reject_reason,
+            closed_by=instance.closed_by,
+            closed_date=instance.closed_date,
+            changed_by=changed_by,
+            remarks=remarks,
+            age_days=0.0
+        )

@@ -49,7 +49,8 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         department = self.request.query_params.get('department')
         if department:
-            queryset = queryset.filter(sub_department__department_id=department)
+            queryset = queryset.filter(
+                sub_department__department_id=department)
         return queryset
 
 
@@ -66,7 +67,8 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
 
 
 class TicketViewSet(viewsets.ModelViewSet):
-    queryset = Ticket.objects.all().order_by('-created_date').prefetch_related('allocations', 'allocations__worker')
+    queryset = Ticket.objects.all().order_by(
+        '-created_date').prefetch_related('allocations', 'allocations__worker')
     serializer_class = TicketSerializer
     pagination_class = TicketPagination
 
@@ -171,42 +173,21 @@ class TicketViewSet(viewsets.ModelViewSet):
             kwargs['created_by'] = user
         serializer.save(**kwargs)
 
-    def perform_update(self, serializer):
-        user = self.request.user
-        status = serializer.validated_data.get('status')
-        if status:
-            status_name = status.status_name.lower()
-            if status_name in ['approved', 'rejected']:
-                can_approve_reject = (
-                    user.is_superuser or
-                    user.has_perm('maintenance.can_move_open_to_rejected') or
-                    user.has_perm('maintenance.can_move_open_to_in_progress')
-                )
-                if not can_approve_reject:
-                    raise exceptions.PermissionDenied(
-                        "You do not have permission to approve or reject tickets.")
+    # def _run_status_rules(self, ticket, from_status, to_status):
+    #     """
+    #     Runs StatusRequiredField validation and StatusClearField clearing for a
+    #     status transition.  Returns a list of cleared-field messages.
+    #     Raises ValidationError if any required-field rule fails.
+    #     """
+    #     from rest_framework.exceptions import ValidationError as DRFValidationError
+    #     from .utils import validate_ticket_required_fields, clear_ticket_fields
 
-                if status_name == 'approved':
-                    serializer.save(approved_by=user,
-                                    approved_date=timezone.now())
-                    return
-                elif status_name == 'rejected':
-                    serializer.save(rejected_by=user,
-                                    rejected_date=timezone.now())
-                    return
-            elif status_name == 'completed':
-                can_complete = (
-                    user.is_superuser or
-                    user.has_perm(
-                        'maintenance.can_move_in_progress_to_completed')
-                )
-                if not can_complete:
-                    raise exceptions.PermissionDenied(
-                        "You do not have permission to mark tickets as completed.")
-                serializer.save(closed_by=user, closed_date=timezone.now())
-                return
+    #     errors = validate_ticket_required_fields(ticket, from_status, to_status)
+    #     if errors:
+    #         raise DRFValidationError({"status_validation": errors})
 
-        serializer.save()
+    #     cleared = clear_ticket_fields(ticket, from_status, to_status)
+    #     return cleared
 
 
 class AllocationViewSet(viewsets.ModelViewSet):

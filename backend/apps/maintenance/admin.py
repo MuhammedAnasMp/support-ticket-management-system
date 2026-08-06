@@ -1,5 +1,7 @@
+from django.http import JsonResponse
+from django.urls import path
 from django.contrib import admin
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, StatusChangeRule
 
 
 @admin.register(Priority)
@@ -66,3 +68,40 @@ class TicketHistoryAdmin(admin.ModelAdmin):
                     'changed_by', 'changed_date', 'remarks')
     list_filter = ('changed_date', 'status')
     search_fields = ('ticket__work_order_no', 'changed_by__username')
+
+
+@admin.register(StatusChangeRule)
+class StatusChangeRuleAdmin(admin.ModelAdmin):
+    list_display = (
+        "from_status",
+        "to_status",
+        "type",
+        "path",
+        "mode",
+        "is_active",
+    )
+
+    list_filter = (
+        "type",
+        "mode",
+        "is_active",
+        "from_status",
+        "to_status",
+    )
+
+    search_fields = (
+        "path",
+        "value",
+        "message",
+        "from_status__name",
+        "to_status__name",
+    )
+
+    list_editable = (
+        "is_active",
+    )
+
+    ordering = (
+        "from_status",
+        "to_status",
+    )
