@@ -13,7 +13,7 @@ class PriorityAdmin(admin.ModelAdmin):
 
 @admin.register(Status)
 class StatusAdmin(admin.ModelAdmin):
-    list_display = ('status_id', 'status_name')
+    list_display = ('order', 'status_name')
     search_fields = ('status_name',)
 
 
@@ -72,36 +72,17 @@ class TicketHistoryAdmin(admin.ModelAdmin):
 
 @admin.register(StatusChangeRule)
 class StatusChangeRuleAdmin(admin.ModelAdmin):
-    list_display = (
-        "from_status",
-        "to_status",
-        "type",
-        "path",
-        "mode",
-        "is_active",
-    )
+    list_display = ("from_status", "to_status", "mode", "type", "path", "message", "is_active",
+                    )
 
-    list_filter = (
-        "type",
-        "mode",
-        "is_active",
-        "from_status",
-        "to_status",
-    )
+    list_filter = ("mode", "type", "is_active", "from_status", "to_status",
+                   )
 
-    search_fields = (
-        "path",
-        "value",
-        "message",
-        "from_status__name",
-        "to_status__name",
-    )
+    search_fields = ("path", "value", "message", "from_status__name", "to_status__name",
+                     )
 
-    list_editable = (
-        "is_active",
-    )
+    list_editable = ("is_active",
+                     )
 
-    ordering = (
-        "from_status",
-        "to_status",
-    )
+    ordering = ("from_status", "to_status",
+                )

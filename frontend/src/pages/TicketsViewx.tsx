@@ -1761,7 +1761,7 @@ export const TicketsViewx: React.FC = () => {
                       <button onClick={() => handleMoveToNextStatus()}
                         disabled={actionLoading}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50">
-                        {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Mark Completed
+                        {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Location Approval
                       </button>
                     </Can>
                   }

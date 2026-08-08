@@ -120,6 +120,7 @@ export const TicketsView: React.FC = () => {
     const [filterStore, setFilterStore] = useState('');
     const [filterDept, setFilterDept] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
+    const [filterPriority, setFilterPriority] = useState('');
     const [fromDate, setFromDate] = useState<string>(() => {
         const savedFrom = localStorage.getItem('ticket-filter-from-date');
         if (savedFrom !== null) return savedFrom;
@@ -148,6 +149,7 @@ export const TicketsView: React.FC = () => {
     // Drag and Drop state
     const [draggingTicketId, setDraggingTicketId] = useState<number | null>(null);
     const [dragOverStatusId, setDragOverStatusId] = useState<number | null>(null);
+    const [priorities, setPriorities] = useState<any[]>([]);
 
     // UI
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -201,9 +203,14 @@ export const TicketsView: React.FC = () => {
             const reason = window.prompt(`Please provide a reason for rejecting ticket ${ticket.work_order_no}:`);
             if (reason === null) return;
             extraData.reject_reason = reason;
+        } else if (targetStatus.status_name?.toLowerCase() === 'location approval') {
+            if (!window.confirm('Confirmation 1 of 2:\nAre you sure you want to mark this ticket as COMPLETED?')) return;
+            if (!window.confirm('Confirmation 2 of 2 (Final):\nAre you ABSOLUTELY SURE you want to change ticket status to COMPLETED?')) return;
         } else if (targetStatus.status_name?.toLowerCase() === 'completed') {
             if (!window.confirm(`Are you sure you want to mark ticket ${ticket.work_order_no} as COMPLETED?`)) return;
         } else if (targetStatus.status_name?.toLowerCase() === 'in progress') {
+            extraData.approved_by = user?.user_id;
+            extraData.approved_date = new Date().toISOString();
             // Fetch allocations on-demand to validate at least one worker is assigned
             try {
                 const res = await fetch(`${API_URL}/maintenance/allocation/?ticket=${ticketId}`, {
@@ -249,13 +256,29 @@ export const TicketsView: React.FC = () => {
 
             if (response.ok) {
                 const updatedData = await response.json();
-                setMessage({ text: `Ticket ${ticket.work_order_no} moved to ${targetStatus.status_name}`, type: 'success' });
+                if (updatedData.deleted_warnings && updatedData.deleted_warnings.length > 0) {
+                    setMessage({
+                        text: `Ticket ${ticket.work_order_no} moved to ${targetStatus.status_name}. Warning: ${updatedData.deleted_warnings.join(', ')}`,
+                        type: 'warning'
+                    });
+                } else {
+                    setMessage({ text: `Ticket ${ticket.work_order_no} moved to ${targetStatus.status_name}`, type: 'success' });
+                }
                 setTickets(prev => prev.map(t => t.ticket_id === ticketId ? { ...t, ...updatedData } : t));
                 fetchTickets(true);
             } else {
                 setTickets(previousTickets);
                 const err = await response.json();
-                setMessage({ text: `Failed to move status: ${JSON.stringify(err)}`, type: 'error' });
+                let errorText = '';
+                if (Array.isArray(err)) {
+                    errorText = err.join(', ');
+                } else if (err && typeof err === 'object') {
+                    const messages = err.non_field_errors || err.status || err.detail || Object.values(err).flat();
+                    errorText = Array.isArray(messages) ? messages.join(', ') : String(messages);
+                } else {
+                    errorText = String(err);
+                }
+                setMessage({ text: `Failed to move status: ${errorText}`, type: 'error' });
             }
         } catch (err) {
             console.error(err);
@@ -307,10 +330,20 @@ export const TicketsView: React.FC = () => {
         return departments.filter(d => userDepartmentIds.has(Number(d.department_id)));
     }, [departments, userDepartmentIds, canCreateAllDepts]);
 
+    const uniquePriorityNames = useMemo(() => {
+        const names = new Set<string>();
+        priorities.forEach(p => {
+            if (p.priority_name) {
+                names.add(p.priority_name);
+            }
+        });
+        return Array.from(names);
+    }, [priorities]);
+
     const fetchMetadata = async () => {
         try {
             const headers = { Authorization: `Token ${token}` };
-            const [resStores, resDepts, resSubDepts, resStat, resNat, resWork, resExp] = await Promise.all([
+            const [resStores, resDepts, resSubDepts, resStat, resNat, resWork, resExp, resPrio] = await Promise.all([
                 fetch(`${API_URL}/stores/store/`, { headers }),
                 fetch(`${API_URL}/stores/department/`, { headers }),
                 fetch(`${API_URL}/stores/subdepartment/`, { headers }),
@@ -318,12 +351,14 @@ export const TicketsView: React.FC = () => {
                 fetch(`${API_URL}/maintenance/worknature/`, { headers }),
                 fetch(`${API_URL}/accounts/customuser/`, { headers }),
                 fetch(`${API_URL}/finance/expensetype/`, { headers }),
+                fetch(`${API_URL}/maintenance/priority/`, { headers }),
             ]);
             if (resStores.ok) setStores(await resStores.json());
             if (resDepts.ok) setDepartments(await resDepts.json());
             if (resSubDepts.ok) setSubDepartments(await resSubDepts.json());
             if (resStat.ok) setStatuses(await resStat.json());
             if (resNat.ok) setNatures(await resNat.json());
+            if (resPrio.ok) setPriorities(await resPrio.json());
             if (resWork.ok) {
                 const uList = await resWork.json();
                 // Include users who are technicians by role OR who have at least one
@@ -355,6 +390,7 @@ export const TicketsView: React.FC = () => {
             if (filterStore) query.set('store', filterStore);
             if (filterDept) query.set('department', filterDept);
             if (filterStatus) query.set('status', filterStatus);
+            if (filterPriority) query.set('priority', filterPriority);
             // Skip date filters when searching so results span all dates
             if (!debouncedSearch) {
                 if (fromDate) query.set('from_date', fromDate);
@@ -378,7 +414,7 @@ export const TicketsView: React.FC = () => {
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, fromDate, toDate]);
+    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, filterPriority, fromDate, toDate]);
 
     useEffect(() => { fetchMetadata(); }, [token]);
     useEffect(() => { fetchTickets(); }, [fetchTickets]);
@@ -506,6 +542,7 @@ export const TicketsView: React.FC = () => {
     const clearFilters = () => {
         setSearch(''); setFilterStore(''); setFilterDept('');
         setFilterStatus('');
+        setFilterPriority('');
         handleResetDates();
     };
 
@@ -593,7 +630,12 @@ export const TicketsView: React.FC = () => {
         },
         {
             headerName: 'Priority',
-            field: 'priority',
+            valueGetter: params => params.data?.priority?.priority_name || '',
+            comparator: (valueA, valueB, nodeA, nodeB) => {
+                const levelA = nodeA.data?.priority?.level ?? 0;
+                const levelB = nodeB.data?.priority?.level ?? 0;
+                return levelA - levelB;
+            },
             width: 110,
             minWidth: 90,
             hide: isMobile,
@@ -610,7 +652,12 @@ export const TicketsView: React.FC = () => {
         },
         {
             headerName: 'Status',
-            field: 'status',
+            valueGetter: params => params.data?.status?.status_name || '',
+            comparator: (valueA, valueB, nodeA, nodeB) => {
+                const orderA = nodeA.data?.status?.order ?? 0;
+                const orderB = nodeB.data?.status?.order ?? 0;
+                return orderA - orderB;
+            },
             width: 130,
             minWidth: 110,
             cellRenderer: (params: any) => {
@@ -634,6 +681,17 @@ export const TicketsView: React.FC = () => {
             width: 120,
             minWidth: 100,
             hide: isMobile,
+        },
+        {
+            headerName: 'Age (Days)',
+            field: 'age_days',
+            valueFormatter: params => {
+                const val = Number(params.value);
+                return isNaN(val) ? '' : val.toFixed(1);
+            },
+            width: 110,
+            minWidth: 90,
+            hide: isMobile,
         }
     ], [isMobile]);
 
@@ -656,7 +714,7 @@ export const TicketsView: React.FC = () => {
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
     const defaultMonth = getCurrentMonthRange();
     const isDefaultDateRange = fromDate === defaultMonth.fromDate && toDate === defaultMonth.toDate;
-    const hasActiveFilters = !!(search || filterStore || filterDept || filterStatus || !isDefaultDateRange);
+    const hasActiveFilters = !!(search || filterStore || filterDept || filterStatus || filterPriority || !isDefaultDateRange);
 
     const selectCls = 'text-xs bg-surface-container border border-outline-variant rounded px-2.5 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors min-h-[36px] max-w-[160px] truncate flex-shrink-0';
 
@@ -671,9 +729,13 @@ export const TicketsView: React.FC = () => {
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        className={`flex items-center gap-3 px-4 py-3 rounded border text-xs font-medium ${message.type === 'success'
-                            ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-error-container border-error/20 text-on-error-container'}`}
+                        className={`flex items-center gap-3 px-4 py-3 rounded border text-xs font-medium ${
+                            message.type === 'success'
+                                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
+                                : message.type === 'warning'
+                                ? 'bg-amber-500/10 border-amber-500/25 text-amber-700 dark:text-amber-400'
+                                : 'bg-error-container border-error/20 text-on-error-container'
+                        }`}
                     >
                         <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                         <span className="flex-1">{message.text}</span>
@@ -818,6 +880,11 @@ export const TicketsView: React.FC = () => {
                             </select>
                         </Can>
 
+                        <select value={filterPriority} onChange={e => { setFilterPriority(e.target.value); setPage(1); }} className={selectCls}>
+                            <option value="">All Priorities</option>
+                            {uniquePriorityNames.map(pName => <option key={pName} value={pName}>{pName}</option>)}
+                        </select>
+
                         <DateRangePickerCard
                             fromDate={fromDate}
                             toDate={toDate}
@@ -867,8 +934,14 @@ export const TicketsView: React.FC = () => {
                                         {/* Title */}
                                         <p className="text-xs font-semibold text-on-surface leading-snug line-clamp-2 flex-1">{ticket.title}</p>
 
-                                        {/* Work order */}
-                                        <span className="font-mono text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-mono text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
+                                            {ticket.age_days !== undefined && (
+                                                <span className="text-[10px] text-outline">
+                                                    Age: {Number(ticket.age_days).toFixed(1)}d
+                                                </span>
+                                            )}
+                                        </div>
 
                                         {/* Footer: store + assignees */}
                                         <div className="flex items-center justify-between gap-1 pt-1 border-t border-outline-variant/40">
@@ -1036,11 +1109,17 @@ export const TicketsView: React.FC = () => {
                                                                                 } ${isLastOpened ? 'border-primary ring-1 ring-primary/20 bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary' : ''
                                                                                 }`}
                                                                         >
-                                                                            {/* Header Row */}
                                                                             <div className="flex items-center justify-between gap-2">
-                                                                                <span className="font-mono text-xs font-bold text-primary truncate">
-                                                                                    {ticket.work_order_no}
-                                                                                </span>
+                                                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                                                    <span className="font-mono text-xs font-bold text-primary truncate">
+                                                                                        {ticket.work_order_no}
+                                                                                    </span>
+                                                                                    {ticket.age_days !== undefined && (
+                                                                                        <span className="text-[10px] text-outline shrink-0" title="Days spent in current status">
+                                                                                            ({Number(ticket.age_days).toFixed(1)}d)
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
                                                                                 {ticket.priority && (
                                                                                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded shrink-0 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
                                                                                         {ticket.priority.priority_name}

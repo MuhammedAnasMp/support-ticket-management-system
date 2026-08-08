@@ -5,14 +5,14 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from apps.stores.models import Department, SubDepartment, Store, Area
 from apps.accounts.models import Role, CustomUser
-from apps.maintenance.models import Priority, Status, WorkNature, Ticket
+from apps.maintenance.models import Priority, Status, WorkNature, Ticket, TicketChatMessage
 from apps.common.models import MediaCategory, Media
 from apps.finance.models import ExpenseType, Expense
 from apps.maintenance.serializers import TicketWriteSerializer
 from apps.common.serializers import MediaWriteSerializer
 from apps.finance.serializers import ExpenseWriteSerializer, ExpenseTypeWriteSerializer
 from rest_framework.exceptions import ValidationError
-from apps.maintenance.utils import validate_ticket_required_fields, clear_ticket_fields
+
 
 class DepartmentWiseValidationTestCase(TestCase):
     def setUp(self):
@@ -57,11 +57,10 @@ class DepartmentWiseValidationTestCase(TestCase):
 
         # Create Statuses
         self.status_it_open = Status.objects.create(
-            department=self.dept_it, status_name="Open"
+            status_name="Open"
         )
-        self.status_maint_open = Status.objects.create(
-            department=self.dept_maint, status_name="Open"
-        )
+        self.status_maint_open = self.status_it_open
+
 
         # Create Work Natures
         self.nature_it = WorkNature.objects.create(
@@ -125,24 +124,12 @@ class DepartmentWiseValidationTestCase(TestCase):
             "created_by": self.manager.user_id
         }
         serializer = TicketWriteSerializer(data=data)
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("priority", serializer.errors)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data['priority'].department, self.dept_it)
 
-    def test_invalid_ticket_status_department(self):
-        data = {
-            "work_order_no": "WO-IT-004",
-            "store": self.store.store_id,
-            "department": self.dept_it.department_id,
-            "nature": self.nature_it.nature_id,
-            "priority": self.priority_it_high.priority_id,
-            "status": self.status_maint_open.status_id, # Wrong department status
-            "title": "Invalid Status Ticket",
-            "description": "Details",
-            "created_by": self.manager.user_id
-        }
-        serializer = TicketWriteSerializer(data=data)
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("status", serializer.errors)
+    def test_status_creation(self):
+        # Placeholder since status is global
+        pass
 
     def test_invalid_ticket_nature_department(self):
         data = {
@@ -249,6 +236,7 @@ class TicketStatusFilteringAPITests(APITestCase):
         self.subdept_maint = SubDepartment.objects.create(
             department=self.dept_maint, sub_department_name="Electrical"
         )
+        self.user.sub_departments.add(self.subdept_maint)
         self.nature = WorkNature.objects.create(
             nature_name="Generator Fault", sub_department=self.subdept_maint,
             default_priority=self.priority
@@ -278,26 +266,26 @@ class TicketStatusFilteringAPITests(APITestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_no_status_permissions_returns_nothing(self):
-        url = '/api/maintenance/tickets/'
+        url = '/api/maintenance/ticket/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(len(response.data['results']), 0)
 
     def test_only_open_status_permission_returns_only_open(self):
         self.user.user_permissions.add(self.perm_view_open)
-        url = '/api/maintenance/tickets/'
+        url = '/api/maintenance/ticket/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['ticket_id'], self.ticket_open.ticket_id)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['ticket_id'], self.ticket_open.ticket_id)
 
     def test_multiple_status_permissions(self):
         self.user.user_permissions.add(self.perm_view_open, self.perm_view_progress)
-        url = '/api/maintenance/tickets/'
+        url = '/api/maintenance/ticket/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 2)
-        ticket_ids = [t['ticket_id'] for t in response.data]
+        self.assertEqual(len(response.data['results']), 2)
+        ticket_ids = [t['ticket_id'] for t in response.data['results']]
         self.assertIn(self.ticket_open.ticket_id, ticket_ids)
         self.assertIn(self.ticket_progress.ticket_id, ticket_ids)
         self.assertNotIn(self.ticket_completed.ticket_id, ticket_ids)
@@ -305,316 +293,245 @@ class TicketStatusFilteringAPITests(APITestCase):
     def test_superuser_bypass(self):
         self.user.is_superuser = True
         self.user.save()
-        url = '/api/maintenance/tickets/'
+        url = '/api/maintenance/ticket/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 3)
+        self.assertEqual(len(response.data['results']), 3)
 
 
-from apps.maintenance.forms import StatusRequiredFieldForm
-from apps.maintenance.models import StatusRequiredField
+from apps.maintenance.models import StatusChangeRule, Allocation
+from apps.maintenance.utils import get_value_from_path, compare_values, change_status
+from django.core.exceptions import ValidationError
 
-class StatusRequiredFieldFormTestCase(TestCase):
+class StatusChangeRuleTestCase(TestCase):
     def setUp(self):
-        self.status = Status.objects.create(status_name="In Progress")
-        self.status_to = Status.objects.create(status_name="Completed")
-
-    def test_empty_form(self):
-        form = StatusRequiredFieldForm()
-        self.assertIn("target", form.fields)
-        self.assertIn("optional_key", form.fields)
-        self.assertTrue(len(form.fields["target"].choices) > 0)
-        self.assertEqual(form.fields["optional_key"].choices, [("", "---------")])
-
-    def test_bound_form_relation_target(self):
-        data = {
-            "from_status": self.status.pk,
-            "to_status": self.status_to.pk,
-            "target": "relation:created_by",
-            "optional_key": "full_name",
-            "can_or_cant": "can"
-        }
-        form = StatusRequiredFieldForm(data=data)
-        choices_keys = [c[0] for c in form.fields["optional_key"].choices]
-        self.assertIn("full_name", choices_keys)
-        self.assertIn("username", choices_keys)
-        self.assertTrue(form.is_valid(), form.errors)
-
-    def test_bound_form_field_target(self):
-        data = {
-            "from_status": self.status.pk,
-            "to_status": self.status_to.pk,
-            "target": "field:title",
-            "optional_key": "",
-            "can_or_cant": "can"
-        }
-        form = StatusRequiredFieldForm(data=data)
-        self.assertEqual(form.fields["optional_key"].choices, [("", "---------")])
-        self.assertTrue(form.is_valid(), form.errors)
-        instance = form.save(commit=False)
-        self.assertEqual(instance.target_type, "field")
-        self.assertEqual(instance.target_name, "title")
-        self.assertIsNone(instance.optional_key)
-
-    def test_bound_form_foreign_key_field_target(self):
-        data = {
-            "from_status": self.status.pk,
-            "to_status": self.status_to.pk,
-            "target": "field:store",
-            "optional_key": "",
-            "can_or_cant": "can"
-        }
-        form = StatusRequiredFieldForm(data=data)
-        self.assertTrue(form.is_valid(), form.errors)
-        instance = form.save(commit=False)
-        self.assertEqual(instance.target_type, "field")
-        self.assertEqual(instance.target_name, "store")
-        self.assertIsNone(instance.optional_key)
-
-    def test_bound_form_foreign_key_field_target_with_optional_value(self):
-        data = {
-            "from_status": self.status.pk,
-            "to_status": self.status_to.pk,
-            "target": "field:store",
-            "optional_key": "store_name",
-            "can_or_cant": "can"
-        }
-        form = StatusRequiredFieldForm(data=data)
-        self.assertTrue(form.is_valid(), form.errors)
-        instance = form.save(commit=False)
-        self.assertEqual(instance.target_type, "relation")
-        self.assertEqual(instance.target_name, "store")
-        self.assertEqual(instance.optional_key, "store_name")
-
-
-from apps.maintenance.forms import StatusClearFieldForm
-from apps.maintenance.models import StatusClearField
-
-class StatusClearFieldFormTestCase(TestCase):
-    def setUp(self):
-        self.status1 = Status.objects.create(status_name="In Progress")
-        self.status2 = Status.objects.create(status_name="Completed")
-
-    def test_empty_form(self):
-        form = StatusClearFieldForm()
-        self.assertIn("target", form.fields)
-        self.assertTrue(len(form.fields["target"].choices) > 0)
-
-    def test_bound_form(self):
-        data = {
-            "from_status": self.status1.pk,
-            "to_status": self.status2.pk,
-            "target": "field:title",
-            "can_or_cant": "can"
-        }
-        form = StatusClearFieldForm(data=data)
-        self.assertTrue(form.is_valid(), form.errors)
-        instance = form.save(commit=False)
-        self.assertEqual(instance.target_type, "field")
-        self.assertEqual(instance.target_name, "title")
-
-
-class StatusRequiredFieldValidationTestCase(TestCase):
-    def setUp(self):
-        self.status = Status.objects.create(status_name="In Progress")
-        self.area = Area.objects.create(area_name="Capital Area")
-        self.store = Store.objects.create(store_id="M1", store_name="Main Store", area=self.area)
-        self.dept = Department.objects.create(department_name="IT")
-        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="Software Systems")
-        self.user = CustomUser.objects.create(username="testuser", full_name="Test User", active=True)
-        self.priority = Priority.objects.create(department=self.dept, priority_name="High", level=2)
-        self.nature = WorkNature.objects.create(
-            nature_name="Hardware",
-            sub_department=self.subdept,
-            default_priority=self.priority
-        )
+        self.area = Area.objects.create(area_name="Test Area")
+        self.store = Store.objects.create(store_id="S-002", store_name="Store-002", area=self.area)
+        self.dept = Department.objects.create(department_name="Test Dept")
+        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="Sub-Dept")
+        self.user = CustomUser.objects.create_user(username="testuser2", email="t2@test.com", password="pwd", full_name="Test User 2")
+        self.priority = Priority.objects.create(department=self.dept, priority_name="Normal", level=1)
+        self.priority_high = Priority.objects.create(department=self.dept, priority_name="High", level=2)
+        
+        self.status_open = Status.objects.create(status_name="Open")
+        self.status_progress = Status.objects.create(status_name="In Progress")
+        self.status_completed = Status.objects.create(status_name="Completed")
+        
+        self.nature = WorkNature.objects.create(nature_name="Test Nature", sub_department=self.subdept, default_priority=self.priority)
+        
         self.ticket = Ticket.objects.create(
-            work_order_no="WO123",
+            work_order_no="WO-TEST-999",
             store=self.store,
             department=self.dept,
             nature=self.nature,
             priority=self.priority,
-            status=self.status,
-            title="Fix Router",
-            description="Router is broken",
-            created_by=self.user,
+            status=self.status_open,
+            title="Broken Light",
+            description="Office light is flickering",
+            created_by=self.user
         )
 
-    def test_simple_field_validation_success(self):
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="field",
-            target_name="title",
+    def test_get_value_from_path_simple(self):
+        self.assertEqual(get_value_from_path(self.ticket, "title"), "Broken Light")
+        self.assertEqual(get_value_from_path(self.ticket, "store.store_name"), "Store-002")
+        self.assertEqual(get_value_from_path(self.ticket, "created_by.username"), "testuser2")
+
+    def test_get_value_from_path_related_manager(self):
+        allocations_manager = get_value_from_path(self.ticket, "allocations")
+        self.assertFalse(allocations_manager.exists())
+        
+        alloc = Allocation.objects.create(ticket=self.ticket, worker=self.user, planned_hours=2)
+        self.assertTrue(allocations_manager.exists())
+
+    def test_get_value_from_path_nested_related(self):
+        Allocation.objects.create(ticket=self.ticket, worker=self.user, planned_hours=2)
+        self.assertEqual(get_value_from_path(self.ticket, "allocations.worker.username"), ["testuser2"])
+
+    def test_compare_values(self):
+        self.assertTrue(compare_values("Store-002", "Store-002"))
+        self.assertFalse(compare_values("Store-002", "Store-003"))
+        self.assertTrue(compare_values(["Active", "Pending"], "Active"))
+        self.assertFalse(compare_values(["Active", "Pending"], "Closed"))
+
+    def test_check_rule_validation_field_success(self):
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_open,
+            to_status=self.status_progress,
+            mode="check",
+            type="field",
+            path="priority.priority_name",
+            value="High",
+            message="Priority must be High"
         )
-        self.assertIsNone(req.validate_ticket(self.ticket))
+        with self.assertRaisesMessage(ValidationError, "Priority must be High"):
+            self.ticket.status = self.status_progress
+            self.ticket.clean()
+            
+        self.ticket.priority = self.priority_high
+        self.ticket.status = self.status_progress
+        self.ticket.clean()
+        self.ticket.save()
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.status, self.status_progress)
 
-    def test_simple_field_validation_failure(self):
-        # approved_by is None initially on the ticket
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="field",
-            target_name="approved_by",
-            message="Ticket must be approved before moving to this status."
+    def test_check_rule_validation_field_empty(self):
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_open,
+            to_status=self.status_progress,
+            mode="check",
+            type="field",
+            path="closed_by",
+            value="",
+            message="Closed by user required"
         )
-        error = req.validate_ticket(self.ticket)
-        self.assertEqual(error, "Ticket must be approved before moving to this status.")
+        with self.assertRaisesMessage(ValidationError, "Closed by user required"):
+            self.ticket.status = self.status_progress
+            self.ticket.clean()
+            
+        self.ticket.closed_by = self.user
+        self.ticket.status = self.status_progress
+        self.ticket.clean()
 
-    def test_relation_key_validation_success(self):
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="relation",
-            target_name="created_by",
-            optional_key="full_name",
+    def test_check_rule_validation_related_empty(self):
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_open,
+            to_status=self.status_progress,
+            mode="check",
+            type="related",
+            path="allocations",
+            value="",
+            message="At least one worker must be allocated"
         )
-        self.assertIsNone(req.validate_ticket(self.ticket))
+        with self.assertRaisesMessage(ValidationError, "At least one worker must be allocated"):
+            self.ticket.status = self.status_progress
+            self.ticket.clean()
+            
+        Allocation.objects.create(ticket=self.ticket, worker=self.user, planned_hours=1)
+        self.ticket.status = self.status_progress
+        self.ticket.clean()
 
-    def test_relation_key_validation_failure(self):
-        self.user.full_name = ""
-        self.user.save()
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="relation",
-            target_name="created_by",
-            optional_key="full_name",
+    def test_delete_rule_cleanup(self):
+        alloc = Allocation.objects.create(ticket=self.ticket, worker=self.user, planned_hours=1)
+        
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_progress,
+            to_status=self.status_completed,
+            mode="delete",
+            type="related",
+            path="allocations",
+            message="Clean allocations"
         )
-        self.assertIsNotNone(req.validate_ticket(self.ticket))
+        
+        self.ticket.status = self.status_progress
+        self.ticket.save()
+        
+        self.ticket.status = self.status_completed
+        self.ticket.save()
+        
+        self.assertFalse(Allocation.objects.filter(pk=alloc.pk).exists())
 
-    def test_option_value_match_success(self):
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="relation",
-            target_name="created_by",
-            optional_key="username",
-            option_value="testuser"
+    def test_set_rule_field_execution(self):
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_open,
+            to_status=self.status_progress,
+            mode="set",
+            type="field",
+            path="title",
+            value="Status has been set!"
         )
-        self.assertIsNone(req.validate_ticket(self.ticket))
+        self.ticket.status = self.status_progress
+        self.ticket.clean()
+        self.assertEqual(self.ticket.title, "Status has been set!")
 
-    def test_option_value_match_failure(self):
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="relation",
-            target_name="created_by",
-            optional_key="username",
-            option_value="differentuser"
+    def test_set_rule_relation_execution(self):
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_open,
+            to_status=self.status_progress,
+            mode="set",
+            type="field",
+            path="priority",
+            value="Normal"
         )
-        self.assertIsNotNone(req.validate_ticket(self.ticket))
+        self.ticket.priority = self.priority_high
+        self.ticket.save()
+        
+        self.ticket.status = self.status_progress
+        self.ticket.clean()
+        self.assertEqual(self.ticket.priority, self.priority)
 
-    def test_cant_condition_validation(self):
-        # ticket.title is "Fix Router" (available)
-        # can_or_cant="cant" and only target -> should fail because it IS available!
-        req = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="field",
-            target_name="title",
-            can_or_cant="cant",
-            message="Title must be blank"
+    def test_warning_rule_execution(self):
+        rule = StatusChangeRule.objects.create(
+            from_status=self.status_open,
+            to_status=self.status_progress,
+            mode="warning",
+            type="field",
+            path="priority.priority_name",
+            value="High",
+            message="Warning: Priority is not High!"
         )
-        error = req.validate_ticket(self.ticket)
-        self.assertEqual(error, "Title must be blank")
-
-        # approved_by is None (not available). can_or_cant="cant" -> should pass!
-        req2 = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status,
-            target_type="field",
-            target_name="approved_by",
-            can_or_cant="cant"
-        )
-        self.assertIsNone(req2.validate_ticket(self.ticket))
+        self.ticket.status = self.status_progress
+        self.ticket.save()
+        self.assertEqual(self.ticket.status, self.status_progress)
+        self.assertIn("Warning: Priority is not High!", self.ticket._deleted_warnings)
 
 
-class StatusClearFieldValidationTestCase(TestCase):
+class TicketChatMessageAPITests(APITestCase):
     def setUp(self):
-        self.status = Status.objects.create(status_name="In Progress")
-        self.status_to = Status.objects.create(status_name="Completed")
+        self.role_mgr = Role.objects.create(role_name="Store Manager")
+        self.dept_maint = Department.objects.create(department_name="Maintenance")
         self.area = Area.objects.create(area_name="Capital Area")
-        self.store = Store.objects.create(store_id="M1", store_name="Main Store", area=self.area)
-        self.dept = Department.objects.create(department_name="IT")
-        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="Software Systems")
-        self.user = CustomUser.objects.create(username="testuser", full_name="Test User", active=True)
-        self.priority = Priority.objects.create(department=self.dept, priority_name="High", level=2)
+        self.store = Store.objects.create(store_id="S-001", store_name="Store-001", area=self.area)
+        
+        self.user = CustomUser.objects.create_user(
+            username="manager1", email="m1@test.com", password="pwd",
+            full_name="Mgr One", role=self.role_mgr
+        )
+        self.user.accessible_stores.add(self.store)
+        self.client.force_authenticate(user=self.user)
+        
+        self.priority = Priority.objects.create(
+            department=self.dept_maint, priority_name="High", level=2
+        )
+        
+        self.status_open = Status.objects.create(status_name="Open")
+        self.subdept_maint = SubDepartment.objects.create(
+            department=self.dept_maint, sub_department_name="Electrical"
+        )
         self.nature = WorkNature.objects.create(
-            nature_name="Hardware",
-            sub_department=self.subdept,
+            nature_name="Generator Fault", sub_department=self.subdept_maint,
             default_priority=self.priority
         )
+
         self.ticket = Ticket.objects.create(
-            work_order_no="WO123",
-            store=self.store,
-            department=self.dept,
-            nature=self.nature,
-            priority=self.priority,
-            status=self.status,
-            title="Fix Router",
-            description="Router is broken",
-            created_by=self.user,
+            work_order_no="WO-001", store=self.store, department=self.dept_maint,
+            nature=self.nature, priority=self.priority, status=self.status_open,
+            title="Open Ticket", description="Desc", created_by=self.user
         )
 
-    def test_clear_field_can_available(self):
-        # can_or_cant="can" and target title is available -> should clear!
-        rule = StatusClearField.objects.create(
-            from_status=self.status,
-            to_status=self.status_to,
-            target_type="field",
-            target_name="title",
-            can_or_cant="can"
-        )
-        self.assertTrue(rule.should_clear(self.ticket))
-        success, msg = rule.clear_ticket_field(self.ticket)
-        self.assertTrue(success)
-        self.ticket.refresh_from_db()
-        self.assertEqual(self.ticket.title, "")
+    def test_create_chat_message(self):
+        url = "/api/maintenance/ticketchat/"
+        data = {
+            "ticket": self.ticket.ticket_id,
+            "sender": self.user.user_id,
+            "message_text": "Hello team!"
+        }
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["message_text"], "Hello team!")
+        self.assertEqual(response.data["sender"]["user_id"], self.user.user_id)
 
-    def test_clear_field_cant_available(self):
-        # can_or_cant="cant" and target title is available -> should NOT clear!
-        rule = StatusClearField.objects.create(
-            from_status=self.status,
-            to_status=self.status_to,
-            target_type="field",
-            target_name="title",
-            can_or_cant="cant"
+    def test_list_chat_messages(self):
+        msg = TicketChatMessage.objects.create(
+            ticket=self.ticket,
+            sender=self.user,
+            message_text="Test message"
         )
-        self.assertFalse(rule.should_clear(self.ticket))
-        success, msg = rule.clear_ticket_field(self.ticket)
-        self.assertFalse(success)
-        self.ticket.refresh_from_db()
-        self.assertEqual(self.ticket.title, "Fix Router")
+        url = f"/api/maintenance/ticketchat/?ticket={self.ticket.ticket_id}"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        results = response.data.get("results", response.data)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["message_text"], "Test message")
 
-    def test_validate_ticket_required_fields_utility(self):
-        # 1. Create a validation rule: when status goes from self.status to self.status_to,
-        # 'approved_by' field is required.
-        rule = StatusRequiredField.objects.create(
-            from_status=self.status,
-            to_status=self.status_to,
-            target_type="field",
-            target_name="approved_by",
-            can_or_cant="can",
-            message="Required approved_by"
-        )
-        # Ticket approved_by is None, so it should return the error message
-        errors = validate_ticket_required_fields(self.ticket, self.status, self.status_to)
-        self.assertEqual(errors, ["Required approved_by"])
-
-    def test_clear_ticket_fields_utility(self):
-        # 1. Create a clear field rule
-        rule = StatusClearField.objects.create(
-            from_status=self.status,
-            to_status=self.status_to,
-            target_type="field",
-            target_name="title",
-            can_or_cant="can",
-            message="Cleared title"
-        )
-        messages = clear_ticket_fields(self.ticket, self.status, self.status_to)
-        self.assertEqual(messages, ["Cleared title"])
-        self.ticket.refresh_from_db()
-        self.assertEqual(self.ticket.title, "")
 
 

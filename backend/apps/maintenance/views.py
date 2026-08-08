@@ -2,11 +2,11 @@ from django.db.models import Q
 from rest_framework import viewsets, exceptions
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage
 from .serializers import (
     PrioritySerializer, StatusSerializer, WorkNatureSerializer,
     NatureWorkerSerializer, TicketSerializer, AllocationSerializer,
-    WorkLogSerializer, TicketHistorySerializer,
+    WorkLogSerializer, TicketHistorySerializer, TicketChatMessageSerializer,
     AllocationWriteSerializer, WorkLogWriteSerializer, TicketWriteSerializer
 )
 
@@ -122,7 +122,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                     user.has_perm('maintenance.view_all_department_tickets') or
                     user.has_perm('maintenance.create_ticket_all_departments') or
                     'main_admin' in user_groups_lower or
-                    'main administrator' in user_groups_lower
+                    'main administrator' in user_groups_lower or
+                    'administrator' in user_groups_lower
                 )
 
                 if not can_view_all_depts:
@@ -154,6 +155,13 @@ class TicketViewSet(viewsets.ModelViewSet):
         if status:
             queryset = queryset.filter(status__status_name=status)
 
+        priority = params.get('priority')
+        if priority:
+            if priority.isdigit():
+                queryset = queryset.filter(priority_id=priority)
+            else:
+                queryset = queryset.filter(priority__priority_name=priority)
+
         from_date = params.get('from_date')
         if from_date:
             queryset = queryset.filter(created_date__gte=from_date)
@@ -172,22 +180,6 @@ class TicketViewSet(viewsets.ModelViewSet):
         if user and not user.is_anonymous:
             kwargs['created_by'] = user
         serializer.save(**kwargs)
-
-    # def _run_status_rules(self, ticket, from_status, to_status):
-    #     """
-    #     Runs StatusRequiredField validation and StatusClearField clearing for a
-    #     status transition.  Returns a list of cleared-field messages.
-    #     Raises ValidationError if any required-field rule fails.
-    #     """
-    #     from rest_framework.exceptions import ValidationError as DRFValidationError
-    #     from .utils import validate_ticket_required_fields, clear_ticket_fields
-
-    #     errors = validate_ticket_required_fields(ticket, from_status, to_status)
-    #     if errors:
-    #         raise DRFValidationError({"status_validation": errors})
-
-    #     cleared = clear_ticket_fields(ticket, from_status, to_status)
-    #     return cleared
 
 
 class AllocationViewSet(viewsets.ModelViewSet):
@@ -284,3 +276,36 @@ class TicketHistoryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(ticket_id=ticket)
 
         return queryset
+
+
+class TicketChatPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class TicketChatMessageViewSet(viewsets.ModelViewSet):
+    queryset = TicketChatMessage.objects.all()
+    serializer_class = TicketChatMessageSerializer
+    pagination_class = TicketChatPagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return TicketChatMessage.objects.none()
+
+        if not user.is_superuser:
+            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            if accessible_store_ids:
+                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+            else:
+                return TicketChatMessage.objects.none()
+
+        ticket_id = self.request.query_params.get("ticket")
+        if ticket_id:
+            queryset = queryset.filter(ticket_id=ticket_id)
+        else:
+            return TicketChatMessage.objects.none()
+
+        return queryset.order_by('-created_date')

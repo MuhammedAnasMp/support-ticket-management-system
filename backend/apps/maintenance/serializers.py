@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage
 from apps.finance.models import EmployeeRate
 from decimal import Decimal
 
@@ -34,6 +34,8 @@ class NatureWorkerSerializer(serializers.ModelSerializer):
 
 class TicketSerializer(serializers.ModelSerializer):
     allocations = serializers.SerializerMethodField()
+    age_days = serializers.SerializerMethodField()
+    ticket_age_days = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
@@ -42,6 +44,23 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_allocations(self, obj):
         return AllocationSerializer(obj.allocations.all(), many=True).data
+
+    def get_age_days(self, obj):
+        from django.utils import timezone
+        last_history = obj.history.order_by('-changed_date').first()
+        if not last_history:
+            return 0.0
+        now = timezone.now()
+        duration = now - last_history.changed_date
+        return round(duration.total_seconds() / 86400.0, 4)
+
+    def get_ticket_age_days(self, obj):
+        from django.utils import timezone
+        if not obj.created_date:
+            return 0.0
+        now = timezone.now()
+        duration = now - obj.created_date
+        return round(duration.total_seconds() / 86400.0, 4)
 
     def validate(self, data):
         department = data.get('department')
@@ -52,10 +71,6 @@ class TicketSerializer(serializers.ModelSerializer):
         if priority and department and priority.department != department:
             raise serializers.ValidationError(
                 {"priority": f"Priority '{priority.priority_name}' does not belong to department '{department.department_name}'."}
-            )
-        if status and department and status.department != department:
-            raise serializers.ValidationError(
-                {"status": f"Status '{status.status_name}' does not belong to department '{department.department_name}'."}
             )
         if nature and department and nature.sub_department.department != department:
             raise serializers.ValidationError(
@@ -131,6 +146,36 @@ class TicketWriteSerializer(serializers.ModelSerializer):
             )
         return data
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if hasattr(instance, '_deleted_warnings'):
+            data['deleted_warnings'] = instance._deleted_warnings
+        return data
+
+    def create(self, validated_data):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(detail=e.messages if hasattr(e, 'messages') else str(e))
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and not user.is_anonymous:
+            instance._changed_by = user
+        remarks = validated_data.get('reject_reason') or validated_data.get('location_reject_reason') or getattr(instance, '_remarks', '')
+        if remarks:
+            instance._remarks = remarks
+            
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        try:
+            return super().update(instance, validated_data)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(detail=e.messages if hasattr(e, 'messages') else str(e))
+
+
+
 
 class AllocationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -193,3 +238,25 @@ class TicketHistorySerializer(serializers.ModelSerializer):
         model = TicketHistory
         fields = '__all__'
         depth = 1
+
+
+class TicketChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TicketChatMessage
+        fields = '__all__'
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        if instance.sender:
+            rep['sender'] = {
+                'user_id': instance.sender.user_id,
+                'username': instance.sender.username,
+                'full_name': instance.sender.full_name,
+                'employee_no': instance.sender.employee_no,
+                'profile_image': instance.sender.profile_image.url if instance.sender.profile_image else None,
+                'role': {
+                    'role_id': instance.sender.role.role_id,
+                    'role_name': instance.sender.role.role_name
+                } if instance.sender.role else None
+            }
+        return rep

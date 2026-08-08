@@ -24,6 +24,7 @@ import { WorkforceView } from './pages/WorkforceView';
 import Test from './Test';
 import PageTitle from './PageTitle';
 import { TicketsView } from './pages/ticket/TicketsView';
+import { TicketHistoryView } from './pages/ticket/TicketHistoryView';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -131,6 +132,14 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <DashboardLayout>
                 <TicketsView />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/ticket/:ticketId/history" element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <TicketHistoryView />
               </DashboardLayout>
             </ProtectedRoute>
           } />

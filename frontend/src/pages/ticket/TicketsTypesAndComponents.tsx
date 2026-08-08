@@ -22,7 +22,7 @@ export interface Ticket {
     department: { department_id: number; department_name: string };
     nature: { nature_id: number; nature_name: string };
     priority: { priority_id: number; priority_name: string; level: number };
-    status: { status_id: number; status_name: string };
+    status: { status_id: number; status_name: string; order: number };
     title: string;
     description: string;
     created_by: UserStub;

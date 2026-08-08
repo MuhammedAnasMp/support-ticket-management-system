@@ -45,28 +45,78 @@ class Status(models.Model):
 
 
 class StatusChangeRule(models.Model):
-    TYPE_CHOICES = [("field", "Field"), ("related", "Related"),]
+    TYPE_CHOICES = [
+        ("field", "Field"),
+        ("related", "Related"),
+    ]
 
-    MODE_CHOICES = [("check", "Check"), ("delete", "Delete"),]
+    MODE_CHOICES = [
+        ("check", "Check"),
+        ("delete", "Delete"),
+        ("set", "Set"),
+        ("warning", "Warning"),
+    ]
 
     from_status = models.ForeignKey(
-        "maintenance.Status", on_delete=models.CASCADE, related_name="from_rules",)
+        "maintenance.Status",
+        on_delete=models.CASCADE,
+        related_name="from_rules",
+    )
+
     to_status = models.ForeignKey(
-        "maintenance.Status", on_delete=models.CASCADE, related_name="to_rules",)
+        "maintenance.Status",
+        on_delete=models.CASCADE,
+        related_name="to_rules",
+    )
+
+    mode = models.CharField(
+        max_length=10,
+        choices=MODE_CHOICES,
+        default="check",
+        help_text=(
+            "Check: validate before status change.\n"
+            "Delete: remove related fields/records before status change.\n"
+            "Set: set the field/relationship value to value before status change.\n"
+            "Warning: warn if condition fails, but allow status change."
+        ),
+    )
 
     type = models.CharField(
-        max_length=10, choices=TYPE_CHOICES, default="field",)
+        max_length=10,
+        choices=TYPE_CHOICES,
+        default="field",
+    )
+
     path = models.CharField(
         max_length=255,
         help_text=(
-            "Examples:\n" "store.name\n" "created_by.username\n" "attachments.file_name\n" "allocations.name"
+            "Field/relationship path.\n"
+            "Examples:\n"
+            "store.name\n"
+            "created_by.username\n"
+            "attachments.file_name\n"
+            "allocations.name"
         ),
     )
-    value = models.CharField(max_length=255, blank=True,
-                             null=True, help_text="Expected value.", )
-    mode = models.CharField(
-        max_length=10,    choices=MODE_CHOICES,    default="check",)
-    message = models.TextField()
+
+    value = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Expected value (used for check, set, and warning modes).",
+    )
+
+    message = models.TextField(
+        blank=True,
+        null=True,
+        help_text=(
+            "For Check/Warning mode: error/warning message displayed when validation fails.\n"
+            "Example: 'Store must be assigned before closing.'\n\n"
+            "For Delete mode: describe what will be deleted.\n"
+            "Example: 'Delete all attachments and allocations.'"
+        ),
+    )
+
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -149,6 +199,11 @@ class Ticket(models.Model):
     closed_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
                                   null=True, blank=True, related_name='closed_tickets')
     closed_date = models.DateTimeField(null=True, blank=True)
+    location_approval = models.CharField(max_length=100, default='Pending', null=True, blank=True)
+    location_approved_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
+                                             null=True, blank=True, related_name='location_approved_tickets')
+    location_approved_date = models.DateTimeField(null=True, blank=True)
+    location_reject_reason = models.TextField(null=True, blank=True)
 
     class Meta:
         permissions = [
@@ -203,6 +258,75 @@ class Ticket(models.Model):
 
     def __str__(self):
         return f"{self.work_order_no} - {self.title}"
+
+    def clean(self):
+        super().clean()
+        if self.pk:
+            old_instance = Ticket.objects.get(pk=self.pk)
+            if old_instance.status != self.status:
+                from .utils import get_value_from_path, compare_values, set_value_on_path
+                from .models import StatusChangeRule
+                
+                # Apply set rules first
+                set_rules = StatusChangeRule.objects.filter(
+                    from_status=old_instance.status,
+                    to_status=self.status,
+                    is_active=True,
+                    mode="set"
+                )
+                for rule in set_rules:
+                    set_value_on_path(self, rule.path, rule.value)
+                
+                # Run check rules validation
+                rules = StatusChangeRule.objects.filter(
+                    from_status=old_instance.status,
+                    to_status=self.status,
+                    is_active=True,
+                    mode="check"
+                )
+                from django.core.exceptions import ValidationError
+                for rule in rules:
+                    val = get_value_from_path(self, rule.path)
+                    
+                    if rule.value is None or rule.value == "":
+                        if rule.type == "field":
+                            if val is None or val == "":
+                                raise ValidationError(rule.message)
+                        elif rule.type == "related":
+                            exists = False
+                            if hasattr(val, 'exists') and callable(val.exists):
+                                exists = val.exists()
+                            elif isinstance(val, (list, tuple, set)):
+                                exists = len(val) > 0
+                            elif val:
+                                exists = True
+                            if not exists:
+                                raise ValidationError(rule.message)
+                    else:
+                        if not compare_values(val, rule.value):
+                            raise ValidationError(rule.message)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            old_instance = Ticket.objects.get(pk=self.pk)
+            if old_instance.status != self.status:
+                if getattr(self, '_bypass_status_rule', False):
+                    super().save(*args, **kwargs)
+                    return
+                
+                new_status = self.status
+                self.status = old_instance.status
+                
+                from .utils import change_status
+                change_status(
+                    self,
+                    new_status,
+                    changed_by=getattr(self, '_changed_by', None),
+                    remarks=getattr(self, '_remarks', None)
+                )
+                return
+        super().save(*args, **kwargs)
+
 
 
 class Allocation(models.Model):
@@ -311,6 +435,11 @@ class TicketHistory(models.Model):
     closed_by = models.ForeignKey(
         'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_closed_tickets')
     closed_date = models.DateTimeField(null=True, blank=True)
+    location_approval = models.CharField(max_length=100, default='Pending', null=True, blank=True)
+    location_approved_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_location_approved_tickets')
+    location_approved_date = models.DateTimeField(null=True, blank=True)
+    location_reject_reason = models.TextField(null=True, blank=True)
 
     # History metadata fields
     changed_by = models.ForeignKey(
@@ -406,7 +535,28 @@ def create_ticket_history_on_save(sender, instance, created, **kwargs):
             reject_reason=instance.reject_reason,
             closed_by=instance.closed_by,
             closed_date=instance.closed_date,
+            location_approval=instance.location_approval,
+            location_approved_by=instance.location_approved_by,
+            location_approved_date=instance.location_approved_date,
+            location_reject_reason=instance.location_reject_reason,
             changed_by=changed_by,
             remarks=remarks,
             age_days=0.0
         )
+
+
+class TicketChatMessage(models.Model):
+    message_id = models.AutoField(primary_key=True)
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='chat_messages')
+    sender = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='sent_chat_messages')
+    message_text = models.TextField(null=True, blank=True)
+    image = models.ImageField(upload_to='ticket_chats/images/', null=True, blank=True)
+    video = models.FileField(upload_to='ticket_chats/videos/', null=True, blank=True)
+    voice = models.FileField(upload_to='ticket_chats/voices/', null=True, blank=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_date']
+
+    def __str__(self):
+        return f"Msg {self.message_id} on Ticket {self.ticket.work_order_no} by {self.sender.username}"
