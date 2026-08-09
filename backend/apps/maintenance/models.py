@@ -199,7 +199,8 @@ class Ticket(models.Model):
     closed_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
                                   null=True, blank=True, related_name='closed_tickets')
     closed_date = models.DateTimeField(null=True, blank=True)
-    location_approval = models.CharField(max_length=100, default='Pending', null=True, blank=True)
+    location_approval = models.CharField(
+        max_length=100, default='Pending', null=True, blank=True)
     location_approved_by = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL,
                                              null=True, blank=True, related_name='location_approved_tickets')
     location_approved_date = models.DateTimeField(null=True, blank=True)
@@ -266,7 +267,7 @@ class Ticket(models.Model):
             if old_instance.status != self.status:
                 from .utils import get_value_from_path, compare_values, set_value_on_path
                 from .models import StatusChangeRule
-                
+
                 # Apply set rules first
                 set_rules = StatusChangeRule.objects.filter(
                     from_status=old_instance.status,
@@ -276,7 +277,7 @@ class Ticket(models.Model):
                 )
                 for rule in set_rules:
                     set_value_on_path(self, rule.path, rule.value)
-                
+
                 # Run check rules validation
                 rules = StatusChangeRule.objects.filter(
                     from_status=old_instance.status,
@@ -287,7 +288,7 @@ class Ticket(models.Model):
                 from django.core.exceptions import ValidationError
                 for rule in rules:
                     val = get_value_from_path(self, rule.path)
-                    
+
                     if rule.value is None or rule.value == "":
                         if rule.type == "field":
                             if val is None or val == "":
@@ -313,10 +314,10 @@ class Ticket(models.Model):
                 if getattr(self, '_bypass_status_rule', False):
                     super().save(*args, **kwargs)
                     return
-                
+
                 new_status = self.status
                 self.status = old_instance.status
-                
+
                 from .utils import change_status
                 change_status(
                     self,
@@ -326,7 +327,6 @@ class Ticket(models.Model):
                 )
                 return
         super().save(*args, **kwargs)
-
 
 
 class Allocation(models.Model):
@@ -435,7 +435,8 @@ class TicketHistory(models.Model):
     closed_by = models.ForeignKey(
         'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_closed_tickets')
     closed_date = models.DateTimeField(null=True, blank=True)
-    location_approval = models.CharField(max_length=100, default='Pending', null=True, blank=True)
+    location_approval = models.CharField(
+        max_length=100, default='Pending', null=True, blank=True)
     location_approved_by = models.ForeignKey(
         'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='history_location_approved_tickets')
     location_approved_date = models.DateTimeField(null=True, blank=True)
@@ -547,12 +548,17 @@ def create_ticket_history_on_save(sender, instance, created, **kwargs):
 
 class TicketChatMessage(models.Model):
     message_id = models.AutoField(primary_key=True)
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='chat_messages')
-    sender = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='sent_chat_messages')
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='chat_messages')
+    sender = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='sent_chat_messages')
     message_text = models.TextField(null=True, blank=True)
-    image = models.ImageField(upload_to='ticket_chats/images/', null=True, blank=True)
-    video = models.FileField(upload_to='ticket_chats/videos/', null=True, blank=True)
-    voice = models.FileField(upload_to='ticket_chats/voices/', null=True, blank=True)
+    image = models.ImageField(
+        upload_to='ticket_chats/images/', null=True, blank=True)
+    video = models.FileField(
+        upload_to='ticket_chats/videos/', null=True, blank=True)
+    voice = models.FileField(
+        upload_to='ticket_chats/voices/', null=True, blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -560,3 +566,277 @@ class TicketChatMessage(models.Model):
 
     def __str__(self):
         return f"Msg {self.message_id} on Ticket {self.ticket.work_order_no} by {self.sender.username}"
+
+
+@receiver(models.signals.pre_save, sender=Ticket)
+def store_old_status(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            old_inst = Ticket.objects.get(pk=instance.pk)
+            instance._old_status = old_inst.status
+            instance._old_location_approval = old_inst.location_approval
+        except Ticket.DoesNotExist:
+            instance._old_status = None
+            instance._old_location_approval = None
+    else:
+        instance._old_status = None
+        instance._old_location_approval = None
+
+
+@receiver(models.signals.post_save, sender=Ticket)
+def send_notification_on_ticket_save(sender, instance, created, **kwargs):
+    from apps.common.models import Notification
+    from apps.accounts.models import CustomUser
+
+    def get_store_managers():
+        return CustomUser.objects.filter(
+            role__role_name__iexact="Store Manager",
+            accessible_stores=instance.store,
+            active=True
+        )
+
+    def get_allocated_workers():
+        return [a.worker for a in instance.allocations.all() if a.worker]
+
+    def get_before_image():
+        before_img = instance.attachments.filter(
+            category__category_name='Before Repair').first()
+        return before_img.file_url.url if before_img else None
+
+    def get_after_image():
+        after_img = instance.attachments.filter(
+            category__category_name='After Repair').first()
+        if after_img:
+            return after_img.file_url.url
+        # Fallback to before image if after is missing
+        return get_before_image()
+
+    def notify(user, ntype, title, message, image=None):
+        try:
+            Notification.objects.create(
+                user=user,
+                ticket=instance,
+                notification_type=ntype,
+                title=title,
+                message=message,
+                image=image,
+            )
+        except Exception as err:
+            print(f"[Notification] Failed to notify {user}: {err}")
+
+    # ----------------------------------------------------------------
+    # Scenario A: High/Very High priority ticket created (level >= 4)
+    #   -> Notify responsive department office admins only.
+    #   -> Falls back to ALL office admins if none have sub_departments set up.
+    # ----------------------------------------------------------------
+    if created and instance.priority and instance.priority.level >= 4:
+        office_admins = CustomUser.objects.filter(
+            role__role_name__iexact="Office Administrator",
+            sub_departments__department=instance.department,
+            active=True
+        ).distinct()
+
+        # Fallback: if no department-specific admins found, notify all office admins
+        if not office_admins.exists():
+            office_admins = CustomUser.objects.filter(
+                role__role_name__iexact="Office Administrator",
+                active=True
+            ).distinct()
+
+        before_img_url = get_before_image()
+        for admin in office_admins:
+            notify(
+                admin,
+                "High Priority Ticket",
+                "High Priority Ticket Created",
+                f"High priority ticket {instance.work_order_no} ({instance.priority.priority_name}) "
+                f"has been created: {instance.title}.",
+                image=before_img_url
+            )
+
+    # ----------------------------------------------------------------
+    # Scenario B: Status / location_approval changed
+    # ----------------------------------------------------------------
+    if not created:
+        old_status = getattr(instance, "_old_status", None)
+        new_status = instance.status
+
+        # --- Location approval field changed ---
+        old_loc_app = getattr(instance, "_old_location_approval", None)
+        new_loc_app = instance.location_approval
+
+        if old_loc_app != new_loc_app:
+            # Approved -> notify assigned workers
+            if new_loc_app == 'Approved':
+                after_img_url = get_after_image()
+                for worker in get_allocated_workers():
+                    notify(
+                        worker,
+                        "Ticket Completed",
+                        "Ticket Completed & Approved",
+                        f"Your ticket {instance.work_order_no} has been completed "
+                        f"and approved by the Store Manager.",
+                        image=after_img_url
+                    )
+
+            # Rejected -> notify assigned workers
+            elif new_loc_app == 'Rejected':
+                after_img_url = get_after_image()
+                for worker in get_allocated_workers():
+                    notify(
+                        worker,
+                        "Ticket Rejected",
+                        "Location Approval Rejected",
+                        f"Your ticket {instance.work_order_no} has been rejected "
+                        f"by the Store Manager and needs attention.",
+                        image=after_img_url
+                    )
+
+        # --- Status changed ---
+        if old_status and old_status != new_status:
+            status_lower = new_status.status_name.lower()
+
+            # 1. In Progress
+            if status_lower == 'in progress':
+                old_status_lower = old_status.status_name.lower() if old_status else ""
+                if old_status_lower in ['location approval', 'completed']:
+                    # This is a REJECTION / SEND BACK from completion or location approval!
+                    after_img_url = get_after_image()
+                    for worker in get_allocated_workers():
+                        notify(
+                            worker,
+                            "Ticket Rejected",
+                            "Ticket Rejected / Sent Back",
+                            f"Your ticket {instance.work_order_no} has been rejected by the Store Manager and is back in progress.",
+                            image=after_img_url
+                        )
+                else:
+                    # Regular transition to in progress (Approved/First assignment)
+                    if instance.created_by:
+                        notify(
+                            instance.created_by,
+                            "Ticket Approved",
+                            "Ticket Approved",
+                            f"Your ticket {instance.work_order_no} has been approved."
+                        )
+                    for manager in get_store_managers():
+                        notify(
+                            manager,
+                            "Ticket Approved",
+                            "Ticket Approved",
+                            f"Ticket {instance.work_order_no} for your store "
+                            f"{instance.store.store_name} has been approved and is now in progress."
+                        )
+                    # Notify pre-assigned workers now that they can view the ticket
+                    before_img_url = get_before_image()
+                    for worker in get_allocated_workers():
+                        notify(
+                            worker,
+                            "Assignment",
+                            "New Ticket Assignment",
+                            f"You have been assigned to ticket {instance.work_order_no}: {instance.title}.",
+                            image=before_img_url
+                        )
+
+            # 2. Location Approval -> notify store managers to review
+            elif status_lower == 'location approval':
+                after_img_url = get_after_image()
+                for manager in get_store_managers():
+                    notify(
+                        manager,
+                        "Location Approval Required",
+                        "Ticket Awaiting Location Approval",
+                        f"Ticket {instance.work_order_no} has been completed by the worker "
+                        f"and is waiting for your location approval.",
+                        image=after_img_url
+                    )
+
+            # 3. Completed -> notify store managers (waiting for approval)
+            elif status_lower == 'completed':
+                after_img_url = get_after_image()
+                for manager in get_store_managers():
+                    notify(
+                        manager,
+                        "Ticket Completed",
+                        "Ticket Completed (Pending Approval)",
+                        f"Ticket {instance.work_order_no} has been completed by the worker "
+                        f"and is waiting for your approval.",
+                        image=after_img_url
+                    )
+
+            # 4. Blocked -> notify store managers + assigned workers
+            elif status_lower == 'blocked':
+                for manager in get_store_managers():
+                    notify(
+                        manager,
+                        "Ticket Blocked",
+                        "Ticket Blocked",
+                        f"Ticket {instance.work_order_no} has been blocked: {instance.title}."
+                    )
+                for worker in get_allocated_workers():
+                    notify(
+                        worker,
+                        "Ticket Blocked",
+                        "Ticket Blocked",
+                        f"Ticket {instance.work_order_no} has been marked as blocked."
+                    )
+
+
+@receiver(models.signals.post_save, sender=Allocation)
+def send_notification_on_allocation_save(sender, instance, created, **kwargs):
+    if created:
+        from apps.common.models import Notification
+        if instance.worker and instance.ticket:
+            # Only notify worker if ticket is already In Progress (already approved and visible)
+            if instance.ticket.status.status_name.lower() == 'in progress':
+                try:
+                    Notification.objects.create(
+                        user=instance.worker,
+                        ticket=instance.ticket,
+                        notification_type="Assignment",
+                        title="New Ticket Assignment",
+                        message=f"You have been assigned to ticket {instance.ticket.work_order_no}: {instance.ticket.title}."
+                    )
+                except Exception as err:
+                    print("Failed to notify worker about allocation:", err)
+
+
+@receiver(models.signals.post_save, sender='common.Media')
+def send_notification_on_media_save(sender, instance, created, **kwargs):
+    if created and instance.ticket:
+        from apps.common.models import Notification
+        from apps.common.services import send_push_notification
+
+        ticket = instance.ticket
+        category_name = instance.category.category_name if instance.category else ""
+
+        # 1. Before Repair image uploaded for High Priority ticket
+        if category_name == 'Before Repair' and ticket.priority and ticket.priority.level >= 4:
+            notifs = Notification.objects.filter(
+                ticket=ticket,
+                notification_type="High Priority Ticket",
+                image__isnull=True
+            )
+            for notif in notifs:
+                notif.image = instance.file_url.url
+                notif.save(update_fields=['image'])
+                try:
+                    send_push_notification(notif)
+                except Exception as err:
+                    print("Failed to resend push notification on media save:", err)
+
+        # 2. After Repair image uploaded for Location Approval / Completed ticket
+        elif category_name == 'After Repair':
+            notifs = Notification.objects.filter(
+                ticket=ticket,
+                notification_type__in=[
+                    "Location Approval Required", "Ticket Completed"],
+                image__isnull=True
+            )
+            for notif in notifs:
+                notif.image = instance.file_url.url
+                notif.save(update_fields=['image'])
+                try:
+                    send_push_notification(notif)
+                except Exception as err:
+                    print("Failed to resend push notification on media save:", err)

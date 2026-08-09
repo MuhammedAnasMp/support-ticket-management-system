@@ -35,6 +35,11 @@ export interface Ticket {
     closed_by?: UserStub | null;
     closed_date?: string | null;
     allocations?: Allocation[];
+    age_days?: number | null;
+    location_approval?: string | null;
+    location_approved_by?: UserStub | null;
+    location_approved_date?: string | null;
+    location_reject_reason?: string | null;
 }
 
 export interface Allocation {

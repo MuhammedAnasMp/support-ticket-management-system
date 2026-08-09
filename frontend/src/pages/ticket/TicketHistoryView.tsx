@@ -64,10 +64,10 @@ export const TicketHistoryView: React.FC = () => {
                 
                 // Sort history logs chronologically (newest first)
                 if (Array.isArray(historyData)) {
-                    historyData.sort((a, b) => new Date(b.changed_date).getTime() - new Date(a.changed_date).getTime());
+                    historyData.sort((a: any, b: any) => new Date(b.changed_date).getTime() - new Date(a.changed_date).getTime());
                 } else if (historyData && Array.isArray(historyData.results)) {
                     historyData = historyData.results;
-                    historyData.sort((a, b) => new Date(b.changed_date).getTime() - new Date(a.changed_date).getTime());
+                    historyData.sort((a: any, b: any) => new Date(b.changed_date).getTime() - new Date(a.changed_date).getTime());
                 } else {
                     historyData = [];
                 }

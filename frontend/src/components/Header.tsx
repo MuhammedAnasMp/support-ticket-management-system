@@ -4,10 +4,15 @@ import { useSelector, useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu, User, LogOut, Sun, Moon, ChevronDown,
-  Mail, Phone, Shield, MessageSquare
+  Mail, Phone, Shield, MessageSquare, Bell
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { clearCredentials } from '../store/authSlice';
+import {
+  enablePushNotifications,
+  disablePushNotifications,
+  isPushEnabled
+} from '@/services/pushNotifications';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -23,6 +28,41 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { user } = useSelector((state: RootState) => state.auth);
+
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  useEffect(() => {
+    const checkNotificationStatus = async () => {
+      try {
+        const enabled = await isPushEnabled();
+        setNotificationsEnabled(enabled);
+      } catch (err) {
+        console.error('Failed to check notification status:', err);
+      }
+    };
+    if (user) {
+      checkNotificationStatus();
+    }
+  }, [user]);
+
+  const handleToggleNotifications = async () => {
+    try {
+      setNotificationsLoading(true);
+      if (notificationsEnabled) {
+        await disablePushNotifications();
+        setNotificationsEnabled(false);
+      } else {
+        await enablePushNotifications();
+        setNotificationsEnabled(true);
+      }
+    } catch (err) {
+      console.error('Failed to toggle notifications:', err);
+      alert(err instanceof Error ? err.message : 'Failed to toggle notifications');
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const isDarkTheme = document.documentElement.classList.contains('dark');
@@ -164,6 +204,28 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
                       <span>{user?.whatsapp_number}</span>
                     </div>
                   )}
+                  {/* Push Notifications Toggle */}
+                  <div className="flex items-center justify-between pt-2 border-t border-outline-variant/30 dark:border-dark-outline-variant/30">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-outline" />
+                      <span>Push Notifications</span>
+                    </div>
+                    <button
+                      onClick={handleToggleNotifications}
+                      disabled={notificationsLoading}
+                      type="button"
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        notificationsEnabled ? 'bg-primary' : 'bg-outline-variant/50'
+                      }`}
+                      aria-label="Toggle notifications"
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          notificationsEnabled ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Logout Trigger */}

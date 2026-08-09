@@ -48,7 +48,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
 
     const messageContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const recordTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const recordTimerRef = useRef<any | null>(null);
     const sendImmediatelyRef = useRef(false);
     const discardRecordingRef = useRef(false);
 
@@ -306,7 +306,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
     };
 
     const uploadDirectly = async (recordedFile: File, type: 'voice') => {
-        if (!token) return;
+        if (!token || !currentUser) return;
         setSending(true);
         const formData = new FormData();
         formData.append('ticket', String(ticketId));
@@ -334,7 +334,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
-        if ((!text.trim() && !file) || sending || !token) return;
+        if ((!text.trim() && !file) || sending || !token || !currentUser) return;
 
         setSending(true);
         const formData = new FormData();

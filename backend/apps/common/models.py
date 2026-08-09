@@ -1,13 +1,17 @@
 from django.db import models
+from django.dispatch import receiver
+
 
 class MediaCategory(models.Model):
     category_id = models.AutoField(primary_key=True)
-    department = models.ForeignKey('stores.Department', on_delete=models.CASCADE, related_name='media_categories')
+    department = models.ForeignKey(
+        'stores.Department', on_delete=models.CASCADE, related_name='media_categories')
     category_name = models.CharField(max_length=100)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['department', 'category_name'], name='unique_department_category_name')
+            models.UniqueConstraint(
+                fields=['department', 'category_name'], name='unique_department_category_name')
         ]
         permissions = [
             ("view_category_name", "Can view category name"),
@@ -17,23 +21,31 @@ class MediaCategory(models.Model):
     def __str__(self):
         return self.category_name
 
+
 def get_media_upload_path(instance, filename):
-    category_slug = instance.category.category_name.lower().replace(' ', '_') if instance.category else 'general'
-    
+    category_slug = instance.category.category_name.lower().replace(
+        ' ', '_') if instance.category else 'general'
+
     # Resolve the ticket directly
     ticket = instance.ticket
-    
+
     if ticket:
-        store_slug = ticket.store.store_name.lower().replace(' ', '_') if ticket.store else 'unknown_store'
+        store_slug = ticket.store.store_name.lower().replace(
+            ' ', '_') if ticket.store else 'unknown_store'
         return f"stores/{store_slug}/tickets/ticket_{ticket.ticket_id}/{category_slug}/{filename}"
     return f"general/{category_slug}/{filename}"
 
+
 class Media(models.Model):
     media_id = models.AutoField(primary_key=True)
-    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='attachments')
-    uploaded_by = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='uploaded_media')
-    category = models.ForeignKey(MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_files')
-    expense = models.ForeignKey('finance.Expense', on_delete=models.SET_NULL, null=True, blank=True, related_name='receipts')
+    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE,
+                               null=True, blank=True, related_name='attachments')
+    uploaded_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='uploaded_media')
+    category = models.ForeignKey(
+        MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_files')
+    expense = models.ForeignKey(
+        'finance.Expense', on_delete=models.SET_NULL, null=True, blank=True, related_name='receipts')
     file_name = models.CharField(max_length=255)
     file_url = models.FileField(upload_to=get_media_upload_path)
     uploaded_date = models.DateTimeField(auto_now_add=True)
@@ -55,13 +67,17 @@ class Media(models.Model):
     def __str__(self):
         return self.file_name
 
+
 class Notification(models.Model):
     notification_id = models.AutoField(primary_key=True)
-    user = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, related_name='notifications')
-    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
+    user = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='notifications')
+    ticket = models.ForeignKey('maintenance.Ticket', on_delete=models.CASCADE,
+                               null=True, blank=True, related_name='notifications')
     notification_type = models.CharField(max_length=50)
     title = models.CharField(max_length=255)
     message = models.TextField()
+    image = models.TextField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
     created_date = models.DateTimeField(auto_now_add=True)
 
@@ -83,3 +99,41 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"Notif {self.notification_id} for {self.user.username} - {self.title}"
+
+
+class PushSubscription(models.Model):
+    subscription_id = models.AutoField(primary_key=True)
+
+    user = models.ForeignKey(
+        'accounts.CustomUser',
+        on_delete=models.CASCADE,
+        related_name='push_subscriptions'
+    )
+
+    endpoint = models.TextField(unique=True)
+
+    p256dh = models.TextField()
+
+    auth = models.TextField()
+
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    updated_date = models.DateTimeField(auto_now=True)
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'push_subscriptions'
+
+    def __str__(self):
+        return f"Push subscription for {self.user.username}"
+
+
+@receiver(models.signals.post_save, sender=Notification)
+def send_push_on_notification_create(sender, instance, created, **kwargs):
+    if created:
+        try:
+            from apps.common.services import send_push_notification
+            send_push_notification(instance)
+        except Exception as err:
+            print("Failed to send push notification:", err)

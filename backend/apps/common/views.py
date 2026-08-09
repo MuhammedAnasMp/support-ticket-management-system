@@ -1,4 +1,11 @@
+from .models import PushSubscription
+import json
 from rest_framework import viewsets
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 from .models import MediaCategory, Media, Notification
 from .serializers import MediaCategorySerializer, MediaSerializer, NotificationSerializer, MediaWriteSerializer
 from apps.stores.models import SubDepartment
@@ -51,3 +58,82 @@ class MediaViewSet(viewsets.ModelViewSet):
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
+
+
+
+class SubscribePushView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            subscription = request.data.get("subscription")
+
+            if not subscription:
+                return Response(
+                    {"success": False, "message": "Subscription is required."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            endpoint = subscription.get("endpoint")
+            keys = subscription.get("keys", {})
+            p256dh = keys.get("p256dh")
+            auth = keys.get("auth")
+
+            if not endpoint:
+                return Response(
+                    {"success": False, "message": "Endpoint is required."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not p256dh or not auth:
+                return Response(
+                    {"success": False, "message": "Subscription keys are required."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            PushSubscription.objects.update_or_create(
+                endpoint=endpoint,
+                defaults={
+                    "user": request.user,
+                    "p256dh": p256dh,
+                    "auth": auth,
+                    "is_active": True,
+                },
+            )
+
+            return Response({"success": True, "message": "Push subscription saved."})
+
+        except Exception as error:
+            return Response(
+                {"success": False, "message": str(error)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class UnsubscribePushView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            endpoint = request.data.get("endpoint")
+
+            if not endpoint:
+                return Response(
+                    {"success": False, "message": "Endpoint is required."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            PushSubscription.objects.filter(
+                user=request.user,
+                endpoint=endpoint,
+            ).update(is_active=False)
+
+            return Response({"success": True})
+
+        except Exception as error:
+            return Response(
+                {"success": False, "message": str(error)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

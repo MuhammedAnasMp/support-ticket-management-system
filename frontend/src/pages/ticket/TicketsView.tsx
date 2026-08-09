@@ -156,7 +156,7 @@ export const TicketsView: React.FC = () => {
     const [lastOpenedTicketId, setLastOpenedTicketId] = useState<number | null>(null);
     const modalWasOpen = useRef(false);
     const [loading, setLoading] = useState(true);
-    const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+    const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
     useEffect(() => {
         if (message) {

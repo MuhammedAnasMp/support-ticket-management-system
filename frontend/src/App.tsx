@@ -25,6 +25,7 @@ import Test from './Test';
 import PageTitle from './PageTitle';
 import { TicketsView } from './pages/ticket/TicketsView';
 import { TicketHistoryView } from './pages/ticket/TicketHistoryView';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -173,6 +174,7 @@ const App: React.FC = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
           <Route path="test" element={<Test />} />
         </Routes>
+        <PwaInstallPrompt />
       </Router>
     </div>
   );

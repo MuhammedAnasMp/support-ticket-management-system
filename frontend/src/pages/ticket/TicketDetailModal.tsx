@@ -1419,7 +1419,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                             {!modalLoading && ticketDetails.status.status_name === 'Location Approval' && (
                                 <div className="hidden sm:flex items-center gap-2 shrink-0 ml-3 justify-end">
-                                    <Can permission={'maintenance.can_move_location_approval_to_in_progress'} >
+                                    <Can permission={'maintenance.can_move_location_approval_to_in_progress'} >   {/* reject */}
+                                        {/* also need the  maintenance.can_move_location_approval_to_complteted - approve  */}
+
 
                                         <div className='flex gap-2'>
                                             <button
@@ -1682,6 +1684,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 key: 'location-approve',
                                 label: 'Location Approve',
                                 icon: <CheckCircle2 className="w-4 h-4" />,
+                                permission: 'maintenance.can_move_location_approval_to_in_progress',
                                 color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
                                 onClick: async () => {
                                     setIsFabOpen(false);
@@ -1704,6 +1707,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 key: 'location-reject',
                                 label: 'Location Reject',
                                 icon: <XCircle className="w-4 h-4" />,
+                                permission: 'maintenance.can_move_location_approval_to_in_progress',
                                 color: 'bg-error hover:bg-red-700 text-white',
                                 onClick: () => { setShowLocationRejectForm(true); setIsFabOpen(false); },
                                 show: statusName === 'Location Approval',
