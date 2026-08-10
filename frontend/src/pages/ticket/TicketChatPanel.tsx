@@ -52,16 +52,53 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
     const sendImmediatelyRef = useRef(false);
     const discardRecordingRef = useRef(false);
 
-    // Initial fetch of messages
+    // Initial fetch of messages and WebSocket chatroom subscription
     useEffect(() => {
         fetchMessages(true);
-        // Set up polling for new messages every 5 seconds
-        const pollInterval = setInterval(() => {
-            fetchNewMessages();
+
+        const joinChat = () => {
+            if (window.updateWebSocket && window.updateWebSocket.readyState === WebSocket.OPEN) {
+                window.updateWebSocket.send(JSON.stringify({ action: 'join_chat', ticket_id: ticketId }));
+            }
+        };
+
+        joinChat();
+
+        // Periodically verify WebSocket subscription is active (handles connection drop/reconnection recoveries)
+        const checkInterval = setInterval(() => {
+            joinChat();
         }, 5000);
 
+        const handleChatMessage = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const msg = customEvent.detail;
+            if (msg && Number(msg.ticket) === Number(ticketId)) {
+                setMessages(prev => {
+                    const exists = prev.some(m => m.message_id === msg.message_id);
+                    if (exists) return prev;
+
+                    const container = messageContainerRef.current;
+                    const isNearBottom = container
+                        ? container.scrollHeight - container.scrollTop - container.clientHeight < 120
+                        : false;
+
+                    setTimeout(() => {
+                        if (isNearBottom) scrollToBottom();
+                    }, 50);
+
+                    return [...prev, msg];
+                });
+            }
+        };
+
+        window.addEventListener('chat-message', handleChatMessage);
+
         return () => {
-            clearInterval(pollInterval);
+            clearInterval(checkInterval);
+            window.removeEventListener('chat-message', handleChatMessage);
+            if (window.updateWebSocket && window.updateWebSocket.readyState === WebSocket.OPEN) {
+                window.updateWebSocket.send(JSON.stringify({ action: 'leave_chat', ticket_id: ticketId }));
+            }
             if (recordTimerRef.current) clearInterval(recordTimerRef.current);
         };
     }, [ticketId]);
@@ -323,7 +360,11 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
             if (!response.ok) throw new Error('Failed to send voice message.');
             const newMessage = await response.json();
 
-            setMessages(prev => [...prev, newMessage]);
+            setMessages(prev => {
+                const exists = prev.some(m => m.message_id === newMessage.message_id);
+                if (exists) return prev;
+                return [...prev, newMessage];
+            });
             setTimeout(scrollToBottom, 50);
         } catch (err: any) {
             alert(err.message || 'Failed to deliver voice message.');
@@ -358,7 +399,11 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
             if (!response.ok) throw new Error('Failed to send message.');
             const newMessage = await response.json();
 
-            setMessages(prev => [...prev, newMessage]);
+            setMessages(prev => {
+                const exists = prev.some(m => m.message_id === newMessage.message_id);
+                if (exists) return prev;
+                return [...prev, newMessage];
+            });
 
             // Reset state
             setText('');

@@ -3,9 +3,8 @@ import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, Edit2, Trash2, Settings, Wrench,
-  Shield, CheckSquare, Layers, X, Loader2, AlertCircle,
-  ChevronLeft, ChevronRight
+  Plus, Search, Edit2, Trash2, X, Loader2, AlertCircle,
+  ChevronLeft, ChevronRight, AlertTriangle
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { AgGridReact } from 'ag-grid-react';
@@ -50,6 +49,16 @@ export const MaintenanceView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Priority Modal States
+  const [showPriorityModal, setShowPriorityModal] = useState(false);
+  const [priorityActionLoading, setPriorityActionLoading] = useState(false);
+  const [priorityErrorMsg, setPriorityErrorMsg] = useState('');
+  const [priorityForm, setPriorityForm] = useState({
+    department: '',
+    priority_name: '',
+    level: 1
+  });
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(10);
@@ -85,18 +94,20 @@ export const MaintenanceView: React.FC = () => {
       if (!item) return null;
       return (
         <div className="flex items-center gap-1.5 h-full">
-          {/* <button
+          <button
             onClick={() => handleOpenEdit(item)}
             className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
           >
             <Edit2 className="w-3.5 h-3.5" />
-          </button> */}
-          <button
-            onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id)}
-            className="p-1.5 border border-error/30 bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
           </button>
+          {canDelete && (
+            <button
+              onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.sub_department_id)}
+              className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       );
     };
@@ -112,9 +123,8 @@ export const MaintenanceView: React.FC = () => {
           field: 'active',
           width: 110,
           cellRenderer: (params: any) => (
-            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
+            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
               }`}>
-
               {params.value ? 'Active' : 'Inactive'}
             </span>
           )
@@ -128,30 +138,15 @@ export const MaintenanceView: React.FC = () => {
         { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' },
         { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
       ];
-    } else if (subpage === 'priorities') {
+    } else if (subpage === 'sub-departments') {
       return [
-        { headerName: 'Priority ID', field: 'priority_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Priority Label', field: 'priority_name', flex: 2, minWidth: 160, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Level', field: 'level', width: 100, cellClass: 'font-mono text-xs', valueGetter: p => `LVL ${p.data?.level}` },
-        { headerName: 'Department', field: 'department.department_name', flex: 1.5, minWidth: 150, valueGetter: p => p.data?.department?.department_name || 'N/A' },
-        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
-      ];
-    } else if (subpage === 'statuses') {
-      return [
-        { headerName: 'Status ID', field: 'status_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Status Name', field: 'status_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Department', field: 'department.department_name', flex: 1.5, minWidth: 150, valueGetter: p => p.data?.department?.department_name || 'N/A' },
-        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
-      ];
-    } else {
-      // media-categories
-      return [
-        { headerName: 'Category ID', field: 'category_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Category Name', field: 'category_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Department Scope', field: 'department.department_name', flex: 1.5, minWidth: 150, valueGetter: p => p.data?.department?.department_name || 'Global' },
+        { headerName: 'Sub Dept ID', field: 'sub_department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
         { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
       ];
     }
+    return [];
   }, [subpage]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
@@ -171,23 +166,26 @@ export const MaintenanceView: React.FC = () => {
     nature: '',
     worker: ''
   });
-  const [priorityForm, setPriorityForm] = useState({
+  const [subDeptForm, setSubDeptForm] = useState({
     department: '',
-    priority_name: '',
-    level: 1
-  });
-  const [statusForm, setStatusForm] = useState({
-    department: '',
-    status_name: ''
-  });
-  const [mediaCatForm, setMediaCatForm] = useState({
-    department: '',
-    category_name: ''
+    sub_department_name: ''
   });
 
   useEffect(() => {
     fetchData();
   }, [subpage, token]);
+
+  const fetchPriorities = async () => {
+    try {
+      const headers = { Authorization: `Token ${token}` };
+      const resPri = await fetch(`${API_URL}/maintenance/priority/`, { headers });
+      if (resPri.ok) {
+        setExtraPriorities(await resPri.json());
+      }
+    } catch (err) {
+      console.error('Failed to fetch priorities', err);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -226,14 +224,8 @@ export const MaintenanceView: React.FC = () => {
             return roleName === 'technician' || roleName === 'worker';
           }));
         }
-      } else if (subpage === 'priorities') {
-        const res = await fetch(`${API_URL}/maintenance/priority/`, { headers });
-        if (res.ok) setData(await res.json());
-      } else if (subpage === 'statuses') {
-        const res = await fetch(`${API_URL}/maintenance/status/`, { headers });
-        if (res.ok) setData(await res.json());
-      } else if (subpage === 'media-categories') {
-        const res = await fetch(`${API_URL}/common/mediacategory/`, { headers });
+      } else if (subpage === 'sub-departments') {
+        const res = await fetch(`${API_URL}/stores/subdepartment/`, { headers });
         if (res.ok) setData(await res.json());
       }
     } catch (err) {
@@ -247,9 +239,7 @@ export const MaintenanceView: React.FC = () => {
     setEditItem(null);
     setNatureForm({ nature_name: '', sub_department: '', default_priority: '', active: true });
     setWorkerAssignmentForm({ nature: '', worker: '' });
-    setPriorityForm({ department: '', priority_name: '', level: 1 });
-    setStatusForm({ department: '', status_name: '' });
-    setMediaCatForm({ department: '', category_name: '' });
+    setSubDeptForm({ department: '', sub_department_name: '' });
     setShowModal(true);
   };
 
@@ -267,21 +257,10 @@ export const MaintenanceView: React.FC = () => {
         nature: item.nature?.nature_id || item.nature || '',
         worker: item.worker?.user_id || item.worker || ''
       });
-    } else if (subpage === 'priorities') {
-      setPriorityForm({
+    } else if (subpage === 'sub-departments') {
+      setSubDeptForm({
         department: item.department?.department_id || item.department || '',
-        priority_name: item.priority_name,
-        level: item.level
-      });
-    } else if (subpage === 'statuses') {
-      setStatusForm({
-        department: item.department?.department_id || item.department || '',
-        status_name: item.status_name
-      });
-    } else if (subpage === 'media-categories') {
-      setMediaCatForm({
-        department: item.department?.department_id || item.department || '',
-        category_name: item.category_name
+        sub_department_name: item.sub_department_name
       });
     }
     setShowModal(true);
@@ -302,15 +281,9 @@ export const MaintenanceView: React.FC = () => {
     } else if (subpage === 'worker-assignments') {
       endpoint = editItem ? `${API_URL}/maintenance/natureworker/${editItem.nature_worker_id}/` : `${API_URL}/maintenance/natureworker/`;
       bodyData = workerAssignmentForm;
-    } else if (subpage === 'priorities') {
-      endpoint = editItem ? `${API_URL}/maintenance/priority/${editItem.priority_id}/` : `${API_URL}/maintenance/priority/`;
-      bodyData = priorityForm;
-    } else if (subpage === 'statuses') {
-      endpoint = editItem ? `${API_URL}/maintenance/status/${editItem.status_id}/` : `${API_URL}/maintenance/status/`;
-      bodyData = statusForm;
-    } else if (subpage === 'media-categories') {
-      endpoint = editItem ? `${API_URL}/common/mediacategory/${editItem.category_id}/` : `${API_URL}/common/mediacategory/`;
-      bodyData = mediaCatForm;
+    } else if (subpage === 'sub-departments') {
+      endpoint = editItem ? `${API_URL}/stores/subdepartment/${editItem.sub_department_id}/` : `${API_URL}/stores/subdepartment/`;
+      bodyData = subDeptForm;
     }
 
     try {
@@ -342,9 +315,7 @@ export const MaintenanceView: React.FC = () => {
     let endpoint = '';
     if (subpage === 'natures') endpoint = `${API_URL}/maintenance/worknature/${id}/`;
     else if (subpage === 'worker-assignments') endpoint = `${API_URL}/maintenance/natureworker/${id}/`;
-    else if (subpage === 'priorities') endpoint = `${API_URL}/maintenance/priority/${id}/`;
-    else if (subpage === 'statuses') endpoint = `${API_URL}/maintenance/status/${id}/`;
-    else if (subpage === 'media-categories') endpoint = `${API_URL}/common/mediacategory/${id}/`;
+    else if (subpage === 'sub-departments') endpoint = `${API_URL}/stores/subdepartment/${id}/`;
 
     try {
       const response = await fetch(endpoint, {
@@ -358,6 +329,57 @@ export const MaintenanceView: React.FC = () => {
       }
     } catch (err) {
       setErrorMsg('Network error.');
+    }
+  };
+
+  // Priority Creation & Deletion inside Modal
+  const handleCreatePriority = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPriorityActionLoading(true);
+    setPriorityErrorMsg('');
+    try {
+      const response = await fetch(`${API_URL}/maintenance/priority/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(priorityForm)
+      });
+      if (response.ok) {
+        const created = await response.json();
+        setPriorityForm({ department: '', priority_name: '', level: 1 });
+        await fetchPriorities();
+        // Automatically select the newly created priority if Nature form is open
+        if (created?.priority_id) {
+          setNatureForm(prev => ({ ...prev, default_priority: String(created.priority_id) }));
+        }
+      } else {
+        const errorRes = await response.json();
+        setPriorityErrorMsg(Object.values(errorRes).flat().join(', ') || 'Failed to add priority.');
+      }
+    } catch (err) {
+      setPriorityErrorMsg('Network error.');
+    } finally {
+      setPriorityActionLoading(false);
+    }
+  };
+
+  const handleDeletePriority = async (id: number) => {
+    if (!window.confirm('Delete this priority level?')) return;
+    setPriorityErrorMsg('');
+    try {
+      const response = await fetch(`${API_URL}/maintenance/priority/${id}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Token ${token}` }
+      });
+      if (response.ok) {
+        await fetchPriorities();
+      } else {
+        setPriorityErrorMsg('Failed to delete priority.');
+      }
+    } catch (err) {
+      setPriorityErrorMsg('Network error.');
     }
   };
 
@@ -396,8 +418,37 @@ export const MaintenanceView: React.FC = () => {
     })
     : extraSubs;
 
+  // Priorities filtered to user's departments
+  const allowedPriorities = userDeptIds
+    ? extraPriorities.filter(p => userDeptIds.has(Number(p.department?.department_id ?? p.department)))
+    : extraPriorities;
+
+  // Natures filtered to user's departments via sub_department
+  const allowedNatures = userDeptIds
+    ? extraNatures.filter(n => {
+      const sdId = n.sub_department?.sub_department_id ?? n.sub_department;
+      const sd = extraSubs.find(s => s.sub_department_id === Number(sdId));
+      const deptId = Number(sd?.department?.department_id ?? sd?.department);
+      return userDeptIds.has(deptId);
+    })
+    : extraNatures;
+
+  // Permission checks
+  const roleName = ((user?.role as any)?.role_name || (user?.role as string) || '').toLowerCase();
+  const isAdmin = roleName === 'admin' || roleName === 'administrator';
+  const userPerms: string[] = ((user?.role as any)?.permissions || []);
+  const subpagePermsMap: Record<string, { add: string; del: string }> = {
+    'natures': { add: 'add_worknature', del: 'delete_worknature' },
+    'worker-assignments': { add: 'add_natureworker', del: 'delete_natureworker' },
+    'sub-departments': { add: 'add_subdepartment', del: 'delete_subdepartment' },
+  };
+  const currentPerms = subpagePermsMap[subpage || ''];
+  const canAdd = isAdmin || (currentPerms ? userPerms.includes(currentPerms.add) : true);
+  const canDelete = isAdmin || (currentPerms ? userPerms.includes(currentPerms.del) : true);
+  const canManagePriorities = isAdmin || userPerms.includes('add_priority') || userPerms.includes('change_priority');
+
   const filteredData = data.filter(item => {
-    const text = (item.nature_name || item.priority_name || item.status_name || item.category_name || item.worker?.full_name || '').toLowerCase();
+    const text = (item.nature_name || item.sub_department_name || item.worker?.full_name || '').toLowerCase();
     return text.includes(search.toLowerCase());
   });
 
@@ -429,13 +480,31 @@ export const MaintenanceView: React.FC = () => {
           />
         </div>
 
-        <button
-          onClick={handleOpenCreate}
-          className="hidden sm:flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Configuration
-        </button>
+        <div className="flex items-center gap-2">
+          {subpage === 'natures' && canManagePriorities && (
+            <button
+              type="button"
+              onClick={() => {
+                setPriorityErrorMsg('');
+                setShowPriorityModal(true);
+              }}
+              className="flex items-center gap-1.5 bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant text-xs font-semibold px-3.5 py-2.5 rounded-xl hover:bg-surface-container-highest transition-all cursor-pointer shadow-sm"
+            >
+              <AlertTriangle className="w-4 h-4 text-primary" />
+              Manage Priorities
+            </button>
+          )}
+
+          {canAdd && (
+            <button
+              onClick={handleOpenCreate}
+              className="hidden sm:flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Configuration
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Content Table */}
@@ -450,7 +519,7 @@ export const MaintenanceView: React.FC = () => {
           {/* Mobile View: Stacked Card Rows */}
           <div className="sm:hidden divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface">
             {paginatedData.map(item => {
-              const itemId = item.nature_id || item.nature_worker_id || item.priority_id || item.status_id || item.category_id;
+              const itemId = item.nature_id || item.nature_worker_id || item.sub_department_id;
               return (
                 <button
                   key={itemId}
@@ -484,33 +553,13 @@ export const MaintenanceView: React.FC = () => {
                         </div>
                         <p className="text-[11px] text-outline">👤 Technician: <span className="text-on-surface font-medium">{item.worker?.full_name}</span></p>
                       </>
-                    ) : subpage === 'priorities' ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-sm truncate">{item.priority_name}</h4>
-                          <span className="text-[9px] font-bold bg-primary/5 px-2 py-0.5 rounded border border-primary/10 text-primary">LVL {item.level}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] text-outline">
-                          <span className="font-mono text-[10px] text-outline">ID: {item.priority_id}</span>
-                          <span>·</span>
-                          <span>🏢 Department: {item.department?.department_name || 'N/A'}</span>
-                        </div>
-                      </>
-                    ) : subpage === 'statuses' ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-sm truncate">{item.status_name}</h4>
-                          <span className="font-mono text-[10px] text-outline">ID: {item.status_id}</span>
-                        </div>
-                        <p className="text-[11px] text-outline">🏢 Department: {item.department?.department_name || 'N/A'}</p>
-                      </>
                     ) : (
                       <>
                         <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-sm truncate">{item.category_name}</h4>
-                          <span className="font-mono text-[10px] text-outline">ID: {item.category_id}</span>
+                          <span className="font-bold text-on-surface text-sm truncate">{item.sub_department_name}</span>
+                          <span className="font-mono text-[10px] text-outline">ID: {item.sub_department_id}</span>
                         </div>
-                        <p className="text-[11px] text-outline">🏢 Department Scope: {item.department?.department_name || 'Global'}</p>
+                        <p className="text-[11px] text-outline pt-0.5">🏢 Parent: {item.department?.department_name || 'N/A'}</p>
                       </>
                     )}
                   </div>
@@ -592,7 +641,7 @@ export const MaintenanceView: React.FC = () => {
         </>
       )}
 
-      {/* Form Modal */}
+      {/* Main Form Modal */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -651,7 +700,19 @@ export const MaintenanceView: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Default Priority Level</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-outline">Default Priority Level</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPriorityErrorMsg('');
+                            setShowPriorityModal(true);
+                          }}
+                          className="text-[11px] font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" /> Quick Add Priority
+                        </button>
+                      </div>
                       <select
                         required
                         value={natureForm.default_priority}
@@ -686,7 +747,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Nature</option>
-                        {extraNatures.map(n => <option key={n.nature_id} value={n.nature_id}>{n.nature_name}</option>)}
+                        {allowedNatures.map(n => <option key={n.nature_id} value={n.nature_id}>{n.nature_name}</option>)}
                       </select>
                     </div>
 
@@ -703,96 +764,29 @@ export const MaintenanceView: React.FC = () => {
                       </select>
                     </div>
                   </>
-                ) : subpage === 'priorities' ? (
-                  <>
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Department Scope</label>
-                      <select
-                        required
-                        value={priorityForm.department}
-                        onChange={e => setPriorityForm({ ...priorityForm, department: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      >
-                        <option value="">Select Department</option>
-                        {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Priority Label</label>
-                      <input
-                        required
-                        type="text"
-                        placeholder="e.g. Critical"
-                        value={priorityForm.priority_name}
-                        onChange={e => setPriorityForm({ ...priorityForm, priority_name: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Priority Level (Severity Rank)</label>
-                      <input
-                        required
-                        type="number"
-                        min="1"
-                        max="5"
-                        value={priorityForm.level}
-                        onChange={e => setPriorityForm({ ...priorityForm, level: Number(e.target.value) })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      />
-                    </div>
-                  </>
-                ) : subpage === 'statuses' ? (
-                  <>
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Department Scope</label>
-                      <select
-                        required
-                        value={statusForm.department}
-                        onChange={e => setStatusForm({ ...statusForm, department: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      >
-                        <option value="">Select Department</option>
-                        {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Status Name</label>
-                      <input
-                        required
-                        type="text"
-                        placeholder="e.g. Waiting Allocation"
-                        value={statusForm.status_name}
-                        onChange={e => setStatusForm({ ...statusForm, status_name: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      />
-                    </div>
-                  </>
                 ) : (
                   <>
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Department Scope</label>
+                      <label className="block text-xs font-semibold text-outline mb-1">Parent Department</label>
                       <select
                         required
-                        value={mediaCatForm.department}
-                        onChange={e => setMediaCatForm({ ...mediaCatForm, department: e.target.value })}
+                        value={subDeptForm.department}
+                        onChange={e => setSubDeptForm({ ...subDeptForm, department: e.target.value })}
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
-                        <option value="">Select Department</option>
+                        <option value="">Select Parent Department</option>
                         {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Media Category Name</label>
+                      <label className="block text-xs font-semibold text-outline mb-1.5">Sub Department Name</label>
                       <input
                         required
                         type="text"
-                        placeholder="e.g. Final Repair Photo"
-                        value={mediaCatForm.category_name}
-                        onChange={e => setMediaCatForm({ ...mediaCatForm, category_name: e.target.value })}
+                        placeholder="e.g. Electrical Panels"
+                        value={subDeptForm.sub_department_name}
+                        onChange={e => setSubDeptForm({ ...subDeptForm, sub_department_name: e.target.value })}
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       />
                     </div>
@@ -821,6 +815,147 @@ export const MaintenanceView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Priority Management Popup Modal */}
+      <AnimatePresence>
+        {showPriorityModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPriorityModal(false)}
+              className="absolute inset-0 bg-black"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl p-6 space-y-4"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-primary" />
+                  <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
+                    Manage Priorities
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowPriorityModal(false)}
+                  className="p-1 rounded-lg text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {priorityErrorMsg && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-lg text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{priorityErrorMsg}</span>
+                </div>
+              )}
+
+              {/* Create Priority Form */}
+              <form onSubmit={handleCreatePriority} className="p-3.5 bg-surface-container-low border border-outline-variant rounded-xl space-y-3">
+                <h4 className="text-xs font-bold text-on-surface dark:text-dark-on-surface">Add New Priority Level</h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-outline mb-1">Department</label>
+                    <select
+                      required
+                      value={priorityForm.department}
+                      onChange={e => setPriorityForm({ ...priorityForm, department: e.target.value })}
+                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                    >
+                      <option value="">Department</option>
+                      {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-outline mb-1">Priority Label</label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="e.g. Critical"
+                      value={priorityForm.priority_name}
+                      onChange={e => setPriorityForm({ ...priorityForm, priority_name: e.target.value })}
+                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-outline mb-1">Level (1-5)</label>
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={priorityForm.level}
+                      onChange={e => setPriorityForm({ ...priorityForm, level: Number(e.target.value) })}
+                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    disabled={priorityActionLoading}
+                    className="px-3.5 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1 cursor-pointer"
+                  >
+                    {priorityActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    Add Priority
+                  </button>
+                </div>
+              </form>
+
+              {/* Priorities List */}
+              <div className="space-y-2 pt-2">
+                <h4 className="text-xs font-bold text-on-surface dark:text-dark-on-surface">Existing Priorities</h4>
+                {allowedPriorities.length === 0 ? (
+                  <p className="text-xs text-outline italic py-2 text-center">No priorities created yet.</p>
+                ) : (
+                  <div className="divide-y divide-outline-variant/30 max-h-56 overflow-y-auto border border-outline-variant rounded-xl bg-surface">
+                    {allowedPriorities.map(p => (
+                      <div key={p.priority_id} className="p-2.5 flex items-center justify-between gap-2 text-xs">
+                        <div>
+                          <span className="font-bold text-on-surface">{p.priority_name}</span>
+                          <span className="ml-2 font-mono text-[10px] text-outline">LVL {p.level}</span>
+                          <span className="ml-2 text-[10px] text-outline">({p.department?.department_name || 'N/A'})</span>
+                        </div>
+                        {canManagePriorities && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePriority(p.priority_id)}
+                            className="p-1 text-outline hover:text-red-500 rounded transition-colors cursor-pointer"
+                            title="Delete Priority"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+                <button
+                  type="button"
+                  onClick={() => setShowPriorityModal(false)}
+                  className="px-4 py-2 bg-surface-container-high text-on-surface border rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Floating Action Button (FAB) for Mobile Add Config */}
       <button
         onClick={handleOpenCreate}

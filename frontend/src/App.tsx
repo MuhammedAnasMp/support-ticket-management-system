@@ -10,6 +10,7 @@ import { ThemeToggleOverlay } from './components/ThemeToggleOverlay';
 import { PlaceholderView } from './components/PlaceholderView';
 import type { RootState } from './store';
 import { setCredentials, clearCredentials } from './store/authSlice';
+import { enablePushNotifications } from './services/pushNotifications';
 
 // Page Views
 import { LoginView } from './pages/LoginView';
@@ -26,6 +27,8 @@ import PageTitle from './PageTitle';
 import { TicketsView } from './pages/ticket/TicketsView';
 import { TicketHistoryView } from './pages/ticket/TicketHistoryView';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
+
+import { WebSocketListener } from './components/WebSocketListener';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -96,6 +99,15 @@ const App: React.FC = () => {
     refetchProfile();
   }, [token, dispatch]);
 
+  // Auto-subscribe to push notifications on successful login if browser permission is already granted
+  useEffect(() => {
+    if (token && 'Notification' in window && Notification.permission === 'granted') {
+      enablePushNotifications().catch(err => {
+        console.warn('Failed to auto-subscribe push notifications on login:', err);
+      });
+    }
+  }, [token]);
+
   if (refetching) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-dark-surface">
@@ -113,6 +125,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface transition-colors duration-200">
       <Router>
         <PageTitle />
+        <WebSocketListener />
         <ThemeToggleOverlay isDark={isDark} setIsDark={setIsDark} />
         <Routes>
           <Route path="/login" element={<LoginView />} />

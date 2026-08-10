@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -85,6 +85,7 @@ const EmptyState: React.FC<{ onClear: () => void }> = ({ onClear }) => (
 export const TicketsView: React.FC = () => {
     const { subpage } = useParams<{ subpage: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const { token, user } = useSelector((state: RootState) => state.auth);
     const { hasPermission } = usePermission();
 
@@ -417,7 +418,16 @@ export const TicketsView: React.FC = () => {
     }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, filterPriority, fromDate, toDate]);
 
     useEffect(() => { fetchMetadata(); }, [token]);
-    useEffect(() => { fetchTickets(); }, [fetchTickets]);
+    useEffect(() => {
+        fetchTickets();
+        const handleTicketUpdated = () => {
+            fetchTickets(true);
+        };
+        window.addEventListener('ticket-updated', handleTicketUpdated);
+        return () => {
+            window.removeEventListener('ticket-updated', handleTicketUpdated);
+        };
+    }, [fetchTickets]);
 
     // Debounce search input: wait 400ms after user stops typing before querying API
     useEffect(() => {
@@ -505,7 +515,7 @@ export const TicketsView: React.FC = () => {
             };
             fetchSingleTicket();
         }
-    }, [tickets, token, selectedTicket]);
+    }, [tickets, token, selectedTicket, location.search]);
     const handleCreateModalClose = () => {
         setIsCreateModalOpen(false);
         if (subpage === 'create') {

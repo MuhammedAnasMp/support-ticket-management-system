@@ -104,6 +104,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         setEditedTitle(selectedTicket.title);
         setEditedDescription(selectedTicket.description);
         setIsEditingTicket(false);
+        setShowRejectForm(false);
+        setRejectReason('');
         setShowLocationRejectForm(false);
         setLocationRejectReason('');
     }, [selectedTicket?.ticket_id]);
@@ -117,6 +119,70 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             setActiveWorkerId(null);
         }
     }, [allocations]);
+
+    // Auto-execute approval or rejection actions from URL query parameters
+    useEffect(() => {
+        if (!ticketDetails?.ticket_id) return;
+        if (statuses.length === 0) return;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const action = urlParams.get('action');
+        if (!action) return;
+
+        // Clear the action parameter to prevent duplicate triggers
+        urlParams.delete('action');
+        const nextQuery = urlParams.toString();
+        const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+        window.history.replaceState(null, '', newUrl);
+
+        const runAction = async () => {
+            const statusName = ticketDetails.status.status_name?.toLowerCase();
+            if (action === 'approve') {
+                if (statusName === 'open') {
+                    await handleMoveToNextStatus();
+                } else if (statusName === 'location approval') {
+                    // Inline location approve
+                    const ticketDeptId = Number(ticketDetails.department?.department_id ?? ticketDetails.department);
+                    const nextStatus = statuses.find(s => {
+                        const sDeptId = Number(s.department?.department_id ?? s.department);
+                        return s.status_name?.toLowerCase() === 'completed' && (!sDeptId || sDeptId === ticketDeptId);
+                    });
+                    if (nextStatus) {
+                        setActionLoading(true);
+                        try {
+                            const response = await fetch(`${API_URL}/maintenance/ticket/${ticketDetails.ticket_id}/`, {
+                                method: 'PATCH',
+                                headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    status: nextStatus.status_id,
+                                    location_approval: 'Approved',
+                                    location_approved_by: user?.user_id,
+                                    location_approved_date: new Date().toISOString()
+                                })
+                            });
+                            if (response.ok) {
+                                await refreshTicketData();
+                            }
+                        } catch (err) {
+                            console.error(err);
+                        } finally {
+                            setActionLoading(false);
+                        }
+                    }
+                }
+            } else if (action === 'reject') {
+                if (statusName === 'open') {
+                    setShowRejectForm(true);
+                } else if (statusName === 'location approval') {
+                    setShowLocationRejectForm(true);
+                }
+            }
+        };
+
+        // Small delay to allow sub-data / allocations to load
+        const timer = setTimeout(runAction, 200);
+        return () => clearTimeout(timer);
+    }, [ticketDetails?.ticket_id, statuses, token, user]);
 
     const getLoggedInUserDepartmentIds = (): Set<number> | null => {
         const roleName = ((user?.role as any)?.role_name || (user?.role as string) || '').toLowerCase();

@@ -240,6 +240,11 @@ def change_status(obj, new_status, changed_by=None, remarks=None):
                     obj.approved_by = changed_by
                     from django.utils import timezone
                     obj.approved_date = timezone.now()
+            elif new_status.status_name.lower() == 'rejected':
+                if not obj.rejected_by and changed_by:
+                    obj.rejected_by = changed_by
+                    from django.utils import timezone
+                    obj.rejected_date = timezone.now()
             if changed_by:
                 obj._changed_by = changed_by
             if remarks:

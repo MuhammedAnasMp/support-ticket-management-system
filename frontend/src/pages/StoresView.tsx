@@ -35,11 +35,11 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const StoresView: React.FC = () => {
   const { subpage } = useParams<{ subpage: string }>();
-  const { token, user } = useSelector((state: RootState) => state.auth);
+  const { token } = useSelector((state: RootState) => state.auth);
 
   // States
   const [data, setData] = useState<any[]>([]);
-  const [extraData, setExtraData] = useState<any[]>([]); // Areas/Depts choices
+  const [extraData, setExtraData] = useState<any[]>([]); // Areas choices
   const [users, setUsers] = useState<any[]>([]); // Managers choices
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -73,7 +73,11 @@ export const StoresView: React.FC = () => {
 
   // Modals state
   const [showModal, setShowModal] = useState(false);
+  const [showAreaModal, setShowAreaModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
+
+  // Strip backend-appended type suffix e.g. "Jahra (HM)" → "Jahra"
+  const stripStoreName = (name: string) => (name || '').replace(/\s*\([A-Z]+\)\s*$/, '').trim();
 
   const columnDefs = useMemo<ColDef[]>(() => {
     const editActionCellRenderer = (params: any) => {
@@ -81,14 +85,11 @@ export const StoresView: React.FC = () => {
       if (!item) return null;
       return (
         <div className="flex items-center gap-1.5 h-full">
-          {/* <button
-            onClick={() => handleOpenEdit(item)}
-            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </button> */}
           <button
-            onClick={() => handleDelete(item.store_id || item.area_id || item.department_id || item.sub_department_id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(item.store_id || item.area_id || item.department_id);
+            }}
             className="p-1.5 border border-error/30 bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -101,6 +102,7 @@ export const StoresView: React.FC = () => {
       return [
         { headerName: 'Store Code/ID', field: 'store_id', width: 130, cellClass: 'font-mono text-xs font-semibold' },
         { headerName: 'Name', field: 'store_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Type', field: 'type', width: 140, valueGetter: p => { const map: Record<string, string> = { SUPER_MARKET: 'Super Market', HYPER_MARKET: 'Hyper Market', WAREHOUSE: 'Warehouse', FRESH: 'Fresh', COSTO: 'Costo', CAMP: 'Camp' }; return map[p.data?.type] || p.data?.type || 'N/A'; } },
         { headerName: 'Area', field: 'area.area_name', flex: 1, minWidth: 130, valueGetter: p => p.data?.area?.area_name || 'N/A' },
         { headerName: 'Manager', field: 'manager.full_name', flex: 1.2, minWidth: 150, valueGetter: p => p.data?.manager?.full_name || 'N/A' },
         { headerName: 'GPS Coord', field: 'latitude', flex: 1.2, minWidth: 160, cellClass: 'font-mono text-xs text-outline', valueGetter: p => p.data?.latitude && p.data?.longitude ? `${p.data.latitude}, ${p.data.longitude}` : 'No Coordinates' },
@@ -123,18 +125,11 @@ export const StoresView: React.FC = () => {
         { headerName: 'Area Name', field: 'area_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
         { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
       ];
-    } else if (subpage === 'departments') {
+    } else {
+      // departments
       return [
         { headerName: 'Department ID', field: 'department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
         { headerName: 'Department Name', field: 'department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
-      ];
-    } else {
-      // sub-departments
-      return [
-        { headerName: 'Sub Dept ID', field: 'sub_department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
         { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
       ];
     }
@@ -147,9 +142,19 @@ export const StoresView: React.FC = () => {
   }), []);
 
   // Form fields
+  const STORE_TYPES = [
+    { value: 'SUPER_MARKET', label: 'Super Market' },
+    { value: 'HYPER_MARKET', label: 'Hyper Market' },
+    { value: 'WAREHOUSE', label: 'Warehouse' },
+    { value: 'FRESH', label: 'Fresh' },
+    { value: 'COSTO', label: 'Costo' },
+    { value: 'CAMP', label: 'Camp' },
+  ];
+
   const [storeForm, setStoreForm] = useState({
     store_id: '',
     store_name: '',
+    type: '',
     area: '',
     address: '',
     phone: '',
@@ -161,7 +166,6 @@ export const StoresView: React.FC = () => {
   });
   const [areaForm, setAreaForm] = useState({ area_name: '' });
   const [deptForm, setDeptForm] = useState({ department_name: '' });
-  const [subDeptForm, setSubDeptForm] = useState({ department: '', sub_department_name: '' });
 
   useEffect(() => {
     fetchData();
@@ -173,7 +177,7 @@ export const StoresView: React.FC = () => {
     try {
       const headers = { Authorization: `Token ${token}` };
       if (subpage === 'all' || !subpage) {
-        // Fetch Stores
+        // Fetch Stores, Areas, Users
         const [resStore, resArea, resUsers] = await Promise.all([
           fetch(`${API_URL}/stores/store/`, { headers }),
           fetch(`${API_URL}/stores/area/`, { headers }),
@@ -188,13 +192,6 @@ export const StoresView: React.FC = () => {
       } else if (subpage === 'departments') {
         const res = await fetch(`${API_URL}/stores/department/`, { headers });
         if (res.ok) setData(await res.json());
-      } else if (subpage === 'sub-departments') {
-        const [resSub, resDept] = await Promise.all([
-          fetch(`${API_URL}/stores/subdepartment/`, { headers }),
-          fetch(`${API_URL}/stores/department/`, { headers })
-        ]);
-        if (resSub.ok) setData(await resSub.json());
-        if (resDept.ok) setExtraData(await resDept.json());
       }
     } catch (err) {
       setErrorMsg('Failed to load data.');
@@ -208,6 +205,7 @@ export const StoresView: React.FC = () => {
     setStoreForm({
       store_id: '',
       store_name: '',
+      type: '',
       area: '',
       address: '',
       phone: '',
@@ -219,8 +217,14 @@ export const StoresView: React.FC = () => {
     });
     setAreaForm({ area_name: '' });
     setDeptForm({ department_name: '' });
-    setSubDeptForm({ department: '', sub_department_name: '' });
+    setErrorMsg('');
     setShowModal(true);
+  };
+
+  const handleOpenAreaModal = () => {
+    setAreaForm({ area_name: '' });
+    setErrorMsg('');
+    setShowAreaModal(true);
   };
 
   const handleOpenEdit = (item: any) => {
@@ -228,7 +232,8 @@ export const StoresView: React.FC = () => {
     if (subpage === 'all' || !subpage) {
       setStoreForm({
         store_id: item.store_id,
-        store_name: item.store_name,
+        store_name: stripStoreName(item.store_name),
+        type: item.type || '',
         area: item.area?.area_id || '',
         address: item.address || '',
         phone: item.phone || '',
@@ -242,12 +247,8 @@ export const StoresView: React.FC = () => {
       setAreaForm({ area_name: item.area_name });
     } else if (subpage === 'departments') {
       setDeptForm({ department_name: item.department_name });
-    } else if (subpage === 'sub-departments') {
-      setSubDeptForm({
-        department: item.department?.department_id || item.department || '',
-        sub_department_name: item.sub_department_name
-      });
     }
+    setErrorMsg('');
     setShowModal(true);
   };
 
@@ -271,9 +272,6 @@ export const StoresView: React.FC = () => {
     } else if (subpage === 'departments') {
       endpoint = editItem ? `${API_URL}/stores/department/${editItem.department_id}/` : `${API_URL}/stores/department/`;
       bodyData = deptForm;
-    } else if (subpage === 'sub-departments') {
-      endpoint = editItem ? `${API_URL}/stores/subdepartment/${editItem.sub_department_id}/` : `${API_URL}/stores/subdepartment/`;
-      bodyData = subDeptForm;
     }
 
     try {
@@ -299,6 +297,57 @@ export const StoresView: React.FC = () => {
     }
   };
 
+  const handleAreaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setErrorMsg('');
+
+    try {
+      const response = await fetch(`${API_URL}/stores/area/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(areaForm)
+      });
+      if (response.ok) {
+        const newArea = await response.json();
+        setAreaForm({ area_name: '' });
+        // If creating area while store form is open, set it as selected
+        if (showModal) {
+          setStoreForm(prev => ({ ...prev, area: newArea.area_id }));
+        }
+        fetchData();
+      } else {
+        const errorRes = await response.json();
+        setErrorMsg(Object.values(errorRes).flat().join(', ') || 'Failed to save area.');
+      }
+    } catch (err) {
+      setErrorMsg('Network error.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteArea = async (areaId: number | string) => {
+    if (!window.confirm('Are you sure you want to delete this area?')) return;
+    setErrorMsg('');
+    try {
+      const response = await fetch(`${API_URL}/stores/area/${areaId}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Token ${token}` }
+      });
+      if (response.ok) {
+        fetchData();
+      } else {
+        setErrorMsg('Failed to delete area.');
+      }
+    } catch (err) {
+      setErrorMsg('Network error.');
+    }
+  };
+
   const handleDelete = async (id: number | string) => {
     if (!window.confirm('Are you sure you want to delete this item?')) return;
     setErrorMsg('');
@@ -306,7 +355,6 @@ export const StoresView: React.FC = () => {
     if (subpage === 'all' || !subpage) endpoint = `${API_URL}/stores/store/${id}/`;
     else if (subpage === 'areas') endpoint = `${API_URL}/stores/area/${id}/`;
     else if (subpage === 'departments') endpoint = `${API_URL}/stores/department/${id}/`;
-    else if (subpage === 'sub-departments') endpoint = `${API_URL}/stores/subdepartment/${id}/`;
 
     try {
       const response = await fetch(endpoint, {
@@ -324,7 +372,7 @@ export const StoresView: React.FC = () => {
   };
 
   const filteredData = data.filter(item => {
-    const text = (item.store_name || item.area_name || item.department_name || item.sub_department_name || '').toLowerCase();
+    const text = (item.store_name || item.area_name || item.department_name || '').toLowerCase();
     return text.includes(search.toLowerCase());
   });
 
@@ -333,6 +381,9 @@ export const StoresView: React.FC = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
   const paginatedData = filteredData.slice(startIndex, endIndex);
+
+  // Fallback for Area List inside Area Modal
+  const areaList = extraData.length > 0 ? extraData : (subpage === 'areas' ? data : []);
 
   return (
     <div className="space-y-6">
@@ -356,13 +407,26 @@ export const StoresView: React.FC = () => {
           />
         </div>
 
-        <button
-          onClick={handleOpenCreate}
-          className="hidden sm:flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add New {subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : subpage === 'sub-departments' ? 'Sub Department' : 'Store'}
-        </button>
+        <div className="hidden sm:flex items-center gap-2">
+          {/* Quick Create/Manage Areas Button */}
+          {(subpage === 'all' || !subpage) && (
+            <button
+              onClick={handleOpenAreaModal}
+              className="flex items-center gap-1.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant text-xs font-semibold px-3.5 py-2.5 rounded-xl transition-all cursor-pointer"
+            >
+              <MapPin className="w-4 h-4 text-primary" />
+              Manage Areas
+            </button>
+          )}
+
+          <button
+            onClick={handleOpenCreate}
+            className="flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add New {subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : 'Store'}
+          </button>
+        </div>
       </div>
 
       {/* Content Table */}
@@ -377,7 +441,7 @@ export const StoresView: React.FC = () => {
           {/* Mobile View: Stacked Card Rows */}
           <div className="sm:hidden divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface">
             {paginatedData.map(item => {
-              const itemId = item.store_id || item.area_id || item.department_id || item.sub_department_id;
+              const itemId = item.store_id || item.area_id || item.department_id;
               return (
                 <button
                   key={itemId}
@@ -412,19 +476,11 @@ export const StoresView: React.FC = () => {
                         <span className="font-bold text-on-surface text-sm truncate">{item.area_name}</span>
                         <span className="font-mono text-[10px] text-outline">ID: {item.area_id}</span>
                       </div>
-                    ) : subpage === 'departments' ? (
+                    ) : (
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-on-surface text-sm truncate">{item.department_name}</span>
                         <span className="font-mono text-[10px] text-outline">ID: {item.department_id}</span>
                       </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-on-surface text-sm truncate">{item.sub_department_name}</span>
-                          <span className="font-mono text-[10px] text-outline">ID: {item.sub_department_id}</span>
-                        </div>
-                        <p className="text-[11px] text-outline pt-0.5">🏢 Parent: {item.department?.department_name || 'N/A'}</p>
-                      </>
                     )}
                   </div>
                 </button>
@@ -505,7 +561,7 @@ export const StoresView: React.FC = () => {
         </>
       )}
 
-      {/* Creation/Edit Form Modal */}
+      {/* Main Creation/Edit Form Modal */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -521,7 +577,7 @@ export const StoresView: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg overflow-y-auto rounded-2xl shadow-2xl p-6 space-y-4"
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl p-6 space-y-4"
             >
               <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
                 <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
@@ -535,24 +591,32 @@ export const StoresView: React.FC = () => {
                 </button>
               </div>
 
+              {/* Inline Error Banner */}
+              {errorMsg && (
+                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-lg text-xs font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
               <form onSubmit={handleSubmit} className="space-y-4">
                 {subpage === 'all' || !subpage ? (
                   <>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Store ID Code</label>
+                        <label className="block text-xs font-semibold text-outline mb-1">Location Code</label>
                         <input
                           required
                           disabled={!!editItem}
                           type="text"
-                          placeholder="e.g. S-001"
+                          placeholder="e.g. 803"
                           value={storeForm.store_id}
                           onChange={e => setStoreForm({ ...storeForm, store_id: e.target.value })}
                           className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Store Name</label>
+                        <label className="block text-xs font-semibold text-outline mb-1">Location Name</label>
                         <input
                           required
                           type="text"
@@ -564,16 +628,39 @@ export const StoresView: React.FC = () => {
                       </div>
                     </div>
 
+                    <div>
+                      <label className="block text-xs font-semibold text-outline mb-1">Store Type</label>
+                      <select
+                        required
+                        value={storeForm.type}
+                        onChange={e => setStoreForm({ ...storeForm, type: e.target.value })}
+                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      >
+                        <option value="">Select Store Type</option>
+                        {STORE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Area Location</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-semibold text-outline">Area Location</label>
+                          <button
+                            type="button"
+                            onClick={handleOpenAreaModal}
+                            className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" /> New Area
+                          </button>
+                        </div>
                         <select
+                          required
                           value={storeForm.area}
                           onChange={e => setStoreForm({ ...storeForm, area: e.target.value })}
                           className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                         >
-                          <option value="">No Area</option>
-                          {extraData.map(a => <option key={a.area_id} value={a.area_id}>{a.area_name}</option>)}
+                          <option value="">Select Area</option>
+                          {areaList.map(a => <option key={a.area_id} value={a.area_id}>{a.area_name}</option>)}
                         </select>
                       </div>
 
@@ -619,6 +706,7 @@ export const StoresView: React.FC = () => {
                       <div>
                         <label className="block text-xs font-semibold text-outline mb-1">Phone Number</label>
                         <input
+                          required
                           type="text"
                           placeholder="8 digits"
                           value={storeForm.phone}
@@ -629,6 +717,7 @@ export const StoresView: React.FC = () => {
                       <div>
                         <label className="block text-xs font-semibold text-outline mb-1">WhatsApp No</label>
                         <input
+                          required
                           type="text"
                           placeholder="8 or 10 digits"
                           value={storeForm.whatsapp_number}
@@ -641,6 +730,7 @@ export const StoresView: React.FC = () => {
                     <div>
                       <label className="block text-xs font-semibold text-outline mb-1">Street Address</label>
                       <textarea
+                        required
                         rows={2}
                         placeholder="Detailed address location..."
                         value={storeForm.address}
@@ -673,7 +763,7 @@ export const StoresView: React.FC = () => {
                       className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                     />
                   </div>
-                ) : subpage === 'departments' ? (
+                ) : (
                   <div>
                     <label className="block text-xs font-semibold text-outline mb-1.5">Department Name</label>
                     <input
@@ -685,47 +775,20 @@ export const StoresView: React.FC = () => {
                       className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                     />
                   </div>
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Parent Department</label>
-                      <select
-                        required
-                        value={subDeptForm.department}
-                        onChange={e => setSubDeptForm({ ...subDeptForm, department: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      >
-                        <option value="">Select Parent Department</option>
-                        {extraData.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1.5">Sub Department Name</label>
-                      <input
-                        required
-                        type="text"
-                        placeholder="e.g. Electrical Panels"
-                        value={subDeptForm.sub_department_name}
-                        onChange={e => setSubDeptForm({ ...subDeptForm, sub_department_name: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      />
-                    </div>
-                  </>
                 )}
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border rounded-lg text-xs font-semibold"
+                    className="px-4 py-2 border rounded-lg text-xs font-semibold cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5"
+                    className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer"
                   >
                     {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     Save Changes
@@ -736,14 +799,133 @@ export const StoresView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
-      {/* Floating Action Button (FAB) for Mobile Add Store/Area/Dept */}
-      <button
-        onClick={handleOpenCreate}
-        className="sm:hidden fixed bottom-6 right-6 z-40 bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
-        title={`Add New ${subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : subpage === 'sub-departments' ? 'Sub Department' : 'Store'}`}
-      >
-        <Plus className="w-6 h-6" />
-      </button>
+
+      {/* Standalone Area Management Modal Popup (Creation + Display List) */}
+      <AnimatePresence>
+        {showAreaModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAreaModal(false)}
+              className="absolute inset-0 bg-black"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant shrink-0">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-primary" />
+                  <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
+                    Manage Areas
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowAreaModal(false)}
+                  className="p-1 rounded-lg text-outline hover:bg-surface-container-high cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Input section to add new area */}
+              <form onSubmit={handleAreaSubmit} className="space-y-3 shrink-0">
+                <div>
+                  <label className="block text-xs font-semibold text-outline mb-1.5">Create New Area</label>
+                  <div className="flex gap-2">
+                    <input
+                      required
+                      type="text"
+                      placeholder="e.g. Hawally Area"
+                      value={areaForm.area_name}
+                      onChange={e => setAreaForm({ area_name: e.target.value })}
+                      className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                    />
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              {/* Display existing areas */}
+              <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-outline-variant dark:border-dark-outline-variant min-h-[140px]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-outline uppercase tracking-wider">
+                    Existing Areas ({areaList.length})
+                  </span>
+                </div>
+
+                {areaList.length === 0 ? (
+                  <p className="text-xs text-outline italic text-center py-6">No areas created yet.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                    {areaList.map((area: any) => (
+                      <div
+                        key={area.area_id}
+                        className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/60 rounded-lg hover:border-outline transition-colors text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
+                          <span className="font-mono text-[10px] text-outline">#{area.area_id}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteArea(area.area_id)}
+                          className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                          title="Delete Area"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-outline-variant dark:border-dark-outline-variant shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAreaModal(false)}
+                  className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Action Buttons (FAB) for Mobile */}
+      <div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+        {(subpage === 'all' || !subpage) && (
+          <button
+            onClick={handleOpenAreaModal}
+            className="bg-surface-container-highest border border-outline-variant text-on-surface shadow-lg p-3.5 rounded-full flex items-center justify-center cursor-pointer"
+            title="Manage Areas"
+          >
+            <MapPin className="w-5 h-5 text-primary" />
+          </button>
+        )}
+        <button
+          onClick={handleOpenCreate}
+          className="bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
+          title={`Add New ${subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : 'Store'}`}
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      </div>
     </div>
   );
 };

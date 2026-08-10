@@ -58,6 +58,13 @@ class MediaViewSet(viewsets.ModelViewSet):
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user and user.is_authenticated:
+            return self.queryset.filter(user=user)
+        return self.queryset.none()
 
 
 

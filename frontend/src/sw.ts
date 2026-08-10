@@ -25,6 +25,8 @@ self.addEventListener(
             message?: string
             url?: string
             image?: string
+            tag?: string
+            notification_type?: string
         }
 
         try {
@@ -49,6 +51,23 @@ self.addEventListener(
             }
         }
 
+        const actions: any[] = []
+        const ntype = (data.notification_type || '').toLowerCase()
+        if (
+            ntype.includes('high priority') ||
+            ntype.includes('location approval') ||
+            ntype.includes('completed')
+        ) {
+            actions.push({
+                action: 'approve',
+                title: 'Approve',
+            })
+            actions.push({
+                action: 'reject',
+                title: 'Reject',
+            })
+        }
+
         const options: any = {
             body:
                 data.message ||
@@ -59,6 +78,12 @@ self.addEventListener(
             badge: '/pwa-192x192.png',
 
             image: imageUrl || undefined,
+
+            tag: data.tag || undefined,
+
+            renotify: data.tag ? false : undefined, // False so silent updating, or omit for default browser alerts
+
+            actions: actions.length > 0 ? actions : undefined,
 
             data: {
                 notification_id:
@@ -87,15 +112,26 @@ self.addEventListener(
 self.addEventListener(
     'notificationclick',
     (event: any) => {
-
         event.notification.close()
 
-        const url =
-            event.notification.data?.url ||
-            '/'
+        let targetUrl = event.notification.data?.url || '/'
+        const action = event.action
+
+        if (action === 'approve') {
+            targetUrl += targetUrl.includes('?') ? '&action=approve' : '?action=approve'
+        } else if (action === 'reject') {
+            targetUrl += targetUrl.includes('?') ? '&action=reject' : '?action=reject'
+        }
 
         event.waitUntil(
-            self.clients.openWindow(url)
+            self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList: any) => {
+                for (const client of clientList) {
+                    if (client.url.startsWith(self.location.origin)) {
+                        return client.navigate(targetUrl).then((c: any) => c.focus())
+                    }
+                }
+                return self.clients.openWindow(targetUrl)
+            })
         )
     }
 )

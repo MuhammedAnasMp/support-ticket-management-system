@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Role, CustomUser
 
+
 class RoleSerializer(serializers.ModelSerializer):
     permissions = serializers.SerializerMethodField()
 
@@ -16,11 +17,24 @@ class RoleSerializer(serializers.ModelSerializer):
         except Group.DoesNotExist:
             return []
 
+
+def assign_role_group(user):
+    if user.role:
+        from django.contrib.auth.models import Group
+        group_name = user.role.role_name
+        group, created = Group.objects.get_or_create(name=group_name)
+        user.groups.set([group])
+
+
 class CustomUserSerializer(serializers.ModelSerializer):
-    hourly_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, write_only=True, allow_null=True)
-    skills = serializers.ListField(child=serializers.IntegerField(), required=False, write_only=True)
-    effective_from = serializers.DateField(required=False, write_only=True, allow_null=True)
-    effective_to = serializers.DateField(required=False, write_only=True, allow_null=True)
+    hourly_rate = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, write_only=True, allow_null=True)
+    skills = serializers.ListField(
+        child=serializers.IntegerField(), required=False, write_only=True)
+    effective_from = serializers.DateField(
+        required=False, write_only=True, allow_null=True)
+    effective_to = serializers.DateField(
+        required=False, write_only=True, allow_null=True)
 
     class Meta:
         model = CustomUser
@@ -33,10 +47,12 @@ class CustomUserSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        active = attrs.get('active', self.instance.active if self.instance else True)
+        active = attrs.get(
+            'active', self.instance.active if self.instance else True)
         if active:
             # 1. Role is required
-            role = attrs.get('role', self.instance.role if self.instance else None)
+            role = attrs.get(
+                'role', self.instance.role if self.instance else None)
             if not role:
                 raise serializers.ValidationError(
                     {"role": "Role is required to approve this employee."}
@@ -55,8 +71,9 @@ class CustomUserSerializer(serializers.ModelSerializer):
             sub_depts = attrs.get('sub_departments', [])
             if self.instance and 'sub_departments' not in attrs:
                 sub_depts = list(self.instance.sub_departments.all())
-            
-            sd_names = [sd.sub_department_name.strip().lower() for sd in sub_depts]
+
+            sd_names = [sd.sub_department_name.strip().lower()
+                        for sd in sub_depts]
             has_technical_dept = any(name != 'office' for name in sd_names)
 
             # Check if role has technician permissions
@@ -65,14 +82,19 @@ class CustomUserSerializer(serializers.ModelSerializer):
             if role:
                 try:
                     group = Group.objects.get(name=role.role_name)
-                    group_perms = list(group.permissions.values_list('codename', flat=True))
+                    group_perms = list(
+                        group.permissions.values_list('codename', flat=True))
                 except Group.DoesNotExist:
                     pass
-            is_tech_role = 'complete_ticket' in group_perms or 'technician' in (role.role_name or '').lower()
+            is_tech_role = 'complete_ticket' in group_perms or 'technician' in (
+                role.role_name or '').lower()
+
+            is_office_admin = role and ('office admin' in role.role_name.lower(
+            ) or 'office administrator' in role.role_name.lower())
 
             acts_as_tech = is_tech_role or has_technical_dept
 
-            if acts_as_tech:
+            if acts_as_tech and not is_office_admin:
                 # Skills required
                 skills = attrs.get('skills', None)
                 if skills is None and self.instance:
@@ -85,7 +107,8 @@ class CustomUserSerializer(serializers.ModelSerializer):
                 # Hourly rate required
                 hourly_rate = attrs.get('hourly_rate', None)
                 if hourly_rate is None and self.instance:
-                    latest_rate = self.instance.rates.order_by('-effective_from', '-rate_id').first()
+                    latest_rate = self.instance.rates.order_by(
+                        '-effective_from', '-rate_id').first()
                     hourly_rate = latest_rate.hourly_rate if latest_rate else None
                 if hourly_rate in [None, '']:
                     raise serializers.ValidationError(
@@ -100,13 +123,14 @@ class CustomUserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         effective_from = validated_data.pop('effective_from', None)
         effective_to = validated_data.pop('effective_to', None)
-        
+
         # Enforce department restriction for non-superusers
         request = self.context.get('request')
         if request and request.user and not request.user.is_superuser:
             from apps.maintenance.models import WorkNature
             req_user = request.user
-            req_dept_ids = set(sd.department_id for sd in req_user.sub_departments.all())
+            req_dept_ids = set(
+                sd.department_id for sd in req_user.sub_departments.all())
             if req_dept_ids:
                 if 'sub_departments' in validated_data:
                     validated_data['sub_departments'] = [
@@ -118,16 +142,19 @@ class CustomUserSerializer(serializers.ModelSerializer):
                         sid for sid in skills
                         if WorkNature.objects.filter(pk=sid, sub_department__department_id__in=req_dept_ids).exists()
                     ]
-        
+
         # Ensure username defaults to employee_no if not present
         if 'username' not in validated_data and 'employee_no' in validated_data:
             validated_data['username'] = validated_data['employee_no']
-            
+
         user = super().create(validated_data)
         if password:
             user.set_password(password)
             user.save()
-            
+
+        # Assign role-based permission group
+        assign_role_group(user)
+
         # Create EmployeeRate if hourly_rate is provided
         if hourly_rate not in [None, '']:
             from apps.finance.models import EmployeeRate
@@ -139,17 +166,18 @@ class CustomUserSerializer(serializers.ModelSerializer):
                 effective_from=eff_from,
                 effective_to=effective_to
             )
-            
+
         # Associate multiple worker skills (NatureWorker)
         if skills:
             from apps.maintenance.models import NatureWorker, WorkNature
             for skill_id in skills:
                 try:
                     nature = WorkNature.objects.get(pk=skill_id)
-                    NatureWorker.objects.get_or_create(worker=user, nature=nature)
+                    NatureWorker.objects.get_or_create(
+                        worker=user, nature=nature)
                 except WorkNature.DoesNotExist:
                     pass
-                    
+
         return user
 
     def update(self, instance, validated_data):
@@ -158,13 +186,14 @@ class CustomUserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         effective_from = validated_data.pop('effective_from', None)
         effective_to = validated_data.pop('effective_to', None)
-        
+
         # Enforce department restriction for non-superusers
         request = self.context.get('request')
         if request and request.user and not request.user.is_superuser:
             from apps.maintenance.models import WorkNature
             req_user = request.user
-            req_dept_ids = set(sd.department_id for sd in req_user.sub_departments.all())
+            req_dept_ids = set(
+                sd.department_id for sd in req_user.sub_departments.all())
             if req_dept_ids:
                 if 'sub_departments' in validated_data:
                     validated_data['sub_departments'] = [
@@ -176,19 +205,23 @@ class CustomUserSerializer(serializers.ModelSerializer):
                         sid for sid in skills
                         if WorkNature.objects.filter(pk=sid, sub_department__department_id__in=req_dept_ids).exists()
                     ]
-        
+
         user = super().update(instance, validated_data)
         if password:
             user.set_password(password)
             user.save()
-            
+
+        # Assign role-based permission group
+        assign_role_group(user)
+
         # Manage employee rate update
         if hourly_rate not in [None, '']:
             from apps.finance.models import EmployeeRate
             from django.utils import timezone
             from decimal import Decimal
             # Check current active rate
-            latest_rate = instance.rates.order_by('-effective_from', '-rate_id').first()
+            latest_rate = instance.rates.order_by(
+                '-effective_from', '-rate_id').first()
             if not latest_rate or latest_rate.hourly_rate != Decimal(str(hourly_rate)):
                 eff_from = effective_from or timezone.now().date()
                 EmployeeRate.objects.create(
@@ -197,7 +230,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
                     effective_from=eff_from,
                     effective_to=effective_to
                 )
-                
+
         # Manage worker skills update
         if skills is not None:
             from apps.maintenance.models import NatureWorker, WorkNature
@@ -207,10 +240,11 @@ class CustomUserSerializer(serializers.ModelSerializer):
             for skill_id in skills:
                 try:
                     nature = WorkNature.objects.get(pk=skill_id)
-                    NatureWorker.objects.get_or_create(worker=instance, nature=nature)
+                    NatureWorker.objects.get_or_create(
+                        worker=instance, nature=nature)
                 except WorkNature.DoesNotExist:
                     pass
-                    
+
         return user
 
     def to_representation(self, instance):
@@ -219,16 +253,21 @@ class CustomUserSerializer(serializers.ModelSerializer):
         from apps.accounts.serializers import RoleSerializer
         from apps.stores.serializers import StoreSerializer, SubDepartmentSerializer
         from apps.maintenance.serializers import WorkNatureSerializer
-        
+
         # Populate nested objects for reads
-        representation['role'] = RoleSerializer(instance.role).data if instance.role else None
-        representation['accessible_stores'] = StoreSerializer(instance.accessible_stores.all(), many=True).data
-        representation['sub_departments'] = SubDepartmentSerializer(instance.sub_departments.all(), many=True).data
-        
+        representation['role'] = RoleSerializer(
+            instance.role).data if instance.role else None
+        representation['accessible_stores'] = StoreSerializer(
+            instance.accessible_stores.all(), many=True).data
+        representation['sub_departments'] = SubDepartmentSerializer(
+            instance.sub_departments.all(), many=True).data
+
         # Add current hourly rate
-        latest_rate = instance.rates.order_by('-effective_from', '-rate_id').first()
-        representation['hourly_rate'] = str(latest_rate.hourly_rate) if latest_rate else None
-        
+        latest_rate = instance.rates.order_by(
+            '-effective_from', '-rate_id').first()
+        representation['hourly_rate'] = str(
+            latest_rate.hourly_rate) if latest_rate else None
+
         # Add rates history
         representation['rates'] = [
             {
@@ -239,12 +278,11 @@ class CustomUserSerializer(serializers.ModelSerializer):
             }
             for r in instance.rates.all().order_by('-effective_from', '-rate_id')
         ]
-        
+
         # Add skills
         representation['skills'] = WorkNatureSerializer(
             [sn.nature for sn in instance.skilled_natures.all()],
             many=True
         ).data
-        
-        return representation
 
+        return representation

@@ -4,6 +4,7 @@ import { useDispatch } from 'react-redux';
 import { motion } from 'framer-motion';
 import { Clock, AlertCircle, RefreshCw } from 'lucide-react';
 import { setCredentials, clearCredentials } from '../store/authSlice';
+import { disablePushNotifications } from '@/services/pushNotifications';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -114,7 +115,12 @@ export const ApprovalPendingView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => {
+            onClick={async () => {
+              try {
+                await disablePushNotifications();
+              } catch (err) {
+                console.warn('Failed to unsubscribe push notifications on logout:', err);
+              }
               sessionStorage.clear();
               dispatch(clearCredentials());
               navigate('/login');

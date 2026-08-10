@@ -5,10 +5,12 @@ from decimal import Decimal
 
 
 class PrioritySerializer(serializers.ModelSerializer):
+    from apps.stores.serializers import DepartmentSerializer as _DeptSer
+    department_detail = _DeptSer(source='department', read_only=True)
+
     class Meta:
         model = Priority
-        fields = '__all__'
-        depth = 1
+        fields = ['priority_id', 'department', 'department_detail', 'priority_name', 'level']
 
 
 class StatusSerializer(serializers.ModelSerializer):

@@ -141,6 +141,10 @@ class SignupView(APIView):
                 user.profile_image = profile_image
             user.save()
 
+            # Assign role-based permission group
+            from apps.accounts.serializers import assign_role_group
+            assign_role_group(user)
+
             selected_sub_depts = set()
             if nature_id:
                 from apps.maintenance.models import WorkNature, NatureWorker

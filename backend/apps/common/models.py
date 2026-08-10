@@ -137,3 +137,24 @@ def send_push_on_notification_create(sender, instance, created, **kwargs):
             send_push_notification(instance)
         except Exception as err:
             print("Failed to send push notification:", err)
+
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            from apps.common.serializers import NotificationSerializer
+
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                serializer = NotificationSerializer(instance)
+                notif_data = serializer.data
+
+                group_name = f"user_{instance.user_id}"
+                async_to_sync(channel_layer.group_send)(
+                    group_name,
+                    {
+                        "type": "notification",
+                        "notification_data": notif_data,
+                    }
+                )
+        except Exception as wse:
+            print("Failed to broadcast WebSocket notification:", wse)

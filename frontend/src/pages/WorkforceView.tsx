@@ -491,12 +491,32 @@ export const WorkforceView: React.FC = () => {
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  const formRoleObj = roles.find(r => String(r.role_id) === String(employeeForm.role));
+  const formRoleObj = roles.find(r => 
+    String(r.role_id) === String(employeeForm.role) ||
+    String(r.role_name).toLowerCase() === String(employeeForm.role).toLowerCase()
+  );
   const selectedRolePermissions = (formRoleObj?.permissions || []) as string[];
-  const isFormTechnician = selectedRolePermissions.includes('complete_ticket') || (formRoleObj?.role_name || '').toLowerCase() === 'technician';
-  const isFormStoreManager = !isFormTechnician && ((selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'store manager');
-  const isFormAreaManager = !isFormTechnician && ((selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) || (formRoleObj?.role_name || '').toLowerCase() === 'area manager');
-  const needsWorkingDepartments = !isFormStoreManager && !isFormAreaManager;
+  const isFormTechnician = selectedRolePermissions.includes('complete_ticket') || 
+    (formRoleObj?.role_name || '').toLowerCase() === 'technician' ||
+    String(employeeForm.role).toLowerCase() === 'technician';
+  const isFormStoreManager = !isFormTechnician && (
+    (selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) || 
+    (formRoleObj?.role_name || '').toLowerCase() === 'store manager' ||
+    String(employeeForm.role).toLowerCase() === 'store manager'
+  );
+  const isFormAreaManager = !isFormTechnician && (
+    (selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) || 
+    (formRoleObj?.role_name || '').toLowerCase() === 'area manager' ||
+    String(employeeForm.role).toLowerCase() === 'area manager'
+  );
+  const isFormOfficeAdmin = (formRoleObj && (
+    (formRoleObj.role_name || '').toLowerCase().includes('office admin') ||
+    (formRoleObj.role_name || '').toLowerCase().includes('office administrator')
+  )) || (
+    String(employeeForm.role).toLowerCase().includes('office admin') ||
+    String(employeeForm.role).toLowerCase().includes('office administrator')
+  );
+  const needsWorkingDepartments = (!isFormStoreManager && !isFormAreaManager) || !!isFormOfficeAdmin;
 
   const selectedSubDepts = subDepartments.filter(sd =>
     employeeForm.sub_departments.map(Number).includes(Number(sd.sub_department_id))
@@ -507,13 +527,13 @@ export const WorkforceView: React.FC = () => {
   const isTechnicianForForm = isFormTechnician || hasTechnicalSubDept;
 
   useEffect(() => {
-    if (!isTechnicianForForm && activeFormTab === 'payroll') {
+    if (!(isTechnicianForForm || isFormOfficeAdmin) && activeFormTab === 'payroll') {
       setActiveFormTab('basic');
     }
     if (!needsWorkingDepartments && activeFormTab === 'skills') {
       setActiveFormTab('access');
     }
-  }, [isTechnicianForForm, needsWorkingDepartments, activeFormTab]);
+  }, [isTechnicianForForm, isFormOfficeAdmin, needsWorkingDepartments, activeFormTab]);
 
   useEffect(() => {
     fetchData();
@@ -754,7 +774,7 @@ export const WorkforceView: React.FC = () => {
       }
 
       // 3. Technical validation if user acts as a technician
-      if (isTechnicianForForm) {
+      if (isTechnicianForForm && !isFormOfficeAdmin) {
         if (employeeForm.skills.length === 0) {
           setErrorMsg("To approve this employee, you must assign at least one technical skill under the 'Departments & Skills' tab.");
           setActionLoading(false);
@@ -1356,10 +1376,10 @@ export const WorkforceView: React.FC = () => {
                       }`}
                   >
                     <Wrench className="w-3.5 h-3.5" />
-                    Departments & Skills
+                    Departments & Skills {isFormOfficeAdmin && '(Optional)'}
                   </button>
                 )}
-                {isTechnicianForForm && (
+                {(isTechnicianForForm || isFormOfficeAdmin) && (
                   <button
                     type="button"
                     onClick={() => setActiveFormTab('payroll')}
@@ -1708,7 +1728,7 @@ export const WorkforceView: React.FC = () => {
                           renderedCount += 1;
 
                           return (
-                            <div key={deptName} className="space-y-2 pb-2 border-b border-outline-variant/30 last:border-b-0">
+<div key={deptName} className="space-y-2 pb-2 border-b border-outline-variant/30 last:border-b-0">
                               <h5 className="text-[10px] font-bold text-outline uppercase tracking-wider">{deptName}</h5>
 
                               <div className="space-y-3 pl-2">
@@ -1728,8 +1748,6 @@ export const WorkforceView: React.FC = () => {
 
                                   if (filteredSubDeptSkills.length === 0) return null;
 
-                                  const isSubDeptChecked = employeeForm.sub_departments.includes(sd.sub_department_id);
-
                                   return (
                                     <div key={sd.sub_department_id} className="space-y-1.5 pb-1">
                                       {/* Sub-department Header (No Checkbox) */}
@@ -1738,7 +1756,7 @@ export const WorkforceView: React.FC = () => {
                                       </div>
 
                                       {/* Indented Technical Skills List (Vertical stack / Down to Down) */}
-                                      {isTechnicianForForm && (
+                                      {(isTechnicianForForm || isFormOfficeAdmin) && (
                                         <div className="pl-4 flex flex-col gap-1.5 border-l border-outline-variant/40 ml-1.5 py-0.5">
                                           {filteredSubDeptSkills.map(sk => {
                                             const isSkillChecked = employeeForm.skills.includes(sk.nature_id);
@@ -1806,7 +1824,7 @@ export const WorkforceView: React.FC = () => {
                       <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Salary Wage Configuration</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Hourly Wage Rate (KWD)</label>
+                          <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Hourly Wage Rate (KWD) {isFormOfficeAdmin && '(Optional)'}</label>
                           <input
                             type="number"
                             step="0.01"

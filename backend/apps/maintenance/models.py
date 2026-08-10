@@ -611,7 +611,14 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
         # Fallback to before image if after is missing
         return get_before_image()
 
+    notified_users = set()
+
     def notify(user, ntype, title, message, image=None):
+        key = (user.pk, ntype)
+        if key in notified_users:
+            return
+        notified_users.add(key)
+
         try:
             Notification.objects.create(
                 user=user,
@@ -682,13 +689,15 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
             # Rejected -> notify assigned workers
             elif new_loc_app == 'Rejected':
                 after_img_url = get_after_image()
+                msg = f"Your ticket {instance.work_order_no} has been rejected by the Store Manager and needs attention."
+                if instance.location_reject_reason:
+                    msg += f" Reason: {instance.location_reject_reason}"
                 for worker in get_allocated_workers():
                     notify(
                         worker,
                         "Ticket Rejected",
                         "Location Approval Rejected",
-                        f"Your ticket {instance.work_order_no} has been rejected "
-                        f"by the Store Manager and needs attention.",
+                        msg,
                         image=after_img_url
                     )
 
@@ -702,12 +711,16 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
                 if old_status_lower in ['location approval', 'completed']:
                     # This is a REJECTION / SEND BACK from completion or location approval!
                     after_img_url = get_after_image()
+                    reason = instance.reject_reason or instance.location_reject_reason
+                    msg = f"Your ticket {instance.work_order_no} has been rejected by the Store Manager and is back in progress."
+                    if reason:
+                        msg += f" Reason: {reason}"
                     for worker in get_allocated_workers():
                         notify(
                             worker,
                             "Ticket Rejected",
                             "Ticket Rejected / Sent Back",
-                            f"Your ticket {instance.work_order_no} has been rejected by the Store Manager and is back in progress.",
+                            msg,
                             image=after_img_url
                         )
                 else:
@@ -720,6 +733,8 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
                             f"Your ticket {instance.work_order_no} has been approved."
                         )
                     for manager in get_store_managers():
+                        if instance.created_by and manager.pk == instance.created_by.pk:
+                            continue
                         notify(
                             manager,
                             "Ticket Approved",
@@ -781,6 +796,32 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
                         f"Ticket {instance.work_order_no} has been marked as blocked."
                     )
 
+            # 5. Rejected -> notify creator + store managers
+            elif status_lower == 'rejected':
+                reason = instance.reject_reason
+                msg = f"Your ticket {instance.work_order_no} has been rejected."
+                if reason:
+                    msg += f" Reason: {reason}"
+                
+                # Notify creator
+                if instance.created_by:
+                    notify(
+                        instance.created_by,
+                        "Ticket Rejected",
+                        "Ticket Rejected",
+                        msg
+                    )
+                # Notify store managers
+                for manager in get_store_managers():
+                    if instance.created_by and manager.pk == instance.created_by.pk:
+                        continue
+                    notify(
+                        manager,
+                        "Ticket Rejected",
+                        "Ticket Rejected",
+                        f"Ticket {instance.work_order_no} for your store {instance.store.store_name} has been rejected." + (f" Reason: {reason}" if reason else "")
+                    )
+
 
 @receiver(models.signals.post_save, sender=Allocation)
 def send_notification_on_allocation_save(sender, instance, created, **kwargs):
@@ -840,3 +881,61 @@ def send_notification_on_media_save(sender, instance, created, **kwargs):
                     send_push_notification(notif)
                 except Exception as err:
                     print("Failed to resend push notification on media save:", err)
+
+
+@receiver(models.signals.post_save, sender=Ticket)
+def broadcast_ticket_update(sender, instance, **kwargs):
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from apps.maintenance.serializers import TicketSerializer
+
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            serializer = TicketSerializer(instance)
+            ticket_data = serializer.data
+
+            metadata = {
+                "ticket_id": instance.ticket_id,
+                "store_id": instance.store_id,
+                "department_id": instance.department_id,
+                "status_id": instance.status_id,
+                "status_name": instance.status.status_name if instance.status else None,
+                "allocated_worker_ids": list(instance.allocations.values_list('worker_id', flat=True)),
+            }
+
+            async_to_sync(channel_layer.group_send)(
+                "tickets_updates",
+                {
+                    "type": "ticket_updated",
+                    "metadata": metadata,
+                    "ticket_data": ticket_data,
+                }
+            )
+    except Exception as err:
+        print("[WebSocket Broadcast] Failed to broadcast ticket update:", err)
+
+
+@receiver(models.signals.post_save, sender=TicketChatMessage)
+def broadcast_chat_message(sender, instance, created, **kwargs):
+    if created:
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            from apps.maintenance.serializers import TicketChatMessageSerializer
+
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                serializer = TicketChatMessageSerializer(instance)
+                message_data = serializer.data
+
+                group_name = f"chat_ticket_{instance.ticket_id}"
+                async_to_sync(channel_layer.group_send)(
+                    group_name,
+                    {
+                        "type": "chat_message",
+                        "message_data": message_data,
+                    }
+                )
+        except Exception as err:
+            print("[WebSocket Broadcast] Failed to broadcast chat message:", err)

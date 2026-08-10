@@ -55,29 +55,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     {
       title: 'Tickets',
       icon: <Ticket className="w-4 h-4" />,
-      subItems: [
-        { title: 'All Tickets', path: '/tickets/all', permission: 'maintenance.view_ticket' },
-        { title: 'Create Ticket', path: '/tickets/create', permission: 'maintenance.create_ticket' },
-      ],
+      // subItems: [
+      //   { title: 'All Tickets', path: '/tickets/all', permission: 'maintenance.view_ticket' },
+      //   { title: 'Create Ticket', path: '/tickets/create', permission: 'maintenance.create_ticket' },
+      // ],
+      path: '/tickets/all'
     },
     {
-      title: 'Stores',
+      title: 'Locations',
       icon: <Store className="w-4 h-4" />,
-      subItems: [
-        { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
-        { title: 'Areas', path: '/stores/areas', permission: 'stores.view_area' },
-        { title: 'Sub Departments', path: '/stores/sub-departments', permission: 'stores.view_subdepartment' },
-      ],
+      // subItems: [
+      //   { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
+      // ],
+      path: '/stores/all'
     },
     {
-      title: 'Maintenance',
+      title: 'Department',
       icon: <Wrench className="w-4 h-4" />,
       subItems: [
-        { title: 'Maintenance Nature', path: '/maintenance/natures', permission: 'maintenance.view_worknature' },
-        { title: 'Default Assignments', path: '/maintenance/worker-assignments', permission: 'maintenance.view_natureworker' },
-        { title: 'Priorities', path: '/maintenance/priorities', permission: 'maintenance.view_priority' },
-        { title: 'Statuses', path: '/maintenance/statuses', permission: 'maintenance.view_status' },
-        { title: 'Media Categories', path: '/maintenance/media-categories', permission: 'common.view_mediacategory' },
+        { title: 'Sub Departments', path: '/maintenance/sub-departments', permission: 'stores.view_subdepartment' },
+        { title: 'Sub Departments Nature', path: '/maintenance/natures', permission: 'maintenance.view_worknature' },
+        { title: 'Skilled Workers', path: '/maintenance/worker-assignments', permission: 'maintenance.view_natureworker' },
       ],
     },
     {
