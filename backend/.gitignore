@@ -11,3 +11,6 @@ env/
 venv/ 
 ENV/ 
 
+
+
+db.sqlite3
