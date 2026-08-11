@@ -14,3 +14,6 @@ ENV/
 
 
 db.sqlite3
+
+
+staticfiles
