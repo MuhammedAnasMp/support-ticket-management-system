@@ -245,7 +245,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 mt-2.5 w-80 sm:w-96 bg-surface-container-high dark:bg-dark-surface-container-high rounded-xl shadow-xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden z-30"
+                className="fixed inset-x-4 top-[56px] sm:absolute sm:right-0 sm:inset-auto sm:mt-2.5 sm:w-96 bg-surface-container-high dark:bg-dark-surface-container-high rounded-xl shadow-xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden z-30"
               >
                 <div className="flex items-center justify-between p-4 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant dark:border-dark-outline-variant">
                   <h3 className="font-bold text-sm text-on-surface dark:text-dark-on-surface flex items-center gap-2">

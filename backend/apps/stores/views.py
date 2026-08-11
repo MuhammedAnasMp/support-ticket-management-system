@@ -2,9 +2,13 @@ from rest_framework import viewsets
 from .models import Store, Department, SubDepartment, Area
 from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer
 
+from django.db.models import Count
+
 
 class AreaViewSet(viewsets.ModelViewSet):
-    queryset = Area.objects.all()
+    queryset = Area.objects.annotate(
+        store_count=Count('stores')
+    )
     serializer_class = AreaSerializer
 
 
@@ -35,3 +39,12 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 class SubDepartmentViewSet(viewsets.ModelViewSet):
     queryset = SubDepartment.objects.all()
     serializer_class = SubDepartmentSerializer
+
+
+class ManagerViewSet(viewsets.ModelViewSet):
+    from .serializers import ManagerSerializer
+    serializer_class = ManagerSerializer
+
+    def get_queryset(self):
+        from apps.accounts.models import CustomUser
+        return CustomUser.objects.filter(role__role_name__icontains='Store Manager').order_by('full_name')

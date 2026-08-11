@@ -210,7 +210,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                 ref={triggerRef}
                 type="button"
                 onClick={openPanel}
-                className={`flex items-center justify-center text-xs font-semibold p-2 sm:px-3 sm:py-2 rounded-lg border transition-all min-h-[36px] flex-shrink-0 ${hasActive
+                className={`flex items-center justify-center text-xs font-semibold p-2 sm:px-3 sm:py-2 rounded border transition-all min-h-[36px] flex-shrink-0 ${hasActive
                     ? 'bg-primary/10 border-primary/40 text-primary'
                     : 'bg-surface-container dark:bg-dark-surface-container border-outline-variant dark:border-dark-outline-variant text-on-surface-variant dark:text-dark-on-surface-variant hover:border-primary/50'
                     }`}

@@ -739,13 +739,12 @@ export const TicketsView: React.FC = () => {
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        className={`flex items-center gap-3 px-4 py-3 rounded border text-xs font-medium ${
-                            message.type === 'success'
-                                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
-                                : message.type === 'warning'
+                        className={`flex items-center gap-3 px-4 py-3 rounded border text-xs font-medium ${message.type === 'success'
+                            ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
+                            : message.type === 'warning'
                                 ? 'bg-amber-500/10 border-amber-500/25 text-amber-700 dark:text-amber-400'
                                 : 'bg-error-container border-error/20 text-on-error-container'
-                        }`}
+                            }`}
                     >
                         <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                         <span className="flex-1">{message.text}</span>
@@ -757,9 +756,9 @@ export const TicketsView: React.FC = () => {
             </AnimatePresence>
 
             {/* Ticket List View */}
-            <div className="flex flex-col border border-outline-variant rounded overflow-hidden bg-surface-container">
+            <div className="flex flex-col border border-x-0 border-outline-variant rounded overflow-hidden bg-surface-container">
                 {/* Toolbar */}
-                <div className="bg-surface-container-low border-b border-outline-variant px-4 py-3 flex flex-col gap-3">
+                <div className="bg-surface-container-low border-b border-outline-variant sm:p-3 flex flex-col gap-3">
                     {/* Row 1: Search + Actions */}
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                         <div className="flex items-center gap-2 flex-1 max-w-md w-full">
@@ -912,7 +911,7 @@ export const TicketsView: React.FC = () => {
                 ) : (
                     <>
                         {/* ── Mobile-only card grid ──────────────────────────────── */}
-                        <div className="sm:hidden p-3 grid grid-cols-1 gap-2.5">
+                        <div className="sm:hidden pt-2 sm:p-3 grid grid-cols-1 gap-2.5">
                             {tickets.map(ticket => {
                                 const isHigh = ticket.priority?.level >= 2;
                                 const assignedWorkers = (ticket.allocations || []).map((a: any) => a.worker).filter(Boolean);
@@ -924,9 +923,9 @@ export const TicketsView: React.FC = () => {
                                             setSelectedTicket(ticket);
                                             setLastOpenedTicketId(ticket.ticket_id);
                                         }}
-                                        className={`text-left flex flex-col gap-2 p-3 rounded-xl border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${lastOpenedTicketId === ticket.ticket_id
-                                                ? 'bg-primary/5 border-primary'
-                                                : 'bg-surface border-outline-variant'
+                                        className={`text-left flex flex-col gap-2 p-3  border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${lastOpenedTicketId === ticket.ticket_id
+                                            ? 'bg-primary/5 border-primary'
+                                            : 'bg-surface border-outline-variant'
                                             }`}
                                     >
                                         {/* Status + Priority row */}

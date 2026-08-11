@@ -55,19 +55,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     {
       title: 'Tickets',
       icon: <Ticket className="w-4 h-4" />,
-      // subItems: [
-      //   { title: 'All Tickets', path: '/tickets/all', permission: 'maintenance.view_ticket' },
-      //   { title: 'Create Ticket', path: '/tickets/create', permission: 'maintenance.create_ticket' },
-      // ],
       path: '/tickets/all'
     },
     {
       title: 'Locations',
       icon: <Store className="w-4 h-4" />,
-      // subItems: [
-      //   { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
-      // ],
-      path: '/stores/all'
+      subItems: [
+        { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
+        { title: 'Managers', path: '/stores/managers', permission: 'stores.view_store' },
+      ],
     },
     {
       title: 'Department',
@@ -143,13 +139,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             return hasPermission(item.permission);
           })
           .map((item, idx) => {
-            const hasSubItems = item.subItems && item.subItems.length > 0;
-            const active = isPathActive(item.path, item.subItems);
+            const hasMultipleSubItems = item.subItems && item.subItems.length > 1;
+            const singleSubItem = item.subItems && item.subItems.length === 1 ? item.subItems[0] : null;
+
+            // Target path, title & permission for 1-level single items
+            const targetPath = singleSubItem ? singleSubItem.path : (item.path || '/');
+            const targetTitle = singleSubItem ? singleSubItem.title : item.title;
+            const targetPermission = singleSubItem ? singleSubItem.permission : item.permission;
+
+            const active = isPathActive(targetPath, item.subItems);
             const expanded = expandedMenus[item.title] ?? active;
 
             return (
               <div key={idx} className="space-y-0.5">
-                {hasSubItems ? (
+                {/* 2-LEVEL ACCORDION MENU (Sub-items > 1) */}
+                {hasMultipleSubItems ? (
                   <div>
                     <button
                       onClick={() => toggleExpand(item.title)}
@@ -194,9 +198,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                                   }`}
                               >
-                                <Can permission={sub.permission ?? false}>
-                                  {sub.title}
-                                </Can>
+                                {sub.permission ? (
+                                  <Can permission={sub.permission}>
+                                    {sub.title}
+                                  </Can>
+                                ) : (
+                                  sub.title
+                                )}
                               </Link>
                             );
                           })}
@@ -205,21 +213,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     </AnimatePresence>
                   </div>
                 ) : (
-                  // Single Item Link
+                  // SINGLE LEVEL ITEM (Direct link with <Can> wrapper)
                   <Link
-                    to={item.path || '/'}
+                    to={targetPath}
                     onClick={() => {
                       if (window.innerWidth < 768) onClose();
                     }}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${active
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${location.pathname === targetPath
                       ? 'text-primary bg-primary/10 font-semibold'
                       : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                       }`}
                   >
-                    <span className={active ? 'text-primary' : 'text-on-surface-variant'}>
+                    <span className={location.pathname === targetPath ? 'text-primary' : 'text-on-surface-variant'}>
                       {item.icon}
                     </span>
-                    <span>{item.title}</span>
+                    {targetPermission ? (
+                      <Can permission={targetPermission}>
+                        <span>{targetTitle}</span>
+                      </Can>
+                    ) : (
+                      <span>{targetTitle}</span>
+                    )}
                   </Link>
                 )}
               </div>

@@ -1494,12 +1494,12 @@ export const TicketsViewx: React.FC = () => {
         /* ── Ticket List ──────────────────────────────────────────────────── */
         <>
           {/* Header Controls */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative max-w-sm w-full">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
               <input type="text" placeholder="Search work order no, title..."
                 value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface" />
+                className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface" />
             </div>
 
             <div className="flex flex-wrap items-center gap-3">

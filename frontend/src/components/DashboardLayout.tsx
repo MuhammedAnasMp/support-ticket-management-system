@@ -34,7 +34,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       return `${formatSegment(segments[1] || 'all')} Tickets`;
     }
     if (segments[0] === 'stores') {
-      if (segments[1] === 'all') return 'Manage Stores';
+      if (segments[1] === 'all') return 'Manage Locations';
       return formatSegment(segments[1] || 'stores');
     }
     if (segments[0] === 'maintenance') {

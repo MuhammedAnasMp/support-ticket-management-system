@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import Can from '@/hooks/Can';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -100,14 +101,18 @@ export const MaintenanceView: React.FC = () => {
           >
             <Edit2 className="w-3.5 h-3.5" />
           </button>
-          {canDelete && (
+          <Can permission={
+            subpage === 'natures' ? 'maintenance.delete_worknature' :
+              subpage === 'worker-assignments' ? 'maintenance.delete_natureworker' :
+                'stores.delete_subdepartment'
+          }>
             <button
               onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.sub_department_id)}
               className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
-          )}
+          </Can>
         </div>
       );
     };
@@ -123,11 +128,16 @@ export const MaintenanceView: React.FC = () => {
           field: 'active',
           width: 110,
           cellRenderer: (params: any) => (
-            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
-              }`}>
+            <span
+              className={`inline-flex h-5 items-center px-2.5 rounded-full text-[10px] font-bold ${params.value
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-red-500/10 text-red-600'
+                }`}
+            >
               {params.value ? 'Active' : 'Inactive'}
             </span>
           )
+
         },
         { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
       ];
@@ -433,19 +443,14 @@ export const MaintenanceView: React.FC = () => {
     })
     : extraNatures;
 
-  // Permission checks
-  const roleName = ((user?.role as any)?.role_name || (user?.role as string) || '').toLowerCase();
-  const isAdmin = roleName === 'admin' || roleName === 'administrator';
-  const userPerms: string[] = ((user?.role as any)?.permissions || []);
-  const subpagePermsMap: Record<string, { add: string; del: string }> = {
-    'natures': { add: 'add_worknature', del: 'delete_worknature' },
-    'worker-assignments': { add: 'add_natureworker', del: 'delete_natureworker' },
-    'sub-departments': { add: 'add_subdepartment', del: 'delete_subdepartment' },
-  };
-  const currentPerms = subpagePermsMap[subpage || ''];
-  const canAdd = isAdmin || (currentPerms ? userPerms.includes(currentPerms.add) : true);
-  const canDelete = isAdmin || (currentPerms ? userPerms.includes(currentPerms.del) : true);
-  const canManagePriorities = isAdmin || userPerms.includes('add_priority') || userPerms.includes('change_priority');
+  // Get department ID of selected sub-department in the nature form
+  const selectedSubDeptObj = extraSubs.find(s => String(s.sub_department_id) === String(natureForm.sub_department));
+  const selectedSubDeptDeptId = selectedSubDeptObj ? Number(selectedSubDeptObj.department?.department_id ?? selectedSubDeptObj.department) : null;
+
+  // Filter priorities to only show those for the selected sub-department's department
+  const natureFormPriorities = selectedSubDeptDeptId
+    ? extraPriorities.filter(p => Number(p.department?.department_id ?? p.department) === selectedSubDeptDeptId)
+    : [];
 
   const filteredData = data.filter(item => {
     const text = (item.nature_name || item.sub_department_name || item.worker?.full_name || '').toLowerCase();
@@ -468,7 +473,7 @@ export const MaintenanceView: React.FC = () => {
       )}
 
       {/* Top Bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative max-w-sm w-full">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
           <input
@@ -476,34 +481,41 @@ export const MaintenanceView: React.FC = () => {
             placeholder="Search here..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded-xl pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+            className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
           />
         </div>
 
         <div className="flex items-center gap-2">
-          {subpage === 'natures' && canManagePriorities && (
-            <button
-              type="button"
-              onClick={() => {
-                setPriorityErrorMsg('');
-                setShowPriorityModal(true);
-              }}
-              className="flex items-center gap-1.5 bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant text-xs font-semibold px-3.5 py-2.5 rounded-xl hover:bg-surface-container-highest transition-all cursor-pointer shadow-sm"
-            >
-              <AlertTriangle className="w-4 h-4 text-primary" />
-              Manage Priorities
-            </button>
+          {subpage === 'natures' && (
+            <Can permission={['maintenance.add_priority', 'maintenance.change_priority']}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPriorityErrorMsg('');
+                  setShowPriorityModal(true);
+                }}
+                // className="flex items-center gap-1.5 bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant text-xs font-semibold px-3.5 py-2.5 rounded-xl hover:bg-surface-container-highest transition-all cursor-pointer shadow-sm"
+                className="border-outline-none bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <AlertTriangle className="w-4 h-4 text-primary" />
+                Manage Priorities
+              </button>
+            </Can>
           )}
 
-          {canAdd && (
+          <Can permission={
+            subpage === 'natures' ? 'maintenance.add_worknature' :
+              subpage === 'worker-assignments' ? 'maintenance.add_natureworker' :
+                'stores.add_subdepartment'
+          }>
             <button
               onClick={handleOpenCreate}
-              className="hidden sm:flex items-center gap-1.5 bg-primary text-white text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-primary/95 transition-all cursor-pointer shadow-sm"
+              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4" />
               Add Configuration
             </button>
-          )}
+          </Can>
         </div>
       </div>
 
@@ -517,7 +529,8 @@ export const MaintenanceView: React.FC = () => {
       ) : (
         <>
           {/* Mobile View: Stacked Card Rows */}
-          <div className="sm:hidden divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface">
+          <div className="sm:hidden flex flex-col gap-y-3 divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface"
+          >
             {paginatedData.map(item => {
               const itemId = item.nature_id || item.nature_worker_id || item.sub_department_id;
               return (
@@ -525,33 +538,35 @@ export const MaintenanceView: React.FC = () => {
                   key={itemId}
                   type="button"
                   onClick={() => handleOpenEdit(item)}
-                  className="w-full text-left px-4 py-3.5 flex items-start gap-3 bg-surface active:bg-surface-container-high transition-colors cursor-pointer"
+                  className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                 >
                   <div className="flex-1 min-w-0 space-y-0.5">
                     {subpage === 'natures' ? (
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-bold text-on-surface text-sm truncate">{item.nature_name}</h4>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
-                            }`}>
-                            {item.active ? 'Active' : 'Inactive'}
-                          </span>
+                          <div className='flex gap-2 justify-center items-center'>
+
+                            <span className="text-primary text-[9px] font-medium">⚠️ {item.default_priority?.priority_name || 'No Priority'}</span>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                              }`}>
+                              {item.active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-outline">
-                          <span className="font-mono text-[10px] font-semibold">ID: {item.nature_id}</span>
-                          <span>·</span>
+                          {/* <span className="font-mono text-[10px] font-semibold">ID: {item.nature_id}</span> */}
                           <span>🏢 {item.sub_department?.sub_department_name || 'No Dept'}</span>
-                          <span>·</span>
-                          <span className="text-primary font-medium">⚠️ {item.default_priority?.priority_name || 'No Priority'}</span>
+
                         </div>
                       </>
                     ) : subpage === 'worker-assignments' ? (
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-bold text-on-surface text-sm truncate">{item.nature?.nature_name}</h4>
-                          <span className="font-mono text-[10px] text-outline">ID: {item.nature_worker_id}</span>
+                          {/* <span className="font-mono text-[10px] text-outline">ID: {item.nature_worker_id}</span> */}
                         </div>
-                        <p className="text-[11px] text-outline">👤 Technician: <span className="text-on-surface font-medium">{item.worker?.full_name}</span></p>
+                        <p className="flex items-center gap-2 text-[11px] text-outline">👤 Technician: <span className="text-on-surface font-medium">{item.worker?.full_name}</span></p>
                       </>
                     ) : (
                       <>
@@ -559,7 +574,7 @@ export const MaintenanceView: React.FC = () => {
                           <span className="font-bold text-on-surface text-sm truncate">{item.sub_department_name}</span>
                           <span className="font-mono text-[10px] text-outline">ID: {item.sub_department_id}</span>
                         </div>
-                        <p className="text-[11px] text-outline pt-0.5">🏢 Parent: {item.department?.department_name || 'N/A'}</p>
+                        <p className="text-[11px] text-outline pt-0.5 text-start">🏢 Parent: {item.department?.department_name || 'N/A'}</p>
                       </>
                     )}
                   </div>
@@ -657,7 +672,7 @@ export const MaintenanceView: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md overflow-y-auto rounded-2xl shadow-2xl p-6 space-y-4"
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md overflow-y-auto rounded shadow-2xl p-4 space-y-2"
             >
               <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
                 <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
@@ -720,7 +735,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Default Priority</option>
-                        {extraPriorities.map(p => <option key={p.priority_id} value={p.priority_id}>{p.priority_name} (Lvl {p.level})</option>)}
+                        {natureFormPriorities.map(p => <option key={p.priority_id} value={p.priority_id}>{p.priority_name} (Lvl {p.level})</option>)}
                       </select>
                     </div>
 
@@ -797,14 +812,15 @@ export const MaintenanceView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border rounded-lg text-xs font-semibold"
+                    className="px-3.5 py-2 border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium rounded transition-colors cursor-pointer
+"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5"
+                    className="px-3.5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-70 shadow-xs"
                   >
                     {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     Save Changes
@@ -832,7 +848,7 @@ export const MaintenanceView: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg overflow-y-auto max-h-[90vh] rounded-2xl shadow-2xl p-6 space-y-4"
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-3xl overflow-y-auto max-h-[90vh] rounded shadow-2xl p-4 space-y-2"
             >
               <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
                 <div className="flex items-center gap-2">
@@ -904,7 +920,7 @@ export const MaintenanceView: React.FC = () => {
                   <button
                     type="submit"
                     disabled={priorityActionLoading}
-                    className="px-3.5 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1 cursor-pointer"
+                    className="px-3.5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-70 shadow-xs"
                   >
                     {priorityActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                     Add Priority
@@ -922,11 +938,13 @@ export const MaintenanceView: React.FC = () => {
                     {allowedPriorities.map(p => (
                       <div key={p.priority_id} className="p-2.5 flex items-center justify-between gap-2 text-xs">
                         <div>
+                          <Can permission="maintenance.delete_priority">
+                            <div className='mr-2'>{p.department_detail.department_name}</div>
+                          </Can>
                           <span className="font-bold text-on-surface">{p.priority_name}</span>
                           <span className="ml-2 font-mono text-[10px] text-outline">LVL {p.level}</span>
-                          <span className="ml-2 text-[10px] text-outline">({p.department?.department_name || 'N/A'})</span>
                         </div>
-                        {canManagePriorities && (
+                        <Can permission="maintenance.delete_priority">
                           <button
                             type="button"
                             onClick={() => handleDeletePriority(p.priority_id)}
@@ -935,7 +953,7 @@ export const MaintenanceView: React.FC = () => {
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        )}
+                        </Can>
                       </div>
                     ))}
                   </div>
@@ -946,7 +964,7 @@ export const MaintenanceView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPriorityModal(false)}
-                  className="px-4 py-2 bg-surface-container-high text-on-surface border rounded-lg text-xs font-semibold cursor-pointer"
+                  className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
                 >
                   Close
                 </button>

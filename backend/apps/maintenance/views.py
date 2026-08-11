@@ -47,6 +47,26 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return WorkNature.objects.none()
+
+        if not user.is_superuser:
+            user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+            can_view_all_depts = (
+                user.has_perm('maintenance.view_all_department_tickets') or
+                user.has_perm('maintenance.create_ticket_all_departments') or
+                'main_admin' in user_groups_lower or
+                'main administrator' in user_groups_lower or
+                'administrator' in user_groups_lower
+            )
+            if not can_view_all_depts:
+                user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
+                if user_dept_ids:
+                    queryset = queryset.filter(sub_department__department_id__in=user_dept_ids)
+                else:
+                    return WorkNature.objects.none()
+
         department = self.request.query_params.get('department')
         if department:
             queryset = queryset.filter(

@@ -491,21 +491,21 @@ export const WorkforceView: React.FC = () => {
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  const formRoleObj = roles.find(r => 
+  const formRoleObj = roles.find(r =>
     String(r.role_id) === String(employeeForm.role) ||
     String(r.role_name).toLowerCase() === String(employeeForm.role).toLowerCase()
   );
   const selectedRolePermissions = (formRoleObj?.permissions || []) as string[];
-  const isFormTechnician = selectedRolePermissions.includes('complete_ticket') || 
+  const isFormTechnician = selectedRolePermissions.includes('complete_ticket') ||
     (formRoleObj?.role_name || '').toLowerCase() === 'technician' ||
     String(employeeForm.role).toLowerCase() === 'technician';
   const isFormStoreManager = !isFormTechnician && (
-    (selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) || 
+    (selectedRolePermissions.includes('create_ticket') && !selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('complete_ticket')) ||
     (formRoleObj?.role_name || '').toLowerCase() === 'store manager' ||
     String(employeeForm.role).toLowerCase() === 'store manager'
   );
   const isFormAreaManager = !isFormTechnician && (
-    (selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) || 
+    (selectedRolePermissions.includes('create_ticket_all_departments') && !selectedRolePermissions.includes('approve_ticket')) ||
     (formRoleObj?.role_name || '').toLowerCase() === 'area manager' ||
     String(employeeForm.role).toLowerCase() === 'area manager'
   );
@@ -513,9 +513,9 @@ export const WorkforceView: React.FC = () => {
     (formRoleObj.role_name || '').toLowerCase().includes('office admin') ||
     (formRoleObj.role_name || '').toLowerCase().includes('office administrator')
   )) || (
-    String(employeeForm.role).toLowerCase().includes('office admin') ||
-    String(employeeForm.role).toLowerCase().includes('office administrator')
-  );
+      String(employeeForm.role).toLowerCase().includes('office admin') ||
+      String(employeeForm.role).toLowerCase().includes('office administrator')
+    );
   const needsWorkingDepartments = (!isFormStoreManager && !isFormAreaManager) || !!isFormOfficeAdmin;
 
   const selectedSubDepts = subDepartments.filter(sd =>
@@ -899,7 +899,7 @@ export const WorkforceView: React.FC = () => {
       <div className="flex flex-col border border-outline-variant rounded overflow-hidden bg-surface-container">
 
         {/* Top Header & Toolbar Bar */}
-        <div className="bg-surface-container-low border-b border-outline-variant px-4 py-3 flex flex-col gap-3">
+        <div className="bg-surface-container-low border-b border-outline-variant px-4 sm:py-3 flex flex-col gap-3">
 
           {/* Row 1: Search, Sub-tabs & Action Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -960,7 +960,7 @@ export const WorkforceView: React.FC = () => {
                         setCopiedToast(false);
                         setShowLinkModal(true);
                       }}
-                      className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                      className="border-outline-none bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <LinkIcon className="w-4 h-4 text-primary" />
                       <span className="hidden sm:inline">Registration Link</span>
@@ -1728,7 +1728,7 @@ export const WorkforceView: React.FC = () => {
                           renderedCount += 1;
 
                           return (
-<div key={deptName} className="space-y-2 pb-2 border-b border-outline-variant/30 last:border-b-0">
+                            <div key={deptName} className="space-y-2 pb-2 border-b border-outline-variant/30 last:border-b-0">
                               <h5 className="text-[10px] font-bold text-outline uppercase tracking-wider">{deptName}</h5>
 
                               <div className="space-y-3 pl-2">
