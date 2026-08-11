@@ -51,8 +51,12 @@ export default defineConfig({
         ],
       },
     })
-
   ],
+  base: '/static/',
+  build: {
+    outDir: path.resolve(__dirname, '../backend/static'),
+    emptyOutDir: true,
+  },
   server: {
     port: 3001,
     host: '0.0.0.0',
