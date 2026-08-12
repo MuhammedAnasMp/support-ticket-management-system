@@ -93,6 +93,10 @@ export interface Media {
 export const getMediaUrl = (url: string) => {
     if (!url) return '';
     if (url.startsWith('http')) return url;
+    const base = MEDIA_BASE.replace(/\/$/, '');
+    if (base.startsWith('/') && url.startsWith(base)) {
+        return url;
+    }
     return `${MEDIA_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 

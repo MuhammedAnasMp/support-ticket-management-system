@@ -26,9 +26,12 @@ export const WebSocketListener: React.FC = () => {
 
     const connect = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const apiHost = import.meta.env.VITE_API_URL
-        ? import.meta.env.VITE_API_URL.replace(/^https?:\/\//, '').replace(/\/api$/, '')
-        : 'localhost:8000';
+      let apiHost = import.meta.env.VITE_API_URL || 'localhost:8000';
+      if (apiHost.startsWith('/')) {
+        apiHost = window.location.host;
+      } else {
+        apiHost = apiHost.replace(/^https?:\/\//, '').replace(/\/api$/, '');
+      }
       const wsUrl = `${protocol}//${apiHost}/ws/updates/?token=${token}`;
 
       const socket = new WebSocket(wsUrl);
