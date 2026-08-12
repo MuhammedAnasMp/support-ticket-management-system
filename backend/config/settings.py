@@ -102,6 +102,7 @@ CHANNEL_LAYERS = {
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 if not DEBUG and os.environ.get("DB_NAME"):
+    print("<Production>")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -119,6 +120,13 @@ if not DEBUG and os.environ.get("DB_NAME"):
         }
     }
 else:
+    print("<DEV>")
+    print("<DEV>")
+    print("<DEV>")
+    print("<DEV>")
+    print("<DEV>")
+    print("<DEV>")
+    print("<DEV>")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
