@@ -25,3 +25,10 @@ application = ProtocolTypeRouter({
         config.routing.websocket_urlpatterns
     ),
 })
+
+# Serve static files in development when running Daphne/ASGI directly
+from django.conf import settings
+if settings.DEBUG:
+    from django.contrib.staticfiles.handlers import ASGIStaticFilesHandler
+    application = ASGIStaticFilesHandler(application)
+
