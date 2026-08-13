@@ -17,6 +17,8 @@ Incremental==24.11.0
 msgpack==1.2.1
 packaging==26.3
 pillow==12.3.0
+psycopg==3.3.4
+psycopg-binary==3.3.4
 pycparser==3.0
 pyOpenSSL==26.4.0
 python-dotenv==1.2.2
