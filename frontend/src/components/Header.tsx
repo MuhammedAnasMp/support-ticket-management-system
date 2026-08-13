@@ -139,6 +139,11 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
     if (user) {
       checkNotificationStatus();
     }
+
+    window.addEventListener('push-subscription-changed', checkNotificationStatus);
+    return () => {
+      window.removeEventListener('push-subscription-changed', checkNotificationStatus);
+    };
   }, [user]);
 
   const handleToggleNotifications = async () => {
@@ -147,9 +152,11 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
       if (notificationsEnabled) {
         await disablePushNotifications();
         setNotificationsEnabled(false);
+        localStorage.setItem('push_notifications_enabled', 'false');
       } else {
         await enablePushNotifications();
         setNotificationsEnabled(true);
+        localStorage.setItem('push_notifications_enabled', 'true');
       }
     } catch (err) {
       console.error('Failed to toggle notifications:', err);

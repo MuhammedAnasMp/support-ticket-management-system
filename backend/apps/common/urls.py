@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import MediaCategoryViewSet, MediaViewSet, NotificationViewSet, SubscribePushView, UnsubscribePushView
+from .views import MediaCategoryViewSet, MediaViewSet, NotificationViewSet, SubscribePushView, UnsubscribePushView, GithubWebhookView
 
 router = DefaultRouter()
 router.register(r'mediacategory', MediaCategoryViewSet)
@@ -20,6 +20,12 @@ urlpatterns = [
         'push/unsubscribe/',
         UnsubscribePushView.as_view(),
         name='push-unsubscribe'
+    ),
+
+    path(
+        'deploy/webhook/',
+        GithubWebhookView.as_view(),
+        name='deploy-webhook'
     ),
 
 ]

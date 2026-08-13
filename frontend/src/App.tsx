@@ -29,8 +29,10 @@ import { TicketHistoryView } from './pages/ticket/TicketHistoryView';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 
 import { WebSocketListener } from './components/WebSocketListener';
+import { PushNotificationPrompt } from './components/PushNotificationPrompt';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
 
 // Theme helper functions
 const getInitialTheme = (): boolean => {
@@ -126,6 +128,7 @@ const App: React.FC = () => {
       <Router>
         <PageTitle />
         <WebSocketListener />
+        <PushNotificationPrompt />
         <ThemeToggleOverlay isDark={isDark} setIsDark={setIsDark} />
         <Routes>
           <Route path="/login" element={<LoginView />} />

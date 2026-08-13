@@ -141,6 +141,8 @@ export async function enablePushNotifications() {
     }
 
 
+    const oldEndpoint = localStorage.getItem('last_registered_push_endpoint')
+
     const response =
         await fetch(
             `${apiUrl}/common/push/subscribe/`,
@@ -155,6 +157,7 @@ export async function enablePushNotifications() {
                 body: JSON.stringify({
                     subscription:
                         subscription.toJSON(),
+                    old_endpoint: oldEndpoint || undefined,
                 }),
             }
         )
@@ -184,6 +187,7 @@ export async function enablePushNotifications() {
         )
     }
 
+    localStorage.setItem('last_registered_push_endpoint', subscription.endpoint)
 
     return subscription
 }
@@ -222,6 +226,8 @@ export async function disablePushNotifications() {
 
     const token = localStorage.getItem('token')
 
+
+    localStorage.removeItem('last_registered_push_endpoint')
 
     await fetch(
         `${apiUrl}/common/push/unsubscribe/`,

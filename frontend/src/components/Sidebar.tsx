@@ -86,11 +86,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   // Check if a path or any subitem path matches the current location
   const isPathActive = (path?: string, subItems?: SubItem[]) => {
-    if (path) return location.pathname === path;
-    if (subItems) {
+    if (subItems && subItems.length > 0) {
       return subItems.some((subItem) => location.pathname === subItem.path);
     }
-    return false;
+    return Boolean(path && location.pathname === path);
   };
 
   const sidebarContent = (
@@ -143,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             const singleSubItem = item.subItems && item.subItems.length === 1 ? item.subItems[0] : null;
 
             // Target path, title & permission for 1-level single items
-            const targetPath = singleSubItem ? singleSubItem.path : (item.path || '/');
+            const targetPath = singleSubItem ? singleSubItem.path : item.path;
             const targetTitle = singleSubItem ? singleSubItem.title : item.title;
             const targetPermission = singleSubItem ? singleSubItem.permission : item.permission;
 
@@ -215,7 +214,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 ) : (
                   // SINGLE LEVEL ITEM (Direct link with <Can> wrapper)
                   <Link
-                    to={targetPath}
+                    to={targetPath || '#'}
                     onClick={() => {
                       if (window.innerWidth < 768) onClose();
                     }}
