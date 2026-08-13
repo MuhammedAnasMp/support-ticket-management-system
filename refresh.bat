@@ -1,7 +1,9 @@
 @echo off
 setlocal
 
-REM Go to project directory
+REM ==========================================
+REM Project directory
+REM ==========================================
 cd /d C:\inetpub\wwwroot\support-ticket-management-system
 
 echo.
@@ -15,11 +17,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM ==========================================
+REM Build frontend
+REM ==========================================
 echo.
 echo ==========================================
 echo Building frontend
 echo ==========================================
-cd /d frontend
+cd /d C:\inetpub\wwwroot\support-ticket-management-system\frontend
+
 call npm run build
 
 if errorlevel 1 (
@@ -27,27 +33,57 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM ==========================================
+REM Backend
+REM ==========================================
+echo.
+echo ==========================================
+echo Updating Python packages
+echo ==========================================
+
+cd /d C:\inetpub\wwwroot\support-ticket-management-system\backend
+
+venv\Scripts\python.exe -m pip install -r requirements.txt
+
+if errorlevel 1 (
+    echo ERROR: pip install failed.
+    exit /b 1
+)
+
+REM ==========================================
+REM Django collectstatic
+REM ==========================================
 echo.
 echo ==========================================
 echo Collecting Django static files
 echo ==========================================
-cd /d ..\backend
-python manage.py collectstatic --noinput
+
+venv\Scripts\python.exe manage.py collectstatic --noinput
 
 if errorlevel 1 (
     echo ERROR: Django collectstatic failed.
     exit /b 1
 )
 
+REM ==========================================
+REM Restart mtracker
+REM ==========================================
 echo.
 echo ==========================================
 echo Restarting mtracker service
 echo ==========================================
+
 powershell -NoProfile -Command "Stop-Service mtracker -Force"
+
+if errorlevel 1 (
+    echo ERROR: Failed to stop mtracker service.
+    exit /b 1
+)
+
 powershell -NoProfile -Command "Start-Service mtracker"
 
 if errorlevel 1 (
-    echo ERROR: Failed to restart mtracker service.
+    echo ERROR: Failed to start mtracker service.
     exit /b 1
 )
 
@@ -55,4 +91,5 @@ echo.
 echo ==========================================
 echo Deployment completed successfully!
 echo ==========================================
+
 pause
