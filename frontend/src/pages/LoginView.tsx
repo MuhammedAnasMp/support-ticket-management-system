@@ -26,8 +26,8 @@ export const LoginView: React.FC = () => {
   }, [navigate]);
 
   const handleEmployeeNoChange = (val: string) => {
-    const clean = val.replace(/\D/g, '');
-    setEmployeeNo(clean);
+    // const clean = val.replace(/\D/g, '');  
+    setEmployeeNo(val);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

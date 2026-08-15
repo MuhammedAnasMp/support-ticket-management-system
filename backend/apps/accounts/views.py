@@ -250,12 +250,7 @@ class LoginView(APIView):
         profile_image_url = None
 
         if user.profile_image:
-            try:
-                profile_image_url = request.build_absolute_uri(
-                    user.profile_image.url
-                )
-            except Exception:
-                profile_image_url = user.profile_image.url
+            profile_image_url = user.profile_image.url
 
         return Response({
             "token": token.key,
@@ -293,11 +288,7 @@ class ProfileView(APIView):
         # Build image URL if it exists
         profile_image_url = None
         if user.profile_image:
-            try:
-                profile_image_url = request.build_absolute_uri(
-                    user.profile_image.url)
-            except Exception:
-                profile_image_url = user.profile_image.url
+            profile_image_url = user.profile_image.url
 
         return Response({
             "permissions": list(user.get_all_permissions()),
