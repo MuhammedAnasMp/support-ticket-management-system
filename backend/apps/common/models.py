@@ -158,3 +158,14 @@ def send_push_on_notification_create(sender, instance, created, **kwargs):
                 )
         except Exception as wse:
             print("Failed to broadcast WebSocket notification:", wse)
+
+
+@receiver(models.signals.post_save, sender=Media)
+def compress_media_on_create(sender, instance, created, **kwargs):
+    if created and instance.file_url:
+        try:
+            from apps.common.services import compress_media_file_async
+            file_path = instance.file_url.path
+            compress_media_file_async(file_path)
+        except Exception as err:
+            print("Failed to start media compression:", err)
