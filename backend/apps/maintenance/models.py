@@ -546,6 +546,26 @@ def create_ticket_history_on_save(sender, instance, created, **kwargs):
         )
 
 
+def get_chat_media_path(instance, filename):
+    import os
+    ext = os.path.splitext(filename)[1].lower()
+    if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'):
+        media_type = 'images'
+    elif ext in ('.mp4', '.mov', '.avi', '.mkv', '.webm'):
+        media_type = 'videos'
+    elif ext in ('.mp3', '.wav', '.ogg', '.m4a', '.aac'):
+        media_type = 'voices'
+    else:
+        media_type = 'others'
+        
+    ticket = instance.ticket
+    if ticket:
+        store_slug = ticket.store.store_name.lower().replace(
+            ' ', '_') if ticket.store else 'unknown_store'
+        return f"stores/{store_slug}/tickets/ticket_{ticket.ticket_id}/chats/{media_type}/{filename}"
+    return f"general/chats/{media_type}/{filename}"
+
+
 class TicketChatMessage(models.Model):
     message_id = models.AutoField(primary_key=True)
     ticket = models.ForeignKey(
@@ -554,11 +574,11 @@ class TicketChatMessage(models.Model):
         'accounts.CustomUser', on_delete=models.CASCADE, related_name='sent_chat_messages')
     message_text = models.TextField(null=True, blank=True)
     image = models.ImageField(
-        upload_to='ticket_chats/images/', null=True, blank=True)
+        upload_to=get_chat_media_path, null=True, blank=True)
     video = models.FileField(
-        upload_to='ticket_chats/videos/', null=True, blank=True)
+        upload_to=get_chat_media_path, null=True, blank=True)
     voice = models.FileField(
-        upload_to='ticket_chats/voices/', null=True, blank=True)
+        upload_to=get_chat_media_path, null=True, blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:

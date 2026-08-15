@@ -20,6 +20,19 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import TemplateView
 
+# Monkeypatch DRF FileField to return relative URLs instead of absolute URLs,
+# preventing hardcoded localhost/127.0.0.1:8000 domains behind reverse proxies.
+from rest_framework.serializers import FileField
+def relative_to_representation(self, value):
+    if not value:
+        return None
+    try:
+        return value.url
+    except AttributeError:
+        return None
+FileField.to_representation = relative_to_representation
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/accounts/', include('apps.accounts.urls')),
