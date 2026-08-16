@@ -30,6 +30,52 @@ function urlBase64ToUint8Array(
 
 
 // ==========================================
+// HELPER: GET SERVICE WORKER REGISTRATION
+// ==========================================
+
+async function getSWRegistration(): Promise<ServiceWorkerRegistration> {
+    if (!('serviceWorker' in navigator)) {
+        throw new Error('This browser does not support service workers.')
+    }
+
+    // 1. Try navigator.serviceWorker.ready with a 2-second timeout
+    try {
+        const readyPromise = navigator.serviceWorker.ready
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000))
+        const reg = await Promise.race([readyPromise, timeoutPromise])
+        if (reg) return reg
+    } catch {
+        // ignore timeout/error
+    }
+
+    // 2. Check existing registrations via getRegistrations() or getRegistration()
+    try {
+        const registrations = await navigator.serviceWorker.getRegistrations()
+        if (registrations && registrations.length > 0) {
+            const activeReg = registrations.find(r => r.active || r.installing || r.waiting) || registrations[0]
+            if (activeReg) return activeReg
+        }
+        const singleReg = await navigator.serviceWorker.getRegistration()
+        if (singleReg) return singleReg
+    } catch {
+        // ignore error
+    }
+
+    // 3. Fallback: Register the service worker manually if it hasn't been registered yet
+    try {
+        const baseUrl = (import.meta.env.BASE_URL || '/static/').replace(/\/+$/, '/')
+        const swUrl = baseUrl + 'sw.js'
+        const reg = await navigator.serviceWorker.register(swUrl)
+        return reg
+    } catch (err: any) {
+        throw new Error(
+            'Service Worker is not ready. Make sure the app is loaded over localhost or HTTPS, then hard-refresh (Ctrl+Shift+R) and try again.'
+        )
+    }
+}
+
+
+// ==========================================
 // ENABLE PUSH NOTIFICATIONS
 // ==========================================
 
@@ -73,17 +119,8 @@ export async function enablePushNotifications() {
     }
 
 
-    // Get service worker (with 10s timeout to avoid silent hangs)
-    const swTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(
-            'Service Worker is not ready. Make sure the app is loaded over localhost or HTTPS, then hard-refresh (Ctrl+Shift+R) and try again.'
-        )), 10000)
-    )
-
-    const registration = await Promise.race([
-        navigator.serviceWorker.ready,
-        swTimeout,
-    ])
+    // Get service worker registration reliably
+    const registration = await getSWRegistration()
 
 
     // ========================================
@@ -200,7 +237,7 @@ export async function enablePushNotifications() {
 export async function disablePushNotifications() {
 
     const registration =
-        await navigator.serviceWorker.ready
+        await getSWRegistration()
 
 
     const subscription =
@@ -257,18 +294,19 @@ export async function isPushEnabled() {
         return false
     }
 
+    try {
+        const registration =
+            await getSWRegistration()
 
-    const registration =
-        await navigator.serviceWorker.ready
+        const subscription =
+            await registration
+                .pushManager
+                .getSubscription()
 
-
-    const subscription =
-        await registration
-            .pushManager
-            .getSubscription()
-
-
-    return (
-        subscription !== null
-    )
+        return (
+            subscription !== null
+        )
+    } catch {
+        return false
+    }
 }

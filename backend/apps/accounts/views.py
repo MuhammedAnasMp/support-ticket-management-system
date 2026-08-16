@@ -32,7 +32,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         can_view_all = (
             user.has_perm('maintenance.view_all_department_tickets') or
             user.has_perm('maintenance.create_ticket_all_departments') or
-            'main_admin' in user_groups_lower or
+            'administrator' in user_groups_lower or
             'main administrator' in user_groups_lower
         )
         if can_view_all:
