@@ -18,6 +18,21 @@ if errorlevel 1 (
 )
 
 REM ==========================================
+REM Generate permissions JSON
+REM ==========================================
+echo.
+echo ==========================================
+echo Generating default_permissions.json
+echo ==========================================
+cd /d C:\inetpub\wwwroot\support-ticket-management-system\backend
+call venv\Scripts\python.exe manage.py permissions
+
+if errorlevel 1 (
+    echo ERROR: Permissions generation failed.
+    exit /b 1
+)
+
+REM ==========================================
 REM Build frontend
 REM ==========================================
 echo.

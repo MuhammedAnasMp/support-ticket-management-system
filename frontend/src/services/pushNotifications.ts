@@ -33,6 +33,36 @@ function urlBase64ToUint8Array(
 // HELPER: GET SERVICE WORKER REGISTRATION
 // ==========================================
 
+async function waitActive(registration: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> {
+    if (registration.active) {
+        return registration
+    }
+
+    const serviceWorker = registration.installing || registration.waiting
+    if (!serviceWorker) {
+        return registration
+    }
+
+    return new Promise((resolve) => {
+        const stateChangeHandler = () => {
+            if (serviceWorker.state === 'activated' || registration.active) {
+                serviceWorker.removeEventListener('statechange', stateChangeHandler)
+                resolve(registration)
+            }
+        }
+        serviceWorker.addEventListener('statechange', stateChangeHandler)
+        if (serviceWorker.state === 'activated' || registration.active) {
+            serviceWorker.removeEventListener('statechange', stateChangeHandler)
+            resolve(registration)
+        }
+        // Safety timeout of 5 seconds to avoid hanging
+        setTimeout(() => {
+            serviceWorker.removeEventListener('statechange', stateChangeHandler)
+            resolve(registration)
+        }, 5000)
+    })
+}
+
 async function getSWRegistration(): Promise<ServiceWorkerRegistration> {
     if (!('serviceWorker' in navigator)) {
         throw new Error('This browser does not support service workers.')
@@ -43,7 +73,7 @@ async function getSWRegistration(): Promise<ServiceWorkerRegistration> {
         const readyPromise = navigator.serviceWorker.ready
         const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000))
         const reg = await Promise.race([readyPromise, timeoutPromise])
-        if (reg) return reg
+        if (reg) return await waitActive(reg)
     } catch {
         // ignore timeout/error
     }
@@ -53,10 +83,10 @@ async function getSWRegistration(): Promise<ServiceWorkerRegistration> {
         const registrations = await navigator.serviceWorker.getRegistrations()
         if (registrations && registrations.length > 0) {
             const activeReg = registrations.find(r => r.active || r.installing || r.waiting) || registrations[0]
-            if (activeReg) return activeReg
+            if (activeReg) return await waitActive(activeReg)
         }
         const singleReg = await navigator.serviceWorker.getRegistration()
-        if (singleReg) return singleReg
+        if (singleReg) return await waitActive(singleReg)
     } catch {
         // ignore error
     }
@@ -66,7 +96,7 @@ async function getSWRegistration(): Promise<ServiceWorkerRegistration> {
         const baseUrl = (import.meta.env.BASE_URL || '/static/').replace(/\/+$/, '/')
         const swUrl = baseUrl + 'sw.js'
         const reg = await navigator.serviceWorker.register(swUrl)
-        return reg
+        return await waitActive(reg)
     } catch (err: any) {
         throw new Error(
             'Service Worker is not ready. Make sure the app is loaded over localhost or HTTPS, then hard-refresh (Ctrl+Shift+R) and try again.'
