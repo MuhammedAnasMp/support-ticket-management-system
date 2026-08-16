@@ -97,8 +97,8 @@ class Command(BaseCommand):
                 f" * {p.content_type.app_label}.{p.codename} -> {p.name}")
         self.stdout.write("")
 
-        # JSON file path
-        root_dir = r"E:\Code\Maintenancde Tracker"
+        # JSON file path dynamically located from BASE_DIR
+        root_dir = settings.BASE_DIR.parent
         file_path = os.path.join(root_dir, "frontend",
                                  "src", "hooks", "default_permissions.json")
 
