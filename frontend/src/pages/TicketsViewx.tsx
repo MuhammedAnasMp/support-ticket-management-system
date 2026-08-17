@@ -14,7 +14,7 @@ import { usePermission } from '../hooks/usePermission';
 import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || 'http://localhost:8000';
+const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || window.location.origin;
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@ import { Eye, FileText, Trash2, Headphones, X, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-export const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || 'http://localhost:8000';
+export const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || window.location.origin;
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 

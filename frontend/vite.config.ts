@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     tailwindcss(),
@@ -52,7 +52,7 @@ export default defineConfig({
       },
     })
   ],
-  base: '/static/',
+  base: command === 'serve' ? '/' : '/static/',
   build: {
     outDir: path.resolve(__dirname, '../backend/static'),
     emptyOutDir: true,
@@ -61,11 +61,23 @@ export default defineConfig({
     port: 3001,
     host: '0.0.0.0',
     allowedHosts: true as any,
+    proxy: {
+      '/media': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 3001,
     host: '0.0.0.0',
     allowedHosts: true as any,
+    proxy: {
+      '/media': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
   },
 
   resolve: {
@@ -73,4 +85,5 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-})
+}))
+

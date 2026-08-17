@@ -521,8 +521,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         try {
             const selectedWorkerObj = workers.find(w => String(w.user_id) === String(newAllocation.worker_id));
             const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
+            const hasOfficeSubDept = selectedWorkerObj && Array.isArray(selectedWorkerObj.sub_departments) && selectedWorkerObj.sub_departments.some((sd: any) => {
+                const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
+                return name === 'office';
+            });
 
-            if (newAllocation.worker_id && !hasRate) {
+            if (newAllocation.worker_id && !hasRate && !hasOfficeSubDept) {
                 if (!hourlyRateToCreate) {
                     alert("Please specify the hourly rate.");
                     setActionLoading(false);
@@ -1968,7 +1972,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         if (!newAllocation.worker_id) return null;
                                         const selectedWorkerObj = workers.find(w => String(w.user_id) === String(newAllocation.worker_id));
                                         const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
-                                        if (hasRate) return null;
+                                        const hasOfficeSubDept = selectedWorkerObj && Array.isArray(selectedWorkerObj.sub_departments) && selectedWorkerObj.sub_departments.some((sd: any) => {
+                                            const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
+                                            return name === 'office';
+                                        });
+                                        if (hasRate || hasOfficeSubDept) return null;
                                         return (
                                             <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 rounded-lg space-y-2 animate-fadeIn">
                                                 <div className="flex items-start gap-1.5 text-xs font-bold">
