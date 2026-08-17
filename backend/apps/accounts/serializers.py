@@ -110,7 +110,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
                     latest_rate = self.instance.rates.order_by(
                         '-effective_from', '-rate_id').first()
                     hourly_rate = latest_rate.hourly_rate if latest_rate else None
-                if hourly_rate in [None, '']:
+                if 'office' not in sd_names and hourly_rate in [None, '']:
                     raise serializers.ValidationError(
                         {"hourly_rate": "Hourly wage rate is required to approve this employee."}
                     )

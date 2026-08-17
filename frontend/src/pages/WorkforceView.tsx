@@ -781,7 +781,8 @@ export const WorkforceView: React.FC = () => {
           return;
         }
 
-        if (!employeeForm.hourly_rate || parseFloat(employeeForm.hourly_rate) <= 0) {
+        const isOfficeSelected = selectedSubDepts.some(sd => sd.sub_department_name.trim().toLowerCase() === 'office');
+        if (!isOfficeSelected && (!employeeForm.hourly_rate || parseFloat(employeeForm.hourly_rate) <= 0)) {
           setErrorMsg("Hourly wage rate is required to approve this employee under the 'Salary & Rate' tab.");
           setActionLoading(false);
           return;
