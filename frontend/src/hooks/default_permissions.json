@@ -172,6 +172,7 @@
     "maintenance.approve_ticket": "Allows can approve ticket.",
     "maintenance.can_change_my_log_time": "Allows can can change my log time.",
     "maintenance.can_change_others_log_time": "Allows can can change others log time.",
+    "maintenance.can_filter_worker_ticket": "Allows can filter worker ticket.",
     "maintenance.can_move_blocked_to_completed": "Allows can can move blocked to completed.",
     "maintenance.can_move_blocked_to_in_progress": "Allows can can move blocked to in progress.",
     "maintenance.can_move_blocked_to_open": "Allows can move blocked to open.",
@@ -493,6 +494,7 @@
         "maintenance.approve_ticket",
         "maintenance.can_change_my_log_time",
         "maintenance.can_change_others_log_time",
+        "maintenance.can_filter_worker_ticket",
         "maintenance.can_move_blocked_to_completed",
         "maintenance.can_move_blocked_to_in_progress",
         "maintenance.can_move_blocked_to_open",
@@ -686,13 +688,19 @@
         "maintenance.view_worknature",
         "stores.add_area",
         "stores.view_store",
-        "stores.view_subdepartment"
+        "stores.view_subdepartment",
+        "maintenance.change_priority",
+        "stores.add_store",
+        "stores.change_store",
+        "maintenance.add_natureworker",
+        "maintenance.add_worknature"
       ]
     },
     "Store Manager": {
       "display_name": "Store Manager",
       "ui_privileges": "",
       "permissions": [
+        "accounts.view_accessible_stores",
         "maintenance.can_move_location_approval_to_in_progress",
         "maintenance.can_move_rejected_to_open",
         "maintenance.can_view_blocked_ticket",
@@ -705,7 +713,8 @@
         "maintenance.create_ticket_all_departments",
         "maintenance.switch_to_card_view",
         "maintenance.update_before_repair",
-        "maintenance.view_ticket"
+        "maintenance.view_ticket",
+        "stores.view_store"
       ]
     },
     "Technician": {
@@ -725,6 +734,13 @@
         "maintenance.switch_to_card_view",
         "maintenance.update_after_repair",
         "maintenance.view_ticket"
+      ]
+    },
+    "office admin": {
+      "display_name": "Office Admin",
+      "ui_privileges": "",
+      "permissions": [
+        "maintenance.can_filter_worker_ticket"
       ]
     }
   }
