@@ -65,6 +65,23 @@ if errorlevel 1 (
     exit /b 1
 )
 
+
+
+venv\Scripts\python.exe manage.py makemigrations
+
+if errorlevel 1 (
+    echo ERROR: makemigrations failed.
+    exit /b 1
+)
+
+venv\Scripts\python.exe manage.py migrate
+
+if errorlevel 1 (
+    echo ERROR: migrate failed.
+    exit /b 1
+)
+
+
 REM ==========================================
 REM Django collectstatic
 REM ==========================================
