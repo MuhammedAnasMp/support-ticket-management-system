@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.utils import timezone
 import os
 import hashlib
 import hmac
@@ -158,7 +159,7 @@ class UnsubscribePushView(APIView):
             )
 
 
-PROJECT_DIR = r"C:\inetpub\wwwroot\support-ticket-management-system"
+PROJECT_DIR = str(settings.BASE_DIR.parent)
 
 
 def run_command(command, cwd=None):
