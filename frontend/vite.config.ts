@@ -40,13 +40,13 @@ export default defineConfig(({ command }) => {
 
         icons: [
           {
-            src: `${base}pwa-192x192.png`,
+            src: `${base}icon-192x192.png`,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: `${base}pwa-512x512.png`,
+            src: `${base}icon-512x512.png`,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',

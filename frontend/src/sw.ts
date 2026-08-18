@@ -81,9 +81,9 @@ self.addEventListener(
                 data.message ||
                 'You have a new notification.',
 
-            icon: '/pwa-192x192.png',
+            icon: `${import.meta.env.BASE_URL}icon-192x192.png`,
 
-            badge: '/pwa-192x192.png',
+            badge: `${import.meta.env.BASE_URL}ic_stat_notify.png`,
 
             image: imageUrl || undefined,
 
