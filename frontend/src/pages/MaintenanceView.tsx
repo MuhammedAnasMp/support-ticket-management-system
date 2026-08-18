@@ -452,6 +452,30 @@ export const MaintenanceView: React.FC = () => {
     ? extraPriorities.filter(p => Number(p.department?.department_id ?? p.department) === selectedSubDeptDeptId)
     : [];
 
+  // Filter technicians to only those in the same department as the selected Nature
+  const filteredUsers = useMemo(() => {
+    if (!workerAssignmentForm.nature) return users;
+
+    const selectedNature = allowedNatures.find(n => String(n.nature_id) === String(workerAssignmentForm.nature));
+    if (!selectedNature) return users;
+
+    const natureSubDeptId = selectedNature.sub_department?.sub_department_id ?? selectedNature.sub_department;
+    const natureSubDept = extraSubs.find(s => String(s.sub_department_id) === String(natureSubDeptId));
+    const natureDeptId = natureSubDept?.department?.department_id ?? natureSubDept?.department;
+
+    if (!natureDeptId) return users;
+
+    return users.filter(u => {
+      if (!u.sub_departments || u.sub_departments.length === 0) return false;
+      return u.sub_departments.some((userSd: any) => {
+        const userSdId = typeof userSd === 'object' ? userSd.sub_department_id : userSd;
+        const uSubDept = extraSubs.find(s => String(s.sub_department_id) === String(userSdId));
+        const uDeptId = uSubDept?.department?.department_id ?? uSubDept?.department;
+        return String(uDeptId) === String(natureDeptId);
+      });
+    });
+  }, [workerAssignmentForm.nature, allowedNatures, extraSubs, users]);
+
   const filteredData = data.filter(item => {
     const text = (item.nature_name || item.sub_department_name || item.worker?.full_name || '').toLowerCase();
     return text.includes(search.toLowerCase());
@@ -775,7 +799,7 @@ export const MaintenanceView: React.FC = () => {
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
                         <option value="">Select Technician</option>
-                        {users.map(u => <option key={u.user_id} value={u.user_id}>{u.full_name} ({u.employee_no})</option>)}
+                        {filteredUsers.map(u => <option key={u.user_id} value={u.user_id}>{u.full_name} ({u.employee_no})</option>)}
                       </select>
                     </div>
                   </>
