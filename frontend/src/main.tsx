@@ -6,9 +6,20 @@ import './index.css'
 import App from './App.tsx'
 
 // Disable inspect options (context menu and keyboard shortcuts) if running as a standalone PWA
-if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone) {
-  document.addEventListener('contextmenu', event => event.preventDefault());
-  document.addEventListener('keydown', event => {
+const isStandalone = () => {
+  return window.matchMedia('(display-mode: standalone)').matches || 
+         window.matchMedia('(display-mode: window-controls-overlay)').matches ||
+         (navigator as any).standalone;
+};
+
+document.addEventListener('contextmenu', event => {
+  if (isStandalone()) {
+    event.preventDefault();
+  }
+});
+
+document.addEventListener('keydown', event => {
+  if (isStandalone()) {
     // Disable F12
     if (event.key === 'F12' || event.keyCode === 123) {
       event.preventDefault();
@@ -22,8 +33,8 @@ if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any
     if ((event.ctrlKey || event.metaKey) && ['U', 'u'].includes(event.key)) {
       event.preventDefault();
     }
-  });
-}
+  }
+});
 
 import { registerSW } from 'virtual:pwa-register'
 

@@ -219,23 +219,67 @@ def run_deployment():
     log_to_file(f"STATUS: Deployment Started\n{start_msg}")
 
     logs = []
+
     commands = [
+        # ==========================================
+        # Pull latest code from Git
+        # ==========================================
         (
             "git pull",
             PROJECT_DIR,
         ),
+
+        # ==========================================
+        # Update Python packages
+        # ==========================================
         (
             r"call venv\Scripts\activate && pip install -r requirements.txt",
             rf"{PROJECT_DIR}\backend",
         ),
+
+        # ==========================================
+        # Django - Make migrations
+        # ==========================================
+        (
+            r"call venv\Scripts\activate && python manage.py makemigrations",
+            rf"{PROJECT_DIR}\backend",
+        ),
+
+        # ==========================================
+        # Django - Apply migrations
+        # ==========================================
+        (
+            r"call venv\Scripts\activate && python manage.py migrate",
+            rf"{PROJECT_DIR}\backend",
+        ),
+
+        # ==========================================
+        # Generate permissions JSON
+        # ==========================================
+        (
+            r"call venv\Scripts\activate && python manage.py permissions",
+            rf"{PROJECT_DIR}\backend",
+        ),
+
+        # ==========================================
+        # Build frontend
+        # ==========================================
         (
             "call npm run build",
             rf"{PROJECT_DIR}\frontend",
         ),
+
+        # ==========================================
+        # Django collectstatic
+        # ==========================================
         (
             r"call venv\Scripts\activate && python manage.py collectstatic --noinput",
             rf"{PROJECT_DIR}\backend",
         ),
+
+        # ==========================================
+        # Restart mtracker
+        # ==========================================
         (
             'powershell -NoProfile -Command "Stop-Service mtracker -Force"',
             PROJECT_DIR,

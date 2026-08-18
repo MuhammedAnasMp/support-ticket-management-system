@@ -6,10 +6,14 @@ REM Project directory
 REM ==========================================
 cd /d C:\inetpub\wwwroot\support-ticket-management-system
 
+REM ==========================================
+REM Pull latest code from Git
+REM ==========================================
 echo.
 echo ==========================================
 echo Pulling latest code from Git
 echo ==========================================
+
 git pull
 
 if errorlevel 1 (
@@ -18,38 +22,7 @@ if errorlevel 1 (
 )
 
 REM ==========================================
-REM Generate permissions JSON
-REM ==========================================
-echo.
-echo ==========================================
-echo Generating default_permissions.json
-echo ==========================================
-cd /d C:\inetpub\wwwroot\support-ticket-management-system\backend
-call venv\Scripts\python.exe manage.py permissions
-
-if errorlevel 1 (
-    echo ERROR: Permissions generation failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Build frontend
-REM ==========================================
-echo.
-echo ==========================================
-echo Building frontend
-echo ==========================================
-cd /d C:\inetpub\wwwroot\support-ticket-management-system\frontend
-
-call npm run build
-
-if errorlevel 1 (
-    echo ERROR: npm build failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Backend
+REM Backend - Update Python packages
 REM ==========================================
 echo.
 echo ==========================================
@@ -65,7 +38,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-
+REM ==========================================
+REM Django - Make migrations
+REM ==========================================
+echo.
+echo ==========================================
+echo Creating Django migrations
+echo ==========================================
 
 venv\Scripts\python.exe manage.py makemigrations
 
@@ -74,6 +53,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM ==========================================
+REM Django - Apply migrations
+REM ==========================================
+echo.
+echo ==========================================
+echo Applying Django migrations
+echo ==========================================
+
 venv\Scripts\python.exe manage.py migrate
 
 if errorlevel 1 (
@@ -81,6 +68,37 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM ==========================================
+REM Generate permissions JSON
+REM ==========================================
+echo.
+echo ==========================================
+echo Generating default_permissions.json
+echo ==========================================
+
+venv\Scripts\python.exe manage.py permissions
+
+if errorlevel 1 (
+    echo ERROR: Permissions generation failed.
+    exit /b 1
+)
+
+REM ==========================================
+REM Build frontend
+REM ==========================================
+echo.
+echo ==========================================
+echo Building frontend
+echo ==========================================
+
+cd /d C:\inetpub\wwwroot\support-ticket-management-system\frontend
+
+call npm run build
+
+if errorlevel 1 (
+    echo ERROR: npm build failed.
+    exit /b 1
+)
 
 REM ==========================================
 REM Django collectstatic
@@ -89,6 +107,8 @@ echo.
 echo ==========================================
 echo Collecting Django static files
 echo ==========================================
+
+cd /d C:\inetpub\wwwroot\support-ticket-management-system\backend
 
 venv\Scripts\python.exe manage.py collectstatic --noinput
 
