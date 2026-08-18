@@ -196,7 +196,7 @@ export const PwaInstallPrompt: React.FC = () => {
               <div className="flex items-start justify-between p-5 pb-4">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/pwa-192x192.png"
+                    src={`${import.meta.env.BASE_URL}pwa-192x192.png`}
                     alt="App Icon"
                     className="w-12 h-12 rounded-xl shadow border border-zinc-100 dark:border-zinc-700 object-cover"
                   />

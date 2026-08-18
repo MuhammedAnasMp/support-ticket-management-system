@@ -255,6 +255,7 @@ class Ticket(models.Model):
             ("can_view_completed_ticket", "Can view completed ticket"),
             ("can_view_rejected_ticket", "Can view rejected ticket"),
             ("can_view_blocked_ticket", "Can view blocked ticket"),
+            ("can_filter_worker_ticket", "Can filter worker ticket"),
         ]
 
     def __str__(self):

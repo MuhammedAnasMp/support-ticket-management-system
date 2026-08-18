@@ -182,6 +182,10 @@ class TicketViewSet(viewsets.ModelViewSet):
             else:
                 queryset = queryset.filter(priority__priority_name=priority)
 
+        worker = params.get('worker')
+        if worker:
+            queryset = queryset.filter(allocations__worker_id=worker).distinct()
+
         from_date = params.get('from_date')
         if from_date:
             queryset = queryset.filter(created_date__gte=from_date)

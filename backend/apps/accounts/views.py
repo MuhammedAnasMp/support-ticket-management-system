@@ -35,15 +35,26 @@ class CustomUserViewSet(viewsets.ModelViewSet):
             'administrator' in user_groups_lower or
             'main administrator' in user_groups_lower
         )
-        if can_view_all:
-            return CustomUser.objects.all()
-
         user_dept_ids = list(user.sub_departments.values_list(
             'department_id', flat=True))
-        if user_dept_ids:
-            return CustomUser.objects.filter(sub_departments__department_id__in=user_dept_ids).distinct()
+        if can_view_all:
+            qs = CustomUser.objects.all()
+        elif user_dept_ids:
+            qs = CustomUser.objects.filter(sub_departments__department_id__in=user_dept_ids)
+        else:
+            qs = CustomUser.objects.filter(pk=user.pk)
 
-        return CustomUser.objects.filter(pk=user.pk)
+        ticket_from_date = self.request.query_params.get('ticket_from_date')
+        if ticket_from_date:
+            qs = qs.filter(allocations__ticket__created_date__gte=ticket_from_date)
+
+        ticket_to_date = self.request.query_params.get('ticket_to_date')
+        if ticket_to_date:
+            if len(ticket_to_date) == 10:
+                ticket_to_date = f"{ticket_to_date} 23:59:59"
+            qs = qs.filter(allocations__ticket__created_date__lte=ticket_to_date)
+
+        return qs.distinct()
 
 
 class SignupView(APIView):

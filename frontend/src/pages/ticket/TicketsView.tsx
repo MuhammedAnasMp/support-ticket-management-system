@@ -122,6 +122,7 @@ export const TicketsView: React.FC = () => {
     const [filterDept, setFilterDept] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [filterPriority, setFilterPriority] = useState('');
+    const [filterWorker, setFilterWorker] = useState('');
     const [fromDate, setFromDate] = useState<string>(() => {
         const savedFrom = localStorage.getItem('ticket-filter-from-date');
         if (savedFrom !== null) return savedFrom;
@@ -344,13 +345,12 @@ export const TicketsView: React.FC = () => {
     const fetchMetadata = async () => {
         try {
             const headers = { Authorization: `Token ${token}` };
-            const [resStores, resDepts, resSubDepts, resStat, resNat, resWork, resExp, resPrio] = await Promise.all([
+            const [resStores, resDepts, resSubDepts, resStat, resNat, resExp, resPrio] = await Promise.all([
                 fetch(`${API_URL}/stores/store/`, { headers }),
                 fetch(`${API_URL}/stores/department/`, { headers }),
                 fetch(`${API_URL}/stores/subdepartment/`, { headers }),
                 fetch(`${API_URL}/maintenance/status/`, { headers }),
                 fetch(`${API_URL}/maintenance/worknature/`, { headers }),
-                fetch(`${API_URL}/accounts/customuser/`, { headers }),
                 fetch(`${API_URL}/finance/expensetype/`, { headers }),
                 fetch(`${API_URL}/maintenance/priority/`, { headers }),
             ]);
@@ -360,20 +360,6 @@ export const TicketsView: React.FC = () => {
             if (resStat.ok) setStatuses(await resStat.json());
             if (resNat.ok) setNatures(await resNat.json());
             if (resPrio.ok) setPriorities(await resPrio.json());
-            if (resWork.ok) {
-                const uList = await resWork.json();
-                // Include users who are technicians by role OR who have at least one
-                // non-office sub-department assigned (hybrid office staff / technicians)
-                setWorkers(uList.filter((u: any) => {
-                    const roleName = u.role?.role_name?.toLowerCase() ?? '';
-                    const isTechnicianRole = roleName === 'technician' || roleName === 'worker';
-                    const hasTechnicalSubDept = Array.isArray(u.sub_departments) && u.sub_departments.some((sd: any) => {
-                        const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
-                        return name !== '' && name !== 'office';
-                    });
-                    return isTechnicianRole || hasTechnicalSubDept;
-                }));
-            }
             if (resExp.ok) setExpenseTypes(await resExp.json());
         } catch (err) {
             console.error('Failed to load metadata', err);
@@ -392,6 +378,7 @@ export const TicketsView: React.FC = () => {
             if (filterDept) query.set('department', filterDept);
             if (filterStatus) query.set('status', filterStatus);
             if (filterPriority) query.set('priority', filterPriority);
+            if (filterWorker) query.set('worker', filterWorker);
             // Skip date filters when searching so results span all dates
             if (!debouncedSearch) {
                 if (fromDate) query.set('from_date', fromDate);
@@ -415,8 +402,37 @@ export const TicketsView: React.FC = () => {
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, filterPriority, fromDate, toDate]);
+    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, filterPriority, filterWorker, fromDate, toDate]);
 
+    const fetchWorkersForRange = useCallback(async () => {
+        if (!token) return;
+        try {
+            const query = new URLSearchParams();
+            if (!debouncedSearch) {
+                if (fromDate) query.set('ticket_from_date', fromDate);
+                if (toDate) query.set('ticket_to_date', toDate);
+            }
+            const resWork = await fetch(`${API_URL}/accounts/customuser/?${query.toString()}`, {
+                headers: { Authorization: `Token ${token}` }
+            });
+            if (resWork.ok) {
+                const uList = await resWork.json();
+                setWorkers(uList.filter((u: any) => {
+                    const roleName = u.role?.role_name?.toLowerCase() ?? '';
+                    const isTechnicianRole = roleName === 'technician' || roleName === 'worker';
+                    const hasTechnicalSubDept = Array.isArray(u.sub_departments) && u.sub_departments.some((sd: any) => {
+                        const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
+                        return name !== '' && name !== 'office';
+                    });
+                    return isTechnicianRole || hasTechnicalSubDept;
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to load workers', err);
+        }
+    }, [token, fromDate, toDate, debouncedSearch]);
+
+    useEffect(() => { fetchWorkersForRange(); }, [fetchWorkersForRange]);
     useEffect(() => { fetchMetadata(); }, [token]);
     useEffect(() => {
         fetchTickets();
@@ -893,6 +909,13 @@ export const TicketsView: React.FC = () => {
                             <option value="">All Priorities</option>
                             {uniquePriorityNames.map(pName => <option key={pName} value={pName}>{pName}</option>)}
                         </select>
+
+                        <Can permission='maintenance.can_filter_worker_ticket'>
+                            <select value={filterWorker} onChange={e => { setFilterWorker(e.target.value); setPage(1); }} className={selectCls}>
+                                <option value="">All Workers</option>
+                                {workers.map(w => <option key={w.user_id} value={w.user_id}>{w.full_name || w.username}</option>)}
+                            </select>
+                        </Can>
 
                         <DateRangePickerCard
                             fromDate={fromDate}

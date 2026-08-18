@@ -317,7 +317,7 @@ export const WorkforceView: React.FC = () => {
           )
         },
         {
-          headerName: 'Working Department',
+          headerName: 'Sub Department',
           valueGetter: params => params.data?.sub_departments?.map((sd: any) => sd.sub_department_name).join(', ') || '-',
           flex: 1.5,
           minWidth: 160,

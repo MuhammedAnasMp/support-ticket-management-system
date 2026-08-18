@@ -4,7 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command }) => {
+  const base = command === 'serve' ? '/' : '/static/';
+  
+  return {
   plugins: [
     react(),
     tailwindcss(),
@@ -37,13 +40,13 @@ export default defineConfig(({ command }) => ({
 
         icons: [
           {
-            src: '/pwa-192x192.png',
+            src: `${base}pwa-192x192.png`,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/pwa-512x512.png',
+            src: `${base}pwa-512x512.png`,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
@@ -52,7 +55,7 @@ export default defineConfig(({ command }) => ({
       },
     })
   ],
-  base: command === 'serve' ? '/' : '/static/',
+  base: base,
   build: {
     outDir: path.resolve(__dirname, '../backend/static'),
     emptyOutDir: true,
@@ -85,5 +88,6 @@ export default defineConfig(({ command }) => ({
       '@': path.resolve(__dirname, './src'),
     },
   },
-}))
+  };
+});
 
