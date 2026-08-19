@@ -126,3 +126,74 @@ def sync_subdepartment_to_worknature(sender, instance, created, **kwargs):
                 media_required=True,
                 active=True,
             )
+
+
+@receiver(models.signals.pre_save, sender=Store)
+def check_store_manager_contact_pre(sender, instance, **kwargs):
+    # Check if store already exists to detect manager change/removal
+    if instance.pk:
+        try:
+            old_instance = Store.objects.get(pk=instance.pk)
+            old_manager = old_instance.manager
+        except Store.DoesNotExist:
+            old_manager = None
+    else:
+        old_manager = None
+
+    # If the manager was changed or removed, clean up their synced contact details
+    if old_manager and old_manager != instance.manager:
+        if instance.phone == old_manager.phone:
+            instance.phone = None
+        old_manager_wa = old_manager.whatsapp_number or old_manager.phone
+        if instance.whatsapp_number == old_manager_wa:
+            instance.whatsapp_number = None
+
+    # Sync contacts from the new manager if assigned
+    if instance.manager:
+        manager = instance.manager
+        if manager.is_active and getattr(manager, 'active', True):
+            if not instance.phone and manager.phone:
+                instance.phone = manager.phone
+            
+            # Use phone as fallback if whatsapp number is missing
+            manager_wa = manager.whatsapp_number or manager.phone
+            if not instance.whatsapp_number and manager_wa:
+                instance.whatsapp_number = manager_wa
+
+
+@receiver(models.signals.pre_save, sender=settings.AUTH_USER_MODEL)
+def store_old_manager_contact(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            old_user = sender.objects.get(pk=instance.pk)
+            instance._old_phone = old_user.phone
+            instance._old_whatsapp = old_user.whatsapp_number
+        except sender.DoesNotExist:
+            pass
+
+
+@receiver(models.signals.post_save, sender=settings.AUTH_USER_MODEL)
+def update_store_contact_from_manager(sender, instance, created, **kwargs):
+    if hasattr(instance, 'managed_store') and instance.managed_store:
+        store = instance.managed_store
+        if instance.is_active and getattr(instance, 'active', True):
+            old_phone = getattr(instance, '_old_phone', None)
+            old_whatsapp = getattr(instance, '_old_whatsapp', None)
+            
+            updated = False
+            # Update phone if store phone is empty OR matches the manager's old phone
+            if (not store.phone or store.phone == old_phone) and instance.phone:
+                if store.phone != instance.phone:
+                    store.phone = instance.phone
+                    updated = True
+            
+            # Update whatsapp if store whatsapp is empty OR matches the manager's old whatsapp
+            manager_wa = instance.whatsapp_number or instance.phone
+            old_wa = old_whatsapp or old_phone
+            if (not store.whatsapp_number or store.whatsapp_number == old_wa) and manager_wa:
+                if store.whatsapp_number != manager_wa:
+                    store.whatsapp_number = manager_wa
+                    updated = True
+                    
+            if updated:
+                store.save(update_fields=['phone', 'whatsapp_number'])

@@ -386,7 +386,7 @@ export const SignupView: React.FC = () => {
                                 }}
                                 className="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
                               />
-                              <span>{n.nature_name}</span>
+                              <span>{n.nature_name} [{n.sub_department_name || 'N/A'}]</span>
                             </label>
                           );
                         })}

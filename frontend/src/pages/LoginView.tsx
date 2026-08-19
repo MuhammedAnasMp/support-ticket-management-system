@@ -118,7 +118,7 @@ export const LoginView: React.FC = () => {
                 type="text"
                 value={employeeNo}
                 onChange={(e) => handleEmployeeNoChange(e.target.value)}
-                placeholder="12345 or NAME"
+                placeholder="12345 or BlogID"
                 className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
               />
             </div>

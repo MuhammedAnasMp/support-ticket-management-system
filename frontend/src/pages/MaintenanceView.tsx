@@ -120,9 +120,9 @@ export const MaintenanceView: React.FC = () => {
     if (subpage === 'natures') {
       return [
         { headerName: 'Nature ID', field: 'nature_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Nature Name', field: 'nature_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
         { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
-        { headerName: 'Default Priority', field: 'default_priority.priority_name', flex: 1, minWidth: 150, cellClass: 'font-semibold text-primary', valueGetter: p => p.data?.default_priority?.priority_name || 'N/A' },
+        { headerName: 'Nature Name', field: 'nature_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Default Priority', field: 'default_priority.priority_name', flex: 1, minWidth: 150, cellClass: 'font-semibold text-primary', valueGetter: p => p.data?.default_priority?.priority_name || '(*required to add)' },
         {
           headerName: 'Status',
           field: 'active',
@@ -151,8 +151,8 @@ export const MaintenanceView: React.FC = () => {
     } else if (subpage === 'sub-departments') {
       return [
         { headerName: 'Sub Dept ID', field: 'sub_department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
         { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
+        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
         { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
       ];
     }

@@ -74,7 +74,8 @@ class SignupView(APIView):
             natures.append({
                 'nature_id': n.nature_id,
                 'nature_name': n.nature_name,
-                'department_id': n.sub_department.department_id
+                'department_id': n.sub_department.department_id,
+                'sub_department_name': n.sub_department.sub_department_name
             })
 
         return Response({
