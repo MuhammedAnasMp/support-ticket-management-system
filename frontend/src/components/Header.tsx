@@ -439,6 +439,18 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
                   </div>
                 </div>
 
+                {/* Edit Profile Trigger */}
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    window.dispatchEvent(new Event('open-profile-edit'));
+                  }}
+                  className="w-full flex items-center gap-2 px-5 py-3 bg-transparent hover:bg-surface-container-highest dark:hover:bg-dark-surface-container-highest text-on-surface dark:text-dark-on-surface font-semibold text-xs transition-colors cursor-pointer text-left border-none border-b border-outline-variant/30 dark:border-dark-outline-variant/30"
+                >
+                  <User className="w-4 h-4 text-primary" />
+                  <span>Edit Profile Details</span>
+                </button>
+
                 {/* Logout Trigger */}
                 <button
                   onClick={handleLogout}

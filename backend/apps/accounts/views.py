@@ -324,6 +324,81 @@ class ProfileView(APIView):
             }
         }, status=status.HTTP_200_OK)
 
+    def patch(self, request):
+        user = request.user
+        if not user or user.is_anonymous:
+            return Response(
+                {"error": "Unauthorized"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        employee_no = request.data.get('employee_no')
+        full_name = request.data.get('full_name')
+        phone = request.data.get('phone')
+        whatsapp_number = request.data.get('whatsapp_number')
+        profile_image = request.FILES.get('profile_image')
+
+        # Validation
+        if phone is not None:
+            phone = str(phone).strip()
+            if not re.match(r'^\d{8}$', phone):
+                return Response({"error": "Phone number must be exactly 8 digits."}, status=status.HTTP_400_BAD_REQUEST)
+        if whatsapp_number is not None:
+            whatsapp_number = str(whatsapp_number).strip()
+            if not re.match(r'^\d{8}$|^\d{10}$', whatsapp_number):
+                return Response({"error": "WhatsApp number must be either 8 or 10 digits."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check unique constraint on employee_no if changing
+        if employee_no is not None and employee_no != user.employee_no:
+            if get_user_model().objects.filter(employee_no=employee_no).exclude(pk=user.pk).exists():
+                return Response({"error": "Employee number is already in use by another user."}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated = False
+        if employee_no is not None:
+            user.employee_no = employee_no
+            updated = True
+        if full_name is not None:
+            user.full_name = full_name
+            updated = True
+        if phone is not None:
+            user.phone = phone
+            updated = True
+        if whatsapp_number is not None:
+            user.whatsapp_number = whatsapp_number
+            updated = True
+        if profile_image is not None:
+            user.profile_image = profile_image
+            updated = True
+
+        if updated:
+            user.save()
+
+        profile_image_url = None
+        if user.profile_image:
+            profile_image_url = user.profile_image.url
+
+        return Response({
+            "permissions": list(user.get_all_permissions()),
+            "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
+            "user": {
+                "user_id": user.user_id,
+                "username": user.username,
+                "email": user.email,
+                "employee_no": user.employee_no,
+                "full_name": user.full_name,
+                "phone": user.phone,
+                "whatsapp_number": user.whatsapp_number,
+                "role": user.role.role_name if user.role else None,
+                "active": user.active,
+                "is_superuser": user.is_superuser,
+                "profile_image": profile_image_url,
+                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
+                "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
+                "tickets_created_count": user.created_tickets.count(),
+                "tickets_assigned_count": user.allocations.count(),
+            }
+        }, status=status.HTTP_200_OK)
+
 
 def send_whatsapp_otp(whatsapp_number, otp, user=None):
     import urllib.request

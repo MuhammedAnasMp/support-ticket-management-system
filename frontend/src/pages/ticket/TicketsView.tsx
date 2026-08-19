@@ -454,8 +454,25 @@ export const TicketsView: React.FC = () => {
         return () => clearTimeout(timer);
     }, [search]);
 
+    const isTechnician = useMemo(() => {
+        const roleStr = typeof user?.role === 'object' && user?.role 
+            ? (user.role as any).role_name 
+            : user?.role;
+        const name = String(roleStr || '').toLowerCase();
+        return name === 'technician' || name === 'worker';
+    }, [user]);
+
+    // Clear date filters by default for technicians to show all assigned tickets
+    useEffect(() => {
+        if (isTechnician) {
+            setFromDate('');
+            setToDate('');
+        }
+    }, [isTechnician]);
+
     // Auto-lock filterDept for restricted users
     useEffect(() => {
+        if (isTechnician) return;
         if (!canCreateAllDepts && availableDepartments.length > 0) {
             const defaultDeptId = String(availableDepartments[0].department_id);
             if (availableDepartments.length === 1 && filterDept !== defaultDeptId) {
@@ -463,10 +480,11 @@ export const TicketsView: React.FC = () => {
                 setPage(1);
             }
         }
-    }, [canCreateAllDepts, availableDepartments, filterDept]);
+    }, [canCreateAllDepts, availableDepartments, filterDept, isTechnician]);
 
     // Auto-select filterStore if there is only one store
     useEffect(() => {
+        if (isTechnician) return;
         if (stores.length === 1) {
             const defaultStoreId = String(stores[0].store_id);
             if (filterStore !== defaultStoreId) {
@@ -474,7 +492,7 @@ export const TicketsView: React.FC = () => {
                 setPage(1);
             }
         }
-    }, [stores, filterStore]);
+    }, [stores, filterStore, isTechnician]);
     // Sync selectedTicket to URL query parameters silently
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -745,7 +763,7 @@ export const TicketsView: React.FC = () => {
     const selectCls = 'text-xs bg-surface-container border border-outline-variant rounded px-2.5 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors min-h-[36px] max-w-[160px] truncate flex-shrink-0';
 
     return (
-        <div className="flex flex-col gap-4">
+        <div className={`flex flex-col gap-4 ${viewMode === 'table' ? 'sm:max-h-[calc(100vh-112px)] sm:overflow-hidden' : ''}`}>
 
 
             {/* Toast */}
@@ -1248,7 +1266,7 @@ export const TicketsView: React.FC = () => {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(pageSize, tickets.length)) * 52 + 10 }}>
+                                <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(pageSize, tickets.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
                                     <AgGridReact<Ticket>
                                         theme={appTheme}
                                         rowData={tickets}

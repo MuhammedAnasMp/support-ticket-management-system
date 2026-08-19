@@ -609,7 +609,7 @@ export const MaintenanceView: React.FC = () => {
 
           {/* Desktop View: Table */}
           <div className="hidden sm:block">
-            <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10 }}>
+            <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
               <AgGridReact
                 theme={appTheme}
                 rowData={filteredData}
