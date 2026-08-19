@@ -186,7 +186,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                             const cDeptId = Number(c.department?.department_id ?? c.department);
                             return !cDeptId || cDeptId === ticketDeptId;
                         }) || categories.find((c: any) => c.category_name.toLowerCase() === 'before repair');
-                        
+
                         if (catObj) {
                             categoryId = String(catObj.category_id);
                         }
@@ -344,10 +344,15 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                                 : 'Select Department first'}
                                     </option>
                                     {filteredNatures.map(n => (
-                                        <option key={n.nature_id} value={n.nature_id}>
-                                            {n.nature_name}
+                                        <option
+                                            key={n.nature_id}
+                                            value={n.nature_id}
+                                            className="capitalize"
+                                        >
+                                            {n.nature_name} [{n.sub_department?.sub_department_name || 'N/A'}]
                                         </option>
                                     ))}
+
                                 </select>
                             </div>
 

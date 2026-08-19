@@ -5,7 +5,7 @@ import {
     Square, Volume2, Film, ImageIcon, Paperclip, ChevronDown, History as HistoryIcon, Trash2
 } from 'lucide-react';
 import type { RootState } from '@/store';
-import { API_URL, AvatarCircle, MEDIA_BASE } from './TicketsTypesAndComponents';
+import { API_URL, AvatarCircle, MEDIA_BASE, getMediaUrl } from './TicketsTypesAndComponents';
 
 interface ChatMessage {
     message_id: number;
@@ -429,11 +429,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
         return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
 
-    const getFullMediaUrl = (url: string) => {
-        if (!url) return '';
-        if (url.startsWith('http://') || url.startsWith('https://')) return url;
-        return `${MEDIA_BASE}${url}`;
-    };
+
 
     return (
         <div className="flex flex-col h-full bg-surface dark:bg-dark-surface overflow-hidden">
@@ -515,7 +511,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        const url = getFullMediaUrl(record.image!);
+                                                        const url = getMediaUrl(record.image!);
                                                         if (onPreviewMedia) {
                                                             onPreviewMedia(url, record.image!.split('/').pop() || 'image.jpg');
                                                         } else {
@@ -525,7 +521,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                                                     className="w-full h-full text-left cursor-zoom-in p-0 border-0 focus:outline-none block bg-transparent"
                                                 >
                                                     <img
-                                                        src={getFullMediaUrl(record.image)}
+                                                        src={getMediaUrl(record.image)}
                                                         alt="Chat attachment"
                                                         className="w-full h-full object-cover max-h-48"
                                                     />
@@ -536,13 +532,13 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                                         {record.video && (
                                             <div className="rounded-lg overflow-hidden border border-outline-variant/30 bg-black relative group min-h-[120px] flex items-center justify-center">
                                                 <video
-                                                    src={getFullMediaUrl(record.video)}
+                                                    src={getMediaUrl(record.video)}
                                                     className="w-full max-h-48 object-contain"
                                                 />
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        const url = getFullMediaUrl(record.video!);
+                                                        const url = getMediaUrl(record.video!);
                                                         if (onPreviewMedia) {
                                                             onPreviewMedia(url, record.video!.split('/').pop() || 'video.mp4');
                                                         } else {
@@ -560,7 +556,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                                         {record.voice && (
                                             <div className={`flex items-center gap-1.5 p-1 rounded-lg ${isMe ? 'bg-primary-container/20' : 'bg-surface'}`}>
                                                 <audio
-                                                    src={getFullMediaUrl(record.voice)}
+                                                    src={getMediaUrl(record.voice)}
                                                     controls
                                                     className="w-48 h-8 max-w-full text-xs"
                                                 />
