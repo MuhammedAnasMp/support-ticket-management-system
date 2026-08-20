@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from rest_framework import viewsets, exceptions
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
@@ -18,7 +18,7 @@ class TicketPagination(PageNumberPagination):
 
 
 class PriorityViewSet(viewsets.ModelViewSet):
-    queryset = Priority.objects.all()
+    queryset = Priority.objects.all().select_related('department')
     serializer_class = PrioritySerializer
 
     def get_queryset(self):
@@ -42,7 +42,7 @@ class StatusViewSet(viewsets.ModelViewSet):
 
 
 class WorkNatureViewSet(viewsets.ModelViewSet):
-    queryset = WorkNature.objects.all()
+    queryset = WorkNature.objects.all().select_related('sub_department', 'sub_department__department')
     serializer_class = WorkNatureSerializer
 
     def get_queryset(self):
@@ -75,7 +75,12 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
 
 
 class NatureWorkerViewSet(viewsets.ModelViewSet):
-    queryset = NatureWorker.objects.all()
+    queryset = NatureWorker.objects.all().select_related(
+        'nature',
+        'nature__sub_department',
+        'worker',
+        'worker__role'
+    )
     serializer_class = NatureWorkerSerializer
 
     def get_queryset(self):
@@ -87,8 +92,21 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
 
 
 class TicketViewSet(viewsets.ModelViewSet):
-    queryset = Ticket.objects.all().order_by(
-        '-created_date').prefetch_related('allocations', 'allocations__worker')
+    queryset = Ticket.objects.all().order_by('-created_date').select_related(
+        'store',
+        'store__area',
+        'store__manager',
+        'department',
+        'nature',
+        'nature__sub_department',
+        'priority',
+        'status',
+        'created_by'
+    ).prefetch_related(
+        'allocations',
+        'allocations__worker',
+        Prefetch('history', queryset=TicketHistory.objects.order_by('-changed_date'), to_attr='cached_history')
+    )
     serializer_class = TicketSerializer
     pagination_class = TicketPagination
 
@@ -107,13 +125,14 @@ class TicketViewSet(viewsets.ModelViewSet):
             pass
         else:
             # Filter by ticket status permissions.
+            user_perms = user.get_all_permissions()
             disallowed_status_ids = []
             for s in Status.objects.all():
                 codename = 'can_view_{}_ticket'.format(
                     s.status_name.lower().replace(' ', '_')
                 )
                 perm = 'maintenance.{}'.format(codename)
-                if not user.has_perm(perm):
+                if perm not in user_perms:
                     disallowed_status_ids.append(s.status_id)
 
             if disallowed_status_ids:
@@ -207,7 +226,7 @@ class TicketViewSet(viewsets.ModelViewSet):
 
 
 class AllocationViewSet(viewsets.ModelViewSet):
-    queryset = Allocation.objects.all()
+    queryset = Allocation.objects.all().select_related('ticket', 'worker')
     serializer_class = AllocationSerializer
 
     def get_serializer_class(self):
@@ -250,7 +269,7 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
 
 class WorkLogViewSet(viewsets.ModelViewSet):
-    queryset = WorkLog.objects.all()
+    queryset = WorkLog.objects.all().select_related('ticket', 'worker', 'allocation')
     serializer_class = WorkLogSerializer
 
     def get_serializer_class(self):
@@ -279,7 +298,7 @@ class WorkLogViewSet(viewsets.ModelViewSet):
 
 
 class TicketHistoryViewSet(viewsets.ModelViewSet):
-    queryset = TicketHistory.objects.all()
+    queryset = TicketHistory.objects.all().select_related('ticket', 'changed_by')
     serializer_class = TicketHistorySerializer
 
     def get_queryset(self):

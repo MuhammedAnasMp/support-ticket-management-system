@@ -2,11 +2,27 @@ from rest_framework import serializers
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage
 from apps.finance.models import EmployeeRate
 from decimal import Decimal
+from apps.stores.serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer
+from apps.accounts.models import CustomUser
+
+
+class TicketUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = [
+            'user_id', 'username', 'email', 'employee_no', 'full_name',
+            'phone', 'whatsapp_number', 'profile_image', 'role'
+        ]
+
+
+class AllocationTicketSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ticket
+        fields = ['ticket_id', 'work_order_no', 'title', 'status']
 
 
 class PrioritySerializer(serializers.ModelSerializer):
-    from apps.stores.serializers import DepartmentSerializer as _DeptSer
-    department_detail = _DeptSer(source='department', read_only=True)
+    department_detail = DepartmentSerializer(source='department', read_only=True)
 
     class Meta:
         model = Priority
@@ -17,21 +33,24 @@ class StatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Status
         fields = '__all__'
-        depth = 1
 
 
 class WorkNatureSerializer(serializers.ModelSerializer):
+    sub_department = SubDepartmentSerializer(read_only=True)
+    default_priority = PrioritySerializer(read_only=True)
+
     class Meta:
         model = WorkNature
         fields = '__all__'
-        depth = 1
 
 
 class NatureWorkerSerializer(serializers.ModelSerializer):
+    worker = TicketUserSerializer(read_only=True)
+    nature = WorkNatureSerializer(read_only=True)
+
     class Meta:
         model = NatureWorker
         fields = '__all__'
-        depth = 1
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -39,17 +58,33 @@ class TicketSerializer(serializers.ModelSerializer):
     age_days = serializers.SerializerMethodField()
     ticket_age_days = serializers.SerializerMethodField()
 
+    store = StoreSerializer(read_only=True)
+    department = DepartmentSerializer(read_only=True)
+    nature = WorkNatureSerializer(read_only=True)
+    priority = PrioritySerializer(read_only=True)
+    status = StatusSerializer(read_only=True)
+    created_by = TicketUserSerializer(read_only=True)
+    approved_by = TicketUserSerializer(read_only=True)
+    rejected_by = TicketUserSerializer(read_only=True)
+    closed_by = TicketUserSerializer(read_only=True)
+    location_approved_by = TicketUserSerializer(read_only=True)
+
     class Meta:
         model = Ticket
         fields = '__all__'
-        depth = 1
 
     def get_allocations(self, obj):
         return AllocationSerializer(obj.allocations.all(), many=True).data
 
     def get_age_days(self, obj):
         from django.utils import timezone
-        last_history = obj.history.order_by('-changed_date').first()
+        # Use cached history from Prefetch to prevent N+1 DB hits
+        cached_history = getattr(obj, 'cached_history', None)
+        if cached_history is not None:
+            last_history = cached_history[0] if cached_history else None
+        else:
+            last_history = obj.history.order_by('-changed_date').first()
+
         if not last_history:
             return 0.0
         now = timezone.now()
@@ -180,10 +215,12 @@ class TicketWriteSerializer(serializers.ModelSerializer):
 
 
 class AllocationSerializer(serializers.ModelSerializer):
+    worker = TicketUserSerializer(read_only=True)
+    ticket = AllocationTicketSerializer(read_only=True)
+
     class Meta:
         model = Allocation
         fields = '__all__'
-        depth = 1
 
 class AllocationWriteSerializer(serializers.ModelSerializer):
     class Meta:
@@ -192,10 +229,13 @@ class AllocationWriteSerializer(serializers.ModelSerializer):
 
 
 class WorkLogSerializer(serializers.ModelSerializer):
+    worker = TicketUserSerializer(read_only=True)
+    ticket = AllocationTicketSerializer(read_only=True)
+    allocation = AllocationSerializer(read_only=True)
+
     class Meta:
         model = WorkLog
         fields = '__all__'
-        depth = 1
 
 class WorkLogWriteSerializer(serializers.ModelSerializer):
     class Meta:
@@ -236,10 +276,12 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
 
 
 class TicketHistorySerializer(serializers.ModelSerializer):
+    changed_by = TicketUserSerializer(read_only=True)
+    ticket = AllocationTicketSerializer(read_only=True)
+
     class Meta:
         model = TicketHistory
         fields = '__all__'
-        depth = 1
 
 
 class TicketChatMessageSerializer(serializers.ModelSerializer):

@@ -21,14 +21,14 @@ class StoreViewSet(viewsets.ModelViewSet):
             return Store.objects.none()
 
         if user.is_superuser:
-            return Store.objects.all().order_by('store_name')
+            return Store.objects.all().select_related('area', 'manager').order_by('store_name')
 
         accessible_store_ids = list(
             user.accessible_stores.values_list('store_id', flat=True)
         )
         return Store.objects.filter(
             store_id__in=accessible_store_ids
-        ).distinct().order_by('store_name')
+        ).select_related('area', 'manager').distinct().order_by('store_name')
 
 
 class DepartmentViewSet(viewsets.ModelViewSet):
@@ -37,7 +37,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 
 
 class SubDepartmentViewSet(viewsets.ModelViewSet):
-    queryset = SubDepartment.objects.all()
+    queryset = SubDepartment.objects.all().select_related('department')
     serializer_class = SubDepartmentSerializer
 
 
@@ -47,4 +47,6 @@ class ManagerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from apps.accounts.models import CustomUser
-        return CustomUser.objects.filter(role__role_name__icontains='Store Manager').order_by('full_name')
+        return CustomUser.objects.filter(
+            role__role_name__icontains='Store Manager'
+        ).select_related('role', 'managed_store').order_by('full_name')
