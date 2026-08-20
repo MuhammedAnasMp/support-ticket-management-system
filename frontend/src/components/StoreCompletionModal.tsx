@@ -42,6 +42,11 @@ export const StoreCompletionModal: React.FC = () => {
   console.log("dsf")
   // Auto-open logic on load
   useEffect(() => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (!isMobile) {
+      return;
+    }
+
     if (!token || !user || !isStoreIncomplete || hasCheckedAutoOpen.current) {
       return;
     }
@@ -107,36 +112,55 @@ export const StoreCompletionModal: React.FC = () => {
       }
     };
 
-    // Helper to fall back to IP location
+    // Helper to fall back to IP location trying multiple APIs in sequence
     const fallbackToIpLocation = async (originalErrorMsg: string) => {
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.latitude && data.longitude) {
-            const lat = data.latitude;
-            const lon = data.longitude;
-            setLatitude(lat.toFixed(6));
-            setLongitude(lon.toFixed(6));
-
-            // Format a basic address from IP data
-            const ipAddress = [
-              data.city,
-              data.region,
-              data.country_name
-            ].filter(Boolean).join(', ');
-
-            setAddress(ipAddress || 'IP-based location');
-
-            // Try to reverse geocode the IP coords for a better address
-            await fetchAddressFromCoords(lat, lon);
-            return;
-          }
+      const apis = [
+        {
+          url: 'https://freeipapi.com/api/json',
+          parse: (data: any) => ({
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            address: [data.cityName, data.regionName, data.countryName].filter(Boolean).join(', ')
+          })
+        },
+        {
+          url: 'https://ipwho.is/',
+          parse: (data: any) => ({
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            address: [data.city, data.region, data.country].filter(Boolean).join(', ')
+          })
+        },
+        {
+          url: 'https://ipapi.co/json/',
+          parse: (data: any) => ({
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            address: [data.city, data.region, data.country_name].filter(Boolean).join(', ')
+          })
         }
-      } catch (ipErr) {
-        console.error('IP location fallback failed:', ipErr);
+      ];
+
+      for (const api of apis) {
+        try {
+          const res = await fetch(api.url);
+          if (res.ok) {
+            const data = await res.json();
+            const parsed = api.parse(data);
+            if (parsed.lat && parsed.lon) {
+              setLatitude(parsed.lat.toFixed(6));
+              setLongitude(parsed.lon.toFixed(6));
+              setAddress(parsed.address || 'IP-based location');
+              await fetchAddressFromCoords(parsed.lat, parsed.lon);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn(`IP Geolocation from ${api.url} failed, trying next fallback...`, e);
+        }
       }
-      // If IP fallback also fails, show the original error
+
+      // If all fallbacks fail, show original error
       setErrorMsg(originalErrorMsg);
     };
 
@@ -252,12 +276,12 @@ export const StoreCompletionModal: React.FC = () => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 .bg-black/60 backdrop-blur-sm"
         onClick={() => setIsOpen(false)}
       />
 
       {/* Modal Content */}
-      <div className="relative w-full max-w-md bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-2xl shadow-xl overflow-hidden z-10 transition-all p-6">
+      <div className="relative w-full max-w-md bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded shadow-xl overflow-hidden z-10 transition-all p-6">
 
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-outline-variant dark:border-dark-outline-variant mb-5">
@@ -278,7 +302,7 @@ export const StoreCompletionModal: React.FC = () => {
         </div>
 
         {errorMsg && (
-          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs flex items-center gap-2">
+          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 rounded text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="font-medium">{errorMsg}</span>
           </div>
@@ -294,7 +318,7 @@ export const StoreCompletionModal: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
 
             {/* Store Information Summary (Read Only) */}
-            <div className="grid grid-cols-2 gap-3 p-3 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-xl text-xs text-on-surface-variant dark:text-dark-on-surface-variant">
+            <div className="grid grid-cols-2 gap-3 p-3 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded text-xs text-on-surface-variant dark:text-dark-on-surface-variant">
               <div>
                 <span className="block text-[10px] text-outline">Location Code</span>
                 <span className="font-semibold">{managedStore.store_id}</span>
@@ -323,7 +347,7 @@ export const StoreCompletionModal: React.FC = () => {
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   placeholder="8 digits"
-                  className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                  className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                 />
               </div>
 
@@ -336,27 +360,27 @@ export const StoreCompletionModal: React.FC = () => {
                   value={whatsappNumber}
                   onChange={e => setWhatsappNumber(e.target.value)}
                   placeholder="8 or 10 digits"
-                  className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                  className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                 />
               </div>
             </div>
 
             {/* Locate Me Section */}
             {(!latitude || !longitude) && (
-              <div className="flex items-center justify-between gap-2 p-2 border border-dashed border-primary/40 rounded-xl bg-primary/5">
-                <span className="text-[11px] text-primary font-medium pl-1">Autofill coords & address from your device:</span>
+              <div className="flex items-center justify-between gap-2 p-2 border border-dashed border-primary/40 rounded bg-primary/5">
+                <span className="text-[11px] text-primary font-medium pl-1">Autofill coords & address</span>
                 <button
                   type="button"
                   onClick={handleUseCurrentLocation}
                   disabled={locating}
-                  className="flex items-center gap-1.5 bg-primary hover:bg-primary-container text-on-primary text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-70"
+                  className="flex items-center gap-1.5 bg-primary hover:bg-primary-container text-on-primary text-[10px] font-bold px-3 py-1.5 rounded transition-colors cursor-pointer disabled:opacity-70"
                 >
                   {locating ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
                     <MapPin className="w-3.5 h-3.5" />
                   )}
-                  Use Current Location
+                  Use Location
                 </button>
               </div>
             )}
@@ -376,7 +400,7 @@ export const StoreCompletionModal: React.FC = () => {
                       value={latitude}
                       onChange={e => setLatitude(e.target.value)}
                       placeholder="e.g. 29.3759"
-                      className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                     />
                   </div>
                   <div>
@@ -389,7 +413,7 @@ export const StoreCompletionModal: React.FC = () => {
                       value={longitude}
                       onChange={e => setLongitude(e.target.value)}
                       placeholder="e.g. 47.9784"
-                      className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                     />
                   </div>
                 </div>
@@ -403,7 +427,7 @@ export const StoreCompletionModal: React.FC = () => {
                     value={address}
                     onChange={e => setAddress(e.target.value)}
                     placeholder="Enter location address details"
-                    className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface resize-none"
+                    className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface resize-none"
                   />
                 </div>
               </>
@@ -421,7 +445,7 @@ export const StoreCompletionModal: React.FC = () => {
               <button
                 type="submit"
                 disabled={loading || locating || !latitude || !longitude}
-                className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-semibold rounded-lg flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-75"
+                className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-semibold rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-75"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Save Details

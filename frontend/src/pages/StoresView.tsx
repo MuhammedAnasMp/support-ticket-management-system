@@ -309,38 +309,57 @@ export const StoresView: React.FC = () => {
       }
     };
 
-    // Helper to fall back to IP location
+    // Helper to fall back to IP location trying multiple APIs in sequence
     const fallbackToIpLocation = async (originalErrorMsg: string) => {
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.latitude && data.longitude) {
-            const lat = data.latitude;
-            const lon = data.longitude;
-            setStoreForm(prev => ({
-              ...prev,
-              latitude: String(lat.toFixed(6)),
-              longitude: String(lon.toFixed(6))
-            }));
-            
-            // Format a basic address from IP data
-            const ipAddress = [
-              data.city,
-              data.region,
-              data.country_name
-            ].filter(Boolean).join(', ');
-            
-            setStoreForm(prev => ({ ...prev, address: ipAddress || 'IP-based location' }));
-
-            // Try to reverse geocode the IP coords for a better address
-            await fetchAddressFromCoords(lat, lon);
-            return;
-          }
+      const apis = [
+        {
+          url: 'https://freeipapi.com/api/json',
+          parse: (data: any) => ({
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            address: [data.cityName, data.regionName, data.countryName].filter(Boolean).join(', ')
+          })
+        },
+        {
+          url: 'https://ipwho.is/',
+          parse: (data: any) => ({
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            address: [data.city, data.region, data.country].filter(Boolean).join(', ')
+          })
+        },
+        {
+          url: 'https://ipapi.co/json/',
+          parse: (data: any) => ({
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            address: [data.city, data.region, data.country_name].filter(Boolean).join(', ')
+          })
         }
-      } catch (ipErr) {
-        console.error('IP location fallback failed:', ipErr);
+      ];
+
+      for (const api of apis) {
+        try {
+          const res = await fetch(api.url);
+          if (res.ok) {
+            const data = await res.json();
+            const parsed = api.parse(data);
+            if (parsed.lat && parsed.lon) {
+              setStoreForm(prev => ({
+                ...prev,
+                latitude: String(parsed.lat.toFixed(6)),
+                longitude: String(parsed.lon.toFixed(6)),
+                address: parsed.address || 'IP-based location'
+              }));
+              await fetchAddressFromCoords(parsed.lat, parsed.lon);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn(`IP Geolocation from ${api.url} failed, trying next fallback...`, e);
+        }
       }
+
       setErrorMsg(originalErrorMsg);
     };
 
@@ -900,19 +919,19 @@ export const StoresView: React.FC = () => {
                     {/* Locate Me Section */}
                     {(!storeForm.latitude || !storeForm.longitude) && (
                       <div className="flex items-center justify-between gap-2 p-2 border border-dashed border-primary/40 rounded-xl bg-primary/5">
-                        <span className="text-[11px] text-primary font-medium pl-1">Autofill coords & address from device:</span>
+                        <span className="text-[11px] text-primary font-medium pl-1">Autofill coords & address</span>
                         <button
                           type="button"
                           onClick={handleUseCurrentLocation}
                           disabled={locating}
-                          className="flex items-center gap-1.5 bg-primary hover:bg-primary-container text-on-primary text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-70"
+                          className="flex items-center gap-1.5 bg-primary hover:bg-primary-container text-on-primary text-[10px] font-bold px-3 py-1.5 rounded transition-colors cursor-pointer disabled:opacity-70"
                         >
                           {locating ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <MapPin className="w-3.5 h-3.5" />
                           )}
-                          Use Current Location
+                          Use Location
                         </button>
                       </div>
                     )}
