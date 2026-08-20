@@ -260,9 +260,23 @@ class LoginView(APIView):
 
         # Build image URL if it exists
         profile_image_url = None
-
         if user.profile_image:
             profile_image_url = user.profile_image.url
+
+        managed_store_data = None
+        managed_store = getattr(user, 'managed_store', None)
+        if managed_store:
+            managed_store_data = {
+                'store_id': managed_store.store_id,
+                'store_name': managed_store.store_name,
+                'type': managed_store.type,
+                'area_name': managed_store.area.area_name if managed_store.area else None,
+                'address': managed_store.address,
+                'phone': managed_store.phone,
+                'whatsapp_number': managed_store.whatsapp_number,
+                'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
+                'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+            }
 
         return Response({
             "token": token.key,
@@ -284,6 +298,7 @@ class LoginView(APIView):
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
                 "tickets_assigned_count": user.allocations.count(),
+                "managed_store": managed_store_data,
             }
         }, status=status.HTTP_200_OK)
 
@@ -301,6 +316,21 @@ class ProfileView(APIView):
         profile_image_url = None
         if user.profile_image:
             profile_image_url = user.profile_image.url
+
+        managed_store_data = None
+        managed_store = getattr(user, 'managed_store', None)
+        if managed_store:
+            managed_store_data = {
+                'store_id': managed_store.store_id,
+                'store_name': managed_store.store_name,
+                'type': managed_store.type,
+                'area_name': managed_store.area.area_name if managed_store.area else None,
+                'address': managed_store.address,
+                'phone': managed_store.phone,
+                'whatsapp_number': managed_store.whatsapp_number,
+                'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
+                'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+            }
 
         return Response({
             "permissions": list(user.get_all_permissions()),
@@ -321,6 +351,7 @@ class ProfileView(APIView):
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
                 "tickets_assigned_count": user.allocations.count(),
+                "managed_store": managed_store_data,
             }
         }, status=status.HTTP_200_OK)
 
@@ -373,9 +404,25 @@ class ProfileView(APIView):
         if updated:
             user.save()
 
+        # Build image URL if it exists
         profile_image_url = None
         if user.profile_image:
             profile_image_url = user.profile_image.url
+
+        managed_store_data = None
+        managed_store = getattr(user, 'managed_store', None)
+        if managed_store:
+            managed_store_data = {
+                'store_id': managed_store.store_id,
+                'store_name': managed_store.store_name,
+                'type': managed_store.type,
+                'area_name': managed_store.area.area_name if managed_store.area else None,
+                'address': managed_store.address,
+                'phone': managed_store.phone,
+                'whatsapp_number': managed_store.whatsapp_number,
+                'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
+                'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+            }
 
         return Response({
             "permissions": list(user.get_all_permissions()),
@@ -396,6 +443,7 @@ class ProfileView(APIView):
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
                 "tickets_assigned_count": user.allocations.count(),
+                "managed_store": managed_store_data,
             }
         }, status=status.HTTP_200_OK)
 

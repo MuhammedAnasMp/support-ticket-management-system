@@ -74,10 +74,11 @@ export const StoresView: React.FC = () => {
     }
   }, [itemsPerPage, gridApi]);
 
-  // Modals state
   const [showModal, setShowModal] = useState(false);
   const [showAreaModal, setShowAreaModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
+  const [editingAreaId, setEditingAreaId] = useState<number | string | null>(null);
+  const [locating, setLocating] = useState(false);
 
   // Strip backend-appended type suffix e.g. "Jahra (HM)" → "Jahra"
   const stripStoreName = (name: string) => (name || '').replace(/\s*\([A-Z]+\)\s*$/, '').trim();
@@ -277,8 +278,98 @@ export const StoresView: React.FC = () => {
     setShowModal(true);
   };
 
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setErrorMsg('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setLocating(true);
+    setErrorMsg('');
+
+    // Helper to perform Nominatim reverse geocoding
+    const fetchAddressFromCoords = async (lat: number, lon: number) => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
+        const response = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'MaintenanceTrackerApp/1.0'
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.display_name) {
+            setStoreForm(prev => ({ ...prev, address: data.display_name }));
+          }
+        }
+      } catch (err) {
+        console.warn('Reverse geocoding failed:', err);
+      }
+    };
+
+    // Helper to fall back to IP location
+    const fallbackToIpLocation = async (originalErrorMsg: string) => {
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.latitude && data.longitude) {
+            const lat = data.latitude;
+            const lon = data.longitude;
+            setStoreForm(prev => ({
+              ...prev,
+              latitude: String(lat.toFixed(6)),
+              longitude: String(lon.toFixed(6))
+            }));
+            
+            // Format a basic address from IP data
+            const ipAddress = [
+              data.city,
+              data.region,
+              data.country_name
+            ].filter(Boolean).join(', ');
+            
+            setStoreForm(prev => ({ ...prev, address: ipAddress || 'IP-based location' }));
+
+            // Try to reverse geocode the IP coords for a better address
+            await fetchAddressFromCoords(lat, lon);
+            return;
+          }
+        }
+      } catch (ipErr) {
+        console.error('IP location fallback failed:', ipErr);
+      }
+      setErrorMsg(originalErrorMsg);
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        setStoreForm(prev => ({
+          ...prev,
+          latitude: String(lat.toFixed(6)),
+          longitude: String(lon.toFixed(6))
+        }));
+
+        await fetchAddressFromCoords(lat, lon);
+        setLocating(false);
+      },
+      async (error) => {
+        console.warn('Geolocation failed, trying IP fallback:', error.message);
+        await fallbackToIpLocation(`Failed to retrieve location: ${error.message}`);
+        setLocating(false);
+      },
+      { enableHighAccuracy: false, timeout: 5000 }
+    );
+  };
+
   const handleOpenAreaModal = () => {
     setAreaForm({ area_name: '' });
+    setEditingAreaId(null);
     setErrorMsg('');
     setShowAreaModal(true);
   };
@@ -370,9 +461,17 @@ export const StoresView: React.FC = () => {
     setActionLoading(true);
     setErrorMsg('');
 
+    let endpoint = `${API_URL}/stores/area/`;
+    let method = 'POST';
+
+    if (editingAreaId) {
+      endpoint = `${API_URL}/stores/area/${editingAreaId}/`;
+      method = 'PATCH';
+    }
+
     try {
-      const response = await fetch(`${API_URL}/stores/area/`, {
-        method: 'POST',
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           Authorization: `Token ${token}`,
           'Content-Type': 'application/json'
@@ -380,11 +479,12 @@ export const StoresView: React.FC = () => {
         body: JSON.stringify(areaForm)
       });
       if (response.ok) {
-        const newArea = await response.json();
+        const savedArea = await response.json();
         setAreaForm({ area_name: '' });
-        // If creating area while store form is open, set it as selected
+        setEditingAreaId(null);
+        // If creating/updating area while store form is open, set it as selected
         if (showModal) {
-          setStoreForm(prev => ({ ...prev, area: newArea.area_id }));
+          setStoreForm(prev => ({ ...prev, area: savedArea.area_id }));
         }
         fetchData();
       } else {
@@ -774,34 +874,9 @@ export const StoresView: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Longitude</label>
-                        <input
-                          type="number"
-                          step="0.000001"
-                          placeholder="e.g. 47.9784"
-                          value={storeForm.longitude}
-                          onChange={e => setStoreForm({ ...storeForm, longitude: e.target.value })}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Latitude</label>
-                        <input
-                          type="number"
-                          step="0.000001"
-                          placeholder="e.g. 29.3759"
-                          value={storeForm.latitude}
-                          onChange={e => setStoreForm({ ...storeForm, latitude: e.target.value })}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
                         <label className="block text-xs font-semibold text-outline mb-1">Location Contact No</label>
                         <input
-                          required
+                          // required
                           type="text"
                           placeholder="8 digits"
                           value={storeForm.phone}
@@ -812,7 +887,7 @@ export const StoresView: React.FC = () => {
                       <div>
                         <label className="block text-xs font-semibold text-outline mb-1">Location WhatsApp No</label>
                         <input
-                          required
+                          // required
                           type="text"
                           placeholder="8 or 10 digits"
                           value={storeForm.whatsapp_number}
@@ -822,17 +897,69 @@ export const StoresView: React.FC = () => {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Street Address</label>
-                      <textarea
-                        required
-                        rows={2}
-                        placeholder="Detailed address location..."
-                        value={storeForm.address}
-                        onChange={e => setStoreForm({ ...storeForm, address: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      />
-                    </div>
+                    {/* Locate Me Section */}
+                    {(!storeForm.latitude || !storeForm.longitude) && (
+                      <div className="flex items-center justify-between gap-2 p-2 border border-dashed border-primary/40 rounded-xl bg-primary/5">
+                        <span className="text-[11px] text-primary font-medium pl-1">Autofill coords & address from device:</span>
+                        <button
+                          type="button"
+                          onClick={handleUseCurrentLocation}
+                          disabled={locating}
+                          className="flex items-center gap-1.5 bg-primary hover:bg-primary-container text-on-primary text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-70"
+                        >
+                          {locating ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <MapPin className="w-3.5 h-3.5" />
+                          )}
+                          Use Current Location
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Coordinates & Address */}
+                    {storeForm.latitude && storeForm.longitude && (
+                      <>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-outline mb-1">Longitude</label>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              disabled
+                              placeholder="e.g. 47.9784"
+                              value={storeForm.longitude}
+                              onChange={e => setStoreForm({ ...storeForm, longitude: e.target.value })}
+                              className="w-full text-xs bg-surface-container-low border border-outline-variant p-2.5 rounded outline-none text-on-surface dark:text-dark-on-surface opacity-75"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-outline mb-1">Latitude</label>
+                            <input
+                              type="number"
+                              step="0.000001"
+                              disabled
+                              placeholder="e.g. 29.3759"
+                              value={storeForm.latitude}
+                              onChange={e => setStoreForm({ ...storeForm, latitude: e.target.value })}
+                              className="w-full text-xs bg-surface-container-low border border-outline-variant p-2.5 rounded outline-none text-on-surface dark:text-dark-on-surface opacity-75"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-outline mb-1">Street Address</label>
+                          <textarea
+                            disabled
+                            rows={2}
+                            placeholder="Detailed address location..."
+                            value={storeForm.address}
+                            onChange={e => setStoreForm({ ...storeForm, address: e.target.value })}
+                            className="w-full text-xs bg-surface-container-low border border-outline-variant p-2.5 rounded outline-none text-on-surface dark:text-dark-on-surface opacity-75 resize-none"
+                          />
+                        </div>
+                      </>
+                    )}
                     <Can permission='stores.change_store'>
                       <div className="flex items-center gap-2">
                         <input
@@ -997,7 +1124,9 @@ export const StoresView: React.FC = () => {
               {/* Input section to add new area */}
               <form onSubmit={handleAreaSubmit} className="space-y-3 shrink-0">
                 <div>
-                  <label className="block text-xs font-semibold text-outline mb-1.5">Create New Area</label>
+                  <label className="block text-xs font-semibold text-outline mb-1.5">
+                    {editingAreaId ? 'Edit Area Name' : 'Create New Area'}
+                  </label>
                   <div className="flex gap-2">
                     <input
                       required
@@ -1012,9 +1141,21 @@ export const StoresView: React.FC = () => {
                       disabled={actionLoading}
                       className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer shrink-0"
                     >
-                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                      Add
+                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingAreaId ? <Edit2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                      {editingAreaId ? 'Save' : 'Add'}
                     </button>
+                    {editingAreaId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingAreaId(null);
+                          setAreaForm({ area_name: '' });
+                        }}
+                        className="px-3 py-2.5 border border-outline-variant text-xs font-semibold rounded-lg hover:bg-surface-container-high cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </div>
               </form>
@@ -1040,14 +1181,27 @@ export const StoresView: React.FC = () => {
                           <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
                           <span className="font-mono text-[10px] text-outline"> have  {area.store_count} locations</span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteArea(area.area_id)}
-                          className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
-                          title="Delete Area"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAreaId(area.area_id);
+                              setAreaForm({ area_name: area.area_name });
+                            }}
+                            className="p-1 text-primary hover:bg-primary/10 rounded transition-colors cursor-pointer"
+                            title="Edit Area"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteArea(area.area_id)}
+                            className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                            title="Delete Area"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

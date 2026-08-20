@@ -31,6 +31,7 @@ import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { WebSocketListener } from './components/WebSocketListener';
 import { PushNotificationPrompt } from './components/PushNotificationPrompt';
 import { ProfileCompletionModal } from './components/ProfileCompletionModal';
+import { StoreCompletionModal } from './components/StoreCompletionModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -131,6 +132,7 @@ const App: React.FC = () => {
         <WebSocketListener />
         <PushNotificationPrompt />
         <ProfileCompletionModal />
+        <StoreCompletionModal />
         <ThemeToggleOverlay isDark={isDark} setIsDark={setIsDark} />
         <Routes>
           <Route path="/login" element={<LoginView />} />

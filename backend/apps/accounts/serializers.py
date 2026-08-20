@@ -285,4 +285,21 @@ class CustomUserSerializer(serializers.ModelSerializer):
             many=True
         ).data
 
+        # Add managed store details if exists
+        managed_store = getattr(instance, 'managed_store', None)
+        if managed_store:
+            representation['managed_store'] = {
+                'store_id': managed_store.store_id,
+                'store_name': managed_store.store_name,
+                'type': managed_store.type,
+                'area_name': managed_store.area.area_name if managed_store.area else None,
+                'address': managed_store.address,
+                'phone': managed_store.phone,
+                'whatsapp_number': managed_store.whatsapp_number,
+                'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
+                'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+            }
+        else:
+            representation['managed_store'] = None
+
         return representation

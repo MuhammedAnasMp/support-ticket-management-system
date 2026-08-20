@@ -6,6 +6,18 @@ export interface StoreDetails {
   store_name: string;
 }
 
+export interface ManagedStoreDetails {
+  store_id: string;
+  store_name: string;
+  type: string | null;
+  area_name: string | null;
+  address: string | null;
+  phone: string | null;
+  whatsapp_number: string | null;
+  longitude: string | null;
+  latitude: string | null;
+}
+
 export interface UserDetails {
   user_id: number;
   username: string;
@@ -21,6 +33,7 @@ export interface UserDetails {
   natures?: string[];
   tickets_created_count?: number;
   tickets_assigned_count?: number;
+  managed_store?: ManagedStoreDetails | null;
 }
 
 export interface AuthState {
