@@ -18,6 +18,10 @@ export default defineConfig(({ command }) => {
       srcDir: 'src',
       filename: 'sw.ts',
 
+      injectManifest: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
+
       registerType: 'autoUpdate',
 
       devOptions: {
