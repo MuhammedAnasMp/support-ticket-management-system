@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import Can from '@/hooks/Can';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, X, Loader2, AlertCircle,
-  ChevronLeft, ChevronRight, AlertTriangle
+  ChevronLeft, ChevronRight, AlertTriangle,
+  LayoutList, GitFork, Building2, FolderTree, Wrench, User,
+  ShieldAlert, ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { AgGridReact } from 'ag-grid-react';
@@ -14,29 +16,42 @@ import type { ColDef } from 'ag-grid-community';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-// ─── AG Grid v36 Theming API ─────────────────────────────────────────────────
+// ─── AG Grid Token Theme ─────────────────────────────────────────────────────
 const appTheme = themeQuartz.withParams({
-  fontFamily: 'Inter, sans-serif',
+  fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   fontSize: 13,
-  rowHeight: 52,
-  headerHeight: 44,
-  cellHorizontalPaddingScale: 1.4,
+  rowHeight: 48,
+  headerHeight: 40,
+  cellHorizontalPaddingScale: 1.2,
   backgroundColor: '#ffffff',
   foregroundColor: '#191c1d',
   headerBackgroundColor: '#f3f4f5',
   headerTextColor: '#414754',
   rowHoverColor: '#e7e8e9',
   borderColor: '#E0E2E6',
-  accentColor: '#1A73E8',
+  accentColor: '#005bbf',
   spacing: 6,
-  wrapperBorderRadius: 0,
+  wrapperBorderRadius: 4,
 });
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+interface LineConnection {
+  id: string;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
 export const MaintenanceView: React.FC = () => {
   const { subpage } = useParams<{ subpage: string }>();
   const { token, user } = useSelector((state: RootState) => state.auth);
+
+  // View Mode: 'table' | 'flowchart'
+  const [viewMode, setViewMode] = useState<'table' | 'flowchart'>('flowchart');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
+  const [flowZoom, setFlowZoom] = useState<number>(1);
 
   // States
   const [data, setData] = useState<any[]>([]);
@@ -44,11 +59,16 @@ export const MaintenanceView: React.FC = () => {
   const [extraSubs, setExtraSubs] = useState<any[]>([]);
   const [extraPriorities, setExtraPriorities] = useState<any[]>([]);
   const [extraNatures, setExtraNatures] = useState<any[]>([]);
+  const [workerAssignments, setWorkerAssignments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // SVG Line Connections State & Ref
+  const treeContainerRef = useRef<HTMLDivElement>(null);
+  const [connections, setConnections] = useState<LineConnection[]>([]);
 
   // Priority Modal States
   const [showPriorityModal, setShowPriorityModal] = useState(false);
@@ -85,85 +105,10 @@ export const MaintenanceView: React.FC = () => {
     }
   }, [itemsPerPage, gridApi]);
 
-  // Modals state
+  // Modal target type state
+  const [activeModalType, setActiveModalType] = useState<'natures' | 'sub-departments' | 'worker-assignments'>('natures');
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
-
-  const columnDefs = useMemo<ColDef[]>(() => {
-    const editActionCellRenderer = (params: any) => {
-      const item = params.data;
-      if (!item) return null;
-      return (
-        <div className="flex items-center gap-1.5 h-full">
-          <button
-            onClick={() => handleOpenEdit(item)}
-            className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-primary rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </button>
-          <Can permission={
-            subpage === 'natures' ? 'maintenance.delete_worknature' :
-              subpage === 'worker-assignments' ? 'maintenance.delete_natureworker' :
-                'stores.delete_subdepartment'
-          }>
-            <button
-              onClick={() => handleDelete(item.nature_id || item.nature_worker_id || item.sub_department_id)}
-              className="p-1 inline-flex bg-surface-container-high dark:bg-dark-surface-container-high text-outline hover:text-red-500 rounded-lg border border-outline-variant dark:border-dark-outline-variant cursor-pointer transition-all"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </Can>
-        </div>
-      );
-    };
-
-    if (subpage === 'natures') {
-      return [
-        { headerName: 'Nature ID', field: 'nature_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
-        { headerName: 'Nature Name', field: 'nature_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Default Priority', field: 'default_priority.priority_name', flex: 1, minWidth: 150, cellClass: 'font-semibold text-primary', valueGetter: p => p.data?.default_priority?.priority_name || '(required to add)' },
-        {
-          headerName: 'Status',
-          field: 'active',
-          width: 110,
-          cellRenderer: (params: any) => (
-            <span
-              className={`inline-flex h-5 items-center px-2.5 rounded-full text-[10px] font-bold ${params.value
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                : 'bg-red-500/10 text-red-600'
-                }`}
-            >
-              {params.value ? 'Active' : 'Inactive'}
-            </span>
-          )
-
-        },
-        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
-      ];
-    } else if (subpage === 'worker-assignments') {
-      return [
-        { headerName: 'Assignment ID', field: 'nature_worker_id', width: 150, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Nature of Work', field: 'nature.nature_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface', valueGetter: p => p.data?.nature?.nature_name || 'N/A' },
-        { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' },
-        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
-      ];
-    } else if (subpage === 'sub-departments') {
-      return [
-        { headerName: 'Sub Dept ID', field: 'sub_department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
-        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
-      ];
-    }
-    return [];
-  }, [subpage]);
-
-  const defaultColDef = useMemo<ColDef>(() => ({
-    sortable: true,
-    filter: true,
-    resizable: true,
-  }), []);
 
   // Forms state
   const [natureForm, setNatureForm] = useState({
@@ -181,96 +126,200 @@ export const MaintenanceView: React.FC = () => {
     sub_department_name: ''
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [subpage, token]);
+  // Safe fetch helper
+  const safeFetch = async (endpoint: string) => {
+    if (!token) return null;
+    try {
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      if (res.ok) return await res.json();
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   const fetchPriorities = async () => {
-    try {
-      const headers = { Authorization: `Token ${token}` };
-      const resPri = await fetch(`${API_URL}/maintenance/priority/`, { headers });
-      if (resPri.ok) {
-        setExtraPriorities(await resPri.json());
-      }
-    } catch (err) {
-      console.error('Failed to fetch priorities', err);
+    const resPri = await safeFetch('/maintenance/priority/');
+    if (Array.isArray(resPri)) {
+      setExtraPriorities(resPri);
     }
   };
 
   const fetchData = async () => {
     setLoading(true);
     setErrorMsg('');
+
     try {
-      const headers = { Authorization: `Token ${token}` };
-      const [resDepts, resSubs] = await Promise.all([
-        fetch(`${API_URL}/stores/department/`, { headers }),
-        fetch(`${API_URL}/stores/subdepartment/`, { headers })
+      const [depts, subs, natures, workers, priorities, customUsers] = await Promise.all([
+        safeFetch('/stores/department/'),
+        safeFetch('/stores/subdepartment/'),
+        safeFetch('/maintenance/worknature/'),
+        safeFetch('/maintenance/natureworker/'),
+        safeFetch('/maintenance/priority/'),
+        safeFetch('/accounts/customuser/')
       ]);
-      if (resDepts.ok) setExtraDepts(await resDepts.json());
-      if (resSubs.ok) setExtraSubs(await resSubs.json());
+
+      if (Array.isArray(depts)) setExtraDepts(depts);
+      if (Array.isArray(subs)) setExtraSubs(subs);
+      if (Array.isArray(natures)) setExtraNatures(natures);
+      if (Array.isArray(workers)) setWorkerAssignments(workers);
+      if (Array.isArray(priorities)) setExtraPriorities(priorities);
+
+      if (Array.isArray(customUsers)) {
+        setUsers(customUsers.filter((u: any) => {
+          const roleName = (u.role as any)?.role_name?.toLowerCase() || (u.role as string)?.toLowerCase();
+          return roleName === 'technician' || roleName === 'worker';
+        }));
+      }
 
       if (subpage === 'natures') {
-        const [resNat, resSub, resPri] = await Promise.all([
-          fetch(`${API_URL}/maintenance/worknature/`, { headers }),
-          fetch(`${API_URL}/stores/subdepartment/`, { headers }),
-          fetch(`${API_URL}/maintenance/priority/`, { headers })
-        ]);
-        if (resNat.ok) setData(await resNat.json());
-        if (resSub.ok) setExtraSubs(await resSub.json());
-        if (resPri.ok) setExtraPriorities(await resPri.json());
+        setData(Array.isArray(natures) ? natures : []);
       } else if (subpage === 'worker-assignments') {
-        const [resWorkAss, resNat, resUsers] = await Promise.all([
-          fetch(`${API_URL}/maintenance/natureworker/`, { headers }),
-          fetch(`${API_URL}/maintenance/worknature/`, { headers }),
-          fetch(`${API_URL}/accounts/customuser/`, { headers })
-        ]);
-        if (resWorkAss.ok) setData(await resWorkAss.json());
-        if (resNat.ok) setExtraNatures(await resNat.json());
-        if (resUsers.ok) {
-          const uList = await resUsers.json();
-          // Filter technicians/workers
-          setUsers(uList.filter((u: any) => {
-            const roleName = (u.role as any)?.role_name?.toLowerCase() || (u.role as string)?.toLowerCase();
-            return roleName === 'technician' || roleName === 'worker';
-          }));
-        }
+        setData(Array.isArray(workers) ? workers : []);
       } else if (subpage === 'sub-departments') {
-        const res = await fetch(`${API_URL}/stores/subdepartment/`, { headers });
-        if (res.ok) setData(await res.json());
+        setData(Array.isArray(subs) ? subs : []);
       }
-    } catch (err) {
+    } catch {
       setErrorMsg('Failed to load maintenance configurations.');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, [subpage, token]);
+
+  const columnDefs = useMemo<ColDef[]>(() => {
+    const editActionCellRenderer = (params: any) => {
+      const item = params.data;
+      if (!item) return null;
+      return (
+        <div className="flex items-center gap-1 h-full">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenEdit(item);
+            }}
+            className="p-1 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface text-xs rounded transition-colors cursor-pointer"
+            title="Edit"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <Can permission={
+            subpage === 'natures' ? 'maintenance.delete_worknature' :
+              subpage === 'worker-assignments' ? 'maintenance.delete_natureworker' :
+                'stores.delete_subdepartment'
+          }>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(item.nature_id || item.nature_worker_id || item.sub_department_id);
+              }}
+              className="p-1 border border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container hover:bg-error-container text-on-surface dark:text-dark-on-surface hover:text-on-error-container text-xs rounded transition-colors cursor-pointer"
+              title="Delete"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </Can>
+        </div>
+      );
+    };
+
+    if (subpage === 'natures') {
+      return [
+        { headerName: 'Nature ID', field: 'nature_id', width: 110, cellClass: 'font-mono text-xs' },
+        { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
+        { headerName: 'Nature Name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        {
+          headerName: 'Default Priority',
+          field: 'default_priority.priority_name',
+          flex: 1,
+          minWidth: 140,
+          cellRenderer: (params: any) => {
+            const val = params.data?.default_priority?.priority_name;
+            if (!val) return <span className="text-on-surface-variant italic">None</span>;
+            return (
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-tertiary-container/20 text-tertiary">
+                {val}
+              </span>
+            );
+          }
+        },
+        {
+          headerName: 'Status',
+          field: 'active',
+          width: 100,
+          cellRenderer: (params: any) => (
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-medium ${params.value
+                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                : 'bg-error-container text-on-error-container'
+                }`}
+            >
+              {params.value ? 'Active' : 'Inactive'}
+            </span>
+          )
+        },
+        { headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'worker-assignments') {
+      return [
+        { headerName: 'ID', field: 'nature_worker_id', width: 90, cellClass: 'font-mono text-xs' },
+        { headerName: 'Nature of Work', field: 'nature.nature_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface', valueGetter: p => p.data?.nature?.nature_name || 'N/A' },
+        { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' },
+        { headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    } else if (subpage === 'sub-departments') {
+      return [
+        { headerName: 'ID', field: 'sub_department_id', width: 90, cellClass: 'font-mono text-xs' },
+        { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
+        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+      ];
+    }
+    return [];
+  }, [subpage]);
+
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    filter: true,
+    resizable: true,
+  }), []);
+
   const handleOpenCreate = () => {
     setEditItem(null);
+    const target = (subpage as 'natures' | 'sub-departments' | 'worker-assignments') || 'natures';
+    setActiveModalType(target);
     setNatureForm({ nature_name: '', sub_department: '', default_priority: '', active: true });
     setWorkerAssignmentForm({ nature: '', worker: '' });
-    setSubDeptForm({ department: '', sub_department_name: '' });
+    setSubDeptForm({ department: allowedDepts.length === 1 ? String(allowedDepts[0].department_id) : '', sub_department_name: '' });
     setShowModal(true);
   };
 
-  const handleOpenEdit = (item: any) => {
+  const handleOpenEdit = (item: any, typeOverride?: 'natures' | 'sub-departments' | 'worker-assignments') => {
     setEditItem(item);
-    if (subpage === 'natures') {
+    const targetType = typeOverride || (subpage as 'natures' | 'sub-departments' | 'worker-assignments') || 'natures';
+    setActiveModalType(targetType);
+
+    if (targetType === 'natures') {
       setNatureForm({
-        nature_name: item.nature_name,
-        sub_department: item.sub_department?.sub_department_id || item.sub_department || '',
-        default_priority: item.default_priority?.priority_id || item.default_priority || '',
-        active: item.active
+        nature_name: item.nature_name || '',
+        sub_department: String(item.sub_department?.sub_department_id ?? item.sub_department ?? ''),
+        default_priority: String(item.default_priority?.priority_id ?? item.default_priority ?? ''),
+        active: item.active ?? true
       });
-    } else if (subpage === 'worker-assignments') {
+    } else if (targetType === 'worker-assignments') {
       setWorkerAssignmentForm({
-        nature: item.nature?.nature_id || item.nature || '',
-        worker: item.worker?.user_id || item.worker || ''
+        nature: String(item.nature?.nature_id ?? item.nature ?? ''),
+        worker: String(item.worker?.user_id ?? item.worker ?? '')
       });
-    } else if (subpage === 'sub-departments') {
+    } else if (targetType === 'sub-departments') {
       setSubDeptForm({
-        department: item.department?.department_id || item.department || '',
-        sub_department_name: item.sub_department_name
+        department: String(item.department?.department_id ?? item.department ?? ''),
+        sub_department_name: item.sub_department_name || ''
       });
     }
     setShowModal(true);
@@ -282,22 +331,27 @@ export const MaintenanceView: React.FC = () => {
     setErrorMsg('');
 
     let endpoint = '';
-    let method = editItem ? 'PATCH' : 'POST';
+    const method = editItem ? 'PATCH' : 'POST';
     let bodyData: any = {};
 
-    if (subpage === 'natures') {
-      endpoint = editItem ? `${API_URL}/maintenance/worknature/${editItem.nature_id}/` : `${API_URL}/maintenance/worknature/`;
-      bodyData = natureForm;
-    } else if (subpage === 'worker-assignments') {
-      endpoint = editItem ? `${API_URL}/maintenance/natureworker/${editItem.nature_worker_id}/` : `${API_URL}/maintenance/natureworker/`;
+    if (activeModalType === 'natures') {
+      endpoint = editItem ? `/maintenance/worknature/${editItem.nature_id}/` : `/maintenance/worknature/`;
+      bodyData = {
+        nature_name: natureForm.nature_name,
+        sub_department: natureForm.sub_department,
+        default_priority: natureForm.default_priority || null,
+        active: natureForm.active
+      };
+    } else if (activeModalType === 'worker-assignments') {
+      endpoint = editItem ? `/maintenance/natureworker/${editItem.nature_worker_id}/` : `/maintenance/natureworker/`;
       bodyData = workerAssignmentForm;
-    } else if (subpage === 'sub-departments') {
-      endpoint = editItem ? `${API_URL}/stores/subdepartment/${editItem.sub_department_id}/` : `${API_URL}/stores/subdepartment/`;
+    } else if (activeModalType === 'sub-departments') {
+      endpoint = editItem ? `/stores/subdepartment/${editItem.sub_department_id}/` : `/stores/subdepartment/`;
       bodyData = subDeptForm;
     }
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method,
         headers: {
           Authorization: `Token ${token}`,
@@ -305,6 +359,7 @@ export const MaintenanceView: React.FC = () => {
         },
         body: JSON.stringify(bodyData)
       });
+
       if (response.ok) {
         setShowModal(false);
         fetchData();
@@ -312,23 +367,24 @@ export const MaintenanceView: React.FC = () => {
         const errorRes = await response.json();
         setErrorMsg(Object.values(errorRes).flat().join(', ') || 'Failed to save changes.');
       }
-    } catch (err) {
-      setErrorMsg('Network error.');
+    } catch {
+      setErrorMsg('Network error occurred.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this config?')) return;
+  const handleDelete = async (id: number, typeOverride?: 'natures' | 'sub-departments' | 'worker-assignments') => {
+    if (!window.confirm('Are you sure you want to delete this configuration?')) return;
     setErrorMsg('');
+    const targetType = typeOverride || (subpage as 'natures' | 'sub-departments' | 'worker-assignments') || 'natures';
     let endpoint = '';
-    if (subpage === 'natures') endpoint = `${API_URL}/maintenance/worknature/${id}/`;
-    else if (subpage === 'worker-assignments') endpoint = `${API_URL}/maintenance/natureworker/${id}/`;
-    else if (subpage === 'sub-departments') endpoint = `${API_URL}/stores/subdepartment/${id}/`;
+    if (targetType === 'natures') endpoint = `/maintenance/worknature/${id}/`;
+    else if (targetType === 'worker-assignments') endpoint = `/maintenance/natureworker/${id}/`;
+    else if (targetType === 'sub-departments') endpoint = `/stores/subdepartment/${id}/`;
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'DELETE',
         headers: { Authorization: `Token ${token}` }
       });
@@ -337,12 +393,11 @@ export const MaintenanceView: React.FC = () => {
       } else {
         setErrorMsg('Failed to delete item.');
       }
-    } catch (err) {
+    } catch {
       setErrorMsg('Network error.');
     }
   };
 
-  // Priority Creation & Deletion inside Modal
   const handleCreatePriority = async (e: React.FormEvent) => {
     e.preventDefault();
     setPriorityActionLoading(true);
@@ -360,7 +415,6 @@ export const MaintenanceView: React.FC = () => {
         const created = await response.json();
         setPriorityForm({ department: '', priority_name: '', level: 1 });
         await fetchPriorities();
-        // Automatically select the newly created priority if Nature form is open
         if (created?.priority_id) {
           setNatureForm(prev => ({ ...prev, default_priority: String(created.priority_id) }));
         }
@@ -368,7 +422,7 @@ export const MaintenanceView: React.FC = () => {
         const errorRes = await response.json();
         setPriorityErrorMsg(Object.values(errorRes).flat().join(', ') || 'Failed to add priority.');
       }
-    } catch (err) {
+    } catch {
       setPriorityErrorMsg('Network error.');
     } finally {
       setPriorityActionLoading(false);
@@ -388,7 +442,7 @@ export const MaintenanceView: React.FC = () => {
       } else {
         setPriorityErrorMsg('Failed to delete priority.');
       }
-    } catch (err) {
+    } catch {
       setPriorityErrorMsg('Network error.');
     }
   };
@@ -403,7 +457,7 @@ export const MaintenanceView: React.FC = () => {
       if (typeof sd === 'string' || typeof sd === 'number') {
         sdObj = extraSubs.find(item =>
           item.sub_department_id === Number(sd) ||
-          item.sub_department_name.toLowerCase() === String(sd).toLowerCase()
+          item.sub_department_name?.toLowerCase() === String(sd).toLowerCase()
         );
       }
       if (sdObj) {
@@ -428,12 +482,10 @@ export const MaintenanceView: React.FC = () => {
     })
     : extraSubs;
 
-  // Priorities filtered to user's departments
   const allowedPriorities = userDeptIds
     ? extraPriorities.filter(p => userDeptIds.has(Number(p.department?.department_id ?? p.department)))
     : extraPriorities;
 
-  // Natures filtered to user's departments via sub_department
   const allowedNatures = userDeptIds
     ? extraNatures.filter(n => {
       const sdId = n.sub_department?.sub_department_id ?? n.sub_department;
@@ -443,16 +495,15 @@ export const MaintenanceView: React.FC = () => {
     })
     : extraNatures;
 
-  // Get department ID of selected sub-department in the nature form
+  // Department of the selected sub-department in Nature Form
   const selectedSubDeptObj = extraSubs.find(s => String(s.sub_department_id) === String(natureForm.sub_department));
   const selectedSubDeptDeptId = selectedSubDeptObj ? Number(selectedSubDeptObj.department?.department_id ?? selectedSubDeptObj.department) : null;
 
-  // Filter priorities to only show those for the selected sub-department's department
   const natureFormPriorities = selectedSubDeptDeptId
     ? extraPriorities.filter(p => Number(p.department?.department_id ?? p.department) === selectedSubDeptDeptId)
-    : [];
+    : extraPriorities;
 
-  // Filter technicians to only those in the same department as the selected Nature
+  // Filter technicians for worker-assignment form
   const filteredUsers = useMemo(() => {
     if (!workerAssignmentForm.nature) return users;
 
@@ -476,6 +527,107 @@ export const MaintenanceView: React.FC = () => {
     });
   }, [workerAssignmentForm.nature, allowedNatures, extraSubs, users]);
 
+  // Hierarchical flowchart data model
+  const treeData = useMemo(() => {
+    const sTerm = search.toLowerCase().trim();
+
+    return allowedDepts.map(dept => {
+      const subs = allowedSubs.filter(s => {
+        const dId = s.department?.department_id ?? s.department;
+        return Number(dId) === Number(dept.department_id);
+      });
+
+      const subsWithNatures = subs.map(sub => {
+        const natures = allowedNatures.filter(n => {
+          const sdId = n.sub_department?.sub_department_id ?? n.sub_department;
+          return Number(sdId) === Number(sub.sub_department_id);
+        }).map(nat => {
+          const assignedWorkers = workerAssignments.filter(w => {
+            const nId = w.nature?.nature_id ?? w.nature;
+            return Number(nId) === Number(nat.nature_id);
+          });
+          return { ...nat, assignedWorkers };
+        });
+
+        const filteredNatures = sTerm
+          ? natures.filter(n =>
+            n.nature_name?.toLowerCase().includes(sTerm) ||
+            n.assignedWorkers.some((w: any) => w.worker?.full_name?.toLowerCase().includes(sTerm))
+          )
+          : natures;
+
+        return {
+          ...sub,
+          natures: filteredNatures,
+          totalNaturesCount: natures.length
+        };
+      });
+
+      const filteredSubs = sTerm
+        ? subsWithNatures.filter(s =>
+          s.sub_department_name?.toLowerCase().includes(sTerm) ||
+          s.natures.length > 0
+        )
+        : subsWithNatures;
+
+      return {
+        ...dept,
+        subDepartments: filteredSubs,
+        totalSubsCount: subs.length
+      };
+    }).filter(dept => {
+      if (allowedDepts.length > 1 && selectedDeptFilter !== 'all' && String(dept.department_id) !== String(selectedDeptFilter)) {
+        return false;
+      }
+      if (!sTerm) return true;
+      return dept.department_name?.toLowerCase().includes(sTerm) || dept.subDepartments.length > 0;
+    });
+  }, [allowedDepts, allowedSubs, allowedNatures, workerAssignments, search, selectedDeptFilter]);
+
+  // Dynamic SVG Line calculation between Flowchart Tiers
+  useLayoutEffect(() => {
+    if (viewMode !== 'flowchart' || !treeContainerRef.current) return;
+
+    const recalculateLines = () => {
+      if (!treeContainerRef.current) return;
+      const containerRect = treeContainerRef.current.getBoundingClientRect();
+      const childNodes = treeContainerRef.current.querySelectorAll<HTMLElement>('[data-parent-id]');
+      const newConnections: LineConnection[] = [];
+
+      childNodes.forEach(child => {
+        const parentId = child.getAttribute('data-parent-id');
+        if (!parentId) return;
+        const parent = treeContainerRef.current?.querySelector<HTMLElement>(`[data-node-id="${parentId}"]`);
+        if (!parent) return;
+
+        const pRect = parent.getBoundingClientRect();
+        const cRect = child.getBoundingClientRect();
+
+        const fromX = (pRect.left + pRect.width / 2 - containerRect.left) / flowZoom;
+        const fromY = (pRect.bottom - containerRect.top) / flowZoom;
+        const toX = (cRect.left + cRect.width / 2 - containerRect.left) / flowZoom;
+        const toY = (cRect.top - containerRect.top) / flowZoom;
+
+        newConnections.push({
+          id: `${parentId}->${child.getAttribute('data-node-id')}`,
+          fromX,
+          fromY,
+          toX,
+          toY
+        });
+      });
+
+      setConnections(newConnections);
+    };
+
+    const timeout = setTimeout(recalculateLines, 100);
+    window.addEventListener('resize', recalculateLines);
+    return () => {
+      clearTimeout(timeout);
+      window.removeEventListener('resize', recalculateLines);
+    };
+  }, [treeData, viewMode, flowZoom, selectedDeptFilter]);
+
   const filteredData = data.filter(item => {
     const text = (item.nature_name || item.sub_department_name || item.worker?.full_name || '').toLowerCase();
     return text.includes(search.toLowerCase());
@@ -488,28 +640,58 @@ export const MaintenanceView: React.FC = () => {
   const paginatedData = filteredData.slice(startIndex, endIndex);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
+      {/* Error Banner */}
       {errorMsg && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0" />
-          <span className="text-sm font-semibold">{errorMsg}</span>
+        <div className="p-3 rounded bg-error-container text-on-error-container text-xs flex items-center gap-2 border border-error/30">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span className="font-medium">{errorMsg}</span>
         </div>
       )}
 
-      {/* Top Bar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-sm w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
+      {/* Main Toolbar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {/* Search Input */}
+        <div className="relative max-w-xs w-full">
+          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant" />
           <input
             type="text"
-            placeholder="Search here..."
+            placeholder="Search hierarchy..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+            className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded pl-8 pr-3 py-2 focus:outline-none focus:border-primary"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Table / Flowchart View Switcher */}
+          <div className="flex items-center bg-surface-container-low border border-outline-variant rounded p-0.5">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'table'
+                ? 'bg-primary text-on-primary'
+                : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              title="Table View"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Table</span>
+            </button>
+            <button
+              onClick={() => setViewMode('flowchart')}
+              className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'flowchart'
+                ? 'bg-primary text-on-primary'
+                : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              title="Flowchart Tree Diagram"
+            >
+              <GitFork className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Flowchart</span>
+            </button>
+          </div>
+
+          {/* Manage Priorities (visible in 'natures' subpage) */}
           {subpage === 'natures' && (
             <Can permission={['maintenance.add_priority', 'maintenance.change_priority']}>
               <button
@@ -518,15 +700,15 @@ export const MaintenanceView: React.FC = () => {
                   setPriorityErrorMsg('');
                   setShowPriorityModal(true);
                 }}
-                // className="flex items-center gap-1.5 bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant text-xs font-semibold px-3.5 py-2.5 rounded-xl hover:bg-surface-container-highest transition-all cursor-pointer shadow-sm"
-                className="border-outline-none bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors"
               >
-                <AlertTriangle className="w-4 h-4 text-primary" />
-                Manage Priorities
+                <AlertTriangle className="w-4 h-4 text-tertiary" />
+                <span>Manage Priorities</span>
               </button>
             </Can>
           )}
 
+          {/* Add Configuration Button */}
           <Can permission={
             subpage === 'natures' ? 'maintenance.add_worknature' :
               subpage === 'worker-assignments' ? 'maintenance.add_natureworker' :
@@ -534,112 +716,357 @@ export const MaintenanceView: React.FC = () => {
           }>
             <button
               onClick={handleOpenCreate}
-              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
+              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add Configuration
+              <span>Add Configuration</span>
             </button>
           </Can>
         </div>
       </div>
 
-      {/* Content Table */}
+      {/* Main View Area */}
       {loading ? (
         <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-16 w-full bg-surface-container-high dark:bg-dark-surface-container-low animate-pulse rounded-xl" />
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-14 w-full bg-surface-container-high animate-pulse rounded" />
           ))}
         </div>
-      ) : (
-        <>
-          {/* Mobile View: Stacked Card Rows */}
-          <div className="sm:hidden flex flex-col gap-y-3 divide-y divide-outline-variant/30 border-t border-b border-outline-variant/30 bg-surface"
-          >
-            {paginatedData.map(item => {
-              const itemId = item.nature_id || item.nature_worker_id || item.sub_department_id;
-              return (
-                <button
-                  key={itemId}
-                  type="button"
-                  onClick={() => handleOpenEdit(item)}
-                  className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+      ) : viewMode === 'flowchart' ? (
+        /* ══════════════════════════════════════════════════════════════════════
+           TOP-DOWN FLOWCHART TREE DIAGRAM
+           ══════════════════════════════════════════════════════════════════════ */
+        <div className="border border-outline-variant bg-surface rounded overflow-hidden flex flex-col">
+          {/* Top Bar for Flowchart */}
+          <div className="p-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-3 flex-wrap">
+            {/* Show department filter ONLY when multiple departments exist */}
+            {allowedDepts.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-on-surface-variant">Filter Dept:</span>
+                <select
+                  value={selectedDeptFilter}
+                  onChange={e => setSelectedDeptFilter(e.target.value)}
+                  className="bg-surface-container border border-outline text-on-surface text-xs rounded px-2.5 py-1 focus:outline-none focus:border-primary cursor-pointer"
                 >
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    {subpage === 'natures' ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-sm truncate">{item.nature_name}</h4>
-                          <div className='flex gap-2 justify-center items-center'>
+                  <option value="all">All Departments ({allowedDepts.length})</option>
+                  {allowedDepts.map(d => (
+                    <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-                            <span className="text-primary text-[9px] font-medium">⚠️ {item.default_priority?.priority_name || 'No Priority'}</span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
-                              }`}>
-                              {item.active ? 'Active' : 'Inactive'}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] text-outline">
-                          {/* <span className="font-mono text-[10px] font-semibold">ID: {item.nature_id}</span> */}
-                          <span>🏢 {item.sub_department?.sub_department_name || 'No Dept'}</span>
-
-                        </div>
-                      </>
-                    ) : subpage === 'worker-assignments' ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-sm truncate">{item.nature?.nature_name}</h4>
-                          {/* <span className="font-mono text-[10px] text-outline">ID: {item.nature_worker_id}</span> */}
-                        </div>
-                        <p className="flex items-center gap-2 text-[11px] text-outline">👤 Technician: <span className="text-on-surface font-medium">{item.worker?.full_name}</span></p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-on-surface text-sm truncate">{item.sub_department_name}</span>
-                          <span className="font-mono text-[10px] text-outline">ID: {item.sub_department_id}</span>
-                        </div>
-                        <p className="text-[11px] text-outline pt-0.5 text-start">🏢 Parent: {item.department?.department_name || 'N/A'}</p>
-                      </>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Desktop View: Table */}
-          <div className="hidden sm:block">
-            <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
-              <AgGridReact
-                theme={appTheme}
-                rowData={filteredData}
-                columnDefs={columnDefs}
-                defaultColDef={defaultColDef}
-                pagination={true}
-                paginationPageSize={itemsPerPage}
-                suppressPaginationPanel={true}
-                onGridReady={onGridReady}
-                onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
-                rowHeight={52}
-                headerHeight={44}
-                rowClass="cursor-pointer"
-                onRowClicked={(event) => {
-                  if (event.data) {
-                    handleOpenEdit(event.data);
-                  }
-                }}
-              />
+            {/* Zoom / Scale Controls */}
+            <div className="flex items-center gap-1 bg-surface-container border border-outline-variant rounded p-1 ml-auto">
+              <button
+                type="button"
+                onClick={() => setFlowZoom(prev => Math.max(0.5, prev - 0.1))}
+                className="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded cursor-pointer"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-xs font-mono px-1.5 text-on-surface font-medium">
+                {Math.round(flowZoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setFlowZoom(prev => Math.min(1.4, prev + 0.1))}
+                className="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded cursor-pointer"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFlowZoom(1)}
+                className="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded cursor-pointer ml-1 border-l border-outline-variant pl-1.5"
+                title="Reset Zoom"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          {/* Custom Pagination Footer */}
-          {!loading && filteredData.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border border-t-0 border-outline-variant rounded-b-2xl bg-surface-container-low">
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] text-outline">
-                  {startIndex + 1}–{endIndex} of {totalItems.toLocaleString()}
+          {/* Diagram Canvas */}
+          <div className="relative overflow-auto p-5 min-h-[640px] bg-surface-container-lowest">
+
+            {/* Horizontal Dashed Level Division Guidelines */}
+            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between py-12 px-6 z-0 opacity-40">
+              <div className="border-b border-dashed border-outline flex justify-start">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
+                  L1: Department
                 </span>
-                <div className="flex items-center gap-1.5 text-[11px] text-outline">
+              </div>
+              <div className="border-b border-dashed border-outline flex justify-start">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
+                  L2: Sub-Department
+                </span>
+              </div>
+              <div className="border-b border-dashed border-outline flex justify-start">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
+                  L3: Work Nature
+                </span>
+              </div>
+              <div className="border-b border-dashed border-outline flex justify-start">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
+                  L4: Assigned Technicians
+                </span>
+              </div>
+            </div>
+
+            {/* Tree Flow Graph Container */}
+            <div
+              ref={treeContainerRef}
+              style={{ transform: `scale(${flowZoom})`, transformOrigin: 'top center' }}
+              className="relative z-10 transition-transform duration-150 flex flex-col items-center gap-16 min-w-max pb-12"
+            >
+              {/* Solid Continuous SVG Connector Lines */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
+                <defs>
+                  <marker
+                    id="flow-arrow"
+                    viewBox="0 0 10 10"
+                    refX="6"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#005bbf" />
+                  </marker>
+                </defs>
+                {connections.map(c => (
+                  <path
+                    key={c.id}
+                    d={`M ${c.fromX} ${c.fromY} C ${c.fromX} ${c.fromY + 28}, ${c.toX} ${c.toY - 28}, ${c.toX} ${c.toY}`}
+                    fill="none"
+                    stroke="#005bbf"
+                    strokeWidth="2"
+                    markerEnd="url(#flow-arrow)"
+                  />
+                ))}
+              </svg>
+
+              {treeData.length === 0 ? (
+                <div className="p-12 text-center text-on-surface-variant text-xs bg-surface-container border border-outline-variant rounded">
+                  No hierarchy records found.
+                </div>
+              ) : (
+                treeData.map(dept => (
+                  <div key={dept.department_id} className="pl-32 flex flex-col items-center gap-14 w-full">
+
+                    {/* ── LEVEL 1: ROOT DEPARTMENT CARD ── */}
+                    <div
+                      data-node-id={`dept-${dept.department_id}`}
+                      className="relative z-10 flex flex-col items-center justify-center min-w-[240px] max-w-[280px] p-3.5 bg-surface-container border-2 border-primary rounded shadow-xs text-center"
+                    >
+                      <div className="flex items-center justify-center gap-1.5 text-primary font-semibold text-xs mb-0.5">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <span className="font-bold">{dept.department_name}</span>
+                      </div>
+                      <span className="font-mono text-[10px] text-on-surface-variant">
+                        Dept ID #{dept.department_id}
+                      </span>
+                      <div className="mt-2">
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-primary text-on-primary">
+                          {dept.subDepartments.length} Sub-Departments
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ── LEVEL 2 & 3 & 4 TIERS ── */}
+                    {dept.subDepartments.length > 0 && (
+                      <div className="flex items-start justify-center gap-12 pt-2">
+                        {dept.subDepartments.map((sub: any) => (
+                          <div key={sub.sub_department_id} className="flex flex-col items-center gap-14">
+
+                            {/* LEVEL 2: SUB-DEPARTMENT CARD */}
+                            <div
+                              data-node-id={`sub-${sub.sub_department_id}`}
+                              data-parent-id={`dept-${dept.department_id}`}
+                              className="relative z-10 flex flex-col items-center min-w-[210px] max-w-[240px] p-3 bg-surface-container border-2 border-secondary rounded shadow-xs"
+                            >
+                              <div className="flex items-center justify-between w-full pb-1.5 border-b border-outline-variant">
+                                <div className="flex items-center gap-1.5 text-secondary font-semibold text-xs truncate">
+                                  <FolderTree className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">{sub.sub_department_name}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEdit(sub, 'sub-departments')}
+                                    className="p-1 hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded cursor-pointer"
+                                    title="Edit Sub Dept"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                  <Can permission="stores.delete_subdepartment">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDelete(sub.sub_department_id, 'sub-departments')}
+                                      className="p-1 hover:bg-error-container text-on-surface-variant hover:text-on-error-container rounded cursor-pointer"
+                                      title="Delete Sub Dept"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </Can>
+                                </div>
+                              </div>
+
+                              <div className="w-full flex items-center justify-between pt-1.5 text-[10px]">
+                                <span className="font-mono text-on-surface-variant">ID #{sub.sub_department_id}</span>
+                                <span className="font-medium px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container">
+                                  {sub.natures.length} Natures
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* LEVEL 3: WORK NATURE CARDS */}
+                            {sub.natures.length > 0 && (
+                              <div className="flex items-start justify-center gap-6">
+                                {sub.natures.map((nat: any) => (
+                                  <div key={nat.nature_id} className="flex flex-col items-center gap-14">
+
+                                    {/* Work Nature Box */}
+                                    <div
+                                      data-node-id={`nat-${nat.nature_id}`}
+                                      data-parent-id={`sub-${sub.sub_department_id}`}
+                                      className="relative z-10 flex flex-col items-center min-w-[180px] max-w-[200px] p-2.5 bg-surface-container border-2 border-outline rounded shadow-xs"
+                                    >
+                                      <div className="flex items-center justify-between w-full pb-1 border-b border-outline-variant">
+                                        <div className="flex items-center gap-1 text-on-surface font-semibold text-xs truncate">
+                                          <Wrench className="w-3 h-3 text-primary shrink-0" />
+                                          <span className="truncate">{nat.nature_name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenEdit(nat, 'natures')}
+                                            className="p-0.5 hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded cursor-pointer"
+                                            title="Edit Nature"
+                                          >
+                                            <Edit2 className="w-2.5 h-2.5" />
+                                          </button>
+                                          <Can permission="maintenance.delete_worknature">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDelete(nat.nature_id, 'natures')}
+                                              className="p-0.5 hover:bg-error-container text-on-surface-variant hover:text-on-error-container rounded cursor-pointer"
+                                              title="Delete Nature"
+                                            >
+                                              <Trash2 className="w-2.5 h-2.5" />
+                                            </button>
+                                          </Can>
+                                        </div>
+                                      </div>
+
+                                      {/* Nature Details */}
+                                      <div className="w-full pt-1.5 space-y-1">
+                                        <div className="flex items-center justify-between text-[10px]">
+                                          <span className="font-medium text-tertiary flex items-center gap-0.5">
+                                            <ShieldAlert className="w-2.5 h-2.5" />
+                                            {nat.default_priority?.priority_name || 'No Priority'}
+                                          </span>
+                                          {nat.default_priority?.level && (
+                                            <span className="font-mono bg-surface-container-low px-1 rounded text-on-surface-variant">
+                                              L{nat.default_priority.level}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex items-center justify-between text-[10px]">
+                                          <span className="font-mono text-on-surface-variant">#{nat.nature_id}</span>
+                                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-medium ${nat.active ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-error-container text-on-error-container'
+                                            }`}>
+                                            {nat.active ? 'Active' : 'Inactive'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* LEVEL 4: ASSIGNED TECHNICIANS CARD */}
+                                    <div
+                                      data-node-id={`tech-${nat.nature_id}`}
+                                      data-parent-id={`nat-${nat.nature_id}`}
+                                      className="relative z-10 flex flex-col items-center min-w-[160px] max-w-[180px] p-2 bg-surface-container-low border border-outline-variant rounded text-center shadow-3xs"
+                                    >
+                                      <div className="flex items-center justify-center gap-1 text-[10px] font-medium text-on-surface-variant pb-1 border-b border-outline-variant w-full">
+                                        <User className="w-3 h-3 text-secondary" />
+                                        <span>Assigned Workers</span>
+                                      </div>
+                                      <div className="mt-1.5 w-full space-y-1">
+                                        {nat.assignedWorkers && nat.assignedWorkers.length > 0 ? (
+                                          nat.assignedWorkers.map((w: any) => (
+                                            <div
+                                              key={w.nature_worker_id}
+                                              className="text-[10px] font-medium bg-surface text-on-surface px-1.5 py-0.5 rounded border border-outline-variant truncate"
+                                            >
+                                              {w.worker?.full_name || 'Worker'}
+                                              <span className="opacity-60 ml-1 font-mono text-[9px]">
+                                                ({w.worker?.employee_no || w.worker?.user_id})
+                                              </span>
+                                            </div>
+                                          ))
+                                        ) : (
+                                          <span className="text-[10px] italic text-on-surface-variant block py-0.5">
+                                            None Assigned
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  </div>
+                ))
+              )}
+            </div>
+
+          </div>
+        </div>
+      ) : (
+        /* ══════════════════════════════════════════════════════════════════════
+           AG GRID TABLE VIEW
+           ══════════════════════════════════════════════════════════════════════ */
+        <div className="border border-outline-variant dark:border-dark-outline-variant bg-surface dark:bg-dark-surface rounded overflow-hidden flex flex-col">
+          <div className="ag-theme-app w-full h-[480px]">
+            <AgGridReact
+              theme={appTheme}
+              rowData={filteredData}
+              columnDefs={columnDefs}
+              defaultColDef={defaultColDef}
+              pagination={true}
+              paginationPageSize={itemsPerPage}
+              suppressPaginationPanel={true}
+              onGridReady={onGridReady}
+              onGridSizeChanged={(params) => params.api.sizeColumnsToFit()}
+              rowHeight={48}
+              headerHeight={40}
+              onRowClicked={(event) => {
+                if (event.data) {
+                  handleOpenEdit(event.data);
+                }
+              }}
+            />
+          </div>
+
+          {/* Standardized Pagination Footer */}
+          {!loading && filteredData.length > 0 && (
+            <div className="flex justify-between items-center text-xs text-on-surface-variant dark:text-dark-on-surface-variant px-3 py-2 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
+              <div className="flex items-center gap-3">
+                <span>
+                  Showing {startIndex + 1}–{endIndex} of {totalItems.toLocaleString()}
+                </span>
+                <div className="flex items-center gap-1.5">
                   <span>Per page:</span>
                   <select
                     value={itemsPerPage}
@@ -647,7 +1074,7 @@ export const MaintenanceView: React.FC = () => {
                       setItemsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="bg-surface border border-outline-variant rounded px-1.5 py-0.5 text-[11px] text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                    className="bg-surface dark:bg-dark-surface border border-outline dark:border-dark-outline text-on-surface dark:text-dark-on-surface text-xs rounded px-1.5 py-0.5 focus:outline-none focus:border-primary cursor-pointer"
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>
@@ -656,134 +1083,139 @@ export const MaintenanceView: React.FC = () => {
                   </select>
                 </div>
               </div>
+
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                  className="px-2 py-1 rounded border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[11px] text-on-surface font-medium px-2">{currentPage} / {totalPages}</span>
+                <span className="px-2 py-1 border border-primary bg-primary text-on-primary rounded font-medium">
+                  {currentPage}
+                </span>
+                <span className="text-on-surface-variant dark:text-dark-on-surface-variant px-1">/ {totalPages}</span>
                 <button
                   type="button"
                   disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-outline-variant text-on-surface disabled:opacity-35 hover:bg-surface-container-high transition-colors cursor-pointer"
+                  className="px-2 py-1 rounded border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
 
-      {/* Main Form Modal */}
+      {/* Main Configuration Modal */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
+              animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowModal(false)}
-              className="absolute inset-0 bg-black"
+              className="absolute inset-0 bg-inverse-surface"
             />
 
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md overflow-y-auto rounded shadow-2xl p-4 space-y-2"
+              className="relative bg-surface-container border border-outline-variant w-full max-w-md rounded shadow-lg p-5 space-y-4"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
-                <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant">
+                <h3 className="text-base font-semibold text-on-surface">
                   {editItem ? 'Edit Configuration' : 'Create Configuration'}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="p-1 rounded-lg text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer"
+                  className="p-1 rounded text-on-surface-variant hover:bg-surface-container-high cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                {subpage === 'natures' ? (
+                {activeModalType === 'natures' ? (
                   <>
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Maintenance Nature Name</label>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">Maintenance Nature Name</label>
                       <input
                         required
                         type="text"
                         placeholder="e.g. Broken Glass Door"
                         value={natureForm.nature_name}
                         onChange={e => setNatureForm({ ...natureForm, nature_name: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Assigned Sub Department</label>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">Assigned Sub Department</label>
                       <select
                         required
                         value={natureForm.sub_department}
                         onChange={e => setNatureForm({ ...natureForm, sub_department: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
                       >
                         <option value="">Select Sub Department</option>
-                        {allowedSubs.map(s => <option key={s.sub_department_id} value={s.sub_department_id}>{s.sub_department_name}  </option>)}
+                        {allowedSubs.map(s => <option key={s.sub_department_id} value={s.sub_department_id}>{s.sub_department_name}</option>)}
                       </select>
                     </div>
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-outline">Default Priority Level</label>
+                        <label className="text-xs font-medium text-on-surface-variant">Default Priority Level</label>
                         <button
                           type="button"
                           onClick={() => {
                             setPriorityErrorMsg('');
                             setShowPriorityModal(true);
                           }}
-                          className="text-[11px] font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
+                          className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
                         >
-                          <Plus className="w-3 h-3" /> Quick Add Priority
+                          <Plus className="w-3 h-3" /> Add Priority
                         </button>
                       </div>
                       <select
                         required
                         value={natureForm.default_priority}
                         onChange={e => setNatureForm({ ...natureForm, default_priority: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
                       >
                         <option value="">Select Default Priority</option>
                         {natureFormPriorities.map(p => <option key={p.priority_id} value={p.priority_id}>{p.priority_name} (Lvl {p.level})</option>)}
                       </select>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 pt-1">
                       <input
                         type="checkbox"
                         checked={natureForm.active}
                         id="nature-active-checkbox"
                         onChange={e => setNatureForm({ ...natureForm, active: e.target.checked })}
+                        className="cursor-pointer"
                       />
-                      <label htmlFor="nature-active-checkbox" className="text-xs font-semibold text-outline">
+                      <label htmlFor="nature-active-checkbox" className="text-xs text-on-surface cursor-pointer select-none">
                         Mark work nature as active
                       </label>
                     </div>
                   </>
-                ) : subpage === 'worker-assignments' ? (
+                ) : activeModalType === 'worker-assignments' ? (
                   <>
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Select Nature of Work</label>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">Select Nature of Work</label>
                       <select
                         required
                         value={workerAssignmentForm.nature}
                         onChange={e => setWorkerAssignmentForm({ ...workerAssignmentForm, nature: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
                       >
                         <option value="">Select Nature</option>
                         {allowedNatures.map(n => <option key={n.nature_id} value={n.nature_id}>{n.nature_name}</option>)}
@@ -791,12 +1223,12 @@ export const MaintenanceView: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Technician / Worker</label>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">Technician / Worker</label>
                       <select
                         required
                         value={workerAssignmentForm.worker}
                         onChange={e => setWorkerAssignmentForm({ ...workerAssignmentForm, worker: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
                       >
                         <option value="">Select Technician</option>
                         {filteredUsers.map(u => <option key={u.user_id} value={u.user_id}>{u.full_name} ({u.employee_no})</option>)}
@@ -806,12 +1238,12 @@ export const MaintenanceView: React.FC = () => {
                 ) : (
                   <>
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Parent Department</label>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">Parent Department</label>
                       <select
                         required
                         value={subDeptForm.department}
                         onChange={e => setSubDeptForm({ ...subDeptForm, department: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
                       >
                         <option value="">Select Parent Department</option>
                         {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
@@ -819,35 +1251,34 @@ export const MaintenanceView: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1.5">Sub Department Name</label>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">Sub Department Name</label>
                       <input
                         required
                         type="text"
                         placeholder="e.g. Electrical Panels"
                         value={subDeptForm.sub_department_name}
                         onChange={e => setSubDeptForm({ ...subDeptForm, sub_department_name: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary"
                       />
                     </div>
                   </>
                 )}
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+                <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant">
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-3.5 py-2 border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium rounded transition-colors cursor-pointer
-"
+                    className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className="px-3.5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-70 shadow-xs"
+                    className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
                   >
                     {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Save Changes
+                    <span>Save Changes</span>
                   </button>
                 </div>
               </form>
@@ -856,78 +1287,76 @@ export const MaintenanceView: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Priority Management Popup Modal */}
+      {/* Priority Management Modal */}
       <AnimatePresence>
         {showPriorityModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
+              animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowPriorityModal(false)}
-              className="absolute inset-0 bg-black"
+              className="absolute inset-0 bg-inverse-surface"
             />
 
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-3xl overflow-y-auto max-h-[90vh] rounded shadow-2xl p-4 space-y-2"
+              className="relative bg-surface-container border border-outline-variant w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded shadow-lg p-5 space-y-4"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-primary" />
-                  <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
-                    Manage Priorities
-                  </h3>
+                  <AlertTriangle className="w-4 h-4 text-tertiary" />
+                  <h3 className="text-base font-semibold text-on-surface">Manage Priorities</h3>
                 </div>
                 <button
                   onClick={() => setShowPriorityModal(false)}
-                  className="p-1 rounded-lg text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer"
+                  className="p-1 rounded text-on-surface-variant hover:bg-surface-container-high cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {priorityErrorMsg && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-lg text-xs font-semibold flex items-center gap-2">
+                <div className="p-3 rounded bg-error-container text-on-error-container text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{priorityErrorMsg}</span>
                 </div>
               )}
 
-              {/* Create Priority Form */}
-              <form onSubmit={handleCreatePriority} className="p-3.5 bg-surface-container-low border border-outline-variant rounded-xl space-y-3">
-                <h4 className="text-xs font-bold text-on-surface dark:text-dark-on-surface">Add New Priority Level</h4>
+              {/* Add Priority Form */}
+              <form onSubmit={handleCreatePriority} className="p-3.5 bg-surface-container-low border border-outline-variant rounded space-y-3">
+                <h4 className="text-xs font-semibold text-on-surface">Add New Priority Level</h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div>
-                    <label className="block text-[11px] font-semibold text-outline mb-1">Department</label>
+                    <label className="block text-xs text-on-surface-variant mb-1">Department</label>
                     <select
                       required
                       value={priorityForm.department}
                       onChange={e => setPriorityForm({ ...priorityForm, department: e.target.value })}
-                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      className="w-full bg-surface border border-outline text-on-surface text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-primary cursor-pointer"
                     >
-                      <option value="">Department</option>
+                      <option value="">Select Dept</option>
                       {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-outline mb-1">Priority Label</label>
+                    <label className="block text-xs text-on-surface-variant mb-1">Priority Label</label>
                     <input
                       required
                       type="text"
                       placeholder="e.g. Critical"
                       value={priorityForm.priority_name}
                       onChange={e => setPriorityForm({ ...priorityForm, priority_name: e.target.value })}
-                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      className="w-full bg-surface border border-outline text-on-surface text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-primary"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-outline mb-1">Level (1-5)</label>
+                    <label className="block text-xs text-on-surface-variant mb-1">Level (1-5)</label>
                     <input
                       required
                       type="number"
@@ -935,7 +1364,7 @@ export const MaintenanceView: React.FC = () => {
                       max="5"
                       value={priorityForm.level}
                       onChange={e => setPriorityForm({ ...priorityForm, level: Number(e.target.value) })}
-                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      className="w-full bg-surface border border-outline text-on-surface text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-primary"
                     />
                   </div>
                 </div>
@@ -944,35 +1373,35 @@ export const MaintenanceView: React.FC = () => {
                   <button
                     type="submit"
                     disabled={priorityActionLoading}
-                    className="px-3.5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-70 shadow-xs"
+                    className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-1.5 rounded flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
                   >
                     {priorityActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                    Add Priority
+                    <span>Add Priority</span>
                   </button>
                 </div>
               </form>
 
               {/* Priorities List */}
               <div className="space-y-2 pt-2">
-                <h4 className="text-xs font-bold text-on-surface dark:text-dark-on-surface">Existing Priorities</h4>
+                <h4 className="text-xs font-semibold text-on-surface">Configured Priorities</h4>
                 {allowedPriorities.length === 0 ? (
-                  <p className="text-xs text-outline italic py-2 text-center">No priorities created yet.</p>
+                  <p className="text-xs text-on-surface-variant italic py-2 text-center">No priorities created yet.</p>
                 ) : (
-                  <div className="divide-y divide-outline-variant/30 max-h-56 overflow-y-auto border border-outline-variant rounded-xl bg-surface">
+                  <div className="divide-y divide-outline-variant max-h-48 overflow-y-auto border border-outline-variant rounded bg-surface">
                     {allowedPriorities.map(p => (
                       <div key={p.priority_id} className="p-2.5 flex items-center justify-between gap-2 text-xs">
-                        <div>
-                          <Can permission="maintenance.delete_priority">
-                            <div className='mr-2'>{p.department_detail.department_name}</div>
-                          </Can>
-                          <span className="font-bold text-on-surface">{p.priority_name}</span>
-                          <span className="ml-2 font-mono text-[10px] text-outline">LVL {p.level}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-on-surface-variant font-mono">[{p.department_detail?.department_name || 'Dept'}]</span>
+                          <span className="font-medium text-on-surface">{p.priority_name}</span>
+                          <span className="font-mono text-[10px] px-1.5 py-0.2 bg-surface-container border border-outline-variant rounded text-on-surface-variant">
+                            Level {p.level}
+                          </span>
                         </div>
                         <Can permission="maintenance.delete_priority">
                           <button
                             type="button"
                             onClick={() => handleDeletePriority(p.priority_id)}
-                            className="p-1 text-outline hover:text-red-500 rounded transition-colors cursor-pointer"
+                            className="p-1 hover:bg-error-container text-on-surface-variant hover:text-on-error-container rounded transition-colors cursor-pointer"
                             title="Delete Priority"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -984,11 +1413,11 @@ export const MaintenanceView: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex justify-end pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+              <div className="flex justify-end pt-3 border-t border-outline-variant">
                 <button
                   type="button"
                   onClick={() => setShowPriorityModal(false)}
-                  className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                  className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded transition-colors cursor-pointer"
                 >
                   Close
                 </button>
@@ -997,15 +1426,6 @@ export const MaintenanceView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
-
-      {/* Floating Action Button (FAB) for Mobile Add Config */}
-      <button
-        onClick={handleOpenCreate}
-        className="sm:hidden fixed bottom-6 right-6 z-40 bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
-        title="Add Configuration"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
     </div>
   );
 };

@@ -227,22 +227,50 @@ body {
 }
 
 /* Dark mode overrides */
-.dark .ag-theme-app {
-  --ag-background-color: #1c1d1f;
-  --ag-foreground-color: #e3e3e4;
-  --ag-secondary-foreground-color: #c4c7c5;
-  --ag-header-background-color: #232427;
-  --ag-header-foreground-color: #c4c7c5;
-  --ag-odd-row-background-color: #1c1d1f;
-  --ag-row-hover-color: #2a2b2e;
-  --ag-selected-row-background-color: rgba(26, 115, 232, 0.15);
-  --ag-border-color: #2e3033;
-  --ag-row-border-color: #2e3033;
-  --ag-header-column-separator-color: #2e3033;
-  --ag-header-column-resize-handle-color: #2e3033;
-  --ag-panel-background-color: #232427;
-  --ag-tool-panel-background-color: #232427;
-  --ag-control-panel-background-color: #232427;
+.dark .ag-theme-app,
+.dark .ag-theme-alpine,
+.dark .ag-theme-quartz {
+  --ag-background-color: #1c1d1f !important;
+  --ag-foreground-color: #e3e3e4 !important;
+  --ag-secondary-foreground-color: #c4c7c5 !important;
+  --ag-header-background-color: #232427 !important;
+  --ag-header-foreground-color: #c4c7c5 !important;
+  --ag-odd-row-background-color: #1c1d1f !important;
+  --ag-row-hover-color: #2a2b2e !important;
+  --ag-selected-row-background-color: rgba(26, 115, 232, 0.15) !important;
+  --ag-border-color: #2e3033 !important;
+  --ag-row-border-color: #2e3033 !important;
+  --ag-header-column-separator-color: #2e3033 !important;
+  --ag-header-column-resize-handle-color: #2e3033 !important;
+  --ag-panel-background-color: #232427 !important;
+  --ag-tool-panel-background-color: #232427 !important;
+  --ag-control-panel-background-color: #232427 !important;
+}
+
+.dark .ag-root-wrapper,
+.dark .ag-root-wrapper-body,
+.dark .ag-header,
+.dark .ag-header-row,
+.dark .ag-header-cell,
+.dark .ag-body-viewport,
+.dark .ag-row,
+.dark .ag-cell,
+.dark .ag-paging-panel {
+  background-color: var(--ag-background-color, #1c1d1f) !important;
+  color: var(--ag-foreground-color, #e3e3e4) !important;
+  border-color: var(--ag-border-color, #2e3033) !important;
+}
+
+.dark .ag-header,
+.dark .ag-header-row,
+.dark .ag-header-cell {
+  background-color: var(--ag-header-background-color, #232427) !important;
+  color: var(--ag-header-foreground-color, #c4c7c5) !important;
+}
+
+.dark .ag-row-hover,
+.dark .ag-row:hover {
+  background-color: var(--ag-row-hover-color, #2a2b2e) !important;
 }
 
 /* Cell alignment — vertically center content, clip overflow */

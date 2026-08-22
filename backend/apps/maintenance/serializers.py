@@ -6,12 +6,18 @@ from apps.stores.serializers import StoreSerializer, DepartmentSerializer, SubDe
 from apps.accounts.models import CustomUser
 
 
+from apps.accounts.serializers import RoleSerializer
+
+
 class TicketUserSerializer(serializers.ModelSerializer):
+    sub_departments = SubDepartmentSerializer(many=True, read_only=True)
+    role = RoleSerializer(read_only=True)
+
     class Meta:
         model = CustomUser
         fields = [
             'user_id', 'username', 'email', 'employee_no', 'full_name',
-            'phone', 'whatsapp_number', 'profile_image', 'role'
+            'phone', 'whatsapp_number', 'profile_image', 'role', 'sub_departments'
         ]
 
 

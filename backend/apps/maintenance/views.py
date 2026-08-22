@@ -201,6 +201,10 @@ class TicketViewSet(viewsets.ModelViewSet):
         if department:
             queryset = queryset.filter(department_id=department)
 
+        sub_department = params.get('sub_department')
+        if sub_department:
+            queryset = queryset.filter(nature__sub_department_id=sub_department)
+
         status = params.get('status')
         if status:
             queryset = queryset.filter(status__status_name=status)

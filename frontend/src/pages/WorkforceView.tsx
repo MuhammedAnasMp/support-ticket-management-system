@@ -203,6 +203,10 @@ export const WorkforceView: React.FC = () => {
   const isGenStoreManager = genRoleName === 'store manager';
   const isGenTechnician = genRoleName === 'technician';
 
+  const unmanagedStores = useMemo(() => {
+    return stores.filter(s => !s.manager);
+  }, [stores]);
+
   const availableSubDepartments = useMemo(() => {
     if (canCreateAllDepts || !userDepartmentIds) return subDepartments;
     return subDepartments.filter(sd => {
@@ -1971,14 +1975,14 @@ export const WorkforceView: React.FC = () => {
 
                 {isGenStoreManager && (
                   <div>
-                    <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Target Store</label>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Target Store (Unmanaged Locations)</label>
                     <select
                       value={genStore}
                       onChange={e => setGenStore(e.target.value)}
-                      className="w-full text-xs bg-surface-container border border-outline-variant p-2.5 rounded text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                      className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
                     >
                       <option value="">Select Store (Optional)</option>
-                      {stores.map(s => (
+                      {unmanagedStores.map(s => (
                         <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
                       ))}
                     </select>

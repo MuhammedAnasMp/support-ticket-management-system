@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  User, Lock, Mail, Phone, Clock, MessageSquare, 
-  AlertCircle, Camera, Check, RefreshCw 
+import {
+  User, Lock, Mail, Phone, Clock, MessageSquare,
+  AlertCircle, Camera, Check, RefreshCw
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -313,7 +313,7 @@ export const SignupView: React.FC = () => {
           {isStoreManager && (
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
-                Store
+                Store (Unmanaged Locations)
               </label>
               <select
                 required
@@ -323,9 +323,12 @@ export const SignupView: React.FC = () => {
                 className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
               >
                 {!isStoreLocked && <option value="">Select Store</option>}
-                {stores.map(s => (
-                  <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
-                ))}
+                {stores
+                  .filter(s => !s.manager || String(s.store_id) === String(selectedStore))
+                  .map(s => (
+                    <option key={s.store_id} value={s.store_id}>{s.store_id} - {s.store_name} </option>
+                  ))
+                }
               </select>
             </div>
           )}
@@ -369,8 +372,8 @@ export const SignupView: React.FC = () => {
                         {filteredNatures.map(n => {
                           const checked = selectedNatures.includes(String(n.nature_id));
                           return (
-                            <label 
-                              key={n.nature_id} 
+                            <label
+                              key={n.nature_id}
                               className={`flex items-center gap-2.5 text-sm cursor-pointer select-none text-on-surface dark:text-dark-on-surface ${isNatureLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
                             >
                               <input

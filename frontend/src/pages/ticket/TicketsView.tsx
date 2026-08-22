@@ -123,6 +123,7 @@ export const TicketsView: React.FC = () => {
     const [filterStatus, setFilterStatus] = useState('');
     const [filterPriority, setFilterPriority] = useState('');
     const [filterWorker, setFilterWorker] = useState('');
+    const [filterSubDept, setFilterSubDept] = useState('');
     const [fromDate, setFromDate] = useState<string>(() => {
         const savedFrom = localStorage.getItem('ticket-filter-from-date');
         if (savedFrom !== null) return savedFrom;
@@ -332,6 +333,24 @@ export const TicketsView: React.FC = () => {
         return departments.filter(d => userDepartmentIds.has(Number(d.department_id)));
     }, [departments, userDepartmentIds, canCreateAllDepts]);
 
+    const filteredSubDepartments = useMemo(() => {
+        if (!filterDept) return subDepartments;
+        return subDepartments.filter(sd => {
+            const sdDeptId = sd.department?.department_id ?? sd.department;
+            return String(sdDeptId) === String(filterDept);
+        });
+    }, [subDepartments, filterDept]);
+
+    useEffect(() => {
+        if (filterDept && filterSubDept) {
+            const sdObj = subDepartments.find(s => String(s.sub_department_id) === String(filterSubDept));
+            const sdDeptId = sdObj?.department?.department_id ?? sdObj?.department;
+            if (sdDeptId && String(sdDeptId) !== String(filterDept)) {
+                setFilterSubDept('');
+            }
+        }
+    }, [filterDept, filterSubDept, subDepartments]);
+
     const uniquePriorityNames = useMemo(() => {
         const names = new Set<string>();
         priorities.forEach(p => {
@@ -376,6 +395,7 @@ export const TicketsView: React.FC = () => {
             if (debouncedSearch) query.set('search', debouncedSearch);
             if (filterStore) query.set('store', filterStore);
             if (filterDept) query.set('department', filterDept);
+            if (filterSubDept) query.set('sub_department', filterSubDept);
             if (filterStatus) query.set('status', filterStatus);
             if (filterPriority) query.set('priority', filterPriority);
             if (filterWorker) query.set('worker', filterWorker);
@@ -402,35 +422,31 @@ export const TicketsView: React.FC = () => {
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterStatus, filterPriority, filterWorker, fromDate, toDate]);
+    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterSubDept, filterStatus, filterPriority, filterWorker, fromDate, toDate]);
 
     const fetchWorkersForRange = useCallback(async () => {
         if (!token) return;
         try {
-            const query = new URLSearchParams();
-            if (!debouncedSearch) {
-                if (fromDate) query.set('ticket_from_date', fromDate);
-                if (toDate) query.set('ticket_to_date', toDate);
-            }
-            const resWork = await fetch(`${API_URL}/accounts/customuser/?${query.toString()}`, {
+            const resWork = await fetch(`${API_URL}/accounts/customuser/`, {
                 headers: { Authorization: `Token ${token}` }
             });
             if (resWork.ok) {
                 const uList = await resWork.json();
                 setWorkers(uList.filter((u: any) => {
                     const roleName = u.role?.role_name?.toLowerCase() ?? '';
-                    const isTechnicianRole = roleName === 'technician' || roleName === 'worker';
+                    const isTechnicianRole = roleName === 'technician' || roleName === 'worker' || roleName.includes('admin') || roleName.includes('administrator');
                     const hasTechnicalSubDept = Array.isArray(u.sub_departments) && u.sub_departments.some((sd: any) => {
                         const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
-                        return name !== '' && name !== 'office';
+                        return name !== '';
                     });
-                    return isTechnicianRole || hasTechnicalSubDept;
+                    const hasSkills = Array.isArray(u.skilled_natures) && u.skilled_natures.length > 0;
+                    return isTechnicianRole || hasTechnicalSubDept || hasSkills;
                 }));
             }
         } catch (err) {
             console.error('Failed to load workers', err);
         }
-    }, [token, fromDate, toDate, debouncedSearch]);
+    }, [token]);
 
     useEffect(() => { fetchWorkersForRange(); }, [fetchWorkersForRange]);
     useEffect(() => { fetchMetadata(); }, [token]);
@@ -455,8 +471,8 @@ export const TicketsView: React.FC = () => {
     }, [search]);
 
     const isTechnician = useMemo(() => {
-        const roleStr = typeof user?.role === 'object' && user?.role 
-            ? (user.role as any).role_name 
+        const roleStr = typeof user?.role === 'object' && user?.role
+            ? (user.role as any).role_name
             : user?.role;
         const name = String(roleStr || '').toLowerCase();
         return name === 'technician' || name === 'worker';
@@ -584,7 +600,10 @@ export const TicketsView: React.FC = () => {
     };
 
     const clearFilters = () => {
-        setSearch(''); setFilterStore(''); setFilterDept('');
+        setSearch('');
+        setFilterStore('');
+        setFilterDept('');
+        setFilterSubDept('');
         setFilterStatus('');
         setFilterPriority('');
         handleResetDates();
@@ -913,6 +932,17 @@ export const TicketsView: React.FC = () => {
                                 {availableDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                             </select>
                         )}
+                        <Can permission='maintenance.can_filter_worker_ticket'>
+
+                            <select value={filterSubDept} onChange={e => { setFilterSubDept(e.target.value); setPage(1); }} className={selectCls}>
+                                <option value="">All Sub Departments</option>
+                                {filteredSubDepartments.map(sd => (
+                                    <option key={sd.sub_department_id} value={sd.sub_department_id}>
+                                        {sd.sub_department_name}
+                                    </option>
+                                ))}
+                            </select>
+                        </Can>
 
                         <Can permission={getAllowedStatusPermissions(statuses) as any}>
                             <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} className={selectCls}>

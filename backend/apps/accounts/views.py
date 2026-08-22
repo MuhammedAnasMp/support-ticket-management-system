@@ -65,7 +65,7 @@ class SignupView(APIView):
         from apps.stores.models import Store, Department
         from apps.maintenance.models import WorkNature
         roles = Role.objects.exclude(pk=1).values('role_id', 'role_name')
-        stores = Store.objects.all().values('store_id', 'store_name')
+        stores = Store.objects.all().values('store_id', 'store_name', 'manager')
         departments = Department.objects.all().values(
             'department_id', 'department_name')
 

@@ -205,23 +205,41 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const isWorkerInDepartment = (w: any, targetDeptId: number) => {
-        if (!w || !w.sub_departments || !Array.isArray(w.sub_departments) || w.sub_departments.length === 0) return false;
+        if (!w) return false;
+
+        const roleName = ((user?.role as any)?.role_name || (user?.role as string) || '').toLowerCase();
+        const isAdminOrOfficeAdmin = (user as any)?.is_superuser || roleName.includes('admin') || roleName.includes('administrator');
+
+        // Administrators and Office Administrators have full department visibility to assign workers
+        if (isAdminOrOfficeAdmin) return true;
+
+        if (!targetDeptId || isNaN(targetDeptId)) return true;
+
+        const targetWorker = (w.sub_departments && Array.isArray(w.sub_departments) && w.sub_departments.length > 0)
+            ? w
+            : (workers.find(item => Number(item.user_id) === Number(w.user_id)) || w);
+
         const userDeptIds = getLoggedInUserDepartmentIds();
 
-        return w.sub_departments.some((sd: any) => {
+        if (!targetWorker.sub_departments || !Array.isArray(targetWorker.sub_departments) || targetWorker.sub_departments.length === 0) {
+            return true;
+        }
+
+        return targetWorker.sub_departments.some((sd: any) => {
             let deptId: number | null = null;
             if (typeof sd === 'object' && sd !== null) {
                 if (sd.department?.department_id) deptId = Number(sd.department.department_id);
-                else if (typeof sd.department === 'number') deptId = Number(sd.department);
+                else if (typeof sd.department === 'number' || typeof sd.department === 'string') deptId = Number(sd.department);
+                else if (sd.department_id) deptId = Number(sd.department_id);
                 else if (sd.sub_department_id) {
-                    const found = subDepartments.find(item => item.sub_department_id === Number(sd.sub_department_id));
+                    const found = subDepartments.find(item => Number(item.sub_department_id) === Number(sd.sub_department_id));
                     if (found) deptId = Number(found.department?.department_id ?? found.department);
                 }
             } else if (typeof sd === 'number' || typeof sd === 'string') {
-                const found = subDepartments.find(item => item.sub_department_id === Number(sd) || item.sub_department_name.toLowerCase() === String(sd).toLowerCase());
+                const found = subDepartments.find(item => Number(item.sub_department_id) === Number(sd) || item.sub_department_name?.toLowerCase() === String(sd).toLowerCase());
                 if (found) deptId = Number(found.department?.department_id ?? found.department);
             }
-            if (!deptId) return false;
+            if (!deptId) return true;
             return (deptId === targetDeptId) && (userDeptIds === null || userDeptIds.has(deptId));
         });
     };
@@ -246,8 +264,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             if (resMediaCat.ok) setMediaCategories(await resMediaCat.json());
             if (resNatureWorker.ok) {
                 const rawNW = await resNatureWorker.json();
-                const ticketDeptId = Number(t.department?.department_id ?? t.department);
-                setNatureWorkers(rawNW.filter((nw: any) => nw.worker && isWorkerInDepartment(nw.worker, ticketDeptId)));
+                setNatureWorkers(rawNW.filter((nw: any) => nw.worker));
             }
         } catch (err) {
             console.error('Failed to load ticket details', err);
@@ -289,8 +306,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             if (resMediaCat.ok) setMediaCategories(await resMediaCat.json());
             if (resNatureWorker.ok) {
                 const rawNW = await resNatureWorker.json();
-                const ticketDeptId = Number(ticketDetails.department?.department_id ?? ticketDetails.department);
-                setNatureWorkers(rawNW.filter((nw: any) => nw.worker && isWorkerInDepartment(nw.worker, ticketDeptId)));
+                setNatureWorkers(rawNW.filter((nw: any) => nw.worker));
             }
 
             if (editingAllocation) {
@@ -1935,13 +1951,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 const allocatedIds = new Set(allocations.map(a => a.worker.user_id));
 
                                                 const skilledList = natureWorkers
-                                                    .filter((nw: any) => nw.worker && !allocatedIds.has(nw.worker.user_id) && isWorkerInDepartment(nw.worker, ticketDeptId))
-                                                    .map((nw: any) => nw.worker);
+                                                    .filter((nw: any) => nw.worker && !allocatedIds.has(nw.worker.user_id))
+                                                    .map((nw: any) => {
+                                                        const fullW = workers.find(w => Number(w.user_id) === Number(nw.worker.user_id));
+                                                        return fullW ? { ...nw.worker, ...fullW } : nw.worker;
+                                                    });
                                                 const skilledMap = new Map(skilledList.map((w: any) => [w.user_id, w]));
                                                 const uniqueSkilledList = Array.from(skilledMap.values());
                                                 const skilledIds = new Set(uniqueSkilledList.map((w: any) => w.user_id));
 
-                                                const otherList = workers.filter(w => {
+                                                const otherInDeptList = workers.filter(w => {
                                                     if (skilledIds.has(w.user_id) || allocatedIds.has(w.user_id)) return false;
                                                     return isWorkerInDepartment(w, ticketDeptId);
                                                 });
@@ -1949,16 +1968,20 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 return (
                                                     <>
                                                         {uniqueSkilledList.length > 0 && (
-                                                            <optgroup label={`⭐ Skilled — ${selectedTicket.nature.nature_name}`}>
+                                                            <optgroup label={`⭐ Skilled — ${selectedTicket.nature?.nature_name || 'Nature'}`}>
                                                                 {uniqueSkilledList.map((w: any) => (
-                                                                    <option key={w.user_id} value={w.user_id}>{w.full_name}</option>
+                                                                    <option key={w.user_id} value={w.user_id}>
+                                                                        {w.full_name}{w.employee_no ? ` (ID: ${w.employee_no})` : ''}
+                                                                    </option>
                                                                 ))}
                                                             </optgroup>
                                                         )}
-                                                        {otherList.length > 0 && (
+                                                        {otherInDeptList.length > 0 && (
                                                             <optgroup label="Other Workers in Department">
-                                                                {otherList.map(w => (
-                                                                    <option key={w.user_id} value={w.user_id}>{w.full_name}</option>
+                                                                {otherInDeptList.map(w => (
+                                                                    <option key={w.user_id} value={w.user_id}>
+                                                                        {w.full_name}{w.employee_no ? ` (ID: ${w.employee_no})` : ''}
+                                                                    </option>
                                                                 ))}
                                                             </optgroup>
                                                         )}

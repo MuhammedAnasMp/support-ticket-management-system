@@ -4,7 +4,8 @@ import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, MapPin, Store,
-  Building, ChevronRight, ChevronLeft, X, Loader2, AlertCircle
+  Building, ChevronRight, ChevronLeft, X, Loader2, AlertCircle,
+  Link as LinkIcon, Copy, Check, RefreshCw
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { AgGridReact } from 'ag-grid-react';
@@ -44,10 +45,112 @@ export const StoresView: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
   const [extraData, setExtraData] = useState<any[]>([]); // Areas choices
   const [users, setUsers] = useState<any[]>([]); // Managers choices
+  const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Manager Registration Link Modal State
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [genStore, setGenStore] = useState('');
+  const [copiedToast, setCopiedToast] = useState(false);
+
+  const unmanagedStores = useMemo(() => {
+    const storeList = subpage === 'managers' ? extraData : [];
+    return storeList.filter((s: any) => !s.manager);
+  }, [subpage, extraData]);
+
+  const getGeneratedLink = () => {
+    const baseUrl = `${window.location.origin}/signup`;
+    const params = new URLSearchParams();
+    const storeManagerRole = roles.find((r: any) => (r.role_name || '').toLowerCase() === 'store manager');
+    if (storeManagerRole) {
+      params.set('role', String(storeManagerRole.role_id));
+    }
+    if (genStore) {
+      params.set('store', genStore);
+    }
+    const str = params.toString();
+    return str ? `${baseUrl}?${str}` : baseUrl;
+  };
+
+  // Swap / Conflict handling states
+  const [conflictAction, setConflictAction] = useState<'swap' | 'unassign' | 'reassign'>('swap');
+  const [conflictReassignStoreId, setConflictReassignStoreId] = useState('');
+
+  // Dedicated Swap Modal state
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [swapManagerA, setSwapManagerA] = useState<string>('');
+  const [swapManagerB, setSwapManagerB] = useState<string>('');
+  const [swapLoading, setSwapLoading] = useState(false);
+  const [swapErrorMsg, setSwapErrorMsg] = useState('');
+
+  const handleOpenSwapModal = (manager?: any) => {
+    if (manager) {
+      setSwapManagerA(String(manager.user_id));
+      const other = data.find((m: any) => String(m.user_id) !== String(manager.user_id));
+      setSwapManagerB(other ? String(other.user_id) : '');
+    } else {
+      setSwapManagerA(data[0] ? String(data[0].user_id) : '');
+      setSwapManagerB(data[1] ? String(data[1].user_id) : '');
+    }
+    setSwapErrorMsg('');
+    setShowSwapModal(true);
+  };
+
+  const handleExecuteSwap = async () => {
+    if (!swapManagerA || !swapManagerB) {
+      setSwapErrorMsg('Please select two managers to swap.');
+      return;
+    }
+    if (swapManagerA === swapManagerB) {
+      setSwapErrorMsg('Please select two different managers.');
+      return;
+    }
+
+    setSwapLoading(true);
+    setSwapErrorMsg('');
+
+    try {
+      const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
+      const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
+
+      const storeAId = mA?.store?.store_id || null;
+      const storeBId = mB?.store?.store_id || null;
+
+      const headers = {
+        Authorization: `Token ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      // 1. Assign Manager B to Manager A's store
+      await fetch(`${API_URL}/stores/managers/${swapManagerB}/`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ store_id: storeAId })
+      });
+
+      // 2. Assign Manager A to Manager B's store
+      const res = await fetch(`${API_URL}/stores/managers/${swapManagerA}/`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ store_id: storeBId })
+      });
+
+      if (res.ok) {
+        setShowSwapModal(false);
+        fetchData();
+      } else {
+        const errJson = await res.json();
+        setSwapErrorMsg(Object.values(errJson).flat().join(', ') || 'Failed to execute store swap.');
+      }
+    } catch (err) {
+      setSwapErrorMsg('Network error while swapping stores.');
+    } finally {
+      setSwapLoading(false);
+    }
+  };
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -96,6 +199,30 @@ export const StoresView: React.FC = () => {
       if (!item) return null;
       return (
         <div className="flex items-center gap-1.5 h-full">
+          {subpage === 'managers' && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenSwapModal(item);
+              }}
+              className="p-1.5 border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 rounded cursor-pointer transition-colors inline-flex"
+              title="Swap Store Location"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenEdit(item);
+            }}
+            className="p-1.5 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface rounded cursor-pointer transition-colors inline-flex"
+            title="Edit / Reassign"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
           <Can permission={deletePermission}>
             <button
               onClick={(e) => {
@@ -235,12 +362,14 @@ export const StoresView: React.FC = () => {
         const res = await fetch(`${API_URL}/stores/department/`, { headers });
         if (res.ok) setData(await res.json());
       } else if (subpage === 'managers') {
-        const [resManagers, resStores] = await Promise.all([
+        const [resManagers, resStores, resRoles] = await Promise.all([
           fetch(`${API_URL}/stores/managers/`, { headers }),
-          fetch(`${API_URL}/stores/store/`, { headers })
+          fetch(`${API_URL}/stores/store/`, { headers }),
+          fetch(`${API_URL}/accounts/role/`, { headers })
         ]);
         if (resManagers.ok) setData(await resManagers.json());
         if (resStores.ok) setExtraData(await resStores.json());
+        if (resRoles.ok) setRoles(await resRoles.json());
       }
     } catch (err) {
       setErrorMsg('Failed to load data.');
@@ -450,6 +579,35 @@ export const StoresView: React.FC = () => {
     } else if (subpage === 'managers') {
       endpoint = editItem ? `${API_URL}/stores/managers/${editItem.user_id}/` : `${API_URL}/stores/managers/`;
       bodyData = managerForm;
+
+      // Check if target selected store is currently assigned to another manager
+      const selectedStoreObj = extraData.find((s: any) => String(s.store_id) === String(managerForm.store_id));
+      const existingManager = selectedStoreObj?.manager;
+      const isTargetConflict = existingManager && String(existingManager.user_id) !== String(editItem?.user_id);
+
+      if (isTargetConflict && editItem) {
+        const headers = {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json'
+        };
+
+        if (conflictAction === 'swap') {
+          // Reassign existing manager of target store to editItem's previous store
+          const prevStoreId = editItem.store?.store_id || null;
+          await fetch(`${API_URL}/stores/managers/${existingManager.user_id}/`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ store_id: prevStoreId })
+          });
+        } else if (conflictAction === 'reassign' && conflictReassignStoreId) {
+          // Reassign existing manager to selected store
+          await fetch(`${API_URL}/stores/managers/${existingManager.user_id}/`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ store_id: conflictReassignStoreId })
+          });
+        }
+      }
     }
 
     try {
@@ -609,6 +767,25 @@ export const StoresView: React.FC = () => {
             </Can>
           </>
           }
+
+          {subpage === 'managers' && (
+            <>
+              <button
+                onClick={() => handleOpenSwapModal()}
+                className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Swap Managers
+              </button>
+              <button
+                onClick={() => setShowLinkModal(true)}
+                className="border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <LinkIcon className="w-4 h-4 text-primary" />
+                Generate Manager Link
+              </button>
+            </>
+          )}
 
           <Can permission={subpage === 'managers' ? 'accounts.add_customuser' : 'stores.add_store'}>
             <button
@@ -877,16 +1054,26 @@ export const StoresView: React.FC = () => {
                       <div>
                         <label className="block text-xs font-semibold text-outline mb-1">Store Manager</label>
                         <select
+                          disabled
                           value={storeForm.manager}
                           onChange={e => setStoreForm({ ...storeForm, manager: e.target.value })}
                           className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                         >
                           <option value="">No Manager Assigned</option>
-                          {users.map(u => (
-                            <option key={u.user_id} value={u.user_id}>
-                              {u.full_name} {u.store ? `(${u.store.store_name})` : '(no store)'}
-                            </option>
-                          ))}
+                          {users
+                            .filter(u => {
+                              if (!u.store) return true;
+                              const currentManagerId = Number(storeForm.manager);
+                              const currentStoreId = Number(editItem?.store_id ?? storeForm.store_id);
+                              const managerStoreId = Number(u.store?.store_id ?? u.store);
+                              return Number(u.user_id) === currentManagerId || (currentStoreId && managerStoreId === currentStoreId);
+                            })
+                            .map(u => (
+                              <option key={u.user_id} value={u.user_id}>
+                                {u.full_name}{u.store ? ` (${u.store.store_name || u.store})` : ''}
+                              </option>
+                            ))
+                          }
                         </select>
                       </div>
                     </div>
@@ -1057,17 +1244,129 @@ export const StoresView: React.FC = () => {
                       </div>
                     </div>
 
+                    {editItem && (
+                      <div className="p-3 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg flex items-center justify-between">
+                        <div>
+                          <span className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant">
+                            Previous / Current Store
+                          </span>
+                          <span className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
+                            {editItem?.store?.store_name || 'No Store Assigned'}
+                          </span>
+                        </div>
+                        {editItem?.store && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
+                            ID #{editItem.store.store_id}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">Assigned Store / Location</label>
+                      <label className="block text-xs font-semibold text-outline mb-1">New Store / Location</label>
                       <select
                         value={managerForm.store_id}
-                        onChange={e => setManagerForm({ ...managerForm, store_id: e.target.value })}
+                        onChange={e => {
+                          setManagerForm({ ...managerForm, store_id: e.target.value });
+                          setConflictAction('swap');
+                          setConflictReassignStoreId('');
+                        }}
                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       >
-                        <option value="">No Store Assigned</option>
-                        {extraData.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
+                        <option value="">No Store Assigned (Unassigned)</option>
+                        {extraData.map((s: any) => {
+                          const mgrName = s.manager?.full_name ? ` (Managed by ${s.manager.full_name})` : ' (Unmanaged)';
+                          return (
+                            <option key={s.store_id} value={s.store_id}>
+                              {s.store_name}{mgrName}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
+
+                    {(() => {
+                      const selectedStoreObj = extraData.find((s: any) => String(s.store_id) === String(managerForm.store_id));
+                      const targetManager = selectedStoreObj?.manager;
+                      if (!targetManager || String(targetManager.user_id) === String(editItem?.user_id)) return null;
+
+                      const prevStoreName = editItem?.store?.store_name;
+
+                      return (
+                        <div className="p-3.5 bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/40 rounded-xl space-y-3">
+                          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-xs">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>Store Conflict — Reassign {targetManager.full_name}</span>
+                          </div>
+                          <p className="text-xs text-on-surface dark:text-dark-on-surface">
+                            <strong>{selectedStoreObj.store_name}</strong> is currently assigned to <strong>{targetManager.full_name}</strong>.
+                          </p>
+                          <div className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant">
+                            What should happen to <strong>{targetManager.full_name}</strong>?
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
+                              <input
+                                type="radio"
+                                name="conflictAction"
+                                value="swap"
+                                checked={conflictAction === 'swap'}
+                                onChange={() => setConflictAction('swap')}
+                                className="text-primary focus:ring-primary"
+                              />
+                              <span>
+                                <strong>Swap Stores:</strong> Move {targetManager.full_name} to {prevStoreName ? `"${prevStoreName}"` : 'No Store (Unassigned)'}
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
+                              <input
+                                type="radio"
+                                name="conflictAction"
+                                value="unassign"
+                                checked={conflictAction === 'unassign'}
+                                onChange={() => setConflictAction('unassign')}
+                                className="text-primary focus:ring-primary"
+                              />
+                              <span>
+                                <strong>Unassign:</strong> Leave {targetManager.full_name} unassigned (No Store)
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
+                              <input
+                                type="radio"
+                                name="conflictAction"
+                                value="reassign"
+                                checked={conflictAction === 'reassign'}
+                                onChange={() => setConflictAction('reassign')}
+                                className="text-primary focus:ring-primary"
+                              />
+                              <span>
+                                <strong>Reassign to another store:</strong>
+                              </span>
+                            </label>
+
+                            {conflictAction === 'reassign' && (
+                              <select
+                                value={conflictReassignStoreId}
+                                onChange={e => setConflictReassignStoreId(e.target.value)}
+                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded ml-6 text-on-surface dark:text-dark-on-surface"
+                              >
+                                <option value="">Select New Store for {targetManager.full_name}</option>
+                                {extraData
+                                  .filter((s: any) => String(s.store_id) !== String(managerForm.store_id))
+                                  .map((s: any) => (
+                                    <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
+                                  ))
+                                }
+                              </select>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div>
@@ -1234,6 +1533,238 @@ export const StoresView: React.FC = () => {
                   className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Manager Registration Link Generator Modal ─── */}
+      <AnimatePresence>
+        {showLinkModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowLinkModal(false)}
+              className="absolute inset-0 bg-inverse-surface"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded-xl shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <LinkIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-on-surface dark:text-dark-on-surface">Generate Manager Registration Link</h3>
+                    <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">Create signup links for Store Managers</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowLinkModal(false)}
+                  className="p-1 rounded text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">Target Store (Unmanaged Locations)</label>
+                  <select
+                    required
+                    value={genStore}
+                    onChange={e => setGenStore(e.target.value)}
+                    className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value="">Select Store (Optional)</option>
+                    {unmanagedStores.map((s: any) => (
+                      <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-2">
+                  <label className="block text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">Generated Dynamic Link</label>
+                  <div className="flex items-center gap-2">
+                    <input
+
+                      type="text"
+                      readOnly
+                      value={getGeneratedLink()}
+                      className="w-full text-xs font-mono bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-primary focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(getGeneratedLink());
+                        setCopiedToast(true);
+                        setTimeout(() => setCopiedToast(false), 2000);
+                      }}
+                      className="px-3.5 py-2.5 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors shadow-xs"
+                    >
+                      {copiedToast ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedToast ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end px-6 py-4 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
+                <button
+                  type="button"
+                  onClick={() => setShowLinkModal(false)}
+                  className="px-3.5 py-2 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Swap Store Managers Modal ─── */}
+      <AnimatePresence>
+        {showSwapModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSwapModal(false)}
+              className="absolute inset-0 bg-inverse-surface"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded-xl shadow-2xl overflow-hidden p-6 space-y-5"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <RefreshCw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-on-surface dark:text-dark-on-surface">Swap Store Managers</h3>
+                    <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">Reassign store locations between two managers</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSwapModal(false)}
+                  className="p-1 rounded text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {swapErrorMsg && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs rounded-lg flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{swapErrorMsg}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Manager A */}
+                <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-xl space-y-2">
+                  <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager A</label>
+                  <select
+                    value={swapManagerA}
+                    onChange={e => setSwapManagerA(e.target.value)}
+                    className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
+                  >
+                    <option value="">Select Manager A</option>
+                    {data.map((m: any) => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.full_name} ({m.store?.store_name || 'No Store'})
+                      </option>
+                    ))}
+                  </select>
+                  {(() => {
+                    const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
+                    return (
+                      <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
+                        Current Store: <strong className="text-on-surface dark:text-dark-on-surface">{mA?.store?.store_name || 'Unassigned'}</strong>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Manager B */}
+                <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-xl space-y-2">
+                  <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager B</label>
+                  <select
+                    value={swapManagerB}
+                    onChange={e => setSwapManagerB(e.target.value)}
+                    className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
+                  >
+                    <option value="">Select Manager B</option>
+                    {data
+                      .filter((m: any) => String(m.user_id) !== String(swapManagerA))
+                      .map((m: any) => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {m.full_name} ({m.store?.store_name || 'No Store'})
+                        </option>
+                      ))}
+                  </select>
+                  {(() => {
+                    const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
+                    return (
+                      <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
+                        Current Store: <strong className="text-on-surface dark:text-dark-on-surface">{mB?.store?.store_name || 'Unassigned'}</strong>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Swap Result Preview */}
+              {swapManagerA && swapManagerB && (
+                <div className="p-3.5 bg-primary/10 border border-primary/30 rounded-xl space-y-2">
+                  <div className="text-xs font-bold text-primary flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Swap Outcome Preview</span>
+                  </div>
+                  {(() => {
+                    const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
+                    const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
+                    return (
+                      <div className="text-xs space-y-1 text-on-surface dark:text-dark-on-surface">
+                        <div>• <strong>{mA?.full_name}</strong> ➔ <span className="text-primary font-semibold">{mB?.store?.store_name || 'No Store (Unassigned)'}</span></div>
+                        <div>• <strong>{mB?.full_name}</strong> ➔ <span className="text-primary font-semibold">{mA?.store?.store_name || 'No Store (Unassigned)'}</span></div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+                <button
+                  type="button"
+                  onClick={() => setShowSwapModal(false)}
+                  className="px-3.5 py-2 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={swapLoading || !swapManagerA || !swapManagerB}
+                  onClick={handleExecuteSwap}
+                  className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  {swapLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Confirm Store Swap</span>
                 </button>
               </div>
             </motion.div>
