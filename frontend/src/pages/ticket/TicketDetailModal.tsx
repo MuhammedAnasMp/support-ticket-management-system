@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -150,6 +150,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     // Form states
     const [newAllocation, setNewAllocation] = useState({ worker_id: '', planned_hours: '4.0', remarks: '' });
+    const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+    const [assignmentVoiceFile, setAssignmentVoiceFile] = useState<File | null>(null);
+    const [isAssignRecordingPending, setIsAssignRecordingPending] = useState(false);
     const [hourlyRateToCreate, setHourlyRateToCreate] = useState('');
     const [rejectReason, setRejectReason] = useState('');
     const [showRejectForm, setShowRejectForm] = useState(false);
@@ -627,60 +630,116 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const handleAddAllocation = async (e: React.FormEvent) => {
         e.preventDefault();
+        const targetWorkerIds = selectedWorkerIds.length > 0
+            ? selectedWorkerIds
+            : (newAllocation.worker_id ? [newAllocation.worker_id] : []);
+
+        if (targetWorkerIds.length === 0) {
+            alert("Please select at least one worker to assign.");
+            return;
+        }
+
         setActionLoading(true);
         try {
-            const selectedWorkerObj = workers.find(w => String(w.user_id) === String(newAllocation.worker_id));
-            const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
-            const hasOfficeSubDept = selectedWorkerObj && Array.isArray(selectedWorkerObj.sub_departments) && selectedWorkerObj.sub_departments.some((sd: any) => {
-                const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
-                return name === 'office';
-            });
-
-            if (newAllocation.worker_id && !hasRate && !hasOfficeSubDept) {
-                if (!hourlyRateToCreate) {
-                    alert("Please specify the hourly rate.");
-                    setActionLoading(false);
-                    return;
-                }
-                const rateResponse = await fetch(`${API_URL}/finance/employeerate/`, {
-                    method: 'POST',
-                    headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        worker: newAllocation.worker_id,
-                        hourly_rate: hourlyRateToCreate,
-                        effective_from: new Date().toISOString().split('T')[0]
-                    })
+            // Process rates for any selected worker missing hourly rate
+            for (const workerId of targetWorkerIds) {
+                const selectedWorkerObj = workers.find(w => String(w.user_id) === String(workerId));
+                const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
+                const hasOfficeSubDept = selectedWorkerObj && Array.isArray(selectedWorkerObj.sub_departments) && selectedWorkerObj.sub_departments.some((sd: any) => {
+                    const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
+                    return name === 'office';
                 });
-                if (!rateResponse.ok) {
-                    const errData = await rateResponse.json();
-                    alert(Object.values(errData).flat().join(', ') || 'Failed to save employee rate.');
-                    setActionLoading(false);
-                    return;
-                }
-                // Update local worker hourly rate so hasRate checks pass if reused
-                if (selectedWorkerObj) {
-                    selectedWorkerObj.hourly_rate = hourlyRateToCreate;
+
+                if (!hasRate && !hasOfficeSubDept) {
+                    if (!hourlyRateToCreate) {
+                        alert(`Please specify the hourly rate for ${selectedWorkerObj?.full_name || 'selected worker'}.`);
+                        setActionLoading(false);
+                        return;
+                    }
+                    const rateResponse = await fetch(`${API_URL}/finance/employeerate/`, {
+                        method: 'POST',
+                        headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            worker: workerId,
+                            hourly_rate: hourlyRateToCreate,
+                            effective_from: new Date().toISOString().split('T')[0]
+                        })
+                    });
+                    if (!rateResponse.ok) {
+                        const errData = await rateResponse.json();
+                        alert(Object.values(errData).flat().join(', ') || 'Failed to save employee rate.');
+                        setActionLoading(false);
+                        return;
+                    }
+                    if (selectedWorkerObj) {
+                        selectedWorkerObj.hourly_rate = hourlyRateToCreate;
+                    }
                 }
             }
 
-            const response = await fetch(`${API_URL}/maintenance/allocation/`, {
-                method: 'POST',
-                headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ticket: ticketDetails.ticket_id,
-                    worker: newAllocation.worker_id,
-                    planned_hours: newAllocation.planned_hours,
-                    remarks: newAllocation.remarks
-                })
-            });
-            if (response.ok) {
-                const freshAlloc = await response.json();
-                setNewAllocation({ worker_id: '', planned_hours: '4.0', remarks: '' });
-                setHourlyRateToCreate('');
-                setIsAssignModalOpen(false);
-                setActiveWorkerId(freshAlloc.worker?.user_id || Number(newAllocation.worker_id));
-                await refreshTicketData();
+            // Create allocation for each selected worker
+            let lastCreatedAlloc: any = null;
+            for (const workerId of targetWorkerIds) {
+                const allocFormData = new FormData();
+                allocFormData.append('ticket', String(ticketDetails.ticket_id));
+                allocFormData.append('worker', String(workerId));
+                allocFormData.append('planned_hours', newAllocation.planned_hours);
+                if (newAllocation.remarks) allocFormData.append('remarks', newAllocation.remarks);
+                if (assignmentVoiceFile) allocFormData.append('voice_note', assignmentVoiceFile);
+
+                const response = await fetch(`${API_URL}/maintenance/allocation/`, {
+                    method: 'POST',
+                    headers: { Authorization: `Token ${token}` },
+                    body: allocFormData
+                });
+                if (response.ok) {
+                    lastCreatedAlloc = await response.json();
+                }
             }
+
+            // Upload voice instruction file if recorded
+            if (assignmentVoiceFile) {
+                const assignedNames = targetWorkerIds
+                    .map(id => workers.find(w => String(w.user_id) === String(id))?.full_name)
+                    .filter(Boolean)
+                    .join(', ');
+
+                // Upload to ticket media
+                const mediaFormData = new FormData();
+                mediaFormData.append('ticket', String(ticketDetails.ticket_id));
+                mediaFormData.append('file_url', assignmentVoiceFile);
+                mediaFormData.append('file_name', assignmentVoiceFile.name || `assignment_instruction_${Date.now()}.webm`);
+                mediaFormData.append('category', 'Before Repair');
+
+                fetch(`${API_URL}/common/media/`, {
+                    method: 'POST',
+                    headers: { Authorization: `Token ${token}` },
+                    body: mediaFormData
+                }).catch(console.error);
+
+                // Upload to ticket chat as Voice Note
+                const chatFormData = new FormData();
+                chatFormData.append('ticket', String(ticketDetails.ticket_id));
+                chatFormData.append('message_text', `🎙️ Voice Instructions for assignment (${assignedNames || 'Workers'})`);
+                chatFormData.append('voice_note', assignmentVoiceFile);
+
+                fetch(`${API_URL}/maintenance/ticketchat/`, {
+                    method: 'POST',
+                    headers: { Authorization: `Token ${token}` },
+                    body: chatFormData
+                }).catch(console.error);
+            }
+
+            // Reset form states
+            setSelectedWorkerIds([]);
+            setAssignmentVoiceFile(null);
+            setNewAllocation({ worker_id: '', planned_hours: '4.0', remarks: '' });
+            setHourlyRateToCreate('');
+            setIsAssignModalOpen(false);
+            if (lastCreatedAlloc?.worker?.user_id) {
+                setActiveWorkerId(lastCreatedAlloc.worker.user_id);
+            }
+            await refreshTicketData();
         } catch (err) {
             console.error(err);
         } finally {
@@ -1511,11 +1570,63 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                     className="min-h-[15px] min-w-[44px] flex items-center justify-center rounded border border-outline-variant dark:border-dark-outline-variant hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface active:scale-95 transition-transform"
                                                                     aria-label="Edit Allocation"
                                                                 >
-                                                                    <span className='text-md'>Edit</span>
+                                                                    <span className='text-[13px] p-1'>Edit</span>
                                                                 </button>
                                                             </Can>
                                                         </div>
                                                     </div>
+
+                                                    {/* View All Instructions */}
+                                                    <Can permission="maintenance.can_view_all_instruction">
+                                                        {(!a.remarks && !a.voice_note) ? null : (
+                                                            <div className="mx-2 my-2 p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-xl space-y-2 text-xs">
+                                                                {a.remarks && (
+                                                                    <p className="text-on-surface dark:text-dark-on-surface font-medium">{a.remarks}</p>
+                                                                )}
+                                                                {a.voice_note && (
+                                                                    <div className="border-primary/15 flex flex-col gap-1.5">
+                                                                        <span className="text-[10px] font-bold text-primary flex items-center gap-1.5">
+                                                                            <Headphones className="w-3.5 h-3.5 animate-pulse shrink-0 text-primary" />
+                                                                            <span>Instruction for {a.worker.full_name}:</span>
+                                                                        </span>
+                                                                        <audio
+                                                                            src={getMediaUrl(a.voice_note)}
+                                                                            controls
+                                                                            preload="metadata"
+                                                                            className="w-full h-9 rounded-lg"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </Can>
+
+                                                    {/* View My Instruction (if not superuser, doesn't have view_all_instruction, but is my worker card) */}
+                                                    {!hasPermission('maintenance.can_view_all_instruction') && !user?.is_superuser && (user as any)?.user_id === a.worker.user_id && (
+                                                        <Can permission="maintenance.can_view_my_instruction">
+                                                            {(!a.remarks && !a.voice_note) ? null : (
+                                                                <div className="mx-2 my-2 p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-xl space-y-2 text-xs">
+                                                                    {a.remarks && (
+                                                                        <p className="text-on-surface dark:text-dark-on-surface font-medium">{a.remarks}</p>
+                                                                    )}
+                                                                    {a.voice_note && (
+                                                                        <div className="border-primary/15 flex flex-col gap-1.5">
+                                                                            <span className="text-[10px] font-bold text-primary flex items-center gap-1.5">
+                                                                                <Headphones className="w-3.5 h-3.5 animate-pulse shrink-0 text-primary" />
+                                                                                <span>Instruction for {a.worker.full_name}:</span>
+                                                                            </span>
+                                                                            <audio
+                                                                                src={getMediaUrl(a.voice_note)}
+                                                                                controls
+                                                                                preload="metadata"
+                                                                                className="w-full h-9 rounded-lg"
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </Can>
+                                                    )}
 
                                                     <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant dark:divide-dark-outline-variant">
                                                         {/* Work Logs Sub-Panel */}
@@ -2280,74 +2391,131 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                 <form onSubmit={handleAddAllocation} className="space-y-4">
                                     <div>
-                                        <label className="block text-xs font-semibold text-outline mb-1.5">Select Worker</label>
-                                        <select required value={newAllocation.worker_id}
-                                            disabled={actionLoading}
-                                            onChange={e => {
-                                                setNewAllocation({ ...newAllocation, worker_id: e.target.value });
-                                                setHourlyRateToCreate('');
-                                            }}
-                                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface">
-                                            <option value="">Select Worker to Assign</option>
-                                            {(() => {
-                                                const ticketDeptId = Number(selectedTicket.department?.department_id ?? selectedTicket.department);
-                                                const allocatedIds = new Set(allocations.map(a => a.worker.user_id));
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="block text-xs font-semibold text-outline">
+                                                Select Workers {selectedWorkerIds.length > 0 && <span className="text-primary font-bold">({selectedWorkerIds.length} selected)</span>}
+                                            </label>
+                                            {selectedWorkerIds.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedWorkerIds([])}
+                                                    className="text-[10px] text-error hover:underline cursor-pointer font-semibold"
+                                                >
+                                                    Clear selection
+                                                </button>
+                                            )}
+                                        </div>
 
-                                                const skilledList = natureWorkers
-                                                    .filter((nw: any) => nw.worker && !allocatedIds.has(nw.worker.user_id))
-                                                    .map((nw: any) => {
-                                                        const fullW = workers.find(w => Number(w.user_id) === Number(nw.worker.user_id));
-                                                        return fullW ? { ...nw.worker, ...fullW } : nw.worker;
-                                                    });
-                                                const skilledMap = new Map(skilledList.map((w: any) => [w.user_id, w]));
-                                                const uniqueSkilledList = Array.from(skilledMap.values());
-                                                const skilledIds = new Set(uniqueSkilledList.map((w: any) => w.user_id));
+                                        {(() => {
+                                            const ticketDeptId = Number(selectedTicket.department?.department_id ?? selectedTicket.department);
+                                            const allocatedIds = new Set(allocations.map(a => a.worker.user_id));
 
-                                                const otherInDeptList = workers.filter(w => {
-                                                    if (skilledIds.has(w.user_id) || allocatedIds.has(w.user_id)) return false;
-                                                    return isWorkerInDepartment(w, ticketDeptId);
+                                            const skilledList = natureWorkers
+                                                .filter((nw: any) => nw.worker && !allocatedIds.has(nw.worker.user_id))
+                                                .map((nw: any) => {
+                                                    const fullW = workers.find(w => Number(w.user_id) === Number(nw.worker.user_id));
+                                                    return fullW ? { ...nw.worker, ...fullW } : nw.worker;
                                                 });
+                                            const skilledMap = new Map(skilledList.map((w: any) => [w.user_id, w]));
+                                            const uniqueSkilledList = Array.from(skilledMap.values());
+                                            const skilledIds = new Set(uniqueSkilledList.map((w: any) => w.user_id));
 
+                                            const otherInDeptList = workers.filter(w => {
+                                                if (skilledIds.has(w.user_id) || allocatedIds.has(w.user_id)) return false;
+                                                return isWorkerInDepartment(w, ticketDeptId);
+                                            });
+
+                                            const renderWorkerRow = (w: any, isSkilled: boolean) => {
+                                                const idStr = String(w.user_id);
+                                                const isSelected = selectedWorkerIds.includes(idStr);
                                                 return (
-                                                    <>
-                                                        {uniqueSkilledList.length > 0 && (
-                                                            <optgroup label={`⭐ Skilled — ${selectedTicket.nature?.nature_name || 'Nature'}`}>
-                                                                {uniqueSkilledList.map((w: any) => (
-                                                                    <option key={w.user_id} value={w.user_id}>
-                                                                        {w.full_name}{w.employee_no ? ` (ID: ${w.employee_no})` : ''}
-                                                                    </option>
-                                                                ))}
-                                                            </optgroup>
-                                                        )}
-                                                        {otherInDeptList.length > 0 && (
-                                                            <optgroup label="Other Workers in Department">
-                                                                {otherInDeptList.map(w => (
-                                                                    <option key={w.user_id} value={w.user_id}>
-                                                                        {w.full_name}{w.employee_no ? ` (ID: ${w.employee_no})` : ''}
-                                                                    </option>
-                                                                ))}
-                                                            </optgroup>
-                                                        )}
-                                                    </>
+                                                    <div
+                                                        key={w.user_id}
+                                                        onClick={() => {
+                                                            setSelectedWorkerIds(prev =>
+                                                                prev.includes(idStr) ? prev.filter(id => id !== idStr) : [...prev, idStr]
+                                                            );
+                                                            setHourlyRateToCreate('');
+                                                        }}
+                                                        className={`flex items-center gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${isSelected
+                                                            ? 'border-primary bg-primary/10 text-on-surface dark:text-dark-on-surface font-semibold shadow-2xs'
+                                                            : 'border-outline-variant/60 hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface'
+                                                            }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            readOnly
+                                                            className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer shrink-0"
+                                                        />
+                                                        <AvatarCircle user={w} size="sm" />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="truncate font-medium">{w.full_name}</span>
+                                                                {isSkilled && <span className="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-1.5 py-0.5 rounded-full shrink-0">⭐ Skilled</span>}
+                                                            </div>
+                                                            {w.employee_no && <p className="text-[10px] text-outline truncate">ID: {w.employee_no}</p>}
+                                                        </div>
+                                                    </div>
                                                 );
-                                            })()}
-                                        </select>
+                                            };
+
+                                            if (uniqueSkilledList.length === 0 && otherInDeptList.length === 0) {
+                                                return (
+                                                    <p className="text-xs text-outline italic p-3 border border-dashed rounded-lg text-center">
+                                                        No available unallocated workers found for this department.
+                                                    </p>
+                                                );
+                                            }
+
+                                            return (
+                                                <div className="max-h-52 overflow-y-auto space-y-3 pr-1 border border-outline-variant/60 rounded-lg p-2 bg-surface-container-low dark:bg-dark-surface-container-low">
+                                                    {uniqueSkilledList.length > 0 && (
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1.5 px-1">
+                                                                ⭐ Skilled — {selectedTicket.nature?.nature_name || 'Nature'}
+                                                            </p>
+                                                            <div className="space-y-1.5">
+                                                                {uniqueSkilledList.map((w: any) => renderWorkerRow(w, true))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {otherInDeptList.length > 0 && (
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-outline uppercase tracking-wider mb-1.5 px-1">
+                                                                Other Workers in Department
+                                                            </p>
+                                                            <div className="space-y-1.5">
+                                                                {otherInDeptList.map((w: any) => renderWorkerRow(w, false))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
 
+                                    {/* Employee Hourly Rate Check for Selected Workers */}
                                     {(() => {
-                                        if (!newAllocation.worker_id) return null;
-                                        const selectedWorkerObj = workers.find(w => String(w.user_id) === String(newAllocation.worker_id));
-                                        const hasRate = selectedWorkerObj && selectedWorkerObj.hourly_rate !== null && selectedWorkerObj.hourly_rate !== undefined && selectedWorkerObj.hourly_rate !== '';
-                                        const hasOfficeSubDept = selectedWorkerObj && Array.isArray(selectedWorkerObj.sub_departments) && selectedWorkerObj.sub_departments.some((sd: any) => {
-                                            const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
-                                            return name === 'office';
+                                        if (selectedWorkerIds.length === 0) return null;
+                                        const missingRateWorkers = selectedWorkerIds.map(id => workers.find(w => String(w.user_id) === String(id))).filter(w => {
+                                            if (!w) return false;
+                                            const hasRate = w.hourly_rate !== null && w.hourly_rate !== undefined && w.hourly_rate !== '';
+                                            const hasOfficeSubDept = Array.isArray(w.sub_departments) && w.sub_departments.some((sd: any) => {
+                                                const name = (sd?.sub_department_name ?? '').trim().toLowerCase();
+                                                return name === 'office';
+                                            });
+                                            return !hasRate && !hasOfficeSubDept;
                                         });
-                                        if (hasRate || hasOfficeSubDept) return null;
+
+                                        if (missingRateWorkers.length === 0) return null;
+                                        const names = missingRateWorkers.map(w => w?.full_name).join(', ');
+
                                         return (
                                             <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 rounded-lg space-y-2 animate-fadeIn">
                                                 <div className="flex items-start gap-1.5 text-xs font-bold">
                                                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
-                                                    <span>Employee rate required to add "{selectedWorkerObj?.full_name}"</span>
+                                                    <span>Hourly rate required for: {names}</span>
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] font-semibold uppercase text-outline mb-1">Hourly Rate (KWD)</label>
@@ -2366,32 +2534,83 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         );
                                     })()}
 
-                                    <div className="grid grid-cols-1 gap-4">
+                                    <div className="grid grid-cols-1 gap-3">
                                         <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Planned Hours</label>
-                                            <input type="number" step="0.5" min="0.5" required value={newAllocation.planned_hours}
+                                            <label className="block text-xs font-semibold text-outline mb-1.5">Planned Hours (Per Worker)</label>
+                                            <input
+                                                type="number"
+                                                step="0.5"
+                                                min="0.5"
+                                                required
+                                                value={newAllocation.planned_hours}
                                                 disabled={actionLoading}
                                                 onChange={e => setNewAllocation({ ...newAllocation, planned_hours: e.target.value })}
                                                 className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                                                placeholder="Planned hours" />
+                                                placeholder="Planned hours"
+                                            />
                                         </div>
+
                                         <div>
                                             <label className="block text-xs font-semibold text-outline mb-1.5">Assignment Remarks</label>
-                                            <input type="text" value={newAllocation.remarks}
+                                            <input
+                                                type="text"
+                                                value={newAllocation.remarks}
                                                 disabled={actionLoading}
                                                 onChange={e => setNewAllocation({ ...newAllocation, remarks: e.target.value })}
                                                 className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                                                placeholder="Assignment instructions (optional)" />
+                                                placeholder="Assignment instructions (optional)"
+                                            />
+                                        </div>
+
+                                        {/* Audio Recording Section */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-outline mb-1.5">
+                                                Voice Instructions (Optional)
+                                            </label>
+                                            <VoiceRecorder
+                                                onSave={(file) => setAssignmentVoiceFile(file)}
+                                                onCancel={() => setAssignmentVoiceFile(null)}
+                                                onRecordingStateChange={setIsAssignRecordingPending}
+                                                placeholderText="Record audio instruction for assigned workers"
+                                            />
+                                            {assignmentVoiceFile && (
+                                                <div className="mt-2 flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                                                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-semibold truncate">
+                                                        <Headphones className="w-4 h-4 animate-pulse shrink-0" />
+                                                        <span className="truncate">{assignmentVoiceFile.name}</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAssignmentVoiceFile(null)}
+                                                        className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                                                        title="Remove recorded audio"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
                                     <div className="flex justify-end gap-2 pt-2">
-                                        <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high transition-colors cursor-pointer">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsAssignModalOpen(false);
+                                                setSelectedWorkerIds([]);
+                                                setAssignmentVoiceFile(null);
+                                            }}
+                                            className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high transition-colors cursor-pointer"
+                                        >
                                             Cancel
                                         </button>
-                                        <button type="submit" disabled={actionLoading} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                                        <button
+                                            type="submit"
+                                            disabled={actionLoading || isAssignRecordingPending || selectedWorkerIds.length === 0}
+                                            className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        >
                                             {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                            Assign Worker
+                                            Assign {selectedWorkerIds.length > 1 ? `${selectedWorkerIds.length} Workers` : 'Worker'}
                                         </button>
                                     </div>
                                 </form>

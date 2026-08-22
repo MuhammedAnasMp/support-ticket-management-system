@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Eye, FileText, Trash2, Headphones, X, Download } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Eye, FileText, Trash2, Headphones, X, Download, Play, Pause, Image as ImageIcon, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -51,6 +51,7 @@ export interface Allocation {
     assigned_date: string;
     planned_hours: string;
     remarks: string;
+    voice_note?: string | null;
 }
 
 export interface WorkLog {
@@ -129,6 +130,95 @@ interface MediaGridProps {
     onDelete?: (mediaId: number) => void;
 }
 
+// ─── Compact Audio Card Component for Small Grid Cells ───────────────────────
+
+const AudioGridCard: React.FC<{
+    url: string;
+    fileName: string;
+    uploader?: any;
+    onDelete?: () => void;
+    onSelectPreview?: () => void;
+}> = ({ url, fileName, uploader, onDelete, onSelectPreview }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const togglePlay = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+            setIsPlaying(false);
+        } else {
+            // Pause any other playing audio elements on the page
+            document.querySelectorAll('audio').forEach(a => {
+                if (a !== audioRef.current) a.pause();
+            });
+            audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+        }
+    };
+
+    return (
+        <div
+            onClick={onSelectPreview || togglePlay}
+            className="relative aspect-video bg-primary/10 dark:bg-primary/20 rounded-lg overflow-hidden border border-primary/30 flex flex-col items-center justify-center p-1.5 group cursor-pointer hover:border-primary transition-all shadow-2xs"
+        >
+            <audio
+                ref={audioRef}
+                src={url}
+                onEnded={() => setIsPlaying(false)}
+                onPause={() => setIsPlaying(false)}
+                onPlay={() => setIsPlaying(true)}
+                className="hidden"
+            />
+            {uploader && (
+                <div className="absolute top-1 left-1 z-20 pointer-events-none" title={`Uploaded by ${uploader.full_name}`}>
+                    <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center font-bold text-[7px] bg-black/70 text-white border border-white/40 shadow-xs">
+                        {uploader.profile_image ? (
+                            <img src={getMediaUrl(uploader.profile_image)} alt={uploader.full_name} className="w-full h-full object-cover" />
+                        ) : (
+                            <span>{uploader.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            <button
+                type="button"
+                onClick={togglePlay}
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                    isPlaying
+                        ? 'bg-primary text-on-primary scale-110 shadow-md animate-pulse'
+                        : 'bg-primary/20 hover:bg-primary text-primary hover:text-on-primary'
+                }`}
+                title={isPlaying ? "Pause Voice Note" : "Play Voice Note"}
+            >
+                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+            </button>
+
+            <span className="text-[9px] font-semibold text-primary dark:text-primary-light mt-1 truncate max-w-full px-1 flex items-center gap-1">
+                <Headphones className="w-2.5 h-2.5 shrink-0" />
+                {isPlaying ? 'Playing...' : 'Voice Note'}
+            </span>
+
+            {onDelete && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (isPlaying && audioRef.current) audioRef.current.pause();
+                        onDelete();
+                    }}
+                    className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-red-600 text-white rounded transition-colors z-20"
+                    title="Delete file"
+                >
+                    <Trash2 className="w-3 h-3" />
+                </button>
+            )}
+            <div className="absolute bottom-0 inset-x-0 bg-black/60 px-1 py-0.5 text-[8px] text-white truncate pointer-events-none">{fileName}</div>
+        </div>
+    );
+};
+
 export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete }) => {
     const [previewItem, setPreviewItem] = useState<{ url: string; name: string } | null>(null);
 
@@ -139,98 +229,98 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
             </div>
         );
     }
+
     return (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {items.map(m => {
-                const url = getMediaUrl(m.file_url);
-                return (
-                    <div key={m.media_id} className="relative aspect-video bg-surface dark:bg-dark-surface rounded-lg overflow-hidden border border-outline-variant dark:border-dark-outline-variant group">
-                        {/* Uploader Profile Image Overlay (Top Left) */}
-                        {m.uploaded_by && (
-                            <div className="absolute top-1 left-1 z-20 pointer-events-none" title={`Uploaded by ${m.uploaded_by.full_name}`}>
-                                <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center font-bold text-[8px] bg-black/70 text-white border border-white/40 shadow-xs">
-                                    {m.uploaded_by.profile_image ? (
-                                        <img src={getMediaUrl(m.uploaded_by.profile_image)} alt={m.uploaded_by.full_name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <span>{m.uploaded_by.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+        <>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {items.map(m => {
+                    const url = getMediaUrl(m.file_url);
+                    const isAudioItem = isAudio(m.file_name);
 
-                        <div
-                            onClick={() => {
-                                if (!isAudio(m.file_name)) {
-                                    setPreviewItem({ url, name: m.file_name });
-                                }
-                            }}
-                            className="block w-full h-full cursor-pointer relative"
-                        >
-                            {isImage(m.file_name) ? (
-                                <img src={url} alt={m.file_name} className="w-full h-full object-cover" />
-                            ) : isAudio(m.file_name) ? (
-                                <div
-                                    className="flex flex-col items-center justify-center w-full h-full p-3 
-                                        bg-surface-container-low rounded-xl border border-outline/20 
-                                        shadow-sm"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10">
-                                            <Headphones className="w-4 h-4 text-primary animate-pulse" />
-                                        </div>
+                    if (isAudioItem) {
+                        return (
+                            <AudioGridCard
+                                key={m.media_id}
+                                url={url}
+                                fileName={m.file_name}
+                                uploader={m.uploaded_by}
+                                onDelete={onDelete ? () => onDelete(m.media_id) : undefined}
+                                onSelectPreview={() => setPreviewItem({ url, name: m.file_name })}
+                            />
+                        );
+                    }
 
-                                        <span className="text-sm font-medium text-on-surface">
-                                            Voice messagec
-                                        </span>
+                    return (
+                        <div key={m.media_id} className="relative aspect-video bg-surface dark:bg-dark-surface rounded-lg overflow-hidden border border-outline-variant dark:border-dark-outline-variant group">
+                            {/* Uploader Profile Image Overlay (Top Left) */}
+                            {m.uploaded_by && (
+                                <div className="absolute top-1 left-1 z-20 pointer-events-none" title={`Uploaded by ${m.uploaded_by.full_name}`}>
+                                    <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center font-bold text-[8px] bg-black/70 text-white border border-white/40 shadow-xs">
+                                        {m.uploaded_by.profile_image ? (
+                                            <img src={getMediaUrl(m.uploaded_by.profile_image)} alt={m.uploaded_by.full_name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span>{m.uploaded_by.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}</span>
+                                        )}
                                     </div>
-                                    <audio
-                                        src={url}
-                                        controls
-                                        className="
-                                            w-full h-10
-                                            rounded-lg
-                                            [&::-webkit-media-controls-panel]:bg-surface-container
-                                            [&::-webkit-media-controls-play-button]:text-primary
-                                            "
-                                    />
-                                </div>
-                            ) : isVideo(m.file_name) ? (
-                                <video src={url} className="w-full h-full object-cover" muted />
-                            ) : (
-                                <div className="flex items-center justify-center w-full h-full">
-                                    <FileText className="w-6 h-6 text-outline" />
                                 </div>
                             )}
-                            {!onEdit && !onDelete && !isAudio(m.file_name) && (
-                                <div className="absolute inset-0 bg-black/10 hover:bg-black/30 transition-all flex items-center justify-center">
-                                    <Eye className="w-6 h-6 text-white opacity-60 hover:opacity-100 transition-opacity" />
-                                </div>
-                            )}
-                        </div>
 
-                        {(onEdit || onDelete) && (
-                            <div className="absolute top-1 right-1 flex gap-1 z-10">
-                                {onDelete && (
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            onDelete(m.media_id);
-                                        }}
-                                        className="p-1 bg-red-600/80 hover:bg-red-600 text-white rounded cursor-pointer transition-colors"
-                                        title="Delete file"
-                                    >
-                                        <Trash2 className="w-3 h-3" />
-                                    </button>
+                            {/* Media Type Icon Badge (Top Right) */}
+                            <div className="absolute top-1 right-1 z-10 pointer-events-none p-1 rounded bg-black/50 text-white/90 backdrop-blur-xs">
+                                {isImage(m.file_name) ? (
+                                    <ImageIcon className="w-3 h-3" />
+                                ) : isVideo(m.file_name) ? (
+                                    <Video className="w-3 h-3" />
+                                ) : (
+                                    <FileText className="w-3 h-3" />
                                 )}
                             </div>
-                        )}
-                        <div className="absolute bottom-0 inset-x-0 bg-black/60 px-1 py-0.5 text-[8px] text-white truncate pointer-events-none">{m.file_name}</div>
-                    </div>
-                );
-            })}
+
+                            <div
+                                onClick={() => {
+                                    setPreviewItem({ url, name: m.file_name });
+                                }}
+                                className="block w-full h-full cursor-pointer relative"
+                            >
+                                {isImage(m.file_name) ? (
+                                    <img src={url} alt={m.file_name} className="w-full h-full object-cover" />
+                                ) : isVideo(m.file_name) ? (
+                                    <video src={url} className="w-full h-full object-cover" muted />
+                                ) : (
+                                    <div className="flex items-center justify-center w-full h-full">
+                                        <FileText className="w-6 h-6 text-outline" />
+                                    </div>
+                                )}
+                                {!onEdit && !onDelete && (
+                                    <div className="absolute inset-0 bg-black/10 hover:bg-black/30 transition-all flex items-center justify-center">
+                                        <Eye className="w-6 h-6 text-white opacity-60 hover:opacity-100 transition-opacity" />
+                                    </div>
+                                )}
+                            </div>
+
+                            {(onEdit || onDelete) && (
+                                <div className="absolute top-1 right-7 flex gap-1 z-10">
+                                    {onDelete && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                onDelete(m.media_id);
+                                            }}
+                                            className="p-1 bg-black/60 hover:bg-red-600 text-white rounded transition-colors"
+                                            title="Delete file"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                            <div className="absolute bottom-0 inset-x-0 bg-black/60 px-1 py-0.5 text-[8px] text-white truncate pointer-events-none">{m.file_name}</div>
+                        </div>
+                    );
+                })}
+            </div>
 
             {/* Media Preview Modal Overlay */}
             <AnimatePresence>
@@ -281,6 +371,12 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                         alt={previewItem.name}
                                         className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none"
                                     />
+                                ) : isAudio(previewItem.name) ? (
+                                    <div className="flex flex-col items-center justify-center p-6 bg-surface-container dark:bg-dark-surface-container rounded-xl border border-outline-variant max-w-md w-full text-center shadow-lg">
+                                        <Headphones className="w-10 h-10 text-primary mb-2 animate-pulse" />
+                                        <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider mb-3">{previewItem.name}</p>
+                                        <audio src={previewItem.url} controls autoPlay className="w-full h-10 rounded-lg" />
+                                    </div>
                                 ) : isVideo(previewItem.name) ? (
                                     <video
                                         src={previewItem.url}
@@ -313,7 +409,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                     </div>
                 )}
             </AnimatePresence>
-        </div>
+        </>
     );
 };
 

@@ -259,6 +259,8 @@ class Ticket(models.Model):
             ("can_filter_worker_ticket", "Can filter worker ticket"),
             ("can_call_worker", "Can call worker"),
             ("can_call_store", "Can call store"),
+            ("can_view_my_instruction", "Can view my instruction"),
+            ("can_view_all_instruction", "Can view all instruction"),
         ]
 
     def __str__(self):
@@ -344,6 +346,7 @@ class Allocation(models.Model):
     assigned_date = models.DateTimeField(auto_now_add=True)
     planned_hours = models.DecimalField(max_digits=5, decimal_places=2)
     remarks = models.TextField(null=True, blank=True)
+    voice_note = models.FileField(upload_to='allocation_voice_notes/', null=True, blank=True)
 
     class Meta:
         permissions = [

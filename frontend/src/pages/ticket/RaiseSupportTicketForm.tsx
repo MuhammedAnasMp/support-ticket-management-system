@@ -525,11 +525,14 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                                 >
                                                     {item.url && item.isImg ? (
                                                         <img src={item.url} alt="preview" className="w-full h-16 object-cover rounded mb-1" />
-                                                    ) : item.url && item.isAudio ? (
-                                                        <div className="w-full h-16 bg-surface-container flex flex-col items-center justify-center rounded mb-1 p-1">
-                                                            <Headphones className="w-5 h-5 text-primary mb-1 animate-pulse" />
-                                                            <audio src={item.url} controls className="w-full h-4 scale-[0.8] origin-center opacity-95" />
-                                                        </div>
+                                                     ) : item.url && item.isAudio ? (
+                                                         <div className="w-full bg-surface-container flex flex-col items-center justify-center rounded mb-1 p-2 min-h-[64px]">
+                                                             <div className="flex items-center gap-1 mb-1 text-primary">
+                                                                 <Headphones className="w-4 h-4 animate-pulse shrink-0" />
+                                                                 <span className="text-[10px] font-bold">Voice Note</span>
+                                                             </div>
+                                                             <audio src={item.url} controls className="w-full h-8 rounded" />
+                                                         </div>
                                                     ) : (
                                                         <div className="w-full h-16 bg-surface-container flex items-center justify-center rounded mb-1">
                                                             {item.url && item.isVid ? (

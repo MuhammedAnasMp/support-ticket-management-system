@@ -61,7 +61,7 @@ export const TicketHistoryView: React.FC = () => {
                 const resHistory = await fetch(`${API_URL}/maintenance/tickethistory/?ticket=${ticketId}`, { headers });
                 if (!resHistory.ok) throw new Error('Failed to retrieve ticket history logs.');
                 let historyData = await resHistory.json();
-                
+
                 // Sort history logs chronologically (newest first)
                 if (Array.isArray(historyData)) {
                     historyData.sort((a: any, b: any) => new Date(b.changed_date).getTime() - new Date(a.changed_date).getTime());
@@ -119,7 +119,7 @@ export const TicketHistoryView: React.FC = () => {
     }
 
     return (
-        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
+        <div className="p-4 sm:p-0 max-w-4xl mx-auto space-y-6">
             {/* Header Navigation */}
             <div className="flex items-center gap-4">
                 <button

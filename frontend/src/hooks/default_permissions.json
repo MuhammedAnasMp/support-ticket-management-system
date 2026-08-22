@@ -298,6 +298,8 @@
     "maintenance.view_worker": "Allows can view worker.",
     "maintenance.view_worklog": "Allows can view work log.",
     "maintenance.view_worknature": "Allows can view work nature.",
+    "maintenance.can_view_my_instruction": "Allows can view my instruction.",
+    "maintenance.can_view_all_instruction": "Allows can view all instruction.",
     "sessions.add_session": "Allows can add session.",
     "sessions.change_session": "Allows can change session.",
     "sessions.delete_session": "Allows can delete session.",
