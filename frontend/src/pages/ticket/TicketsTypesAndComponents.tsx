@@ -181,7 +181,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                         </div>
 
                                         <span className="text-sm font-medium text-on-surface">
-                                            Voice message
+                                            Voice messagec
                                         </span>
                                     </div>
                                     <audio

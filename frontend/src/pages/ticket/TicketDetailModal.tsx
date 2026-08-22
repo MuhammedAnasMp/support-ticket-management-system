@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -50,6 +50,77 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [mediaList, setMediaList] = useState<Media[]>([]);
     const [mediaCategories, setMediaCategories] = useState<MediaCategory[]>([]);
     const [natureWorkers, setNatureWorkers] = useState<any[]>([]);
+    const [priorities, setPriorities] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (!token) return;
+        fetch(`${API_URL}/maintenance/priority/`, {
+            headers: { 'Authorization': `Token ${token}` }
+        })
+            .then(r => r.ok ? r.json() : [])
+            .then(data => {
+                if (Array.isArray(data)) setPriorities(data);
+            })
+            .catch(() => { });
+    }, [token]);
+
+    const departmentPriorities = useMemo(() => {
+        if (priorities && priorities.length > 0) {
+            const ticketDeptId = ticketDetails.department?.department_id ?? ticketDetails.department;
+            if (ticketDeptId) {
+                const filtered = priorities.filter(p => p.department === ticketDeptId || p.department?.department_id === ticketDeptId);
+                if (filtered.length > 0) return filtered;
+            }
+            return priorities;
+        }
+        if (ticketDetails.priority) {
+            const defaults = [
+                ticketDetails.priority,
+                { priority_id: 1, priority_name: 'Low', level: 1 },
+                { priority_id: 2, priority_name: 'Medium', level: 2 },
+                { priority_id: 3, priority_name: 'High', level: 3 },
+                { priority_id: 4, priority_name: 'Urgent', level: 4 }
+            ];
+            return defaults.filter((v, i, a) => a.findIndex(t => t.priority_name === v.priority_name) === i);
+        }
+        return [
+            { priority_id: 1, priority_name: 'Low', level: 1 },
+            { priority_id: 2, priority_name: 'Medium', level: 2 },
+            { priority_id: 3, priority_name: 'High', level: 3 },
+            { priority_id: 4, priority_name: 'Urgent', level: 4 }
+        ];
+    }, [priorities, ticketDetails.department, ticketDetails.priority]);
+
+    const handlePrioritySelect = async (newPriorityId: number) => {
+        if (!token || !ticketDetails || actionLoading) return;
+        const selectedP = departmentPriorities.find(p => p.priority_id === newPriorityId) || priorities.find(p => p.priority_id === newPriorityId);
+
+        setActionLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/maintenance/ticket/${ticketDetails.ticket_id}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Token ${token}`
+                },
+                body: JSON.stringify({ priority: newPriorityId })
+            });
+            if (res.ok) {
+                const updated = await res.json();
+                setTicketDetails(prev => ({
+                    ...prev,
+                    priority: updated.priority && typeof updated.priority === 'object' ? updated.priority : (selectedP || prev.priority)
+                }));
+                onRefreshList();
+            } else {
+                console.error('Failed to update priority', await res.text());
+            }
+        } catch (err) {
+            console.error('Error changing ticket priority:', err);
+        } finally {
+            setActionLoading(false);
+        }
+    };
 
     // UI / Action states
     const [modalLoading, setModalLoading] = useState(false);
@@ -105,6 +176,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [isCallLocationModalOpen, setIsCallLocationModalOpen] = useState(false);
 
     const { hasPermission } = usePermission();
+    const canChangePriority = useMemo(() => {
+        if (user?.is_superuser) return true;
+        return (
+            hasPermission('maintenance.change_priority') ||
+            hasPermission('maintenance.change_priority_name') ||
+            hasPermission('maintenance.can_update_ticket') ||
+            hasPermission('maintenance.change_ticket')
+        );
+    }, [user, hasPermission]);
     const navigate = useNavigate();
 
     const uploadAbortRef = useRef<AbortController | null>(null);
@@ -1069,62 +1149,100 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <span className="font-bold text-on-surface dark:text-dark-on-surface">{ticketDetails.store.store_name}</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-outline"><AlertCircle className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.nature.nature_name}</span></div>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ticketDetails.priority.level >= 2 ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
-                                                {ticketDetails.priority.priority_name} Priority
-                                            </span>
+                                            {(() => {
+                                                const lvl = ticketDetails.priority?.level ?? 1;
+                                                const badgeColorClass = lvl >= 3
+                                                    ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/25'
+                                                    : lvl === 2
+                                                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
+                                                        : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30 hover:bg-sky-500/25';
+
+                                                return (
+                                                    <>
+                                                        <Can permission={['maintenance.change_priority', 'maintenance.change_priority_name']}>
+                                                            {departmentPriorities.length > 0 ? (
+                                                                <div className="relative inline-flex items-center">
+                                                                    <select
+                                                                        value={ticketDetails.priority?.priority_id}
+                                                                        disabled={actionLoading}
+                                                                        onChange={e => handlePrioritySelect(Number(e.target.value))}
+                                                                        className={`appearance-none font-bold text-[11px] pl-2.5 pr-6 py-0.5 rounded border shadow-2xs outline-none cursor-pointer transition-colors ${badgeColorClass}`}
+                                                                        title="Click to change ticket priority"
+                                                                    >
+                                                                        {departmentPriorities.map(p => (
+                                                                            <option key={p.priority_id} value={p.priority_id} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-sans text-xs font-semibold py-1">
+                                                                                {p.priority_name} Priority
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                    <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none opacity-75 shrink-0" />
+                                                                </div>
+                                                            ) : (
+                                                                <span className={`inline-flex items-center font-bold text-[11px] px-2.5 py-0.5 rounded border shadow-2xs ${badgeColorClass}`}>
+                                                                    {ticketDetails.priority?.priority_name} Priority
+                                                                </span>
+                                                            )}
+                                                        </Can>
+                                                        {!canChangePriority && (
+                                                            <span className={`inline-flex items-center font-bold text-[11px] px-2.5 py-0.5 rounded border shadow-2xs ${badgeColorClass}`}>
+                                                                {ticketDetails.priority?.priority_name} Priority
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
 
                                         {/* Right-Aligned Call Section: Desktop = Number Only, Mobile = Button */}
-                                        <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                                            {(() => {
-                                                const currentStoreManager = ticketDetails.store?.manager;
-                                                const ticketCreator = ticketDetails.created_by;
-                                                const managerPhone = currentStoreManager?.phone || currentStoreManager?.whatsapp_number;
-                                                const cleanManagerPhone = managerPhone ? String(managerPhone).replace(/\D/g, '') : '';
-                                                if (!cleanManagerPhone) return null;
+                                        <Can permission="maintenance.can_call_store">
+                                            <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                                                {(() => {
+                                                    const currentStoreManager = ticketDetails.store?.manager;
+                                                    const ticketCreator = ticketDetails.created_by;
+                                                    const managerPhone = currentStoreManager?.phone || currentStoreManager?.whatsapp_number;
+                                                    const cleanManagerPhone = managerPhone ? String(managerPhone).replace(/\D/g, '') : '';
+                                                    if (!cleanManagerPhone) return null;
 
-                                                const isSamePerson = currentStoreManager && ticketCreator && Number(currentStoreManager.user_id) === Number(ticketCreator.user_id);
-                                                const firstName = currentStoreManager?.full_name ? currentStoreManager.full_name.split(' ')[0] : 'Manager';
-                                                const label = isSamePerson ? `Call ${firstName}` : 'Call Manager';
+                                                    const isSamePerson = currentStoreManager && ticketCreator && Number(currentStoreManager.user_id) === Number(ticketCreator.user_id);
+                                                    const firstName = currentStoreManager?.full_name ? currentStoreManager.full_name.split(' ')[0] : 'Manager';
+                                                    const label = isSamePerson ? `Call ${firstName}` : 'Call Manager';
 
-                                                return (
-                                                    <div key="mgr-call" className="flex items-center gap-1.5 shrink-0">
-                                                        {/* Desktop: Number Only */}
-                                                        <a
-                                                            href={`tel:${cleanManagerPhone}`}
-                                                            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
-                                                            title={`Call Store Manager (${currentStoreManager?.full_name}): ${managerPhone}`}
-                                                        >
-                                                            <PhoneCall className="w-3.5 h-3.5" />
-                                                            <span>{managerPhone}</span>
-                                                        </a>
+                                                    return (
+                                                        <div key="mgr-call" className="flex items-center gap-1.5 shrink-0">
+                                                            {/* Desktop: Number Only */}
+                                                            <a
+                                                                href={`tel:${cleanManagerPhone}`}
+                                                                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
+                                                                title={`Call Store Manager (${currentStoreManager?.full_name}): ${managerPhone}`}
+                                                            >
+                                                                <PhoneCall className="w-3.5 h-3.5" />
+                                                                <span>{managerPhone}</span>
+                                                            </a>
+                                                        </div>
+                                                    );
+                                                })()}
 
-                                                    </div>
-                                                );
-                                            })()}
+                                                {(() => {
+                                                    const storeLocationPhone = ticketDetails.store?.phone || ticketDetails.store?.whatsapp_number;
+                                                    const cleanLocationPhone = storeLocationPhone ? String(storeLocationPhone).replace(/\D/g, '') : '';
+                                                    if (!cleanLocationPhone) return null;
 
-                                            {(() => {
-                                                const storeLocationPhone = ticketDetails.store?.phone || ticketDetails.store?.whatsapp_number;
-                                                const cleanLocationPhone = storeLocationPhone ? String(storeLocationPhone).replace(/\D/g, '') : '';
-                                                if (!cleanLocationPhone) return null;
-
-                                                return (
-                                                    <div key="loc-call" className="flex items-center gap-1.5 shrink-0">
-                                                        {/* Desktop: Number Only */}
-                                                        <a
-                                                            href={`tel:${cleanLocationPhone}`}
-                                                            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
-                                                            title={`Call Store Location (${ticketDetails.store?.store_name}): ${storeLocationPhone}`}
-                                                        >
-                                                            <Phone className="w-3.5 h-3.5" />
-                                                            <span>{storeLocationPhone}</span>
-                                                        </a>
-                                                        {/* Mobile: Button */}
-
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
+                                                    return (
+                                                        <div key="loc-call" className="flex items-center gap-1.5 shrink-0">
+                                                            {/* Desktop: Number Only */}
+                                                            <a
+                                                                href={`tel:${cleanLocationPhone}`}
+                                                                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
+                                                                title={`Call Store Location (${ticketDetails.store?.store_name}): ${storeLocationPhone}`}
+                                                            >
+                                                                <Phone className="w-3.5 h-3.5" />
+                                                                <span>{storeLocationPhone}</span>
+                                                            </a>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </Can>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-outline">
@@ -1134,7 +1252,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             value={ticketDetails.status.status_id}
                                             disabled={actionLoading}
                                             onChange={e => handleStatusSelect(Number(e.target.value))}
-                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 border border-outline-variant dark:border-dark-outline-variant outline-none cursor-pointer focus:ring-1 focus:ring-primary/20 ${statusColor(ticketDetails.status.status_name)}`}
+                                            className={`text-[10px] font-bold p-1 rounded shrink-0 border border-outline-variant dark:border-dark-outline-variant outline-none cursor-pointer focus:ring-1 focus:ring-primary/20 ${statusColor(ticketDetails.status.status_name)}`}
                                         >
                                             {allowedDropdownStatuses.map(st => (
                                                 <option key={st.status_id} value={st.status_id} className="text-xs bg-surface text-on-surface">
@@ -1149,70 +1267,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     )}
                                     <button
                                         onClick={() => navigate(`/ticket/${ticketDetails.ticket_id}/history`)}
-                                        className="flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md border border-outline-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-primary hover:text-primary-hover transition-colors ml-2 cursor-pointer active:scale-95 shrink-0"
+                                        className="flex items-center gap-1 text-[10px] font-semibold p-1 rounded-md border border-outline-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-primary hover:text-primary-hover transition-colors  cursor-pointer active:scale-95 shrink-0"
                                         title="View Ticket History Logs"
                                         type="button"
                                     >
                                         <HistoryIcon className="w-3.5 h-3.5" />
-                                        History Log
+
                                     </button>
                                 </div>
 
-                                {/* Approved / Rejected Notifications */}
-                                {(ticketDetails.approved_by || ticketDetails.rejected_by || ticketDetails.location_approval === 'Approved' || ticketDetails.location_approval === 'Rejected') && (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {ticketDetails.rejected_by && (
-                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-red-500/5 border border-red-500/20 rounded-lg">
-                                                <AvatarCircle user={ticketDetails.rejected_by} size="sm" />
-                                                <div>
-                                                    <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">Rejected by</p>
-                                                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
-                                                        {ticketDetails.rejected_by.full_name}
-                                                        {ticketDetails.rejected_date && <span className="text-[10px] text-outline font-normal ml-1.5">({new Date(ticketDetails.rejected_date).toLocaleString()})</span>}
-                                                    </p>
-                                                    {ticketDetails.reject_reason && <p className="text-[10px] text-outline mt-0.5 italic">"{ticketDetails.reject_reason}"</p>}
-                                                </div>
-                                            </div>
-                                        )}
-                                        {ticketDetails.approved_by && (
-                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
-                                                <AvatarCircle user={ticketDetails.approved_by} size="sm" />
-                                                <div>
-                                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Approved by</p>
-                                                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
-                                                        {ticketDetails.approved_by.full_name}
-                                                        {ticketDetails.approved_date && <span className="text-[10px] text-outline font-normal ml-1.5">({new Date(ticketDetails.approved_date).toLocaleString()})</span>}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
-                                        {ticketDetails.location_approval === 'Approved' && (
-                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
-                                                {ticketDetails.location_approved_by ? (
-                                                    <AvatarCircle user={ticketDetails.location_approved_by} size="sm" />
-                                                ) : (
-                                                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 font-bold text-xs">L</div>
-                                                )}
-                                                <div>
-                                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Location Approved</p>
-                                                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
-                                                        {ticketDetails.location_approved_by?.full_name || 'Store / Location Manager'}
-                                                        {ticketDetails.location_approved_date && <span className="text-[10px] text-outline font-normal ml-1.5">({new Date(ticketDetails.location_approved_date).toLocaleString()})</span>}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
-                                        {ticketDetails.location_approval === 'Rejected' && (
-                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-red-500/5 border border-red-500/20 rounded-lg">
-                                                <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0 font-bold text-xs">L</div>
-                                                <div>
-                                                    <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">Location Rejected</p>
-                                                    {ticketDetails.location_reject_reason && <p className="text-[10px] text-outline mt-0.5 italic">"{ticketDetails.location_reject_reason}"</p>}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+
 
                                 {/* Description Section */}
                                 <div>
@@ -1295,6 +1359,65 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     </>
                                 )}
 
+
+                                {/* Approved / Rejected Notifications */}
+                                {(ticketDetails.approved_by || ticketDetails.rejected_by || ticketDetails.location_approval === 'Approved' || ticketDetails.location_approval === 'Rejected') && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {ticketDetails.rejected_by && (
+                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-red-500/5 border border-red-500/20 rounded-lg">
+                                                <AvatarCircle user={ticketDetails.rejected_by} size="sm" />
+                                                <div>
+                                                    <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">Rejected by</p>
+                                                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
+                                                        {ticketDetails.rejected_by.full_name}
+                                                        {ticketDetails.rejected_date && <span className="text-[10px] text-outline font-normal ml-1.5">({new Date(ticketDetails.rejected_date).toLocaleString()})</span>}
+                                                    </p>
+                                                    {ticketDetails.reject_reason && <p className="text-[10px] text-outline mt-0.5 italic">"{ticketDetails.reject_reason}"</p>}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {ticketDetails.approved_by && (
+                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+                                                <AvatarCircle user={ticketDetails.approved_by} size="sm" />
+                                                <div>
+                                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Approved by</p>
+                                                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
+                                                        {ticketDetails.approved_by.full_name}
+                                                        {ticketDetails.approved_date && <span className="text-[10px] text-outline font-normal ml-1.5">({new Date(ticketDetails.approved_date).toLocaleString()})</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {ticketDetails.location_approval === 'Approved' && (
+                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+                                                {ticketDetails.location_approved_by ? (
+                                                    <AvatarCircle user={ticketDetails.location_approved_by} size="sm" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 font-bold text-xs">L</div>
+                                                )}
+                                                <div>
+                                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Location Approved</p>
+                                                    <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
+                                                        {ticketDetails.location_approved_by?.full_name || 'Store / Location Manager'}
+                                                        {ticketDetails.location_approved_date && <span className="text-[10px] text-outline font-normal ml-1.5">({new Date(ticketDetails.location_approved_date).toLocaleString()})</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {ticketDetails.location_approval === 'Rejected' && (
+                                            <div className="flex items-center gap-3 p-2 sm:p-2.5 bg-red-500/5 border border-red-500/20 rounded-lg">
+                                                <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0 font-bold text-xs">L</div>
+                                                <div>
+                                                    <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider">Location Rejected</p>
+                                                    {ticketDetails.location_reject_reason && <p className="text-[10px] text-outline mt-0.5 italic">"{ticketDetails.location_reject_reason}"</p>}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+
+
                                 {/* Allocated Personnel Section */}
                                 {ticketDetails.status.status_name.toLowerCase() !== 'rejected' && (
                                     <div>
@@ -1369,7 +1492,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             {is8DigitPhone && (
-                                                                <>
+                                                                <Can permission="maintenance.can_call_worker">
                                                                     {/* Desktop: Number Only */}
                                                                     <a
                                                                         href={`tel:${cleanWorkerPhone}`}
@@ -1379,27 +1502,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                         <PhoneCall className="w-3.5 h-3.5" />
                                                                         <span>{rawWorkerPhone}</span>
                                                                     </a>
-                                                                    {/* Mobile: Button */}
-                                                                    {/* <button
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            const validW = (allocations || []).filter(alloc => {
-                                                                                const p = alloc.worker?.phone || alloc.worker?.whatsapp_number;
-                                                                                return p && String(p).replace(/\D/g, '').length >= 8;
-                                                                            });
-                                                                            if (validW.length > 1) {
-                                                                                setIsCallWorkerModalOpen(true);
-                                                                            } else {
-                                                                                window.location.href = `tel:${cleanWorkerPhone}`;
-                                                                            }
-                                                                        }}
-                                                                        className="sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 shrink-0"
-                                                                        title={`Call ${a.worker.full_name}: ${rawWorkerPhone}`}
-                                                                    >
-                                                                        <PhoneCall className="w-3.5 h-3.5" />
-                                                                        <span>Call {a.worker.full_name.split(' ')[0]}</span>
-                                                                    </button> */}
-                                                                </>
+                                                                </Can>
                                                             )}
                                                             <span className="text-xs bg-primary/10 text-primary font-bold px-2.5 py-1.5 rounded-lg">{a.planned_hours}h Planned</span>
                                                             <Can permission="maintenance.change_allocation">
@@ -1929,7 +2032,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         if (validWorkers.length === 0) return null;
 
                                         return (
-                                            <Can permission={hasPermission('accounts.view_phone') || true}>
+                                            <Can permission="maintenance.can_call_worker">
                                                 <motion.button
                                                     onClick={() => {
                                                         if (validWorkers.length > 1) {
@@ -1961,7 +2064,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         if (!cleanMgr && !cleanLoc) return null;
 
                                         return (
-                                            <Can permission={hasPermission('accounts.view_phone') || true}>
+                                            <Can permission="maintenance.can_call_store">
                                                 <motion.button
                                                     onClick={() => {
                                                         const totalLocCount = (cleanMgr ? 1 : 0) + (cleanLoc ? 1 : 0);
@@ -2009,7 +2112,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     if (validWorkers.length === 0) return null;
 
                                     return (
-                                        <Can permission={hasPermission('accounts.view_phone') || true}>
+                                        <Can permission="maintenance.can_call_worker">
                                             <motion.button
                                                 onClick={() => {
                                                     if (validWorkers.length > 1) {
@@ -2041,7 +2144,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     if (!cleanMgr && !cleanLoc) return null;
 
                                     return (
-                                        <Can permission={hasPermission('accounts.view_phone') || true}>
+                                        <Can permission="maintenance.can_call_store">
                                             <motion.button
                                                 onClick={() => {
                                                     const totalLocCount = (cleanMgr ? 1 : 0) + (cleanLoc ? 1 : 0);

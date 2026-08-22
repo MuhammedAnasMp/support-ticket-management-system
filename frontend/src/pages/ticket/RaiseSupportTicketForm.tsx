@@ -244,7 +244,6 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 0.6 }}
                             exit={{ opacity: 0 }}
-                            onClick={handleClose}
                             className="fixed inset-0 bg-black/60 backdrop-blur-xs touch-manipulation"
                         />
 

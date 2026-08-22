@@ -18,7 +18,8 @@ class Priority(models.Model):
             ("view_priority_name", "Can view priority name"),
             ("change_priority_name", "Can change priority name"),
             ("view_level", "Can view level"),
-            ("change_level", "Can change level"),
+            ("change_level", "Can change level")
+
         ]
 
     def __str__(self):
@@ -256,6 +257,8 @@ class Ticket(models.Model):
             ("can_view_rejected_ticket", "Can view rejected ticket"),
             ("can_view_blocked_ticket", "Can view blocked ticket"),
             ("can_filter_worker_ticket", "Can filter worker ticket"),
+            ("can_call_worker", "Can call worker"),
+            ("can_call_store", "Can call store"),
         ]
 
     def __str__(self):
@@ -558,7 +561,7 @@ def get_chat_media_path(instance, filename):
         media_type = 'voices'
     else:
         media_type = 'others'
-        
+
     ticket = instance.ticket
     if ticket:
         store_slug = ticket.store.store_name.lower().replace(
@@ -823,7 +826,7 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
                 msg = f"Your ticket {instance.work_order_no} has been rejected."
                 if reason:
                     msg += f" Reason: {reason}"
-                
+
                 # Notify creator
                 if instance.created_by:
                     notify(
@@ -840,7 +843,8 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
                         manager,
                         "Ticket Rejected",
                         "Ticket Rejected",
-                        f"Ticket {instance.work_order_no} for your store {instance.store.store_name} has been rejected." + (f" Reason: {reason}" if reason else "")
+                        f"Ticket {instance.work_order_no} for your store {instance.store.store_name} has been rejected." + (
+                            f" Reason: {reason}" if reason else "")
                     )
 
 

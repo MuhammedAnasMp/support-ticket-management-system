@@ -170,6 +170,8 @@
     "maintenance.add_worklog": "Allows can add work log.",
     "maintenance.add_worknature": "Allows can add work nature.",
     "maintenance.approve_ticket": "Allows can approve ticket.",
+    "maintenance.can_call_store": "Allows can call store.",
+    "maintenance.can_call_worker": "Allows can call worker.",
     "maintenance.can_change_my_log_time": "Allows can can change my log time.",
     "maintenance.can_change_others_log_time": "Allows can can change others log time.",
     "maintenance.can_filter_worker_ticket": "Allows can filter worker ticket.",
@@ -492,6 +494,8 @@
         "maintenance.add_worklog",
         "maintenance.add_worknature",
         "maintenance.approve_ticket",
+        "maintenance.can_call_store",
+        "maintenance.can_call_worker",
         "maintenance.can_change_my_log_time",
         "maintenance.can_change_others_log_time",
         "maintenance.can_filter_worker_ticket",
@@ -660,6 +664,7 @@
         "accounts.view_customuser",
         "maintenance.add_allocation",
         "maintenance.can_change_others_log_time",
+        "maintenance.can_filter_worker_ticket",
         "maintenance.can_move_blocked_to_completed",
         "maintenance.can_move_blocked_to_in_progress",
         "maintenance.can_move_completed_to_in_progress",
@@ -688,19 +693,13 @@
         "maintenance.view_worknature",
         "stores.add_area",
         "stores.view_store",
-        "stores.view_subdepartment",
-        "maintenance.change_priority",
-        "stores.add_store",
-        "stores.change_store",
-        "maintenance.add_natureworker",
-        "maintenance.add_worknature"
+        "stores.view_subdepartment"
       ]
     },
     "Store Manager": {
       "display_name": "Store Manager",
       "ui_privileges": "",
       "permissions": [
-        "accounts.view_accessible_stores",
         "maintenance.can_move_location_approval_to_in_progress",
         "maintenance.can_move_rejected_to_open",
         "maintenance.can_view_blocked_ticket",
