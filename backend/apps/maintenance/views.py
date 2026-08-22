@@ -7,7 +7,8 @@ from .serializers import (
     PrioritySerializer, StatusSerializer, WorkNatureSerializer,
     NatureWorkerSerializer, TicketSerializer, AllocationSerializer,
     WorkLogSerializer, TicketHistorySerializer, TicketChatMessageSerializer,
-    AllocationWriteSerializer, WorkLogWriteSerializer, TicketWriteSerializer
+    AllocationWriteSerializer, WorkLogWriteSerializer, TicketWriteSerializer,
+    WorkNatureWriteSerializer, NatureWorkerWriteSerializer
 )
 
 
@@ -44,6 +45,11 @@ class StatusViewSet(viewsets.ModelViewSet):
 class WorkNatureViewSet(viewsets.ModelViewSet):
     queryset = WorkNature.objects.all().select_related('sub_department', 'sub_department__department')
     serializer_class = WorkNatureSerializer
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return WorkNatureWriteSerializer
+        return WorkNatureSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -82,6 +88,11 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
         'worker__role'
     )
     serializer_class = NatureWorkerSerializer
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return NatureWorkerWriteSerializer
+        return NatureWorkerSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()

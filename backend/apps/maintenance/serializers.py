@@ -44,10 +44,22 @@ class WorkNatureSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class WorkNatureWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkNature
+        fields = '__all__'
+
+
 class NatureWorkerSerializer(serializers.ModelSerializer):
     worker = TicketUserSerializer(read_only=True)
     nature = WorkNatureSerializer(read_only=True)
 
+    class Meta:
+        model = NatureWorker
+        fields = '__all__'
+
+
+class NatureWorkerWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = NatureWorker
         fields = '__all__'

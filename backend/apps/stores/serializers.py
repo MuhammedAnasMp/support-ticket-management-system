@@ -147,3 +147,9 @@ class SubDepartmentSerializer(serializers.ModelSerializer):
         model = SubDepartment
         fields = '__all__'
         depth = 1
+
+
+class SubDepartmentWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubDepartment
+        fields = '__all__'

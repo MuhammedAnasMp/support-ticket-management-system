@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from .models import Store, Department, SubDepartment, Area
-from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer
+from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer, SubDepartmentWriteSerializer
 
 from django.db.models import Count
 
@@ -39,6 +39,11 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 class SubDepartmentViewSet(viewsets.ModelViewSet):
     queryset = SubDepartment.objects.all().select_related('department')
     serializer_class = SubDepartmentSerializer
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return SubDepartmentWriteSerializer
+        return SubDepartmentSerializer
 
 
 class ManagerViewSet(viewsets.ModelViewSet):
