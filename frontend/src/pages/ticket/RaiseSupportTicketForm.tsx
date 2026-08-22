@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCircle, Headphones } from 'lucide-react';
+import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCircle, Headphones, Camera, Video } from 'lucide-react';
 import { API_URL } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
+import { LiveCameraModal } from '@/components/LiveCameraModal';
 
 const inputCls = "w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors placeholder:text-on-surface-variant/60";
 
@@ -43,7 +44,12 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isRecordingPending, setIsRecordingPending] = useState(false);
 
+    const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+    const [cameraModalMode, setCameraModalMode] = useState<'photo' | 'video'>('photo');
+
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const cameraPhotoInputRef = useRef<HTMLInputElement>(null);
+    const cameraVideoInputRef = useRef<HTMLInputElement>(null);
 
     // Re-sync/reset form when modal opens, availableDepartments changes, or stores changes
     React.useEffect(() => {
@@ -229,177 +235,257 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     };
 
     return (
-        <AnimatePresence>
-            {isOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    {/* Backdrop */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 0.6 }}
-                        exit={{ opacity: 0 }}
-                        onClick={handleClose}
-                        className="fixed inset-0 bg-black/60 backdrop-blur-xs touch-manipulation"
-                    />
+        <>
+            <AnimatePresence>
+                {isOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.6 }}
+                            exit={{ opacity: 0 }}
+                            onClick={handleClose}
+                            className="fixed inset-0 bg-black/60 backdrop-blur-xs touch-manipulation"
+                        />
 
-                    {/* Modal Content */}
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.96, y: 16 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.96, y: 16 }}
-                        className="relative bg-surface-container border border-outline-variant w-full max-w-xl max-h-[90vh] flex flex-col rounded shadow-2xl overflow-hidden z-10"
-                    >
-                        {/* Modal Header */}
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant bg-surface-container-low">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-primary-container text-on-primary-container rounded flex items-center justify-center">
-                                    <FileText className="w-4 h-4" />
+                        {/* Modal Content */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                            className="relative bg-surface-container border border-outline-variant w-full max-w-xl max-h-[90vh] flex flex-col rounded shadow-2xl overflow-hidden z-10"
+                        >
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant bg-surface-container-low">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-primary-container text-on-primary-container rounded flex items-center justify-center">
+                                        <FileText className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-on-surface">Raise Support Ticket</h3>
+                                        <p className="text-xs text-on-surface-variant">Submit a new maintenance request</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="text-sm font-semibold text-on-surface">Raise Support Ticket</h3>
-                                    <p className="text-xs text-on-surface-variant">Submit a new maintenance request</p>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={handleClose}
-                                className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
-                                aria-label="Close"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        {/* Modal Body / Form */}
-                        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
-                            {/* Error Banner */}
-                            {errorMessage && (
-                                <div className="flex items-center gap-2.5 p-3 rounded bg-error-container text-on-error-container text-xs border border-error/20">
-                                    <AlertCircle className="w-4 h-4 shrink-0 text-error" />
-                                    <span className="flex-1">{errorMessage}</span>
-                                    <button type="button" onClick={() => setErrorMessage(null)}>
-                                        <X className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Store & Department Grid */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                        Store <span className="text-error">*</span>
-                                    </label>
-                                    <select
-                                        required
-                                        value={createForm.store_id}
-                                        onChange={e => setCreateForm({ ...createForm, store_id: e.target.value })}
-                                        className={inputCls}
-                                    >
-                                        <option value="">Select Store</option>
-                                        {stores.map(s => (
-                                            <option key={s.store_id} value={s.store_id}>
-                                                {s.store_name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                        Department <span className="text-error">*</span>
-                                    </label>
-                                    <select
-                                        required
-                                        disabled={!canCreateAllDepts && availableDepartments.length <= 1}
-                                        value={createForm.department_id}
-                                        onChange={e => setCreateForm({ ...createForm, department_id: e.target.value, nature_id: '' })}
-                                        className={inputCls}
-                                    >
-                                        {canCreateAllDepts && <option value="">Select Department</option>}
-                                        {availableDepartments.map(d => (
-                                            <option key={d.department_id} value={d.department_id}>
-                                                {d.department_name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Work Nature */}
-                            <div>
-                                <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                    Nature of Work <span className="text-error">*</span>
-                                </label>
-                                <select
-                                    required
-                                    disabled={!createForm.department_id}
-                                    value={createForm.nature_id}
-                                    onChange={e => setCreateForm({ ...createForm, nature_id: e.target.value })}
-                                    className={inputCls}
+                                <button
+                                    type="button"
+                                    onClick={handleClose}
+                                    className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+                                    aria-label="Close"
                                 >
-                                    <option value="">
-                                        {loadingNatures
-                                            ? 'Loading Natures of Work...'
-                                            : createForm.department_id
-                                                ? 'Select Nature of Work'
-                                                : 'Select Department first'}
-                                    </option>
-                                    {filteredNatures.map(n => (
-                                        <option
-                                            key={n.nature_id}
-                                            value={n.nature_id}
-                                            className="capitalize"
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Modal Body / Form */}
+                            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+                                {/* Error Banner */}
+                                {errorMessage && (
+                                    <div className="flex items-center gap-2.5 p-3 rounded bg-error-container text-on-error-container text-xs border border-error/20">
+                                        <AlertCircle className="w-4 h-4 shrink-0 text-error" />
+                                        <span className="flex-1">{errorMessage}</span>
+                                        <button type="button" onClick={() => setErrorMessage(null)}>
+                                            <X className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Store & Department Grid */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                            Store <span className="text-error">*</span>
+                                        </label>
+                                        <select
+                                            required
+                                            value={createForm.store_id}
+                                            onChange={e => setCreateForm({ ...createForm, store_id: e.target.value })}
+                                            className={inputCls}
                                         >
-                                            {n.nature_name} [{n.sub_department?.sub_department_name || 'N/A'}]
+                                            <option value="">Select Store</option>
+                                            {stores.map(s => (
+                                                <option key={s.store_id} value={s.store_id}>
+                                                    {s.store_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                            Department <span className="text-error">*</span>
+                                        </label>
+                                        <select
+                                            required
+                                            disabled={!canCreateAllDepts && availableDepartments.length <= 1}
+                                            value={createForm.department_id}
+                                            onChange={e => setCreateForm({ ...createForm, department_id: e.target.value, nature_id: '' })}
+                                            className={inputCls}
+                                        >
+                                            {canCreateAllDepts && <option value="">Select Department</option>}
+                                            {availableDepartments.map(d => (
+                                                <option key={d.department_id} value={d.department_id}>
+                                                    {d.department_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Work Nature */}
+                                <div>
+                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                        Nature of Work <span className="text-error">*</span>
+                                    </label>
+                                    <select
+                                        required
+                                        disabled={!createForm.department_id}
+                                        value={createForm.nature_id}
+                                        onChange={e => setCreateForm({ ...createForm, nature_id: e.target.value })}
+                                        className={inputCls}
+                                    >
+                                        <option value="">
+                                            {loadingNatures
+                                                ? 'Loading Natures of Work...'
+                                                : createForm.department_id
+                                                    ? 'Select Nature of Work'
+                                                    : 'Select Department first'}
                                         </option>
-                                    ))}
+                                        {filteredNatures.map(n => (
+                                            <option
+                                                key={n.nature_id}
+                                                value={n.nature_id}
+                                                className="capitalize"
+                                            >
+                                                {n.nature_name} [{n.sub_department?.sub_department_name || 'N/A'}]
+                                            </option>
+                                        ))}
 
-                                </select>
-                            </div>
+                                    </select>
+                                </div>
 
-                            {/* Issue Title */}
-                            <div>
-                                <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                    Issue Title <span className="text-error">*</span>
-                                </label>
-                                <input
-                                    required
-                                    type="text"
-                                    placeholder="Briefly describe the issue..."
-                                    value={createForm.title}
-                                    onChange={e => setCreateForm({ ...createForm, title: e.target.value })}
-                                    className={inputCls}
-                                />
-                            </div>
+                                {/* Issue Title */}
+                                <div>
+                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                        Issue Title <span className="text-error">*</span>
+                                    </label>
+                                    <input
+                                        required
+                                        type="text"
+                                        placeholder="Briefly describe the issue..."
+                                        value={createForm.title}
+                                        onChange={e => setCreateForm({ ...createForm, title: e.target.value })}
+                                        className={inputCls}
+                                    />
+                                </div>
 
-                            {/* Description */}
-                            <div>
-                                <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                    Description <span className="text-error">*</span>
-                                </label>
-                                <textarea
-                                    required
-                                    rows={3}
-                                    placeholder="Provide detailed description of the issue..."
-                                    value={createForm.description}
-                                    onChange={e => setCreateForm({ ...createForm, description: e.target.value })}
-                                    className={`${inputCls} resize-none`}
-                                />
-                            </div>
+                                {/* Description */}
+                                <div>
+                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                        Description <span className="text-error">*</span>
+                                    </label>
+                                    <textarea
+                                        required
+                                        rows={3}
+                                        placeholder="Provide detailed description of the issue..."
+                                        value={createForm.description}
+                                        onChange={e => setCreateForm({ ...createForm, description: e.target.value })}
+                                        className={`${inputCls} resize-none`}
+                                    />
+                                </div>
 
-                            {/* Media Attachment Dropzone */}
-
-
-                            {isMediaRequired &&
+                                {/* Media Attachment Dropzone & Live Camera Capture */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
                                         <label className="block text-xs font-medium text-on-surface">
-                                            Attach Media / Images {isMediaRequired && <span className="text-error">* (Min 1 required)</span>}
+                                            Attach Media  {isMediaRequired && <span className="text-error">* (Min 1 required)</span>}
                                         </label>
                                         <span className="text-[11px] text-on-surface-variant">
                                             {createTicketFiles.length} file(s) attached
                                         </span>
                                     </div>
 
+                                    {/* Quick Live Capture Action Toolbar */}
+                                    <div className="grid grid-cols-3 gap-2 mb-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                if (isMobile && cameraPhotoInputRef.current) {
+                                                    cameraPhotoInputRef.current.click();
+                                                } else {
+                                                    setCameraModalMode('photo');
+                                                    setIsCameraModalOpen(true);
+                                                }
+                                            }}
+                                            className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                        >
+                                            <Camera className="w-4 h-4" />
+                                            <span>Photo</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                if (isMobile && cameraVideoInputRef.current) {
+                                                    cameraVideoInputRef.current.click();
+                                                } else {
+                                                    setCameraModalMode('video');
+                                                    setIsCameraModalOpen(true);
+                                                }
+                                            }}
+                                            className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                        >
+                                            <Video className="w-4 h-4" />
+                                            <span>Video</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="px-3 py-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                        >
+                                            <Upload className="w-4 h-4 text-primary" />
+                                            <span>Browse</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Hidden Inputs for Native Mobile Camera & Standard Upload */}
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept="image/*,video/*"
+                                        className="hidden"
+                                        onChange={e => {
+                                            if (e.target.files) handleFileSelect(e.target.files);
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                    <input
+                                        ref={cameraPhotoInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        capture="environment"
+                                        className="hidden"
+                                        onChange={e => {
+                                            if (e.target.files) handleFileSelect(e.target.files);
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                    <input
+                                        ref={cameraVideoInputRef}
+                                        type="file"
+                                        accept="video/*"
+                                        capture="environment"
+                                        className="hidden"
+                                        onChange={e => {
+                                            if (e.target.files) handleFileSelect(e.target.files);
+                                            e.target.value = '';
+                                        }}
+                                    />
+
+                                    {/* Drag & Dropzone */}
                                     <div
                                         onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
                                         onDragLeave={() => setIsDragging(false)}
@@ -409,25 +495,14 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                             if (e.dataTransfer.files) handleFileSelect(e.dataTransfer.files);
                                         }}
                                         onClick={() => fileInputRef.current?.click()}
-                                        className={`border border-dashed rounded p-4 text-center cursor-pointer transition-colors ${isDragging
+                                        className={`border border-dashed rounded p-3 text-center cursor-pointer transition-colors ${isDragging
                                             ? 'border-primary bg-primary/5'
                                             : 'border-outline-variant bg-surface-container-low hover:bg-surface-container-high'
                                             }`}
                                     >
-                                        <input
-                                            ref={fileInputRef}
-                                            type="file"
-                                            multiple
-                                            accept="image/*,video/*"
-                                            className="hidden"
-                                            onChange={e => {
-                                                if (e.target.files) handleFileSelect(e.target.files);
-                                                e.target.value = '';
-                                            }}
-                                        />
-                                        <Upload className="w-5 h-5 mx-auto mb-1.5 text-on-surface-variant" />
-                                        <p className="text-xs text-on-surface font-medium">Click to upload or drag & drop</p>
-                                        <p className="text-[11px] text-on-surface-variant mt-0.5">Images or video files</p>
+                                        <Upload className="w-4 h-4 mx-auto mb-1 text-on-surface-variant" />
+                                        <p className="text-xs text-on-surface font-medium">Click to browse or drag & drop</p>
+                                        <p className="text-[10px] text-on-surface-variant">Supports photos, video recordings & documents</p>
                                     </div>
 
                                     {/* Voice Note Recorder Option */}
@@ -481,40 +556,50 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                         </div>
                                     )}
                                 </div>
-                            }
-                            {/* Modal Footer Actions */}
-                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant bg-surface-container-low -mx-5 -mb-5 p-5">
-                                <button
-                                    type="button"
-                                    onClick={handleClose}
-                                    className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 transition-colors"
-                                >
-                                    Cancel
-                                </button>
 
-                                <button
-                                    type="submit"
-                                    disabled={actionLoading || isRecordingPending}
-                                    className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    {actionLoading ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            <span>Submitting...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Plus className="w-4 h-4" />
-                                            <span>Submit Ticket</span>
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
-                    </motion.div>
-                </div>
-            )}
-        </AnimatePresence>
+                                {/* Modal Footer Actions */}
+                                <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant bg-surface-container-low -mx-5 -mb-5 p-5">
+                                    <button
+                                        type="button"
+                                        onClick={handleClose}
+                                        className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+
+                                    <button
+                                        type="submit"
+                                        disabled={actionLoading || isRecordingPending}
+                                        className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {actionLoading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <span>Submitting...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Plus className="w-4 h-4" />
+                                                <span>Submit Ticket</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            <LiveCameraModal
+                isOpen={isCameraModalOpen}
+                initialMode={cameraModalMode}
+                onClose={() => setIsCameraModalOpen(false)}
+                onCapture={(capturedFile) => {
+                    setCreateTicketFiles(prev => [...prev, capturedFile]);
+                }}
+            />
+        </>
     );
 };
 

@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import {
     Send, Video, Mic, X, AlertCircle, Loader2, Play,
-    Square, Volume2, Film, ImageIcon, Paperclip, ChevronDown, History as HistoryIcon, Trash2
+    Square, Volume2, Film, ImageIcon, Paperclip, ChevronDown, History as HistoryIcon, Trash2, Camera
 } from 'lucide-react';
 import type { RootState } from '@/store';
 import { API_URL, AvatarCircle, MEDIA_BASE, getMediaUrl } from './TicketsTypesAndComponents';
+import { LiveCameraModal } from '@/components/LiveCameraModal';
 
 interface ChatMessage {
     message_id: number;
@@ -46,8 +47,13 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
     const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
 
+    const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
+    const [liveCameraMode, setLiveCameraMode] = useState<'photo' | 'video'>('photo');
+
     const messageContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const chatCameraPhotoRef = useRef<HTMLInputElement>(null);
+    const chatCameraVideoRef = useRef<HTMLInputElement>(null);
     const recordTimerRef = useRef<any | null>(null);
     const sendImmediatelyRef = useRef(false);
     const discardRecordingRef = useRef(false);
@@ -219,8 +225,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0];
+    const attachSelectedFile = (selectedFile: File) => {
         if (!selectedFile) return;
 
         const mime = selectedFile.type;
@@ -246,6 +251,12 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
             setFilePreview(reader.result as string);
         };
         reader.readAsDataURL(selectedFile);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = e.target.files?.[0];
+        if (selectedFile) attachSelectedFile(selectedFile);
+        e.target.value = '';
     };
 
     const triggerFileSelect = (type: 'image' | 'video' | 'voice') => {
@@ -613,10 +624,26 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                 className="p-3 bg-surface-container dark:bg-dark-surface-container border-t border-outline-variant dark:border-dark-outline-variant flex flex-col gap-2 shrink-0"
             >
                 <div className="flex items-center gap-1.5">
-                    {/* Hidden inputs */}
+                    {/* Hidden inputs for file browse & native mobile camera */}
                     <input
                         ref={fileInputRef}
                         type="file"
+                        onChange={handleFileChange}
+                        className="hidden"
+                    />
+                    <input
+                        ref={chatCameraPhotoRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleFileChange}
+                        className="hidden"
+                    />
+                    <input
+                        ref={chatCameraVideoRef}
+                        type="file"
+                        accept="video/*"
+                        capture="environment"
                         onChange={handleFileChange}
                         className="hidden"
                     />
@@ -625,21 +652,46 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                     <div className="flex items-center gap-0.5 shrink-0">
                         <button
                             type="button"
-                            onClick={() => triggerFileSelect('image')}
+                            onClick={() => {
+                                const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                if (isMobile && chatCameraPhotoRef.current) {
+                                    chatCameraPhotoRef.current.click();
+                                } else {
+                                    setLiveCameraMode('photo');
+                                    setIsLiveCameraOpen(true);
+                                }
+                            }}
                             disabled={isRecording || sending}
-                            className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
-                            title="Attach Photo"
+                            className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high hover:text-emerald-500 transition-colors cursor-pointer disabled:opacity-50"
+                            title="Take Live Photo"
                         >
-                            <ImageIcon className="w-4 h-4" />
+                            <Camera className="w-4 h-4" />
                         </button>
                         <button
                             type="button"
-                            onClick={() => triggerFileSelect('video')}
+                            onClick={() => {
+                                const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                if (isMobile && chatCameraVideoRef.current) {
+                                    chatCameraVideoRef.current.click();
+                                } else {
+                                    setLiveCameraMode('video');
+                                    setIsLiveCameraOpen(true);
+                                }
+                            }}
                             disabled={isRecording || sending}
-                            className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
-                            title="Attach Video"
+                            className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high hover:text-red-500 transition-colors cursor-pointer disabled:opacity-50"
+                            title="Record Live Video"
                         >
                             <Video className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => triggerFileSelect('image')}
+                            disabled={isRecording || sending}
+                            className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+                            title="Attach File from Gallery"
+                        >
+                            <Paperclip className="w-4 h-4" />
                         </button>
                     </div>
 
@@ -718,6 +770,15 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                     )}
                 </div>
             </form>
+
+            <LiveCameraModal
+                isOpen={isLiveCameraOpen}
+                initialMode={liveCameraMode}
+                onClose={() => setIsLiveCameraOpen(false)}
+                onCapture={(capturedFile) => {
+                    attachSelectedFile(capturedFile);
+                }}
+            />
         </div>
     );
 };

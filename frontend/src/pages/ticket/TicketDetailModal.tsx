@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -15,6 +15,7 @@ import {
     AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo
 } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
+import { LiveCameraModal } from '@/components/LiveCameraModal';
 
 interface TicketDetailModalProps {
     selectedTicket: Ticket | null;
@@ -87,6 +88,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [expenseFiles, setExpenseFiles] = useState<Record<number, File[]>>({});
     const [replacingMediaId, setReplacingMediaId] = useState<number | null>(null);
     const [isFabOpen, setIsFabOpen] = useState(false);
+
+    // Live Camera & Native Camera states
+    const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
+    const [liveCameraMode, setLiveCameraMode] = useState<'photo' | 'video'>('photo');
+    const [liveCameraCategory, setLiveCameraCategory] = useState<'Before Repair' | 'After Repair'>('Before Repair');
+
+    const issueCameraPhotoRef = useRef<HTMLInputElement>(null);
+    const issueCameraVideoRef = useRef<HTMLInputElement>(null);
+    const completedCameraPhotoRef = useRef<HTMLInputElement>(null);
+    const completedCameraVideoRef = useRef<HTMLInputElement>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
 
@@ -2365,10 +2376,51 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 <div className="space-y-4">
                                     <MediaGrid items={issueMedia} emptyLabel="No Before Repair uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
                                     <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
+                                        {/* Action Toolbar for Live Capture */}
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={actionLoading}
+                                                onClick={() => {
+                                                    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                    if (isMobile && issueCameraPhotoRef.current) {
+                                                        issueCameraPhotoRef.current.click();
+                                                    } else {
+                                                        setLiveCameraCategory('Before Repair');
+                                                        setLiveCameraMode('photo');
+                                                        setIsLiveCameraOpen(true);
+                                                    }
+                                                }}
+                                                className="px-3 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                            >
+                                                <Camera className="w-4 h-4" /> Take
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={actionLoading}
+                                                onClick={() => {
+                                                    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                    if (isMobile && issueCameraVideoRef.current) {
+                                                        issueCameraVideoRef.current.click();
+                                                    } else {
+                                                        setLiveCameraCategory('Before Repair');
+                                                        setLiveCameraMode('video');
+                                                        setIsLiveCameraOpen(true);
+                                                    }
+                                                }}
+                                                className="px-3 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                            >
+                                                <Video className="w-4 h-4" /> Record
+                                            </button>
+                                            <label htmlFor="upload-issue-media-popup" className={`px-3 py-2.5 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded-lg cursor-pointer flex items-center justify-center gap-1.5 text-xs font-semibold text-on-surface dark:text-dark-on-surface transition-colors ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
+                                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Upload className="w-4 h-4 text-primary" />} Browse
+                                            </label>
+                                        </div>
+
                                         <input type="file" accept="image/*,video/*" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" id="upload-issue-media-popup" />
-                                        <label htmlFor="upload-issue-media-popup" className={`w-full min-h-[48px] flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary active:scale-[0.99] transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
-                                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Camera className="w-4 h-4" />} Upload New Issue Photo / Video
-                                        </label>
+                                        <input ref={issueCameraPhotoRef} type="file" accept="image/*" capture="environment" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" />
+                                        <input ref={issueCameraVideoRef} type="file" accept="video/*" capture="environment" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" />
+
                                         <VoiceRecorder
                                             onSave={(voiceFile) => uploadMedia(voiceFile, 'Before Repair')}
                                             placeholderText="Record a voice note to attach (Before Repair)"
@@ -2393,10 +2445,51 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 <div className="space-y-4">
                                     <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
                                     <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
+                                        {/* Action Toolbar for Live Capture */}
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={actionLoading}
+                                                onClick={() => {
+                                                    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                    if (isMobile && completedCameraPhotoRef.current) {
+                                                        completedCameraPhotoRef.current.click();
+                                                    } else {
+                                                        setLiveCameraCategory('After Repair');
+                                                        setLiveCameraMode('photo');
+                                                        setIsLiveCameraOpen(true);
+                                                    }
+                                                }}
+                                                className="px-3 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                            >
+                                                <Camera className="w-4 h-4" /> Photo
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={actionLoading}
+                                                onClick={() => {
+                                                    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                    if (isMobile && completedCameraVideoRef.current) {
+                                                        completedCameraVideoRef.current.click();
+                                                    } else {
+                                                        setLiveCameraCategory('After Repair');
+                                                        setLiveCameraMode('video');
+                                                        setIsLiveCameraOpen(true);
+                                                    }
+                                                }}
+                                                className="px-3 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                            >
+                                                <Video className="w-4 h-4" /> Video
+                                            </button>
+                                            <label htmlFor="upload-completed-media-popup" className={`px-3 py-2.5 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded-lg cursor-pointer flex items-center justify-center gap-1.5 text-xs font-semibold text-on-surface dark:text-dark-on-surface transition-colors ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
+                                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Upload className="w-4 h-4 text-primary" />} Browse
+                                            </label>
+                                        </div>
+
                                         <input type="file" accept="image/*,video/*" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" id="upload-completed-media-popup" />
-                                        <label htmlFor="upload-completed-media-popup" className={`w-full min-h-[48px] flex items-center justify-center gap-2 py-3 border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg cursor-pointer hover:border-primary text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary active:scale-[0.99] transition-all ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}>
-                                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Camera className="w-4 h-4" />} Upload After Repair / Completion Photo
-                                        </label>
+                                        <input ref={completedCameraPhotoRef} type="file" accept="image/*" capture="environment" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" />
+                                        <input ref={completedCameraVideoRef} type="file" accept="video/*" capture="environment" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" />
+
                                         <VoiceRecorder
                                             onSave={(voiceFile) => uploadMedia(voiceFile, 'After Repair')}
                                             placeholderText="Record a voice note to attach (After Repair)"
@@ -2506,6 +2599,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div >
+
+            <LiveCameraModal
+                isOpen={isLiveCameraOpen}
+                initialMode={liveCameraMode}
+                onClose={() => setIsLiveCameraOpen(false)}
+                onCapture={(capturedFile) => {
+                    uploadMedia(capturedFile, liveCameraCategory);
+                }}
+            />
+        </div>
     );
 };

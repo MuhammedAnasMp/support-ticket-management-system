@@ -1278,7 +1278,7 @@ export const StoresView: React.FC = () => {
                           const mgrName = s.manager?.full_name ? ` (Managed by ${s.manager.full_name})` : ' (Unmanaged)';
                           return (
                             <option key={s.store_id} value={s.store_id}>
-                              {s.store_name}{mgrName}
+                              {s.store_id} -{s.store_name}{mgrName}
                             </option>
                           );
                         })}
@@ -1299,7 +1299,7 @@ export const StoresView: React.FC = () => {
                             <span>Store Conflict — Reassign {targetManager.full_name}</span>
                           </div>
                           <p className="text-xs text-on-surface dark:text-dark-on-surface">
-                            <strong>{selectedStoreObj.store_name}</strong> is currently assigned to <strong>{targetManager.full_name}</strong>.
+                            <strong>{selectedStoreObj.store_id} - {selectedStoreObj.store_name}</strong> is currently assigned to <strong>{targetManager.full_name}</strong>.
                           </p>
                           <div className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant">
                             What should happen to <strong>{targetManager.full_name}</strong>?
@@ -1352,16 +1352,52 @@ export const StoresView: React.FC = () => {
                               <select
                                 value={conflictReassignStoreId}
                                 onChange={e => setConflictReassignStoreId(e.target.value)}
-                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded ml-6 text-on-surface dark:text-dark-on-surface"
+                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
                               >
                                 <option value="">Select New Store for {targetManager.full_name}</option>
                                 {extraData
-                                  .filter((s: any) => String(s.store_id) !== String(managerForm.store_id))
+                                  .filter((s: any) => {
+                                    if (String(s.store_id) === String(managerForm.store_id)) return false;
+                                    if (!s.manager) return true;
+                                    return editItem?.store?.store_id && String(s.store_id) === String(editItem.store.store_id);
+                                  })
                                   .map((s: any) => (
-                                    <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
+                                    <option key={s.store_id} value={s.store_id}>
+                                      {s.store_id} - {s.store_name}{s.manager ? ` (Manager: ${s.manager.full_name})` : ' (Unmanaged)'}
+                                    </option>
                                   ))
                                 }
                               </select>
+                            )}
+                          </div>
+
+                          {/* Live Reassignment Outcome Summary */}
+                          <div className="pt-2 border-t border-amber-500/30 text-xs space-y-1 text-on-surface dark:text-dark-on-surface">
+                            <div className="font-semibold text-amber-700 dark:text-amber-300 text-[11px] uppercase tracking-wider">Result Summary:</div>
+                            <div>• <strong>{editItem?.full_name || 'Manager'}</strong> ➔ <span className="text-primary font-medium">{selectedStoreObj.store_id} - {selectedStoreObj.store_name}</span></div>
+                            {conflictAction === 'swap' && (
+                              <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-primary font-medium">{editItem?.store ? `${editItem.store.store_id} - ${editItem.store.store_name}` : 'No Store (Unassigned)'}</span></div>
+                            )}
+                            {conflictAction === 'unassign' && (
+                              <>
+                                <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-amber-600 dark:text-amber-400 font-medium">No Store (Unassigned)</span></div>
+                                {editItem?.store && (
+                                  <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant italic">Note: Store "{editItem.store.store_name}" will have no manager assigned (empty).</div>
+                                )}
+                              </>
+                            )}
+                            {conflictAction === 'reassign' && (
+                              <>
+                                {(() => {
+                                  const reassignedStoreObj = extraData.find((s: any) => String(s.store_id) === String(conflictReassignStoreId));
+                                  return (
+                                    <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-primary font-medium">{reassignedStoreObj ? `${reassignedStoreObj.store_id} - ${reassignedStoreObj.store_name}` : 'Select a store above'}</span></div>
+                                  );
+                                })()}
+                                {editItem?.store && String(editItem.store.store_id) !== String(conflictReassignStoreId) && (
+                                  <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant italic">Note: Store "{editItem.store.store_name}" will have no manager assigned (empty).</div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>

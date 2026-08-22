@@ -232,7 +232,7 @@ export const MaintenanceView: React.FC = () => {
       return [
         { headerName: 'Nature ID', field: 'nature_id', width: 110, cellClass: 'font-mono text-xs' },
         { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
-        { headerName: 'Nature Name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
+        { headerName: 'Nature Name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface', field: 'nature_name' },
         {
           headerName: 'Default Priority',
           field: 'default_priority.priority_name',
