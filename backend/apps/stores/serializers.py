@@ -35,7 +35,9 @@ class StoreSerializer(serializers.ModelSerializer):
                 'user_id': instance.manager.user_id,
                 'full_name': instance.manager.full_name,
                 'username': instance.manager.username,
-                'employee_no': instance.manager.employee_no
+                'employee_no': instance.manager.employee_no,
+                'phone': getattr(instance.manager, 'phone', None),
+                'whatsapp_number': getattr(instance.manager, 'whatsapp_number', None)
             }
         else:
             representation['manager'] = None

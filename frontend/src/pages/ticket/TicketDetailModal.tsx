@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -100,6 +100,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const completedCameraVideoRef = useRef<HTMLInputElement>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+    const [isCallSelectModalOpen, setIsCallSelectModalOpen] = useState(false);
+    const [isCallWorkerModalOpen, setIsCallWorkerModalOpen] = useState(false);
+    const [isCallLocationModalOpen, setIsCallLocationModalOpen] = useState(false);
 
     const { hasPermission } = usePermission();
     const navigate = useNavigate();
@@ -984,11 +987,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             >
                 {/* Header Toolbar Standard */}
                 <div className="sticky top-0 z-10 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant px-4 sm:px-5 py-2.5 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <span className="font-mono text-xs font-semibold text-outline shrink-0">{ticketDetails.work_order_no}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(ticketDetails.status.status_name)}`}>
-                            {ticketDetails.status.status_name}
-                        </span>
+                    <div className="flex flex-col items-start gap-1 sm:gap-1 min-w-0">
                         {isEditingTicket ? (
                             <input
                                 type="text"
@@ -999,6 +998,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         ) : (
                             <span className="text-xs sm:text-sm font-bold text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.title}</span>
                         )}
+                        <span className="font-mono text-xs font-semibold text-outline shrink-0">{ticketDetails.work_order_no}</span>
                     </div>
 
 
@@ -1045,32 +1045,86 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             </div>
                         ) : (
                             <>
-                                {/* Creator Information Card */}
+                                {/* Creator & Store Information Card */}
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 p-3 sm:p-4 bg-surface dark:bg-dark-surface rounded border border-outline-variant dark:border-dark-outline-variant">
                                     <div className="flex items-center gap-3 min-w-0">
                                         <AvatarCircle user={ticketDetails.created_by} size="md" />
                                         <div className="min-w-0">
                                             <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.created_by.full_name}</p>
                                             {ticketDetails.created_by.role && <p className="text-xs text-primary font-semibold mt-0.5">{ticketDetails.created_by.role.role_name}</p>}
-                                            {ticketDetails.created_by.employee_no && <p className="text-xs text-outline mt-0.5">ID: {ticketDetails.created_by.employee_no}</p>}
-                                            <p className="text-[11px] text-outline mt-1">
-                                                Raised on {new Date(ticketDetails.created_date).toLocaleString()}
+                                            {/* <p className="text-[11px] text-outline mt-1">
+                                                {new Date(ticketDetails.created_date).toLocaleString()}
                                                 {ticketDetails.age_days !== undefined && (
                                                     <span className="font-semibold text-primary ml-1.5" title="Days spent in current status">
                                                         ({Number(ticketDetails.age_days).toFixed(1)} days active)
                                                     </span>
                                                 )}
-                                            </p>
+                                            </p> */}
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap sm:flex-col gap-1.5 items-start sm:items-end shrink-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-outline-variant dark:border-dark-outline-variant w-full sm:w-auto">
+                                    <div className="flex flex-col gap-2.5 items-start sm:items-end shrink-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-outline-variant dark:border-dark-outline-variant w-full sm:w-auto">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div className="flex items-center gap-1.5 text-xs text-outline">
+                                                <Building2 className="w-4 h-4 shrink-0 text-outline" />
+                                                <span className="font-bold text-on-surface dark:text-dark-on-surface">{ticketDetails.store.store_name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs text-outline"><AlertCircle className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.nature.nature_name}</span></div>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ticketDetails.priority.level >= 2 ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                                                {ticketDetails.priority.priority_name} Priority
+                                            </span>
+                                        </div>
 
-                                        <div className="flex items-center gap-2 text-xs text-outline"><Building2 className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.store.store_name}</span></div>
-                                        <div className="flex items-center gap-2 text-xs text-outline"><Wrench className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.department.department_name}</span></div>
-                                        <div className="flex items-center gap-2 text-xs text-outline"><AlertCircle className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.nature.nature_name}</span></div>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ticketDetails.priority.level >= 2 ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
-                                            {ticketDetails.priority.priority_name} Priority
-                                        </span>
+                                        {/* Right-Aligned Call Section: Desktop = Number Only, Mobile = Button */}
+                                        <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                                            {(() => {
+                                                const currentStoreManager = ticketDetails.store?.manager;
+                                                const ticketCreator = ticketDetails.created_by;
+                                                const managerPhone = currentStoreManager?.phone || currentStoreManager?.whatsapp_number;
+                                                const cleanManagerPhone = managerPhone ? String(managerPhone).replace(/\D/g, '') : '';
+                                                if (!cleanManagerPhone) return null;
+
+                                                const isSamePerson = currentStoreManager && ticketCreator && Number(currentStoreManager.user_id) === Number(ticketCreator.user_id);
+                                                const firstName = currentStoreManager?.full_name ? currentStoreManager.full_name.split(' ')[0] : 'Manager';
+                                                const label = isSamePerson ? `Call ${firstName}` : 'Call Manager';
+
+                                                return (
+                                                    <div key="mgr-call" className="flex items-center gap-1.5 shrink-0">
+                                                        {/* Desktop: Number Only */}
+                                                        <a
+                                                            href={`tel:${cleanManagerPhone}`}
+                                                            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
+                                                            title={`Call Store Manager (${currentStoreManager?.full_name}): ${managerPhone}`}
+                                                        >
+                                                            <PhoneCall className="w-3.5 h-3.5" />
+                                                            <span>{managerPhone}</span>
+                                                        </a>
+
+                                                    </div>
+                                                );
+                                            })()}
+
+                                            {(() => {
+                                                const storeLocationPhone = ticketDetails.store?.phone || ticketDetails.store?.whatsapp_number;
+                                                const cleanLocationPhone = storeLocationPhone ? String(storeLocationPhone).replace(/\D/g, '') : '';
+                                                if (!cleanLocationPhone) return null;
+
+                                                return (
+                                                    <div key="loc-call" className="flex items-center gap-1.5 shrink-0">
+                                                        {/* Desktop: Number Only */}
+                                                        <a
+                                                            href={`tel:${cleanLocationPhone}`}
+                                                            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
+                                                            title={`Call Store Location (${ticketDetails.store?.store_name}): ${storeLocationPhone}`}
+                                                        >
+                                                            <Phone className="w-3.5 h-3.5" />
+                                                            <span>{storeLocationPhone}</span>
+                                                        </a>
+                                                        {/* Mobile: Button */}
+
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-outline">
@@ -1103,6 +1157,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         History Log
                                     </button>
                                 </div>
+
                                 {/* Approved / Rejected Notifications */}
                                 {(ticketDetails.approved_by || ticketDetails.rejected_by || ticketDetails.location_approval === 'Approved' || ticketDetails.location_approval === 'Rejected') && (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1253,17 +1308,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             const isB = (user as any)?.user_id === b.worker.user_id;
                                                             return isA === isB ? 0 : isA ? -1 : 1;
                                                         })
-                                                        .map(a => (
-                                                            <button
-                                                                key={a.allocation_id}
-                                                                type="button"
-                                                                onClick={() => setActiveWorkerId(a.worker.user_id)}
-                                                                className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
-                                                            >
-                                                                <AvatarCircle user={a.worker} size="sm" />
-                                                                <span>{(user as any)?.user_id === a.worker.user_id ? "You" : a.worker.full_name}</span>
-                                                            </button>
-                                                        ))}
+                                                        .map(a => {
+                                                            const rawWPhone = a.worker.phone || a.worker.whatsapp_number;
+                                                            const cleanWPhone = rawWPhone ? String(rawWPhone).replace(/\D/g, '') : '';
+                                                            const is8Digit = cleanWPhone.length >= 8;
+
+                                                            return (
+                                                                <div key={a.allocation_id} className="flex items-center gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setActiveWorkerId(a.worker.user_id)}
+                                                                        className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
+                                                                    >
+                                                                        <AvatarCircle user={a.worker} size="sm" />
+                                                                        <span>{(user as any)?.user_id === a.worker.user_id ? "You" : a.worker.full_name}</span>
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
                                                 </div>
                                             ) : (
                                                 <p className="text-xs text-outline italic">No personnel allocated to this ticket yet.</p>
@@ -1288,6 +1350,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             const workerExpenses = expenses.filter(exp => exp.worker?.user_id === a.worker.user_id);
                                             const isMyWorker = (user as any)?.user_id === a.worker.user_id;
 
+                                            const rawWorkerPhone = a.worker.phone || a.worker.whatsapp_number;
+                                            const cleanWorkerPhone = rawWorkerPhone ? String(rawWorkerPhone).replace(/\D/g, '') : '';
+                                            const is8DigitPhone = cleanWorkerPhone.length >= 8;
+
                                             return (
                                                 <div className="bg-surface dark:bg-dark-surface rounded-2xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden">
                                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border-b border-outline-variant dark:border-dark-outline-variant">
@@ -1302,6 +1368,39 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
+                                                            {is8DigitPhone && (
+                                                                <>
+                                                                    {/* Desktop: Number Only */}
+                                                                    <a
+                                                                        href={`tel:${cleanWorkerPhone}`}
+                                                                        className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer"
+                                                                        title={`Call ${a.worker.full_name}: ${rawWorkerPhone}`}
+                                                                    >
+                                                                        <PhoneCall className="w-3.5 h-3.5" />
+                                                                        <span>{rawWorkerPhone}</span>
+                                                                    </a>
+                                                                    {/* Mobile: Button */}
+                                                                    {/* <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const validW = (allocations || []).filter(alloc => {
+                                                                                const p = alloc.worker?.phone || alloc.worker?.whatsapp_number;
+                                                                                return p && String(p).replace(/\D/g, '').length >= 8;
+                                                                            });
+                                                                            if (validW.length > 1) {
+                                                                                setIsCallWorkerModalOpen(true);
+                                                                            } else {
+                                                                                window.location.href = `tel:${cleanWorkerPhone}`;
+                                                                            }
+                                                                        }}
+                                                                        className="sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 shrink-0"
+                                                                        title={`Call ${a.worker.full_name}: ${rawWorkerPhone}`}
+                                                                    >
+                                                                        <PhoneCall className="w-3.5 h-3.5" />
+                                                                        <span>Call {a.worker.full_name.split(' ')[0]}</span>
+                                                                    </button> */}
+                                                                </>
+                                                            )}
                                                             <span className="text-xs bg-primary/10 text-primary font-bold px-2.5 py-1.5 rounded-lg">{a.planned_hours}h Planned</span>
                                                             <Can permission="maintenance.change_allocation">
                                                                 <button
@@ -1820,7 +1919,72 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                         if (visibleActions.length === 0) {
                             return (
-                                <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2">
+                                <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2.5">
+                                    {/* 1. Call Technicians FAB */}
+                                    {(() => {
+                                        const validWorkers = (allocations || []).filter(a => {
+                                            const p = a.worker?.phone || a.worker?.whatsapp_number;
+                                            return p && String(p).replace(/\D/g, '').length >= 8;
+                                        });
+                                        if (validWorkers.length === 0) return null;
+
+                                        return (
+                                            <Can permission={hasPermission('accounts.view_phone') || true}>
+                                                <motion.button
+                                                    onClick={() => {
+                                                        if (validWorkers.length > 1) {
+                                                            setIsCallWorkerModalOpen(true);
+                                                        } else if (validWorkers.length === 1) {
+                                                            const wP = validWorkers[0].worker?.phone || validWorkers[0].worker?.whatsapp_number;
+                                                            window.location.href = `tel:${String(wP).replace(/\D/g, '')}`;
+                                                        }
+                                                    }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    className="w-12 h-12 rounded-full bg-emerald-600 text-white shadow-lg flex items-center justify-center cursor-pointer hover:bg-emerald-700 active:scale-95 transition-colors shrink-0"
+                                                    aria-label="Call Technicians"
+                                                    title="Call Technicians"
+                                                    type="button"
+                                                >
+                                                    <PhoneCall className="w-5.5 h-5.5" />
+                                                </motion.button>
+                                            </Can>
+                                        );
+                                    })()}
+
+                                    {/* 2. Call Store / Manager FAB */}
+                                    {(() => {
+                                        const currentMgr = ticketDetails?.store?.manager;
+                                        const mgrPhone = currentMgr?.phone || currentMgr?.whatsapp_number;
+                                        const cleanMgr = mgrPhone ? String(mgrPhone).replace(/\D/g, '') : '';
+                                        const locPhone = ticketDetails?.store?.phone || ticketDetails?.store?.whatsapp_number;
+                                        const cleanLoc = locPhone ? String(locPhone).replace(/\D/g, '') : '';
+                                        if (!cleanMgr && !cleanLoc) return null;
+
+                                        return (
+                                            <Can permission={hasPermission('accounts.view_phone') || true}>
+                                                <motion.button
+                                                    onClick={() => {
+                                                        const totalLocCount = (cleanMgr ? 1 : 0) + (cleanLoc ? 1 : 0);
+                                                        if (totalLocCount > 1) {
+                                                            setIsCallLocationModalOpen(true);
+                                                        } else if (cleanMgr) {
+                                                            window.location.href = `tel:${cleanMgr}`;
+                                                        } else if (cleanLoc) {
+                                                            window.location.href = `tel:${cleanLoc}`;
+                                                        }
+                                                    }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    className="w-12 h-12 rounded-full bg-teal-600 text-white shadow-lg flex items-center justify-center cursor-pointer hover:bg-teal-700 active:scale-95 transition-colors shrink-0"
+                                                    aria-label="Call Store"
+                                                    title="Call Store / Manager"
+                                                    type="button"
+                                                >
+                                                    <PhoneCall className="w-5.5 h-5.5" />
+                                                </motion.button>
+                                            </Can>
+                                        );
+                                    })()}
+
                                     <motion.button
                                         onClick={() => setIsMobileChatOpen(true)}
                                         whileTap={{ scale: 0.9 }}
@@ -1835,7 +1999,72 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         }
 
                         return (
-                            <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2">
+                            <div className="sm:hidden absolute bottom-5 right-4 z-30 flex flex-col items-end gap-2.5">
+                                {/* 1. Call Technicians FAB */}
+                                {(() => {
+                                    const validWorkers = (allocations || []).filter(a => {
+                                        const p = a.worker?.phone || a.worker?.whatsapp_number;
+                                        return p && String(p).replace(/\D/g, '').length >= 8;
+                                    });
+                                    if (validWorkers.length === 0) return null;
+
+                                    return (
+                                        <Can permission={hasPermission('accounts.view_phone') || true}>
+                                            <motion.button
+                                                onClick={() => {
+                                                    if (validWorkers.length > 1) {
+                                                        setIsCallWorkerModalOpen(true);
+                                                    } else if (validWorkers.length === 1) {
+                                                        const wP = validWorkers[0].worker?.phone || validWorkers[0].worker?.whatsapp_number;
+                                                        window.location.href = `tel:${String(wP).replace(/\D/g, '')}`;
+                                                    }
+                                                }}
+                                                whileTap={{ scale: 0.9 }}
+                                                className="w-12 h-12 rounded-full bg-emerald-600 text-white shadow-lg flex items-center justify-center cursor-pointer hover:bg-emerald-700 active:scale-95 transition-colors shrink-0"
+                                                aria-label="Call Technicians"
+                                                title="Call Technicians"
+                                                type="button"
+                                            >
+                                                <PhoneCall className="w-5.5 h-5.5" />
+                                            </motion.button>
+                                        </Can>
+                                    );
+                                })()}
+
+                                {/* 2. Call Store / Manager FAB */}
+                                {(() => {
+                                    const currentMgr = ticketDetails?.store?.manager;
+                                    const mgrPhone = currentMgr?.phone || currentMgr?.whatsapp_number;
+                                    const cleanMgr = mgrPhone ? String(mgrPhone).replace(/\D/g, '') : '';
+                                    const locPhone = ticketDetails?.store?.phone || ticketDetails?.store?.whatsapp_number;
+                                    const cleanLoc = locPhone ? String(locPhone).replace(/\D/g, '') : '';
+                                    if (!cleanMgr && !cleanLoc) return null;
+
+                                    return (
+                                        <Can permission={hasPermission('accounts.view_phone') || true}>
+                                            <motion.button
+                                                onClick={() => {
+                                                    const totalLocCount = (cleanMgr ? 1 : 0) + (cleanLoc ? 1 : 0);
+                                                    if (totalLocCount > 1) {
+                                                        setIsCallLocationModalOpen(true);
+                                                    } else if (cleanMgr) {
+                                                        window.location.href = `tel:${cleanMgr}`;
+                                                    } else if (cleanLoc) {
+                                                        window.location.href = `tel:${cleanLoc}`;
+                                                    }
+                                                }}
+                                                whileTap={{ scale: 0.9 }}
+                                                className="w-12 h-12 rounded-full bg-teal-600 text-white shadow-lg flex items-center justify-center cursor-pointer hover:bg-teal-700 active:scale-95 transition-colors shrink-0"
+                                                aria-label="Call Store"
+                                                title="Call Store / Manager"
+                                                type="button"
+                                            >
+                                                <PhoneCall className="w-5.5 h-5.5" />
+                                            </motion.button>
+                                        </Can>
+                                    );
+                                })()}
+
                                 <motion.button
                                     onClick={() => setIsMobileChatOpen(true)}
                                     whileTap={{ scale: 0.9 }}
@@ -2597,6 +2826,325 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             />
                         </div>
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* UNIFIED CONTACT SELECTION MODAL */}
+            <AnimatePresence>
+                {isCallSelectModalOpen && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.6 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsCallSelectModalOpen(false)}
+                            className="fixed inset-0 bg-black cursor-pointer"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="relative bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-5 max-w-md w-full z-10 shadow-2xl space-y-4"
+                        >
+                            <div className="flex items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                                        <PhoneCall className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-on-surface dark:text-dark-on-surface">Who do you want to call?</h3>
+                                        <p className="text-[11px] text-outline">Select a contact to initiate call</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsCallSelectModalOpen(false)}
+                                    className="p-1 text-outline hover:text-on-surface rounded-lg transition-colors cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                                {(() => {
+                                    const currentMgr = ticketDetails?.store?.manager;
+                                    const mgrPhone = currentMgr?.phone || currentMgr?.whatsapp_number;
+                                    const cleanMgr = mgrPhone ? String(mgrPhone).replace(/\D/g, '') : '';
+                                    const locPhone = ticketDetails?.store?.phone || ticketDetails?.store?.whatsapp_number;
+                                    const cleanLoc = locPhone ? String(locPhone).replace(/\D/g, '') : '';
+
+                                    const isSamePerson = currentMgr && ticketDetails?.created_by && Number(currentMgr.user_id) === Number(ticketDetails.created_by.user_id);
+                                    const mgrFirstName = currentMgr?.full_name ? currentMgr.full_name.split(' ')[0] : 'Manager';
+                                    const mgrLabel = isSamePerson ? `Call ${mgrFirstName}` : 'Call Manager';
+
+                                    const validWorkers = (allocations || []).filter(a => {
+                                        const p = a.worker?.phone || a.worker?.whatsapp_number;
+                                        return p && String(p).replace(/\D/g, '').length >= 8;
+                                    });
+
+                                    return (
+                                        <>
+                                            {(cleanMgr || cleanLoc) && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Store & Location Contacts</p>
+                                                    {cleanMgr && (
+                                                        <div className="flex items-center justify-between p-3 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant/60 dark:border-dark-outline-variant/60 gap-3">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <AvatarCircle user={currentMgr} size="md" />
+                                                                <div className="min-w-0">
+                                                                    <p className="font-bold text-xs text-on-surface dark:text-dark-on-surface truncate">{currentMgr?.full_name || 'Store Manager'}</p>
+                                                                    <p className="text-[10px] text-outline">Store Manager · {ticketDetails?.store?.store_name}</p>
+                                                                    <p className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{mgrPhone}</p>
+                                                                </div>
+                                                            </div>
+                                                            <a
+                                                                href={`tel:${cleanMgr}`}
+                                                                onClick={() => setIsCallSelectModalOpen(false)}
+                                                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                            >
+                                                                <PhoneCall className="w-3.5 h-3.5" />
+                                                                <span>{mgrLabel}</span>
+                                                            </a>
+                                                        </div>
+                                                    )}
+
+                                                    {cleanLoc && (
+                                                        <div className="flex items-center justify-between p-3 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant/60 dark:border-dark-outline-variant/60 gap-3">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                                                    <Building2 className="w-5 h-5" />
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="font-bold text-xs text-on-surface dark:text-dark-on-surface truncate">{ticketDetails?.store?.store_name}</p>
+                                                                    <p className="text-[10px] text-outline">Store Location Phone</p>
+                                                                    <p className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{locPhone}</p>
+                                                                </div>
+                                                            </div>
+                                                            <a
+                                                                href={`tel:${cleanLoc}`}
+                                                                onClick={() => setIsCallSelectModalOpen(false)}
+                                                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                            >
+                                                                <Phone className="w-3.5 h-3.5" />
+                                                                <span>Call Location</span>
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {validWorkers.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Allocated Workers ({validWorkers.length})</p>
+                                                    {validWorkers.map(a => {
+                                                        const rawP = a.worker?.phone || a.worker?.whatsapp_number;
+                                                        const cleanP = rawP ? String(rawP).replace(/\D/g, '') : '';
+                                                        const firstName = a.worker?.full_name ? a.worker.full_name.split(' ')[0] : 'Worker';
+
+                                                        return (
+                                                            <div key={a.allocation_id} className="flex items-center justify-between p-3 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant/60 dark:border-dark-outline-variant/60 gap-3">
+                                                                <div className="flex items-center gap-3 min-w-0">
+                                                                    <AvatarCircle user={a.worker} size="md" />
+                                                                    <div className="min-w-0">
+                                                                        <p className="font-bold text-xs text-on-surface dark:text-dark-on-surface truncate">{a.worker.full_name}</p>
+                                                                        <p className="text-[10px] text-outline">{a.worker.role?.role_name || 'Worker'} {a.worker.employee_no ? `· ID: ${a.worker.employee_no}` : ''}</p>
+                                                                        <p className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{rawP}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <a
+                                                                    href={`tel:${cleanP}`}
+                                                                    onClick={() => setIsCallSelectModalOpen(false)}
+                                                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                                >
+                                                                    <PhoneCall className="w-3.5 h-3.5" />
+                                                                    <span>Call {firstName}</span>
+                                                                </a>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* WORKER SPECIFIC CALL SELECTION MODAL */}
+            <AnimatePresence>
+                {isCallWorkerModalOpen && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.6 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsCallWorkerModalOpen(false)}
+                            className="fixed inset-0 bg-black cursor-pointer"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="relative bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-5 max-w-md w-full z-10 shadow-2xl space-y-4"
+                        >
+                            <div className="flex items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                                        <PhoneCall className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-on-surface dark:text-dark-on-surface">Which worker do you want to call?</h3>
+                                        <p className="text-[11px] text-outline">Select allocated worker to initiate call</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsCallWorkerModalOpen(false)}
+                                    className="p-1 text-outline hover:text-on-surface rounded-lg transition-colors cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+                                {(() => {
+                                    const validWorkers = (allocations || []).filter(a => {
+                                        const p = a.worker?.phone || a.worker?.whatsapp_number;
+                                        return p && String(p).replace(/\D/g, '').length >= 8;
+                                    });
+
+                                    return validWorkers.map(a => {
+                                        const rawP = a.worker?.phone || a.worker?.whatsapp_number;
+                                        const cleanP = rawP ? String(rawP).replace(/\D/g, '') : '';
+                                        const firstName = a.worker?.full_name ? a.worker.full_name.split(' ')[0] : 'Worker';
+
+                                        return (
+                                            <div key={a.allocation_id} className="flex items-center justify-between p-3 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant/60 dark:border-dark-outline-variant/60 gap-3">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <AvatarCircle user={a.worker} size="md" />
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-xs text-on-surface dark:text-dark-on-surface truncate">{a.worker.full_name}</p>
+                                                        <p className="text-[10px] text-outline">{a.worker.role?.role_name || 'Worker'} {a.worker.employee_no ? `· ID: ${a.worker.employee_no}` : ''}</p>
+                                                        <p className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{rawP}</p>
+                                                    </div>
+                                                </div>
+                                                <a
+                                                    href={`tel:${cleanP}`}
+                                                    onClick={() => setIsCallWorkerModalOpen(false)}
+                                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                >
+                                                    <PhoneCall className="w-3.5 h-3.5" />
+                                                    <span>Call {firstName}</span>
+                                                </a>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* LOCATION CALL SELECTION MODAL */}
+            <AnimatePresence>
+                {isCallLocationModalOpen && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.6 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsCallLocationModalOpen(false)}
+                            className="fixed inset-0 bg-black cursor-pointer"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="relative bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-5 max-w-md w-full z-10 shadow-2xl space-y-4"
+                        >
+                            <div className="flex items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-teal-500/10 text-teal-600 dark:text-teal-400 rounded-lg">
+                                        <Building2 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-on-surface dark:text-dark-on-surface">Which location contact do you want to call?</h3>
+                                        <p className="text-[11px] text-outline">Select store manager or location phone</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsCallLocationModalOpen(false)}
+                                    className="p-1 text-outline hover:text-on-surface rounded-lg transition-colors cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+                                {(() => {
+                                    const currentMgr = ticketDetails?.store?.manager;
+                                    const mgrPhone = currentMgr?.phone || currentMgr?.whatsapp_number;
+                                    const cleanMgr = mgrPhone ? String(mgrPhone).replace(/\D/g, '') : '';
+                                    const locPhone = ticketDetails?.store?.phone || ticketDetails?.store?.whatsapp_number;
+                                    const cleanLoc = locPhone ? String(locPhone).replace(/\D/g, '') : '';
+
+                                    const isSamePerson = currentMgr && ticketDetails?.created_by && Number(currentMgr.user_id) === Number(ticketDetails.created_by.user_id);
+                                    const mgrFirstName = currentMgr?.full_name ? currentMgr.full_name.split(' ')[0] : 'Manager';
+                                    const mgrLabel = isSamePerson ? `Call ${mgrFirstName}` : 'Call Manager';
+
+                                    return (
+                                        <>
+                                            {cleanMgr && (
+                                                <div className="flex items-center justify-between p-3 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant/60 dark:border-dark-outline-variant/60 gap-3">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <AvatarCircle user={currentMgr} size="md" />
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold text-xs text-on-surface dark:text-dark-on-surface truncate">{currentMgr?.full_name || 'Store Manager'}</p>
+                                                            <p className="text-[10px] text-outline">Store Manager · {ticketDetails?.store?.store_name}</p>
+                                                            <p className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{mgrPhone}</p>
+                                                        </div>
+                                                    </div>
+                                                    <a
+                                                        href={`tel:${cleanMgr}`}
+                                                        onClick={() => setIsCallLocationModalOpen(false)}
+                                                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                    >
+                                                        <PhoneCall className="w-3.5 h-3.5" />
+                                                        <span>{mgrLabel}</span>
+                                                    </a>
+                                                </div>
+                                            )}
+
+                                            {cleanLoc && (
+                                                <div className="flex items-center justify-between p-3 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant/60 dark:border-dark-outline-variant/60 gap-3">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className="w-10 h-10 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                                            <Building2 className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold text-xs text-on-surface dark:text-dark-on-surface truncate">{ticketDetails?.store?.store_name}</p>
+                                                            <p className="text-[10px] text-outline">Store Location Phone</p>
+                                                            <p className="text-[10px] font-mono text-teal-600 dark:text-teal-400 font-semibold">{locPhone}</p>
+                                                        </div>
+                                                    </div>
+                                                    <a
+                                                        href={`tel:${cleanLoc}`}
+                                                        onClick={() => setIsCallLocationModalOpen(false)}
+                                                        className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                    >
+                                                        <Phone className="w-3.5 h-3.5" />
+                                                        <span>Call Location</span>
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
 

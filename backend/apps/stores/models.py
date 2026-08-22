@@ -140,6 +140,22 @@ def check_store_manager_contact_pre(sender, instance, **kwargs):
     else:
         old_manager = None
 
+    # Track old manager on the instance for post_save accessible_stores sync
+    instance._old_manager = old_manager
+
+    # Check if the newly assigned manager previously managed another store
+    if instance.manager:
+        prev_store = Store.objects.filter(manager=instance.manager).exclude(pk=instance.pk).first()
+        if prev_store:
+            # Unassign previous store first to prevent DB OneToOne UNIQUE constraint violation
+            prev_store.manager = None
+            prev_store.save(update_fields=['manager'])
+            instance._manager_previous_store = prev_store
+        else:
+            instance._manager_previous_store = None
+    else:
+        instance._manager_previous_store = None
+
     # If the manager was changed or removed, clean up their synced contact details
     if old_manager and old_manager != instance.manager:
         if instance.phone == old_manager.phone:
@@ -159,6 +175,32 @@ def check_store_manager_contact_pre(sender, instance, **kwargs):
             manager_wa = manager.whatsapp_number or manager.phone
             if not instance.whatsapp_number and manager_wa:
                 instance.whatsapp_number = manager_wa
+
+
+@receiver(models.signals.post_save, sender=Store)
+def handle_store_manager_accessible_stores(sender, instance, created, **kwargs):
+    old_manager = getattr(instance, '_old_manager', None)
+    new_manager = instance.manager
+    prev_store = getattr(instance, '_manager_previous_store', None)
+
+    # 1. If store's manager changed or was unassigned, remove this store from old manager's accessible_stores
+    if old_manager and old_manager != new_manager:
+        old_manager.accessible_stores.remove(instance)
+
+    # 2. If a new manager is assigned:
+    if new_manager:
+        # If the manager previously managed another store, remove the previous store from accessible_stores
+        if prev_store and prev_store != instance:
+            new_manager.accessible_stores.remove(prev_store)
+
+        # Add the new store to the manager's accessible_stores while preserving other accessible stores
+        new_manager.accessible_stores.add(instance)
+
+
+@receiver(models.signals.post_delete, sender=Store)
+def handle_store_delete_accessible_stores(sender, instance, **kwargs):
+    if instance.manager:
+        instance.manager.accessible_stores.remove(instance)
 
 
 @receiver(models.signals.pre_save, sender=settings.AUTH_USER_MODEL)
