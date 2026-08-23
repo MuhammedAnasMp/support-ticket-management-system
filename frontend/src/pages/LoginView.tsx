@@ -83,8 +83,8 @@ export const LoginView: React.FC = () => {
         className="w-full max-w-md bg-surface-container dark:bg-dark-surface-container p-8 rounded-2xl shadow-xl border border-outline-variant dark:border-dark-outline-variant"
       >
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 bg-accent-light/20 dark:bg-primary/20 rounded-xl mb-3">
-            <Wrench className="w-8 h-8 text-primary" />
+          <div className="inline-flex justify-center mb-3">
+            <img src="/icon-192x192.png" alt="App Logo" className="w-14 h-14 object-contain" />
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-on-surface dark:text-dark-on-surface">
             Maintenance Tracker

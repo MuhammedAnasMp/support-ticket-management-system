@@ -861,38 +861,41 @@ export const StoresView: React.FC = () => {
           </div>
 
           {subpage === 'managers' && (
-            <div className="flex items-center gap-1 p-1 bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded shrink-0">
-              <button
-                type="button"
-                onClick={() => setManagerTab('all')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'all'
-                  ? 'bg-primary text-white'
-                  : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setManagerTab('approved')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'approved'
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-              >
-                Approved
-              </button>
-              <button
-                type="button"
-                onClick={() => setManagerTab('unapproved')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'unapproved'
-                  ? 'bg-amber-600 text-white'
-                  : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-              >
-                Unapproved
-              </button>
-            </div>
+            <Can permission="accounts.can_edit_full_manager_details">
+
+              <div className="flex items-center gap-1 p-1 bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setManagerTab('all')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'all'
+                    ? 'bg-primary text-white'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManagerTab('approved')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'approved'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                >
+                  Approved
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManagerTab('unapproved')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'unapproved'
+                    ? 'bg-amber-600 text-white'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                >
+                  Unapproved
+                </button>
+              </div>
+            </Can>
           )}
         </div>
 
@@ -1766,24 +1769,26 @@ export const StoresView: React.FC = () => {
 
                 <div className="flex justify-between items-center pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
                   {editItem ? (
-                    <Can permission={
-                      subpage === 'areas' ? 'stores.delete_area' :
-                        subpage === 'departments' ? 'stores.delete_department' :
-                          subpage === 'managers' ? 'accounts.delete_customuser' :
-                            'stores.delete_store'
-                    }>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleDelete(editItem.store_id || editItem.area_id || editItem.department_id || editItem.user_id);
-                          setShowModal(false);
-                        }}
-                        className="px-3.5 py-2 bg-error-container/40 border border-error/30 text-on-error-container hover:bg-error-container text-xs font-medium rounded flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
-                    </Can>
+                    <div>
+                      <Can permission={
+                        subpage === 'areas' ? 'stores.delete_area' :
+                          subpage === 'departments' ? 'stores.delete_department' :
+                            subpage === 'managers' ? 'accounts.delete_customuser' :
+                              'stores.delete_store'
+                      }>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleDelete(editItem.store_id || editItem.area_id || editItem.department_id || editItem.user_id);
+                            setShowModal(false);
+                          }}
+                          className="px-3.5 py-2 bg-error-container/40 border border-error/30 text-on-error-container hover:bg-error-container text-xs font-medium rounded flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </Can>
+                    </div>
                   ) : <div />}
 
                   <div className="flex items-center gap-2">

@@ -214,8 +214,8 @@ export const SignupView: React.FC = () => {
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md bg-surface-container dark:bg-dark-surface-container p-8 rounded-2xl shadow-xl text-center border border-outline-variant dark:border-dark-outline-variant"
         >
-          <div className="inline-flex p-4 bg-amber-500/10 rounded-full mb-4">
-            <Clock className="w-12 h-12 text-amber-500 animate-pulse" />
+          <div className="inline-flex justify-center mb-3">
+            <img src="/icon-192x192.png" alt="App Logo" className="w-14 h-14 object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-on-surface dark:text-dark-on-surface mb-2">
             Waiting for Approval

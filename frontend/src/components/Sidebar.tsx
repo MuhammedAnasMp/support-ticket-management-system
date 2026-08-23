@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
   Home, Ticket, Store, Wrench, Users,
-  ChevronDown, X, User, Shield
+  ChevronDown, X, User, Shield, Building2
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
@@ -97,16 +97,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       {/* Brand Header */}
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-outline-variant bg-surface-container-low shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 bg-primary-container text-on-primary-container rounded flex items-center justify-center">
-            <Wrench className="w-4 h-4" />
+          <div className="shrink-0 flex items-center justify-center">
+            <img src="/icon-192x192.png" alt="App Logo" className="w-7 h-7 object-contain" />
           </div>
           <div>
             <span className="font-semibold text-sm text-on-surface tracking-tight block leading-none">
               Ticket Manager
             </span>
-            <span className="text-[10px] text-on-surface-variant font-medium mt-0.5 block leading-none">
+            {/* <span className="text-[10px] text-on-surface-variant font-medium mt-0.5 block leading-none">
               v1
-            </span>
+            </span> */}
           </div>
         </div>
 
@@ -306,11 +306,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 )}
 
                 {accessibleStores && accessibleStores.length > 0 && (
-                  <div className="pt-2 border-t border-outline-variant">
-                    <span className="text-[9px] text-on-surface-variant/70 block uppercase tracking-wider mb-0.5">Accessible Stores ({accessibleStores.length})</span>
-                    <p className="text-[10px] leading-tight font-medium text-on-surface">
-                      {accessibleStores.map(s => s.store_name).join(', ')}
-                    </p>
+                  <div className="pt-2.5 border-t border-outline-variant space-y-1.5">
+                    <span className="text-[9px] text-on-surface-variant/80 block uppercase tracking-wider font-semibold">
+                      Accessible Stores ({accessibleStores.length})
+                    </span>
+                    <ul className="max-h-32 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
+                      {accessibleStores.map((s, idx) => (
+                        <li
+                          key={s.store_id || idx}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-surface-container/60 rounded text-[11px] font-medium text-on-surface border border-outline-variant/40"
+                        >
+                          <Building2 className="w-3 h-3 text-primary shrink-0" />
+                          <span className="truncate">{s.store_name}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </motion.div>
