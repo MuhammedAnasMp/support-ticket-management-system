@@ -193,6 +193,62 @@ class SignupView(APIView):
                 m2m_changed.connect(update_user_approval,
                                     sender=CustomUser.sub_departments.through)
 
+            from apps.accounts.serializers import ensure_office_admin_default_nature
+            ensure_office_admin_default_nature(user, department_id=department_id)
+
+            is_office_admin = 'office admin' in role_name or 'office administrator' in role_name
+            if is_office_admin:
+                user.active = True
+                user.save()
+
+                from rest_framework.authtoken.models import Token
+                token, _ = Token.objects.get_or_create(user=user)
+
+                profile_image_url = user.profile_image.url if user.profile_image else None
+                managed_store = getattr(user, 'managed_store', None)
+                managed_store_data = None
+                if managed_store:
+                    managed_store_data = {
+                        'store_id': managed_store.store_id,
+                        'store_name': managed_store.store_name,
+                        'type': managed_store.type,
+                        'area_name': managed_store.area.area_name if managed_store.area else None,
+                        'address': managed_store.address,
+                        'phone': managed_store.phone,
+                        'whatsapp_number': managed_store.whatsapp_number,
+                        'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
+                        'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+                        'store_updated_at': managed_store.store_updated_at.isoformat() if managed_store.store_updated_at else None,
+                    }
+
+                return Response({
+                    "message": "Registration successful! Logged in directly.",
+                    "approved": True,
+                    "token": token.key,
+                    "permissions": list(user.get_all_permissions()),
+                    "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
+                    "user": {
+                        "user_id": user.user_id,
+                        "username": user.username,
+                        "email": user.email,
+                        "employee_no": user.employee_no,
+                        "full_name": user.full_name,
+                        "phone": user.phone,
+                        "whatsapp_number": user.whatsapp_number,
+                        "role": user.role.role_name if user.role else None,
+                        "active": user.active,
+                        "is_superuser": user.is_superuser,
+                        "profile_image": profile_image_url,
+                        "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
+                        "last_login": user.last_login.isoformat() if user.last_login else None,
+                        "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
+                        "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
+                        "tickets_created_count": user.created_tickets.count(),
+                        "tickets_assigned_count": user.allocations.count(),
+                        "managed_store": managed_store_data,
+                    }
+                }, status=status.HTTP_201_CREATED)
+
             return Response(
                 {"message": "Waiting for the approval.", "approved": False},
                 status=status.HTTP_201_CREATED

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
 import { motion } from 'framer-motion';
+import { setCredentials } from '../store/authSlice';
 import {
   User, Lock, Mail, Phone, Clock, MessageSquare,
   AlertCircle, Camera, Check, RefreshCw
@@ -10,6 +12,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const SignupView: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [searchParams] = useSearchParams();
 
   const roleParam = searchParams.get('role') || '';
@@ -46,6 +49,7 @@ export const SignupView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const [phoneError, setPhoneError] = useState('');
   const [whatsappError, setWhatsappError] = useState('');
@@ -81,6 +85,7 @@ export const SignupView: React.FC = () => {
 
   const isStoreManager = String(selectedRole) === '3' || selectedRoleName === 'store manager';
   const isTechnician = String(selectedRole) === '5' || selectedRoleName === 'technician';
+  const isOfficeAdmin = selectedRoleName.includes('office admin') || selectedRoleName.includes('office administrator');
 
   const handleEmployeeNoChange = (val: string) => {
     const clean = val.replace(/\D/g, '');
@@ -139,6 +144,11 @@ export const SignupView: React.FC = () => {
       return;
     }
 
+    if (isOfficeAdmin && !selectedDepartment) {
+      setError('Please select a Department for Office Administrator role.');
+      return;
+    }
+
     if (isTechnician && selectedNatures.length === 0) {
       setError('Please select at least one Work Nature for Technician role.');
       return;
@@ -167,7 +177,7 @@ export const SignupView: React.FC = () => {
     if (isStoreManager && selectedStore) {
       formData.append('store', selectedStore);
     }
-    if (isTechnician && selectedDepartment) {
+    if ((isTechnician || isOfficeAdmin) && selectedDepartment) {
       formData.append('department', selectedDepartment);
     }
     if (isTechnician && selectedNatures.length > 0) {
@@ -183,6 +193,17 @@ export const SignupView: React.FC = () => {
       const data = await response.json();
 
       if (response.status === 201) {
+        if (data.token && data.user) {
+          // Direct login for auto-approved roles like Office Administrator
+          dispatch(setCredentials({
+            token: data.token,
+            user: data.user,
+            permissions: data.permissions || [],
+            accessibleStores: data.accessible_stores || []
+          }));
+          navigate('/');
+          return;
+        }
         setSuccess(true);
         sessionStorage.setItem('pending_employee_no', employeeNo);
         sessionStorage.setItem('pending_password', password);
@@ -232,6 +253,18 @@ export const SignupView: React.FC = () => {
     );
   }
 
+  const showImageError = submitted && !imageFile && !imagePreview;
+  const showRoleError = submitted && !selectedRole;
+  const showStoreError = submitted && isStoreManager && !selectedStore;
+  const showDepartmentError = submitted && (isTechnician || isOfficeAdmin) && !selectedDepartment;
+  const showNaturesError = submitted && isTechnician && selectedNatures.length === 0;
+  const showEmpNoError = submitted && !employeeNo;
+  const showFullNameError = submitted && !fullName;
+  const showEmailError = submitted && !email;
+  const showPhoneError = (submitted && (!phone || phone.length !== 8)) || !!phoneError;
+  const showWhatsappError = (submitted && (!whatsappNumber || (whatsappNumber.length !== 8 && whatsappNumber.length !== 10))) || !!whatsappError;
+  const showPasswordError = submitted && !password;
+
   return (
     <div className="flex min-h-screen items-center justify-center p-4 py-12">
       <motion.div
@@ -248,28 +281,17 @@ export const SignupView: React.FC = () => {
           </p>
         </div>
 
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="flex items-center gap-2 p-3.5 mb-6 text-sm text-red-800 bg-red-50 dark:bg-red-950/30 dark:text-red-300 rounded-lg border border-red-200 dark:border-red-900/50"
-          >
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{error}</span>
-          </motion.div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="flex flex-col items-center justify-center mb-4">
             <div className="relative group cursor-pointer">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-primary bg-surface-container-low dark:bg-dark-surface-container-low flex items-center justify-center">
+              <div className={`w-24 h-24 rounded-full overflow-hidden border-2 ${showImageError ? 'border-red-500 ring-4 ring-red-500/20' : 'border-primary'} bg-surface-container-low dark:bg-dark-surface-container-low flex items-center justify-center transition-all`}>
                 {imagePreview ? (
                   <img src={imagePreview} alt="Avatar Preview" className="w-full h-full object-cover" />
                 ) : (
-                  <User className="w-12 h-12 text-outline" />
+                  <User className={`w-12 h-12 ${showImageError ? 'text-red-500' : 'text-outline'}`} />
                 )}
               </div>
-              <label htmlFor="avatar-file" className="absolute bottom-0 right-0 p-2 bg-primary hover:bg-primary-hover text-white rounded-full cursor-pointer shadow-md transform translate-x-1 translate-y-1 transition-all">
+              <label htmlFor="avatar-file" className={`absolute bottom-0 right-0 p-2 ${showImageError ? 'bg-red-500' : 'bg-primary hover:bg-primary-hover'} text-white rounded-full cursor-pointer shadow-md transform translate-x-1 translate-y-1 transition-all`}>
                 <Camera className="w-4 h-4" />
                 <input
                   id="avatar-file"
@@ -280,7 +302,7 @@ export const SignupView: React.FC = () => {
                 />
               </label>
             </div>
-            <span className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant mt-2 font-medium">
+            <span className={`text-xs mt-2 font-medium ${showImageError ? 'text-red-500 font-bold animate-pulse' : 'text-on-surface-variant dark:text-dark-on-surface-variant'}`}>
               Profile Photo (Required)
             </span>
           </div>
@@ -300,7 +322,7 @@ export const SignupView: React.FC = () => {
                 setSelectedDepartment('');
                 setSelectedNatures([]);
               }}
-              className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+              className={`w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showRoleError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface`}
             >
               {!isRoleLocked && <option value="">Select Role</option>}
               {roles.map(r => (
@@ -320,7 +342,7 @@ export const SignupView: React.FC = () => {
                 value={selectedStore}
                 disabled={isStoreLocked}
                 onChange={(e) => setSelectedStore(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+                className={`w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showStoreError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface`}
               >
                 {!isStoreLocked && <option value="">Select Store</option>}
                 {stores
@@ -333,8 +355,8 @@ export const SignupView: React.FC = () => {
             </div>
           )}
 
-          {/* Department and Work Nature Selection for Technician */}
-          {isTechnician && (
+          {/* Department Selection for Technician / Office Administrator */}
+          {(isTechnician || isOfficeAdmin) && (
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
@@ -346,9 +368,9 @@ export const SignupView: React.FC = () => {
                   disabled={isDepartmentLocked}
                   onChange={(e) => {
                     setSelectedDepartment(e.target.value);
-                    setSelectedNatures([]); // Reset natures when department changes
+                    if (isTechnician) setSelectedNatures([]);
                   }}
-                  className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface"
+                  className={`w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showDepartmentError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface`}
                 >
                   {!isDepartmentLocked && <option value="">Select Department</option>}
                   {departments.map(d => (
@@ -357,7 +379,7 @@ export const SignupView: React.FC = () => {
                 </select>
               </div>
 
-              {selectedDepartment && (
+              {isTechnician && selectedDepartment && (
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant mb-2">
                     Work Natures / Skills (Multiple)
@@ -368,7 +390,7 @@ export const SignupView: React.FC = () => {
                       return <p className="text-xs text-outline italic">No work natures found for this department.</p>;
                     }
                     return (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-40 overflow-y-auto border border-outline-variant dark:border-dark-outline-variant rounded-lg p-4 bg-surface-container-low dark:bg-dark-surface-container-low">
+                      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-40 overflow-y-auto border ${showNaturesError ? 'border-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg p-4 bg-surface-container-low dark:bg-dark-surface-container-low`}>
                         {filteredNatures.map(n => {
                           const checked = selectedNatures.includes(String(n.nature_id));
                           return (
@@ -412,7 +434,7 @@ export const SignupView: React.FC = () => {
                 value={employeeNo}
                 onChange={(e) => handleEmployeeNoChange(e.target.value)}
                 placeholder="12345"
-                className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
+                className={`w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showEmpNoError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
               />
             </div>
 
@@ -426,7 +448,7 @@ export const SignupView: React.FC = () => {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="John Doe"
-                className="w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
+                className={`w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showFullNameError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
               />
             </div>
           </div>
@@ -445,7 +467,7 @@ export const SignupView: React.FC = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="john.doe@company.com"
-                className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
+                className={`w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showEmailError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
               />
             </div>
           </div>
@@ -466,7 +488,7 @@ export const SignupView: React.FC = () => {
                   onChange={(e) => handlePhoneChange(e.target.value)}
                   placeholder="87654321"
                   maxLength={8}
-                  className={`w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${phoneError ? 'border-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
+                  className={`w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showPhoneError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
                 />
               </div>
               {phoneError && <span className="text-xs text-red-500 mt-1 block">{phoneError}</span>}
@@ -487,7 +509,7 @@ export const SignupView: React.FC = () => {
                   onChange={(e) => handleWhatsappChange(e.target.value)}
                   placeholder="9876543210"
                   maxLength={10}
-                  className={`w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${whatsappError ? 'border-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
+                  className={`w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showWhatsappError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
                 />
               </div>
               {whatsappError && <span className="text-xs text-red-500 mt-1 block">{whatsappError}</span>}
@@ -508,10 +530,22 @@ export const SignupView: React.FC = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
+                className={`w-full pl-10 pr-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showPasswordError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all`}
               />
             </div>
           </div>
+
+          {/* Bottom Error Alert Banner */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 p-3.5 text-sm text-red-800 bg-red-50 dark:bg-red-950/30 dark:text-red-300 rounded-lg border border-red-200 dark:border-red-900/50"
+            >
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span className="font-medium">{error}</span>
+            </motion.div>
+          )}
 
           <button
             type="submit"

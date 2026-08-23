@@ -18,12 +18,88 @@ class RoleSerializer(serializers.ModelSerializer):
             return []
 
 
+def ensure_office_admin_default_nature(user, department_id=None):
+    """
+    If user role is Office Administrator, ensure default 'Office' SubDepartment 
+    and 'Office Related' WorkNature are assigned under the selected department.
+    """
+    if not user or not user.role:
+        return
+    role_name = (user.role.role_name or '').strip().lower()
+    if 'office admin' not in role_name and 'office administrator' not in role_name:
+        return
+
+    from apps.stores.models import SubDepartment, Department
+    from apps.maintenance.models import WorkNature, NatureWorker
+
+    target_dept = None
+    if department_id:
+        try:
+            target_dept = Department.objects.get(pk=department_id)
+        except Department.DoesNotExist:
+            pass
+
+    if not target_dept:
+        # Check if user already has a subdepartment assigned
+        first_sub = user.sub_departments.select_related('department').first()
+        if first_sub and first_sub.department:
+            target_dept = first_sub.department
+
+    if not target_dept:
+        target_dept = Department.objects.filter(department_name__icontains='admin').first()
+    if not target_dept:
+        target_dept = Department.objects.first()
+    if not target_dept:
+        target_dept = Department.objects.create(department_name='Administration')
+
+    # 1. Get or create 'Office' SubDepartment under target_dept
+    office_subdept = SubDepartment.objects.filter(
+        department=target_dept,
+        sub_department_name__iexact='office'
+    ).first()
+    if not office_subdept:
+        office_subdept = SubDepartment.objects.filter(
+            department=target_dept,
+            sub_department_name__icontains='office'
+        ).first()
+    if not office_subdept:
+        office_subdept = SubDepartment.objects.create(
+            sub_department_name='Office',
+            department=target_dept
+        )
+
+    # 2. Add Office subdepartment to user's sub_departments
+    if not user.sub_departments.filter(pk=office_subdept.pk).exists():
+        user.sub_departments.add(office_subdept)
+
+    # 3. Get or create 'Office Related' WorkNature under this specific office_subdept
+    office_nature = WorkNature.objects.filter(
+        sub_department=office_subdept,
+        nature_name__iexact='office related'
+    ).first()
+    if not office_nature:
+        office_nature = WorkNature.objects.filter(
+            sub_department=office_subdept,
+            nature_name__icontains='office'
+        ).first()
+    if not office_nature:
+        office_nature = WorkNature.objects.create(
+            nature_name='Office Related',
+            sub_department=office_subdept,
+            active=True
+        )
+
+    # 4. Assign NatureWorker to link user to office_nature
+    NatureWorker.objects.get_or_create(nature=office_nature, worker=user)
+
+
 def assign_role_group(user):
     if user.role:
         from django.contrib.auth.models import Group
         group_name = user.role.role_name
         group, created = Group.objects.get_or_create(name=group_name)
         user.groups.set([group])
+        ensure_office_admin_default_nature(user)
 
 
 class CustomUserSerializer(serializers.ModelSerializer):
