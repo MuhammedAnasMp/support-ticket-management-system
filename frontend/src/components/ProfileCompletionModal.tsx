@@ -73,23 +73,22 @@ export const ProfileCompletionModal: React.FC = () => {
     return () => window.removeEventListener('open-profile-edit', handleOpen);
   }, [user]);
 
-  // Strict Auto-open logic on load (Every 2 months / incomplete)
+  // Strict Auto-open logic on load (Every 2 months / incomplete) — CANNOT be closed until updated
   useEffect(() => {
-    if (!token || !user || !isProfileIncomplete || hasCheckedAutoOpen.current) {
-      return;
+    if (!token || !user) return;
+    if (isProfileIncomplete) {
+      if (!isOpen || isManualOpen) {
+        setEmployeeNo(user.employee_no || '');
+        setFullName(user.full_name || '');
+        setPhone('');
+        setWhatsappNumber('');
+        setImagePreview(user.profile_image || null);
+        setIsManualOpen(false);
+        setIsOpen(true);
+      }
+    } else if (!isManualOpen) {
+      setIsOpen(false);
     }
-
-    hasCheckedAutoOpen.current = true;
-
-    // Set initial values from user profile (phone & whatsapp MUST show as BLANK for fresh verification)
-    setEmployeeNo(user.employee_no || '');
-    setFullName(user.full_name || '');
-    setPhone('');
-    setWhatsappNumber('');
-    setImagePreview(user.profile_image || null);
-
-    setIsManualOpen(false);
-    setIsOpen(true);
   }, [token, user, isProfileIncomplete]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -306,22 +305,13 @@ export const ProfileCompletionModal: React.FC = () => {
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-2 pt-4 border-t border-outline-variant dark:border-dark-outline-variant">
-              {!isManualOpen && (
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-outline hover:text-on-surface rounded-lg cursor-pointer"
-                >
-                  Remind Me Later
-                </button>
-              )}
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-semibold rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-75"
+                className="w-full sm:w-auto px-5 py-2.5 bg-primary hover:bg-primary-container text-on-primary text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-75"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Save Details
+                Save & Update Details
               </button>
             </div>
 

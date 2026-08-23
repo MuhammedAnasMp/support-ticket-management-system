@@ -30,7 +30,14 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
 
   useEffect(() => {
     const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isFS = !!document.fullscreenElement;
+      setIsFullscreen(isFS);
+      if (!isFS) {
+        // Store exit timestamp for 1 week opt-out before auto going back to fullscreen
+        localStorage.setItem('fullscreen_exited_at', Date.now().toString());
+      } else {
+        localStorage.removeItem('fullscreen_exited_at');
+      }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
@@ -38,8 +45,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
+      localStorage.removeItem('fullscreen_exited_at');
       document.documentElement.requestFullscreen().catch(() => { });
     } else {
+      localStorage.setItem('fullscreen_exited_at', Date.now().toString());
       document.exitFullscreen().catch(() => { });
     }
   };

@@ -8,9 +8,10 @@ class AreaAdmin(admin.ModelAdmin):
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ('store_id', 'store_name', 'area', 'address', 'phone', 'whatsapp_number', 'active')
+    list_display = ('store_id', 'store_name', 'area', 'address', 'phone', 'whatsapp_number', 'store_updated_at', 'active')
     list_filter = ('active', 'area')
     search_fields = ('store_name', 'address', 'phone', 'whatsapp_number')
+    readonly_fields = ('store_updated_at',)
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):

@@ -50,23 +50,22 @@ export const StoreCompletionModal: React.FC = () => {
     }
   }, [token]);
 
-  // Strict Auto-open logic on load (Desktop & Mobile)
+  // Strict Auto-open logic on load (Desktop & Mobile) — CANNOT be closed until updated
   useEffect(() => {
-    if (!token || !user || !isStoreIncomplete || hasCheckedAutoOpen.current) {
-      return;
+    if (!token || !user || !managedStore) return;
+    if (isStoreIncomplete) {
+      if (!isOpen) {
+        setPhone('');
+        setWhatsappNumber('');
+        setAddress(managedStore.address || '');
+        setLatitude(managedStore.latitude || '');
+        setLongitude(managedStore.longitude || '');
+        setIsOpen(true);
+      }
+    } else {
+      setIsOpen(false);
     }
-
-    hasCheckedAutoOpen.current = true;
-
-    // Contact numbers MUST show as BLANK for fresh verification
-    setPhone('');
-    setWhatsappNumber('');
-    setAddress(managedStore?.address || '');
-    setLatitude(managedStore?.latitude || '');
-    setLongitude(managedStore?.longitude || '');
-
-    setIsOpen(true);
-  }, [token, user, isStoreIncomplete, managedStore]);
+  }, [token, user, managedStore, isStoreIncomplete]);
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -416,19 +415,12 @@ export const StoreCompletionModal: React.FC = () => {
             {/* Actions */}
             <div className="flex items-center justify-end gap-2 pt-4 border-t border-outline-variant dark:border-dark-outline-variant">
               <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="px-4 py-2 text-xs font-semibold text-outline hover:text-on-surface rounded-lg cursor-pointer bg-transparent border-none"
-              >
-                Remind Me Later
-              </button>
-              <button
                 type="submit"
                 disabled={loading || locating || !latitude || !longitude}
-                className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-semibold rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-75"
+                className="w-full sm:w-auto px-5 py-2.5 bg-primary hover:bg-primary-container text-on-primary text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-75"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Save Details
+                Save & Update Location Details
               </button>
             </div>
 

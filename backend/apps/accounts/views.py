@@ -279,6 +279,7 @@ class LoginView(APIView):
                 'whatsapp_number': managed_store.whatsapp_number,
                 'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
                 'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+                'store_updated_at': managed_store.store_updated_at.isoformat() if managed_store.store_updated_at else None,
             }
 
         return Response({
@@ -297,6 +298,7 @@ class LoginView(APIView):
                 "active": user.active,
                 "is_superuser": user.is_superuser,
                 "profile_image": profile_image_url,
+                "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
                 "last_login": user.last_login.isoformat() if user.last_login else None,
                 "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
@@ -413,9 +415,8 @@ class ProfileView(APIView):
             user.profile_image = profile_image
             updated = True
 
-        if updated:
-            user.profile_updated_at = timezone.now()
-            user.save()
+        user.profile_updated_at = timezone.now()
+        user.save()
 
         # Build image URL if it exists
         profile_image_url = None

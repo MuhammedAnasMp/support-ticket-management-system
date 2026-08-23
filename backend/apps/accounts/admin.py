@@ -14,18 +14,19 @@ class RoleAdmin(admin.ModelAdmin):
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
     list_display = ('user_id', 'username', 'email', 'employee_no', 'full_name',
-                    'phone', 'whatsapp_number', 'profile_image', 'role', 'active', 'is_staff')
+                    'phone', 'whatsapp_number', 'profile_image', 'role', 'profile_updated_at', 'active', 'is_staff')
     list_filter = ('active', 'is_staff', 'is_superuser', 'role')
     search_fields = ('username', 'email', 'employee_no', 'full_name', 'phone')
+    readonly_fields = ('profile_updated_at',)
 
     fieldsets = UserAdmin.fieldsets + (
         ('Custom Info', {
-            'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'accessible_stores', 'sub_departments', 'active')
+            'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'accessible_stores', 'sub_departments', 'profile_updated_at', 'active')
         }),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (
         ('Custom Info', {
-            'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'accessible_stores', 'sub_departments', 'active')
+            'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'accessible_stores', 'sub_departments', 'profile_updated_at', 'active')
         }),
     )
     filter_horizontal = ('accessible_stores', 'sub_departments')

@@ -218,6 +218,8 @@ function Can({
                 opacity-50
                 border-2
                 border-red-500
+                pointer-events-none
+                select-none
                 ${className ? className : "inline-block"}
             `}
         >

@@ -13,9 +13,23 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   });
   const location = useLocation();
 
-  // Auto-request fullscreen mode on initial load / user interaction
+  // Auto-request fullscreen mode on initial load / user interaction (unless opted out within 1 week)
   useEffect(() => {
+    const isFullscreenOptedOut = (): boolean => {
+      const exitedAt = localStorage.getItem('fullscreen_exited_at');
+      if (!exitedAt) return false;
+      const exitedTime = parseInt(exitedAt, 10);
+      if (isNaN(exitedTime)) return false;
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      if (Date.now() - exitedTime > SEVEN_DAYS_MS) {
+        localStorage.removeItem('fullscreen_exited_at');
+        return false;
+      }
+      return true;
+    };
+
     const triggerFullscreen = () => {
+      if (isFullscreenOptedOut()) return;
       if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(() => { });
       }
