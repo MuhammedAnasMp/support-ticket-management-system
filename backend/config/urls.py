@@ -49,10 +49,30 @@ if settings.DEBUG:
 else:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
+# Serve root PWA static files directly if requested without /static/ prefix
+from django.views.static import serve
+ROOT_STATIC_FILES = [
+    'manifest.webmanifest',
+    'sw.js',
+    'icon-192x192.png',
+    'icon-512x512.png',
+    'favicon.svg',
+    'favicon.ico',
+    'ic_stat_notify.png',
+]
+for static_file in ROOT_STATIC_FILES:
+    urlpatterns.append(
+        path(
+            static_file,
+            serve,
+            {'document_root': settings.BASE_DIR / 'static', 'path': static_file}
+        )
+    )
+
 # SPA routing fallback: serve React SPA index.html for all other paths
 urlpatterns += [
     re_path(
-        r'^(?!static/|media/|api/|admin/).*$',
+        r'^(?!static/|media/|api/|admin/|' + '|'.join(ROOT_STATIC_FILES) + r').*$',
         TemplateView.as_view(template_name='index.html'),
     )
 ]

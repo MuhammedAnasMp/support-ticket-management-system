@@ -215,7 +215,7 @@ export const SignupView: React.FC = () => {
           className="w-full max-w-md bg-surface-container dark:bg-dark-surface-container p-8 rounded-2xl shadow-xl text-center border border-outline-variant dark:border-dark-outline-variant"
         >
           <div className="inline-flex justify-center mb-3">
-            <img src="/icon-192x192.png" alt="App Logo" className="w-14 h-14 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}icon-192x192.png`} alt="App Logo" className="w-14 h-14 object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-on-surface dark:text-dark-on-surface mb-2">
             Waiting for Approval

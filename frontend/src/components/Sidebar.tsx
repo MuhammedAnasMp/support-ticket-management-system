@@ -98,7 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-outline-variant bg-surface-container-low shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="shrink-0 flex items-center justify-center">
-            <img src="/icon-192x192.png" alt="App Logo" className="w-7 h-7 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}icon-192x192.png`} alt="App Logo" className="w-7 h-7 object-contain" />
           </div>
           <div>
             <span className="font-semibold text-sm text-on-surface tracking-tight block leading-none">

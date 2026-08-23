@@ -84,7 +84,7 @@ export const LoginView: React.FC = () => {
       >
         <div className="text-center mb-8">
           <div className="inline-flex justify-center mb-3">
-            <img src="/icon-192x192.png" alt="App Logo" className="w-14 h-14 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}icon-192x192.png`} alt="App Logo" className="w-14 h-14 object-contain" />
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-on-surface dark:text-dark-on-surface">
             Maintenance Tracker
