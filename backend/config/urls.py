@@ -60,12 +60,14 @@ ROOT_STATIC_FILES = [
     'favicon.ico',
     'ic_stat_notify.png',
 ]
+static_doc_root = settings.STATIC_ROOT if (hasattr(settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
+
 for static_file in ROOT_STATIC_FILES:
     urlpatterns.append(
         path(
             static_file,
             serve,
-            {'document_root': settings.BASE_DIR / 'static', 'path': static_file}
+            {'document_root': static_doc_root, 'path': static_file}
         )
     )
 
