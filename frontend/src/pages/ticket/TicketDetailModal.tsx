@@ -1644,7 +1644,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                             src={getMediaUrl(a.voice_note)}
                                                                             controls
                                                                             preload="metadata"
-                                                                            className="w-full min-w-full block h-8 rounded outline-none"
+                                                                            className="w-full min-w-full block h-8 rounded outline-none dark:invert dark:hue-rotate-180"
                                                                         />
                                                                     </div>
                                                                 )}
@@ -1670,7 +1670,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                 src={getMediaUrl(a.voice_note)}
                                                                                 controls
                                                                                 preload="metadata"
-                                                                                className="w-full min-w-full block h-8 rounded outline-none"
+                                                                                className="w-full min-w-full block h-8 rounded outline-none dark:invert dark:hue-rotate-180"
                                                                             />
                                                                         </div>
                                                                     )}
@@ -2859,7 +2859,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
-                                                <audio src={getMediaUrl(editingAllocation.voice_note)} controls className="w-full h-8 rounded" />
+                                                <audio src={getMediaUrl(editingAllocation.voice_note)} controls className="w-full h-8 rounded dark:invert dark:hue-rotate-180" />
                                             </div>
                                         ) : (
                                             <div className="space-y-2">

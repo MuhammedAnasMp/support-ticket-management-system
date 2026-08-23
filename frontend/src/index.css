@@ -146,6 +146,12 @@ body {
   }
 }
 
+/* Dark Mode Native Audio Player Styling */
+.dark audio {
+  filter: invert(0.9) hue-rotate(180deg);
+  border-radius: 0.5rem;
+}
+
 /* Custom Scrollbar for premium feel */
 ::-webkit-scrollbar {
   width: 8px;
