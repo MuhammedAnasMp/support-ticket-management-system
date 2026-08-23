@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.views.static import serve
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
@@ -23,6 +24,8 @@ from django.views.generic import TemplateView
 # Monkeypatch DRF FileField to return relative URLs instead of absolute URLs,
 # preventing hardcoded localhost/127.0.0.1:8000 domains behind reverse proxies.
 from rest_framework.serializers import FileField
+
+
 def relative_to_representation(self, value):
     if not value:
         return None
@@ -30,6 +33,8 @@ def relative_to_representation(self, value):
         return value.url
     except AttributeError:
         return None
+
+
 FileField.to_representation = relative_to_representation
 
 
@@ -45,22 +50,24 @@ urlpatterns = [
 # Serve media files in development and production fallback
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.BASE_DIR / 'static')
+    urlpatterns += static(settings.STATIC_URL,
+                          document_root=settings.BASE_DIR / 'static')
 else:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.STATIC_URL,
+                          document_root=settings.STATIC_ROOT)
 
 # Serve root PWA static files directly if requested without /static/ prefix
-from django.views.static import serve
 ROOT_STATIC_FILES = [
-    'manifest.webmanifest',
-    'sw.js',
+    # 'manifest.webmanifest',
+    # 'sw.js',
     'icon-192x192.png',
-    'icon-512x512.png',
-    'favicon.svg',
-    'favicon.ico',
-    'ic_stat_notify.png',
+    # 'icon-512x512.png',
+    # 'favicon.svg',
+    # 'favicon.ico',
+    # 'ic_stat_notify.png',
 ]
-static_doc_root = settings.STATIC_ROOT if (hasattr(settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
+static_doc_root = settings.STATIC_ROOT if (hasattr(
+    settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
 
 for static_file in ROOT_STATIC_FILES:
     urlpatterns.append(
@@ -74,7 +81,8 @@ for static_file in ROOT_STATIC_FILES:
 # SPA routing fallback: serve React SPA index.html for all other paths
 urlpatterns += [
     re_path(
-        r'^(?!static/|media/|api/|admin/|' + '|'.join(ROOT_STATIC_FILES) + r').*$',
+        r'^(?!static/|media/|api/|admin/|' +
+        '|'.join(ROOT_STATIC_FILES) + r').*$',
         TemplateView.as_view(template_name='index.html'),
     )
 ]
