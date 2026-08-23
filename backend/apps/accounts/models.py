@@ -169,14 +169,6 @@ class WhatsAppLog(models.Model):
 @receiver(m2m_changed, sender=CustomUser.sub_departments.through)
 def update_user_approval(sender, instance, action, **kwargs):
     if action in ['post_add', 'post_remove', 'post_clear']:
-        has_subdepts = instance.sub_departments.exists()
-        # Update active flag based on sub_departments being assigned
-        if has_subdepts:
-            instance.active = True
-        else:
-            instance.active = False
-        instance.save(update_fields=['active'])
-
         # Relocate the profile image to correct department/sub-department folder
         move_profile_image_to_correct_path(instance)
 

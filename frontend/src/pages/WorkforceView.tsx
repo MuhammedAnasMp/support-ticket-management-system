@@ -143,6 +143,27 @@ export const WorkforceView: React.FC = () => {
 
   const canCreateAllDepts = hasPermission('create_ticket_all_departments');
 
+  const handleActivateEmployee = async (userId: number | string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/accounts/customuser/${userId}/`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ active: true })
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch {
+      setErrorMsg('Failed to activate employee account.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const userDepartmentIds = useMemo(() => {
     if (canCreateAllDepts) return null;
     if (!user?.sub_departments || user.sub_departments.length === 0) return null;
@@ -166,10 +187,10 @@ export const WorkforceView: React.FC = () => {
   }, [user, canCreateAllDepts, subDepartments]);
 
   const availableDepartments = useMemo(() => {
-    if (canCreateAllDepts) return departments;
+    if (canCreateAllDepts || (user as any)?.is_superuser) return departments;
     if (!userDepartmentIds) return [];
     return departments.filter(d => userDepartmentIds.has(Number(d.department_id)));
-  }, [departments, userDepartmentIds, canCreateAllDepts]);
+  }, [departments, userDepartmentIds, canCreateAllDepts, user]);
 
   // Modals state
   const [showModal, setShowModal] = useState(false);
@@ -193,6 +214,7 @@ export const WorkforceView: React.FC = () => {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [genRole, setGenRole] = useState('');
   const [genStore, setGenStore] = useState('');
+  const [genDepartment, setGenDepartment] = useState('');
   const [genSubDepartment, setGenSubDepartment] = useState('');
   const [genNaturesList, setGenNaturesList] = useState<string[]>([]);
   const [copiedToast, setCopiedToast] = useState(false);
@@ -200,8 +222,9 @@ export const WorkforceView: React.FC = () => {
   const genRoleObj = roles.find(r => String(r.role_id) === String(genRole));
   const genRoleName = (genRoleObj?.role_name || '').toLowerCase();
 
-  const isGenStoreManager = genRoleName === 'store manager';
-  const isGenTechnician = genRoleName === 'technician';
+  const isGenStoreManager = genRoleName.includes('store manager');
+  const isGenTechnician = genRoleName.includes('technician');
+  const isGenOfficeAdmin = genRoleName.includes('office admin') || genRoleName.includes('office administrator');
 
   const unmanagedStores = useMemo(() => {
     return stores.filter(s => !s.manager);
@@ -224,11 +247,22 @@ export const WorkforceView: React.FC = () => {
     }
   }, [showLinkModal, isGenTechnician, canCreateAllDepts, availableSubDepartments]);
 
+  useEffect(() => {
+    const isSuper = (user as any)?.is_superuser;
+    if (showLinkModal && isGenOfficeAdmin && (!canCreateAllDepts && !isSuper) && availableDepartments.length > 0) {
+      const defaultDeptId = String(availableDepartments[0].department_id);
+      if (genDepartment !== defaultDeptId) {
+        setGenDepartment(defaultDeptId);
+      }
+    }
+  }, [showLinkModal, isGenOfficeAdmin, canCreateAllDepts, user, availableDepartments]);
+
   const getGeneratedLink = () => {
     const baseUrl = `${window.location.origin}/signup`;
     const params = new URLSearchParams();
     if (genRole) params.set('role', genRole);
     if (genStore && isGenStoreManager) params.set('store', genStore);
+    if (genDepartment && isGenOfficeAdmin) params.set('department', genDepartment);
     if (genSubDepartment && isGenTechnician) {
       const subDeptObj = subDepartments.find(sd => String(sd.sub_department_id) === String(genSubDepartment));
       const parentDeptId = subDeptObj?.department?.department_id ?? subDeptObj?.department;
@@ -1985,15 +2019,32 @@ export const WorkforceView: React.FC = () => {
                   </select>
                 </div>
 
+                {isGenOfficeAdmin && (
+                  <div>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Target Department (Required)</label>
+                    <select
+                      value={genDepartment}
+                      disabled={(!canCreateAllDepts && !(user as any)?.is_superuser) && availableDepartments.length <= 1}
+                      onChange={e => setGenDepartment(e.target.value)}
+                      className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary disabled:opacity-60 cursor-pointer"
+                    >
+                      {(canCreateAllDepts || (user as any)?.is_superuser) && <option value="">Select Department (Required)</option>}
+                      {availableDepartments.map((d: any) => (
+                        <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {isGenStoreManager && (
                   <div>
-                    <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Target Store (Unmanaged Locations)</label>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Target Store (Required - Unmanaged Locations)</label>
                     <select
                       value={genStore}
                       onChange={e => setGenStore(e.target.value)}
                       className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
                     >
-                      <option value="">Select Store (Optional)</option>
+                      <option value="">Select Store (Required)</option>
                       {unmanagedStores.map(s => (
                         <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
                       ))}

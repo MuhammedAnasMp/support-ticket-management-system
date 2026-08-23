@@ -57,6 +57,9 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return WorkNature.objects.none()
 
+        # Exclude internal system 'office' subdepartments and 'office related' natures from management listing
+        queryset = queryset.exclude(nature_name__iexact='office related').exclude(sub_department__sub_department_name__iexact='office')
+
         if not user.is_superuser:
             user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
             can_view_all_depts = (
@@ -88,6 +91,10 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
         'worker__role'
     )
     serializer_class = NatureWorkerSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return queryset.exclude(nature__nature_name__iexact='office related').exclude(nature__sub_department__sub_department_name__iexact='office')
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:

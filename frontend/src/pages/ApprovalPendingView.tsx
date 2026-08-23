@@ -75,12 +75,16 @@ export const ApprovalPendingView: React.FC = () => {
           <Clock className="w-12 h-12 text-amber-500 animate-pulse" />
         </div>
 
-        <h2 className="text-2xl font-bold text-on-surface dark:text-dark-on-surface mb-2">
+        <h2 className="text-2xl font-bold text-on-surface dark:text-dark-on-surface mb-1">
           Waiting for Approval
         </h2>
 
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold text-xs rounded-full mb-3">
+          <span>Account Status: Pending Approval</span>
+        </div>
+
         <p className="text-sm text-on-surface-variant dark:text-dark-on-surface-variant mb-6">
-          Your account registration has been logged in our system. You will be activated once your sub-departments are assigned by the manager.
+          Your account registration has been logged in our system. An authorized administrator must review and approve your account.
         </p>
 
         {message && (

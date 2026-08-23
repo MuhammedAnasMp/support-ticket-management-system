@@ -45,6 +45,10 @@ class SubDepartmentViewSet(viewsets.ModelViewSet):
             return SubDepartmentWriteSerializer
         return SubDepartmentSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return queryset.exclude(sub_department_name__iexact='office')
+
 
 class ManagerViewSet(viewsets.ModelViewSet):
     from .serializers import ManagerSerializer

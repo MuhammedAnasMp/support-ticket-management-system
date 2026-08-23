@@ -136,6 +136,7 @@ class SignupView(APIView):
 
         # Create user
         try:
+            from django.utils import timezone
             role = Role.objects.get(pk=role_id) if role_id else None
 
             user = CustomUser.objects.create(
@@ -146,7 +147,8 @@ class SignupView(APIView):
                 phone=phone,
                 whatsapp_number=whatsapp_number,
                 role=role,
-                active=False  # Defaults to inactive / waiting approval
+                active=False,  # Defaults to inactive / waiting approval
+                profile_updated_at=timezone.now()
             )
             user.set_password(password)
             if profile_image:
@@ -156,6 +158,17 @@ class SignupView(APIView):
             # Assign role-based permission group
             from apps.accounts.serializers import assign_role_group
             assign_role_group(user)
+
+            store_id = request.data.get('store') or request.data.get('store_id')
+            if store_id:
+                from apps.stores.models import Store
+                try:
+                    store_obj = Store.objects.get(pk=store_id)
+                    store_obj.manager = user
+                    store_obj.save()
+                    user.accessible_stores.add(store_obj)
+                except Store.DoesNotExist:
+                    pass
 
             selected_sub_depts = set()
             if nature_id:
@@ -174,6 +187,7 @@ class SignupView(APIView):
 
             role_name = (role.role_name or '').lower() if role else ''
             is_tech = 'technician' in role_name or str(role_id) == '5'
+            is_office_admin = 'office admin' in role_name or 'office administrator' in role_name
 
             # Disconnect the m2m_changed signal temporarily to prevent auto-activation of the user
             from django.db.models.signals import m2m_changed
@@ -184,7 +198,7 @@ class SignupView(APIView):
             try:
                 if is_tech and selected_sub_depts:
                     user.sub_departments.set(list(selected_sub_depts))
-                elif department_id:
+                elif not is_office_admin and department_id:
                     sub_depts = SubDepartment.objects.filter(
                         department_id=department_id)
                     user.sub_departments.set(sub_depts)
@@ -195,59 +209,6 @@ class SignupView(APIView):
 
             from apps.accounts.serializers import ensure_office_admin_default_nature
             ensure_office_admin_default_nature(user, department_id=department_id)
-
-            is_office_admin = 'office admin' in role_name or 'office administrator' in role_name
-            if is_office_admin:
-                user.active = True
-                user.save()
-
-                from rest_framework.authtoken.models import Token
-                token, _ = Token.objects.get_or_create(user=user)
-
-                profile_image_url = user.profile_image.url if user.profile_image else None
-                managed_store = getattr(user, 'managed_store', None)
-                managed_store_data = None
-                if managed_store:
-                    managed_store_data = {
-                        'store_id': managed_store.store_id,
-                        'store_name': managed_store.store_name,
-                        'type': managed_store.type,
-                        'area_name': managed_store.area.area_name if managed_store.area else None,
-                        'address': managed_store.address,
-                        'phone': managed_store.phone,
-                        'whatsapp_number': managed_store.whatsapp_number,
-                        'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
-                        'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
-                        'store_updated_at': managed_store.store_updated_at.isoformat() if managed_store.store_updated_at else None,
-                    }
-
-                return Response({
-                    "message": "Registration successful! Logged in directly.",
-                    "approved": True,
-                    "token": token.key,
-                    "permissions": list(user.get_all_permissions()),
-                    "accessible_stores": [{"store_id": s.store_id, "store_name": s.store_name} for s in user.accessible_stores.all()],
-                    "user": {
-                        "user_id": user.user_id,
-                        "username": user.username,
-                        "email": user.email,
-                        "employee_no": user.employee_no,
-                        "full_name": user.full_name,
-                        "phone": user.phone,
-                        "whatsapp_number": user.whatsapp_number,
-                        "role": user.role.role_name if user.role else None,
-                        "active": user.active,
-                        "is_superuser": user.is_superuser,
-                        "profile_image": profile_image_url,
-                        "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
-                        "last_login": user.last_login.isoformat() if user.last_login else None,
-                        "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
-                        "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
-                        "tickets_created_count": user.created_tickets.count(),
-                        "tickets_assigned_count": user.allocations.count(),
-                        "managed_store": managed_store_data,
-                    }
-                }, status=status.HTTP_201_CREATED)
 
             return Response(
                 {"message": "Waiting for the approval.", "approved": False},

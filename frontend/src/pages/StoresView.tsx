@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, MapPin, Store,
   Building, Building2, ChevronRight, ChevronLeft, X, Loader2, AlertCircle,
-  Link as LinkIcon, Copy, Check, RefreshCw
+  Link as LinkIcon, Copy, Check, RefreshCw, UserCheck, CheckCircle, CheckCircle2, UserX
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { AgGridReact } from 'ag-grid-react';
@@ -51,6 +51,38 @@ export const StoresView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+  const [managerTab, setManagerTab] = useState<'all' | 'approved' | 'unapproved'>('all');
+
+  const handleActivateManager = async (userId: number | string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/stores/managers/${userId}/`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ active: true })
+      });
+      if (res.ok) {
+        fetchData();
+      } else {
+        await fetch(`${API_URL}/accounts/customuser/${userId}/`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Token ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ active: true })
+        });
+        fetchData();
+      }
+    } catch {
+      setErrorMsg('Failed to activate manager account.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 640);
@@ -184,6 +216,12 @@ export const StoresView: React.FC = () => {
     }
   }, [itemsPerPage, gridApi]);
 
+  useEffect(() => {
+    if (gridApi) {
+      gridApi.setGridOption('quickFilterText', search);
+    }
+  }, [search, gridApi]);
+
   const [showModal, setShowModal] = useState(false);
   const [showAreaModal, setShowAreaModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
@@ -207,14 +245,16 @@ export const StoresView: React.FC = () => {
       return (
         <div className="flex items-center gap-1.5 h-full">
           <Can permission={deletePermission} className='flex gap-1'>
+
             {subpage === 'managers' && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  e.nativeEvent?.stopImmediatePropagation?.();
                   handleOpenSwapModal(item);
                 }}
-                className="p-1.5 border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 rounded cursor-pointer transition-colors inline-flex"
+                className="p-1.5 .border .border-primary/30 .bg-primary/10 text-primary hover:bg-primary/20 rounded cursor-pointer transition-colors inline-flex"
                 title="Swap Manager Location"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -223,9 +263,10 @@ export const StoresView: React.FC = () => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                e.nativeEvent?.stopImmediatePropagation?.();
                 handleDelete(item.store_id || item.area_id || item.department_id || item.user_id);
               }}
-              className="p-1.5 border border-error/30 bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
+              className="p-1.5 .border .border-error/30 .bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -275,11 +316,23 @@ export const StoresView: React.FC = () => {
         { headerName: 'Email', field: 'email', flex: 1.5, minWidth: 160 },
         { headerName: 'Phone', field: 'phone', width: 120 },
         { headerName: 'WhatsApp', field: 'whatsapp_number', width: 120 },
-        { headerName: 'Assigned Store', field: 'store.store_name', flex: 1.5, minWidth: 160, valueGetter: (p: any) => p.data?.store?.store_name || 'No Store Assigned' }
+        { headerName: 'Assigned Store', field: 'store.store_name', flex: 1.5, minWidth: 160, valueGetter: (p: any) => p.data?.store?.store_name || 'No Store Assigned' },
+        {
+          headerName: 'Status',
+          field: 'active',
+          width: 120,
+          cellRenderer: (params: any) => (
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
+              }`}>
+              {params.value ? 'Approved' : 'Unapproved'}
+            </span>
+          )
+        }
       ];
       if (canDeleteSubpage && !isMobile) {
-        cols.push({ headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
+        cols.push({ headerName: 'Actions', width: 160, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
+      return cols;
       return cols;
     } else {
       // departments
@@ -332,7 +385,8 @@ export const StoresView: React.FC = () => {
     phone: '',
     whatsapp_number: '',
     store_id: '',
-    accessible_stores: [] as string[]
+    accessible_stores: [] as string[],
+    active: false
   });
   const [mgrStoreFilter, setMgrStoreFilter] = useState('');
   const [mgrAreaFilter, setMgrAreaFilter] = useState('');
@@ -408,7 +462,8 @@ export const StoresView: React.FC = () => {
       phone: '',
       whatsapp_number: '',
       store_id: '',
-      accessible_stores: []
+      accessible_stores: [],
+      active: false
     });
     setMgrStoreFilter('');
     setMgrAreaFilter('');
@@ -566,7 +621,8 @@ export const StoresView: React.FC = () => {
         phone: item.phone || '',
         whatsapp_number: item.whatsapp_number || '',
         store_id: item.store?.store_id || '',
-        accessible_stores: accStores
+        accessible_stores: accStores,
+        active: item.active ?? false
       });
       setMgrStoreFilter('');
       setMgrAreaFilter('');
@@ -598,6 +654,9 @@ export const StoresView: React.FC = () => {
     } else if (subpage === 'managers') {
       endpoint = editItem ? `${API_URL}/stores/managers/${editItem.user_id}/` : `${API_URL}/stores/managers/`;
       bodyData = { ...managerForm };
+      if (!bodyData.store_id) {
+        bodyData.store_id = null;
+      }
       if (editItem && !bodyData.password) {
         delete bodyData.password;
       }
@@ -740,8 +799,33 @@ export const StoresView: React.FC = () => {
   };
 
   const filteredData = data.filter(item => {
-    const text = (item.store_name || item.area_name || item.department_name || item.full_name || item.email || '').toLowerCase();
-    return text.includes(search.toLowerCase());
+    if (subpage === 'managers') {
+      if (managerTab === 'approved' && !item.active) return false;
+      if (managerTab === 'unapproved' && item.active) return false;
+    }
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const fieldsToSearch = [
+      item.employee_no,
+      item.full_name,
+      item.username,
+      item.email,
+      item.phone,
+      item.whatsapp_number,
+      item.store_id,
+      item.store_name,
+      item.store?.store_name,
+      item.store?.store_id,
+      item.area_id,
+      item.area_name,
+      item.area?.area_name,
+      item.department_id,
+      item.department_name,
+      item.manager?.full_name,
+      item.role?.role_name || item.role,
+      item.active ? 'approved active' : 'unapproved pending'
+    ];
+    return fieldsToSearch.some(val => val && String(val).toLowerCase().includes(q));
   });
 
   const totalItems = filteredData.length;
@@ -756,7 +840,7 @@ export const StoresView: React.FC = () => {
   return (
     <div className="space-y-4">
       {errorMsg && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-3">
+        <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded flex items-center gap-3">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <span className="text-sm font-semibold">{errorMsg}</span>
         </div>
@@ -764,15 +848,52 @@ export const StoresView: React.FC = () => {
 
       {/* Top Bar */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-sm w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
-          <input
-            type="text"
-            placeholder="Search here..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-          />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 max-w-lg w-full">
+          <div className="relative max-w-sm w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
+            <input
+              type="text"
+              placeholder="Search here..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full text-sm bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded pl-10 pr-4 py-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+            />
+          </div>
+
+          {subpage === 'managers' && (
+            <div className="flex items-center gap-1 p-1 bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded shrink-0">
+              <button
+                type="button"
+                onClick={() => setManagerTab('all')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'all'
+                  ? 'bg-primary text-white'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setManagerTab('approved')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'approved'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+              >
+                Approved
+              </button>
+              <button
+                type="button"
+                onClick={() => setManagerTab('unapproved')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer ${managerTab === 'unapproved'
+                  ? 'bg-amber-600 text-white'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+              >
+                Unapproved
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="hidden sm:flex items-center gap-2">
@@ -830,7 +951,7 @@ export const StoresView: React.FC = () => {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-16 w-full bg-surface-container-high dark:bg-dark-surface-container-low animate-pulse rounded-xl" />
+            <div key={i} className="h-16 w-full bg-surface-container-high dark:bg-dark-surface-container-low animate-pulse rounded" />
           ))}
         </div>
       ) : (
@@ -905,6 +1026,7 @@ export const StoresView: React.FC = () => {
                 rowData={filteredData}
                 columnDefs={columnDefs}
                 defaultColDef={defaultColDef}
+                quickFilterText={search}
                 pagination={true}
                 paginationPageSize={itemsPerPage}
                 suppressPaginationPanel={true}
@@ -913,7 +1035,12 @@ export const StoresView: React.FC = () => {
                 rowHeight={52}
                 headerHeight={44}
                 rowClass="cursor-pointer"
-                onRowClicked={(event) => {
+                onRowClicked={(event: any) => {
+                  const colId = event.column?.getColId();
+                  const targetEl = event.event?.target as HTMLElement | undefined;
+                  if (colId === 'actions' || targetEl?.closest('button')) {
+                    return;
+                  }
                   if (event.data) {
                     handleOpenEdit(event.data);
                   }
@@ -1132,7 +1259,7 @@ export const StoresView: React.FC = () => {
 
                     {/* Locate Me Section */}
                     {(!storeForm.latitude || !storeForm.longitude) && (
-                      <div className="flex items-center justify-between gap-2 p-2 border border-dashed border-primary/40 rounded-xl bg-primary/5">
+                      <div className="flex items-center justify-between gap-2 p-2 border border-dashed border-primary/40 rounded bg-primary/5">
                         <span className="text-[11px] text-primary font-medium pl-1">Autofill coords & address</span>
                         <button
                           type="button"
@@ -1314,6 +1441,34 @@ export const StoresView: React.FC = () => {
                       </div>
                     </div>
 
+                    <Can permission="stores.delete_store">
+                      <div className="p-3.5 rounded-lg border border-outline-variant bg-surface-container-low flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-full ${managerForm.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                            {managerForm.active ? <CheckCircle2 className="w-5 h-5" /> : <UserX className="w-5 h-5" />}
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-on-surface">
+                              Account Status: {managerForm.active ? 'Active & Approved' : 'Pending Approval'}
+                            </div>
+                            <div className="text-[11px] text-on-surface-variant">
+                              {managerForm.active ? 'User can sign in and perform assigned duties' : 'User account sign-in access is suspended'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={managerForm.active}
+                            onChange={e => setManagerForm({ ...managerForm, active: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                      </div>
+                    </Can>
+
                     {editItem && (
                       <div className="p-3 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg flex items-center justify-between">
                         <div>
@@ -1356,234 +1511,243 @@ export const StoresView: React.FC = () => {
                         </select>
                       </div>
                     </Can>
-                    {(() => {
-                      const selectedStoreObj = extraData.find((s: any) => String(s.store_id) === String(managerForm.store_id));
-                      const targetManager = selectedStoreObj?.manager;
-                      if (!targetManager || String(targetManager.user_id) === String(editItem?.user_id)) return null;
+                    <div>
 
-                      const prevStoreName = editItem?.store?.store_name;
 
-                      return (
-                        <div className="p-3.5 bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/40 rounded-xl space-y-3">
-                          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-xs">
-                            <AlertCircle className="w-4 h-4 shrink-0" />
-                            <span>Store Conflict — Reassign {targetManager.full_name}</span>
-                          </div>
-                          <p className="text-xs text-on-surface dark:text-dark-on-surface">
-                            <strong>{selectedStoreObj.store_id} - {selectedStoreObj.store_name}</strong> is currently assigned to <strong>{targetManager.full_name}</strong>.
-                          </p>
-                          <div className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant">
-                            What should happen to <strong>{targetManager.full_name}</strong>?
-                          </div>
+                      <Can permission="accounts.can_edit_full_manager_details">
+                        {(() => {
+                          const selectedStoreObj = extraData.find((s: any) => String(s.store_id) === String(managerForm.store_id));
+                          const targetManager = selectedStoreObj?.manager;
+                          if (!targetManager || String(targetManager.user_id) === String(editItem?.user_id)) return null;
 
-                          <div className="space-y-2">
-                            <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
-                              <input
-                                type="radio"
-                                name="conflictAction"
-                                value="swap"
-                                checked={conflictAction === 'swap'}
-                                onChange={() => setConflictAction('swap')}
-                                className="text-primary focus:ring-primary"
-                              />
-                              <span>
-                                <strong>Swap Stores:</strong> Move {targetManager.full_name} to {prevStoreName ? `"${prevStoreName}"` : 'No Store (Unassigned)'}
-                              </span>
-                            </label>
+                          const prevStoreName = editItem?.store?.store_name;
 
-                            <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
-                              <input
-                                type="radio"
-                                name="conflictAction"
-                                value="unassign"
-                                checked={conflictAction === 'unassign'}
-                                onChange={() => setConflictAction('unassign')}
-                                className="text-primary focus:ring-primary"
-                              />
-                              <span>
-                                <strong>Unassign:</strong> Leave {targetManager.full_name} unassigned (No Store)
-                              </span>
-                            </label>
+                          return (
+                            <div className="p-3.5 bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/40 rounded space-y-3">
+                              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-xs">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <span>Store Conflict — Reassign {targetManager.full_name}</span>
+                              </div>
+                              <p className="text-xs text-on-surface dark:text-dark-on-surface">
+                                <strong>{selectedStoreObj.store_id} - {selectedStoreObj.store_name}</strong> is currently assigned to <strong>{targetManager.full_name}</strong>.
+                              </p>
+                              <div className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant">
+                                What should happen to <strong>{targetManager.full_name}</strong>?
+                              </div>
 
-                            <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
-                              <input
-                                type="radio"
-                                name="conflictAction"
-                                value="reassign"
-                                checked={conflictAction === 'reassign'}
-                                onChange={() => setConflictAction('reassign')}
-                                className="text-primary focus:ring-primary"
-                              />
-                              <span>
-                                <strong>Reassign to another store:</strong>
-                              </span>
-                            </label>
+                              <div className="space-y-2">
+                                <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
+                                  <input
+                                    type="radio"
+                                    name="conflictAction"
+                                    value="swap"
+                                    checked={conflictAction === 'swap'}
+                                    onChange={() => setConflictAction('swap')}
+                                    className="text-primary focus:ring-primary"
+                                  />
+                                  <span>
+                                    <strong>Swap Stores:</strong> Move {targetManager.full_name} to {prevStoreName ? `"${prevStoreName}"` : 'No Store (Unassigned)'}
+                                  </span>
+                                </label>
 
-                            {conflictAction === 'reassign' && (
-                              <select
-                                value={conflictReassignStoreId}
-                                onChange={e => setConflictReassignStoreId(e.target.value)}
-                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
-                              >
-                                <option value="">Select New Store for {targetManager.full_name}</option>
-                                {extraData
-                                  .filter((s: any) => {
-                                    if (String(s.store_id) === String(managerForm.store_id)) return false;
-                                    if (!s.manager) return true;
-                                    return editItem?.store?.store_id && String(s.store_id) === String(editItem.store.store_id);
-                                  })
-                                  .map((s: any) => (
-                                    <option key={s.store_id} value={s.store_id}>
-                                      {s.store_id} - {s.store_name}{s.manager ? ` (Manager: ${s.manager.full_name})` : ' (Unmanaged)'}
-                                    </option>
-                                  ))
-                                }
-                              </select>
-                            )}
-                          </div>
+                                <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
+                                  <input
+                                    type="radio"
+                                    name="conflictAction"
+                                    value="unassign"
+                                    checked={conflictAction === 'unassign'}
+                                    onChange={() => setConflictAction('unassign')}
+                                    className="text-primary focus:ring-primary"
+                                  />
+                                  <span>
+                                    <strong>Unassign:</strong> Leave {targetManager.full_name} unassigned (No Store)
+                                  </span>
+                                </label>
 
-                          {/* Live Reassignment Outcome Summary */}
-                          <div className="pt-2 border-t border-amber-500/30 text-xs space-y-1 text-on-surface dark:text-dark-on-surface">
-                            <div className="font-semibold text-amber-700 dark:text-amber-300 text-[11px] uppercase tracking-wider">Result Summary:</div>
-                            <div>• <strong>{editItem?.full_name || 'Manager'}</strong> ➔ <span className="text-primary font-medium">{selectedStoreObj.store_id} - {selectedStoreObj.store_name}</span></div>
-                            {conflictAction === 'swap' && (
-                              <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-primary font-medium">{editItem?.store ? `${editItem.store.store_id} - ${editItem.store.store_name}` : 'No Store (Unassigned)'}</span></div>
-                            )}
-                            {conflictAction === 'unassign' && (
-                              <>
-                                <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-amber-600 dark:text-amber-400 font-medium">No Store (Unassigned)</span></div>
-                                {editItem?.store && (
-                                  <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant italic">Note: Store "{editItem.store.store_name}" will have no manager assigned (empty).</div>
+                                <label className="flex items-center gap-2.5 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer select-none">
+                                  <input
+                                    type="radio"
+                                    name="conflictAction"
+                                    value="reassign"
+                                    checked={conflictAction === 'reassign'}
+                                    onChange={() => setConflictAction('reassign')}
+                                    className="text-primary focus:ring-primary"
+                                  />
+                                  <span>
+                                    <strong>Reassign to another store:</strong>
+                                  </span>
+                                </label>
+
+                                {conflictAction === 'reassign' && (
+                                  <select
+                                    value={conflictReassignStoreId}
+                                    onChange={e => setConflictReassignStoreId(e.target.value)}
+                                    className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
+                                  >
+                                    <option value="">Select New Store for {targetManager.full_name}</option>
+                                    {extraData
+                                      .filter((s: any) => {
+                                        if (String(s.store_id) === String(managerForm.store_id)) return false;
+                                        if (!s.manager) return true;
+                                        return editItem?.store?.store_id && String(s.store_id) === String(editItem.store.store_id);
+                                      })
+                                      .map((s: any) => (
+                                        <option key={s.store_id} value={s.store_id}>
+                                          {s.store_id} - {s.store_name}{s.manager ? ` (Manager: ${s.manager.full_name})` : ' (Unmanaged)'}
+                                        </option>
+                                      ))
+                                    }
+                                  </select>
                                 )}
-                              </>
-                            )}
-                            {conflictAction === 'reassign' && (
-                              <>
-                                {(() => {
-                                  const reassignedStoreObj = extraData.find((s: any) => String(s.store_id) === String(conflictReassignStoreId));
-                                  return (
-                                    <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-primary font-medium">{reassignedStoreObj ? `${reassignedStoreObj.store_id} - ${reassignedStoreObj.store_name}` : 'Select a store above'}</span></div>
-                                  );
-                                })()}
-                                {editItem?.store && String(editItem.store.store_id) !== String(conflictReassignStoreId) && (
-                                  <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant italic">Note: Store "{editItem.store.store_name}" will have no manager assigned (empty).</div>
+                              </div>
+
+                              {/* Live Reassignment Outcome Summary */}
+                              <div className="pt-2 border-t border-amber-500/30 text-xs space-y-1 text-on-surface dark:text-dark-on-surface">
+                                <div className="font-semibold text-amber-700 dark:text-amber-300 text-[11px] uppercase tracking-wider">Result Summary:</div>
+                                <div>• <strong>{editItem?.full_name || 'Manager'}</strong> ➔ <span className="text-primary font-medium">{selectedStoreObj.store_id} - {selectedStoreObj.store_name}</span></div>
+                                {conflictAction === 'swap' && (
+                                  <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-primary font-medium">{editItem?.store ? `${editItem.store.store_id} - ${editItem.store.store_name}` : 'No Store (Unassigned)'}</span></div>
                                 )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Accessible Stores section */}
-                    <div className="flex flex-col flex-1 min-h-0 pt-3 border-t border-outline-variant/60 mt-2 space-y-2">
-                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5 shrink-0">
-                        <Building2 className="w-4 h-4" />
-                        Accessible Stores ({managerForm.accessible_stores.length})
-                      </h4>
-
-                      <div className="grid grid-cols-2 gap-2 shrink-0">
-                        <div className="relative">
-                          <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
-                          <input
-                            type="text"
-                            placeholder="Filter stores..."
-                            value={mgrStoreFilter}
-                            onChange={e => setMgrStoreFilter(e.target.value)}
-                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant rounded pl-8 pr-2 py-1.5 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary"
-                          />
-                        </div>
-                        <select
-                          value={mgrAreaFilter}
-                          onChange={e => setMgrAreaFilter(e.target.value)}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant rounded px-2 py-1.5 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                        >
-                          <option value="">All Areas</option>
-                          <option value="NO_AREA">Unassigned Area</option>
-                          {mgrAreas.map((a: any) => (
-                            <option key={a.area_id} value={a.area_id}>{a.area_name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {(() => {
-                        const storeList: any[] = extraData || [];
-                        const filteredStores = storeList.filter((s: any) => {
-                          const matchesSearch = (s.store_name || '').toLowerCase().includes(mgrStoreFilter.toLowerCase());
-                          if (!matchesSearch) return false;
-                          if (!mgrAreaFilter) return true;
-                          if (mgrAreaFilter === 'NO_AREA') return !s.area;
-                          const storeAreaId = s.area?.area_id ?? s.area;
-                          return String(storeAreaId) === String(mgrAreaFilter);
-                        });
-
-                        return (
-                          <div className="flex flex-col flex-1 min-h-0">
-                            <div className="flex items-center justify-between gap-2 mb-1.5 shrink-0 text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant">
-                              <span>{filteredStores.length} store(s)</span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const filteredIds = filteredStores.map((s: any) => String(s.store_id));
-                                    const union = Array.from(new Set([...managerForm.accessible_stores.map(String), ...filteredIds]));
-                                    setManagerForm({ ...managerForm, accessible_stores: union });
-                                  }}
-                                  className="text-primary hover:underline font-semibold cursor-pointer border-none bg-transparent"
-                                >
-                                  + Select All
-                                </button>
-                                <span>|</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const filteredIdsSet = new Set(filteredStores.map((s: any) => String(s.store_id)));
-                                    const remaining = managerForm.accessible_stores.filter(id => !filteredIdsSet.has(String(id)));
-                                    setManagerForm({ ...managerForm, accessible_stores: remaining });
-                                  }}
-                                  className="text-error hover:underline font-semibold cursor-pointer border-none bg-transparent"
-                                >
-                                  - Deselect
-                                </button>
+                                {conflictAction === 'unassign' && (
+                                  <>
+                                    <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-amber-600 dark:text-amber-400 font-medium">No Store (Unassigned)</span></div>
+                                    {editItem?.store && (
+                                      <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant italic">Note: Store "{editItem.store.store_name}" will have no manager assigned (empty).</div>
+                                    )}
+                                  </>
+                                )}
+                                {conflictAction === 'reassign' && (
+                                  <>
+                                    {(() => {
+                                      const reassignedStoreObj = extraData.find((s: any) => String(s.store_id) === String(conflictReassignStoreId));
+                                      return (
+                                        <div>• <strong>{targetManager.full_name}</strong> ➔ <span className="text-primary font-medium">{reassignedStoreObj ? `${reassignedStoreObj.store_id} - ${reassignedStoreObj.store_name}` : 'Select a store above'}</span></div>
+                                      );
+                                    })()}
+                                    {editItem?.store && String(editItem.store.store_id) !== String(conflictReassignStoreId) && (
+                                      <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant italic">Note: Store "{editItem.store.store_name}" will have no manager assigned (empty).</div>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </div>
+                          );
+                        })()}
 
-                            <div className="flex-1 overflow-y-auto border border-outline-variant rounded p-2.5 space-y-1.5 bg-surface-container-low dark:bg-dark-surface-container-low min-h-[160px] max-h-[240px]">
-                              {filteredStores.map((s: any) => {
-                                const checked = managerForm.accessible_stores.some(id => String(id) === String(s.store_id));
-                                const areaName = s.area?.area_name;
-                                return (
-                                  <label key={s.store_id} className="flex items-center justify-between gap-2 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer hover:text-primary py-0.5 select-none">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={e => {
-                                          const sid = String(s.store_id);
-                                          const newList = e.target.checked
-                                            ? [...managerForm.accessible_stores.filter(id => String(id) !== sid), sid]
-                                            : managerForm.accessible_stores.filter(id => String(id) !== sid);
-                                          setManagerForm({ ...managerForm, accessible_stores: newList });
-                                        }}
-                                        className="w-3.5 h-3.5 text-primary border-outline-variant rounded focus:ring-primary shrink-0 cursor-pointer"
-                                      />
-                                      <span className="truncate">{s.store_id} - {s.store_name}</span>
-                                    </div>
-                                    {areaName && (
-                                      <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded shrink-0">
-                                        {areaName}
-                                      </span>
-                                    )}
-                                  </label>
-                                );
-                              })}
-                              {filteredStores.length === 0 && (
-                                <div className="text-center py-6 text-xs text-on-surface-variant">No stores match filter criteria</div>
-                              )}
+                        {/* Accessible Stores section */}
+
+
+
+                        <div className="flex flex-col flex-1 min-h-0 pt-3 border-t border-outline-variant/60 mt-2 space-y-2">
+                          <h4 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                            <Building2 className="w-4 h-4" />
+                            Accessible Stores ({managerForm.accessible_stores.length})
+                          </h4>
+
+                          <div className="grid grid-cols-2 gap-2 shrink-0">
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
+                              <input
+                                type="text"
+                                placeholder="Filter stores..."
+                                value={mgrStoreFilter}
+                                onChange={e => setMgrStoreFilter(e.target.value)}
+                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant rounded pl-8 pr-2 py-1.5 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary"
+                              />
                             </div>
+                            <select
+                              value={mgrAreaFilter}
+                              onChange={e => setMgrAreaFilter(e.target.value)}
+                              className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant rounded px-2 py-1.5 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                            >
+                              <option value="">All Areas</option>
+                              <option value="NO_AREA">Unassigned Area</option>
+                              {mgrAreas.map((a: any) => (
+                                <option key={a.area_id} value={a.area_id}>{a.area_name}</option>
+                              ))}
+                            </select>
                           </div>
-                        );
-                      })()}
+
+                          {(() => {
+                            const storeList: any[] = extraData || [];
+                            const filteredStores = storeList.filter((s: any) => {
+                              const matchesSearch = (s.store_name || '').toLowerCase().includes(mgrStoreFilter.toLowerCase());
+                              if (!matchesSearch) return false;
+                              if (!mgrAreaFilter) return true;
+                              if (mgrAreaFilter === 'NO_AREA') return !s.area;
+                              const storeAreaId = s.area?.area_id ?? s.area;
+                              return String(storeAreaId) === String(mgrAreaFilter);
+                            });
+
+                            return (
+                              <div className="flex flex-col flex-1 min-h-0">
+                                <div className="flex items-center justify-between gap-2 mb-1.5 shrink-0 text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant">
+                                  <span>{filteredStores.length} store(s)</span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const filteredIds = filteredStores.map((s: any) => String(s.store_id));
+                                        const union = Array.from(new Set([...managerForm.accessible_stores.map(String), ...filteredIds]));
+                                        setManagerForm({ ...managerForm, accessible_stores: union });
+                                      }}
+                                      className="text-primary hover:underline font-semibold cursor-pointer border-none bg-transparent"
+                                    >
+                                      + Select All
+                                    </button>
+                                    <span>|</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const filteredIdsSet = new Set(filteredStores.map((s: any) => String(s.store_id)));
+                                        const remaining = managerForm.accessible_stores.filter(id => !filteredIdsSet.has(String(id)));
+                                        setManagerForm({ ...managerForm, accessible_stores: remaining });
+                                      }}
+                                      className="text-error hover:underline font-semibold cursor-pointer border-none bg-transparent"
+                                    >
+                                      - Deselect
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto border border-outline-variant rounded p-2.5 space-y-1.5 bg-surface-container-low dark:bg-dark-surface-container-low min-h-[160px] max-h-[240px]">
+                                  {filteredStores.map((s: any) => {
+                                    const checked = managerForm.accessible_stores.some(id => String(id) === String(s.store_id));
+                                    const areaName = s.area?.area_name;
+                                    return (
+                                      <label key={s.store_id} className="flex items-center justify-between gap-2 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer hover:text-primary py-0.5 select-none">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={e => {
+                                              const sid = String(s.store_id);
+                                              const newList = e.target.checked
+                                                ? [...managerForm.accessible_stores.filter(id => String(id) !== sid), sid]
+                                                : managerForm.accessible_stores.filter(id => String(id) !== sid);
+                                              setManagerForm({ ...managerForm, accessible_stores: newList });
+                                            }}
+                                            className="w-3.5 h-3.5 text-primary border-outline-variant rounded focus:ring-primary shrink-0 cursor-pointer"
+                                          />
+                                          <span className="truncate">{s.store_id} - {s.store_name}</span>
+                                        </div>
+                                        {areaName && (
+                                          <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded shrink-0">
+                                            {areaName}
+                                          </span>
+                                        )}
+                                      </label>
+                                    );
+                                  })}
+                                  {filteredStores.length === 0 && (
+                                    <div className="text-center py-6 text-xs text-on-surface-variant">No stores match filter criteria</div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </Can>
                     </div>
                   </>
                 ) : (
@@ -1643,378 +1807,385 @@ export const StoresView: React.FC = () => {
               </form>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        )
+        }
+      </AnimatePresence >
 
       {/* Standalone Area Management Modal Popup (Creation + Display List) */}
       <AnimatePresence>
-        {showAreaModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowAreaModal(false)}
-              className="absolute inset-0 bg-black"
-            />
+        {
+          showAreaModal && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.6 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowAreaModal(false)}
+                className="absolute inset-0 bg-black"
+              />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant shrink-0">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-primary" />
-                  <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
-                    Manage Areas
-                  </h3>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md rounded shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant shrink-0">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-primary" />
+                    <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
+                      Manage Areas
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setShowAreaModal(false)}
+                    className="p-1 rounded-lg text-outline hover:bg-surface-container-high cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShowAreaModal(false)}
-                  className="p-1 rounded-lg text-outline hover:bg-surface-container-high cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              {/* Input section to add new area */}
-              <form onSubmit={handleAreaSubmit} className="space-y-3 shrink-0">
-                <div>
-                  <label className="block text-xs font-semibold text-outline mb-1.5">
-                    {editingAreaId ? 'Edit Area Name' : 'Create New Area'}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      required
-                      type="text"
-                      placeholder="e.g. Hawally Area"
-                      value={areaForm.area_name}
-                      onChange={e => setAreaForm({ area_name: e.target.value })}
-                      className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                    />
-                    <button
-                      type="submit"
-                      disabled={actionLoading}
-                      className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer shrink-0"
-                    >
-                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingAreaId ? <Edit2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                      {editingAreaId ? 'Save' : 'Add'}
-                    </button>
-                    {editingAreaId && (
+                {/* Input section to add new area */}
+                <form onSubmit={handleAreaSubmit} className="space-y-3 shrink-0">
+                  <div>
+                    <label className="block text-xs font-semibold text-outline mb-1.5">
+                      {editingAreaId ? 'Edit Area Name' : 'Create New Area'}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        required
+                        type="text"
+                        placeholder="e.g. Hawally Area"
+                        value={areaForm.area_name}
+                        onChange={e => setAreaForm({ area_name: e.target.value })}
+                        className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                      />
                       <button
-                        type="button"
-                        onClick={() => {
-                          setEditingAreaId(null);
-                          setAreaForm({ area_name: '' });
-                        }}
-                        className="px-3 py-2.5 border border-outline-variant text-xs font-semibold rounded-lg hover:bg-surface-container-high cursor-pointer"
+                        type="submit"
+                        disabled={actionLoading}
+                        className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer shrink-0"
                       >
-                        Cancel
+                        {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingAreaId ? <Edit2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                        {editingAreaId ? 'Save' : 'Add'}
                       </button>
-                    )}
+                      {editingAreaId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingAreaId(null);
+                            setAreaForm({ area_name: '' });
+                          }}
+                          className="px-3 py-2.5 border border-outline-variant text-xs font-semibold rounded-lg hover:bg-surface-container-high cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </form>
+                </form>
 
-              {/* Display existing areas */}
-              <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-outline-variant dark:border-dark-outline-variant min-h-[140px]">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] font-bold text-outline uppercase tracking-wider">
-                    Existing Areas ({areaList.length})
-                  </span>
-                </div>
-
-                {areaList.length === 0 ? (
-                  <p className="text-xs text-outline italic text-center py-6">No areas created yet.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                    {areaList.map((area: any) => (
-                      <div
-                        key={area.area_id}
-                        className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/60 rounded-lg hover:border-outline transition-colors text-xs"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
-                          <span className="font-mono text-[10px] text-outline"> have  {area.store_count} locations</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingAreaId(area.area_id);
-                              setAreaForm({ area_name: area.area_name });
-                            }}
-                            className="p-1 text-primary hover:bg-primary/10 rounded transition-colors cursor-pointer"
-                            title="Edit Area"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteArea(area.area_id)}
-                            className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
-                            title="Delete Area"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                {/* Display existing areas */}
+                <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-outline-variant dark:border-dark-outline-variant min-h-[140px]">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-bold text-outline uppercase tracking-wider">
+                      Existing Areas ({areaList.length})
+                    </span>
                   </div>
-                )}
-              </div>
 
-              <div className="flex justify-end pt-2 border-t border-outline-variant dark:border-dark-outline-variant shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowAreaModal(false)}
-                  className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                  {areaList.length === 0 ? (
+                    <p className="text-xs text-outline italic text-center py-6">No areas created yet.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                      {areaList.map((area: any) => (
+                        <div
+                          key={area.area_id}
+                          className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/60 rounded-lg hover:border-outline transition-colors text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
+                            <span className="font-mono text-[10px] text-outline"> have  {area.store_count} locations</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAreaId(area.area_id);
+                                setAreaForm({ area_name: area.area_name });
+                              }}
+                              className="p-1 text-primary hover:bg-primary/10 rounded transition-colors cursor-pointer"
+                              title="Edit Area"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteArea(area.area_id)}
+                              className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                              title="Delete Area"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-2 border-t border-outline-variant dark:border-dark-outline-variant shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowAreaModal(false)}
+                    className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )
+        }
+      </AnimatePresence >
 
       {/* ─── Manager Registration Link Generator Modal ─── */}
       <AnimatePresence>
-        {showLinkModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowLinkModal(false)}
-              className="absolute inset-0 bg-inverse-surface"
-            />
+        {
+          showLinkModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowLinkModal(false)}
+                className="absolute inset-0 bg-inverse-surface"
+              />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded-xl shadow-2xl overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <LinkIcon className="w-4 h-4" />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded shadow-2xl overflow-hidden"
+              >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                      <LinkIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-on-surface dark:text-dark-on-surface">Generate Manager Registration Link</h3>
+                      <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">Create signup links for Store Managers</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-on-surface dark:text-dark-on-surface">Generate Manager Registration Link</h3>
-                    <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">Create signup links for Store Managers</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowLinkModal(false)}
-                  className="p-1 rounded text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">Target Store (Unmanaged Locations)</label>
-                  <select
-                    required
-                    value={genStore}
-                    onChange={e => setGenStore(e.target.value)}
-                    className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  <button
+                    onClick={() => setShowLinkModal(false)}
+                    className="p-1 rounded text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer"
                   >
-                    <option value="">Select Store (Optional)</option>
-                    {unmanagedStores.map((s: any) => (
-                      <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
-                    ))}
-                  </select>
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
 
-                <div className="pt-2">
-                  <label className="block text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">Generated Dynamic Link</label>
-                  <div className="flex items-center gap-2">
-                    <input
-
-                      type="text"
-                      readOnly
-                      value={getGeneratedLink()}
-                      className="w-full text-xs font-mono bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-primary focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(getGeneratedLink());
-                        setCopiedToast(true);
-                        setTimeout(() => setCopiedToast(false), 2000);
-                      }}
-                      className="px-3.5 py-2.5 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors shadow-xs"
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">Target Store (Required - Unmanaged Locations)</label>
+                    <select
+                      required
+                      value={genStore}
+                      onChange={e => setGenStore(e.target.value)}
+                      className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
                     >
-                      {copiedToast ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span>{copiedToast ? 'Copied!' : 'Copy'}</span>
-                    </button>
+                      <option value="">Select Store (Required)</option>
+                      {unmanagedStores.map((s: any) => (
+                        <option key={s.store_id} value={s.store_id}>{s.store_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="block text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">Generated Dynamic Link</label>
+                    <div className="flex items-center gap-2">
+                      <input
+
+                        type="text"
+                        readOnly
+                        value={getGeneratedLink()}
+                        className="w-full text-xs font-mono bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-primary focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(getGeneratedLink());
+                          setCopiedToast(true);
+                          setTimeout(() => setCopiedToast(false), 2000);
+                        }}
+                        className="px-3.5 py-2.5 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors shadow-xs"
+                      >
+                        {copiedToast ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        <span>{copiedToast ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex justify-end px-6 py-4 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
-                <button
-                  type="button"
-                  onClick={() => setShowLinkModal(false)}
-                  className="px-3.5 py-2 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                <div className="flex justify-end px-6 py-4 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkModal(false)}
+                    className="px-3.5 py-2 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )
+        }
+      </AnimatePresence >
 
       {/* ─── Swap Store Managers Modal ─── */}
       <AnimatePresence>
-        {showSwapModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowSwapModal(false)}
-              className="absolute inset-0 bg-inverse-surface"
-            />
+        {
+          showSwapModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowSwapModal(false)}
+                className="absolute inset-0 bg-inverse-surface"
+              />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded-xl shadow-2xl overflow-hidden p-6 space-y-5"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <RefreshCw className="w-4 h-4" />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded shadow-2xl overflow-hidden p-6 space-y-5"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                      <RefreshCw className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-on-surface dark:text-dark-on-surface">Swap Store Managers</h3>
+                      <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">Reassign store locations between two managers</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-on-surface dark:text-dark-on-surface">Swap Store Managers</h3>
-                    <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">Reassign store locations between two managers</p>
+                  <button
+                    onClick={() => setShowSwapModal(false)}
+                    className="p-1 rounded text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {swapErrorMsg && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs rounded-lg flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{swapErrorMsg}</span>
                   </div>
-                </div>
-                <button
-                  onClick={() => setShowSwapModal(false)}
-                  className="p-1 rounded text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+                )}
 
-              {swapErrorMsg && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs rounded-lg flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{swapErrorMsg}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Manager A */}
-                <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-xl space-y-2">
-                  <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager A</label>
-                  <select
-                    value={swapManagerA}
-                    onChange={e => setSwapManagerA(e.target.value)}
-                    className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
-                  >
-                    <option value="">Select Manager A</option>
-                    {data.map((m: any) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.full_name} ({m.store?.store_name || 'No Store'})
-                      </option>
-                    ))}
-                  </select>
-                  {(() => {
-                    const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
-                    return (
-                      <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
-                        Current Store: <strong className="text-on-surface dark:text-dark-on-surface">{mA?.store?.store_name || 'Unassigned'}</strong>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Manager B */}
-                <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-xl space-y-2">
-                  <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager B</label>
-                  <select
-                    value={swapManagerB}
-                    onChange={e => setSwapManagerB(e.target.value)}
-                    className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
-                  >
-                    <option value="">Select Manager B</option>
-                    {data
-                      .filter((m: any) => String(m.user_id) !== String(swapManagerA))
-                      .map((m: any) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Manager A */}
+                  <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded space-y-2">
+                    <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager A</label>
+                    <select
+                      value={swapManagerA}
+                      onChange={e => setSwapManagerA(e.target.value)}
+                      className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
+                    >
+                      <option value="">Select Manager A</option>
+                      {data.map((m: any) => (
                         <option key={m.user_id} value={m.user_id}>
                           {m.full_name} ({m.store?.store_name || 'No Store'})
                         </option>
                       ))}
-                  </select>
-                  {(() => {
-                    const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
-                    return (
-                      <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
-                        Current Store: <strong className="text-on-surface dark:text-dark-on-surface">{mB?.store?.store_name || 'Unassigned'}</strong>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Swap Result Preview */}
-              {swapManagerA && swapManagerB && (
-                <div className="p-3.5 bg-primary/10 border border-primary/30 rounded-xl space-y-2">
-                  <div className="text-xs font-bold text-primary flex items-center gap-1.5">
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Swap Outcome Preview</span>
+                    </select>
+                    {(() => {
+                      const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
+                      return (
+                        <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
+                          Current Store: <strong className="text-on-surface dark:text-dark-on-surface">{mA?.store?.store_name || 'Unassigned'}</strong>
+                        </div>
+                      );
+                    })()}
                   </div>
-                  {(() => {
-                    const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
-                    const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
-                    return (
-                      <div className="text-xs space-y-1 text-on-surface dark:text-dark-on-surface">
-                        <div>• <strong>{mA?.full_name}</strong> ➔ <span className="text-primary font-semibold">{mB?.store?.store_name || 'No Store (Unassigned)'}</span></div>
-                        <div>• <strong>{mB?.full_name}</strong> ➔ <span className="text-primary font-semibold">{mA?.store?.store_name || 'No Store (Unassigned)'}</span></div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
-                <button
-                  type="button"
-                  onClick={() => setShowSwapModal(false)}
-                  className="px-3.5 py-2 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={swapLoading || !swapManagerA || !swapManagerB}
-                  onClick={handleExecuteSwap}
-                  className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-60"
-                >
-                  {swapLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Confirm Store Swap</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                  {/* Manager B */}
+                  <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded space-y-2">
+                    <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager B</label>
+                    <select
+                      value={swapManagerB}
+                      onChange={e => setSwapManagerB(e.target.value)}
+                      className="w-full text-xs bg-surface-container dark:bg-dark-surface-container border border-outline-variant p-2 rounded text-on-surface dark:text-dark-on-surface"
+                    >
+                      <option value="">Select Manager B</option>
+                      {data
+                        .filter((m: any) => String(m.user_id) !== String(swapManagerA))
+                        .map((m: any) => (
+                          <option key={m.user_id} value={m.user_id}>
+                            {m.full_name} ({m.store?.store_name || 'No Store'})
+                          </option>
+                        ))}
+                    </select>
+                    {(() => {
+                      const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
+                      return (
+                        <div className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
+                          Current Store: <strong className="text-on-surface dark:text-dark-on-surface">{mB?.store?.store_name || 'Unassigned'}</strong>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Swap Result Preview */}
+                {swapManagerA && swapManagerB && (
+                  <div className="p-3.5 bg-primary/10 border border-primary/30 rounded space-y-2">
+                    <div className="text-xs font-bold text-primary flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Swap Outcome Preview</span>
+                    </div>
+                    {(() => {
+                      const mA = data.find((m: any) => String(m.user_id) === String(swapManagerA));
+                      const mB = data.find((m: any) => String(m.user_id) === String(swapManagerB));
+                      return (
+                        <div className="text-xs space-y-1 text-on-surface dark:text-dark-on-surface">
+                          <div>• <strong>{mA?.full_name}</strong> ➔ <span className="text-primary font-semibold">{mB?.store?.store_name || 'No Store (Unassigned)'}</span></div>
+                          <div>• <strong>{mB?.full_name}</strong> ➔ <span className="text-primary font-semibold">{mA?.store?.store_name || 'No Store (Unassigned)'}</span></div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+                  <button
+                    type="button"
+                    onClick={() => setShowSwapModal(false)}
+                    className="px-3.5 py-2 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={swapLoading || !swapManagerA || !swapManagerB}
+                    onClick={handleExecuteSwap}
+                    className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    {swapLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Confirm Store Swap</span>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )
+        }
+      </AnimatePresence >
 
 
       {/* Floating Action Buttons (FAB) for Mobile */}
-      <div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+      < div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3" >
         {(subpage === 'all' || !subpage) && (
           <Can permission='stores.add_area'>
             <button
@@ -2036,7 +2207,7 @@ export const StoresView: React.FC = () => {
             <Plus className="w-6 h-6" />
           </button>
         </Can>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };

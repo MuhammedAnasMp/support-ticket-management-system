@@ -169,10 +169,28 @@ export const MaintenanceView: React.FC = () => {
         safeFetch('/accounts/customuser/')
       ]);
 
+      const filteredSubs = Array.isArray(subs)
+        ? subs.filter((s: any) => (s.sub_department_name || '').toLowerCase() !== 'office')
+        : [];
+      const filteredNatures = Array.isArray(natures)
+        ? natures.filter((n: any) => {
+          const nName = (n.nature_name || '').toLowerCase();
+          const sName = (n.sub_department_name || n.sub_department?.sub_department_name || '').toLowerCase();
+          return nName !== 'office related' && sName !== 'office';
+        })
+        : [];
+      const filteredWorkers = Array.isArray(workers)
+        ? workers.filter((w: any) => {
+          const nName = (w.nature_name || w.nature?.nature_name || '').toLowerCase();
+          const sName = (w.sub_department_name || w.nature?.sub_department_name || '').toLowerCase();
+          return nName !== 'office related' && sName !== 'office';
+        })
+        : [];
+
       if (Array.isArray(depts)) setExtraDepts(depts);
-      if (Array.isArray(subs)) setExtraSubs(subs);
-      if (Array.isArray(natures)) setExtraNatures(natures);
-      if (Array.isArray(workers)) setWorkerAssignments(workers);
+      setExtraSubs(filteredSubs);
+      setExtraNatures(filteredNatures);
+      setWorkerAssignments(filteredWorkers);
       if (Array.isArray(priorities)) setExtraPriorities(priorities);
 
       if (Array.isArray(customUsers)) {
@@ -183,11 +201,11 @@ export const MaintenanceView: React.FC = () => {
       }
 
       if (subpage === 'natures') {
-        setData(Array.isArray(natures) ? natures : []);
+        setData(filteredNatures);
       } else if (subpage === 'worker-assignments') {
-        setData(Array.isArray(workers) ? workers : []);
+        setData(filteredWorkers);
       } else if (subpage === 'sub-departments') {
-        setData(Array.isArray(subs) ? subs : []);
+        setData(filteredSubs);
       }
     } catch {
       setErrorMsg('Failed to load maintenance configurations.');
@@ -211,7 +229,7 @@ export const MaintenanceView: React.FC = () => {
               e.stopPropagation();
               handleOpenEdit(item);
             }}
-            className="p-1 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface text-xs rounded transition-colors cursor-pointer"
+            className="p-1.5 .border .border-primary/30 .bg-primary/10 text-primary hover:bg-primary/20 rounded cursor-pointer transition-colors inline-flex"
             title="Edit"
           >
             <Edit2 className="w-3.5 h-3.5" />
@@ -226,7 +244,7 @@ export const MaintenanceView: React.FC = () => {
                 e.stopPropagation();
                 handleDelete(item.nature_id || item.nature_worker_id || item.sub_department_id);
               }}
-              className="p-1 border border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container hover:bg-error-container text-on-surface dark:text-dark-on-surface hover:text-on-error-container text-xs rounded transition-colors cursor-pointer"
+              className="p-1.5 .border .border-error/30 .bg-error-container/40 text-on-error-container hover:bg-error-container rounded cursor-pointer transition-colors inline-flex"
               title="Delete"
             >
               <Trash2 className="w-3.5 h-3.5" />

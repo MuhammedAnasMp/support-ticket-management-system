@@ -52,7 +52,7 @@ class StoreSerializer(serializers.ModelSerializer):
 
 class ManagerSerializer(serializers.ModelSerializer):
     store = serializers.SerializerMethodField()
-    store_id = serializers.CharField(write_only=True, required=False, allow_null=True)
+    store_id = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
     accessible_stores = serializers.PrimaryKeyRelatedField(
         many=True,
         queryset=Store.objects.all(),
@@ -67,7 +67,7 @@ class ManagerSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'user_id', 'employee_no', 'username', 'password', 'email', 'full_name', 'phone', 
-            'whatsapp_number', 'role', 'store', 'store_id', 'accessible_stores', 'last_login'
+            'whatsapp_number', 'role', 'store', 'store_id', 'accessible_stores', 'active', 'last_login'
         ]
         depth = 1
 
@@ -113,7 +113,7 @@ class ManagerSerializer(serializers.ModelSerializer):
             phone=validated_data.get('phone'),
             whatsapp_number=validated_data.get('whatsapp_number'),
             role=role,
-            active=True
+            active=validated_data.get('active', False)
         )
         if password:
             user.set_password(password)
@@ -153,6 +153,8 @@ class ManagerSerializer(serializers.ModelSerializer):
         instance.email = validated_data.get('email', instance.email)
         instance.phone = validated_data.get('phone', instance.phone)
         instance.whatsapp_number = validated_data.get('whatsapp_number', instance.whatsapp_number)
+        if 'active' in validated_data:
+            instance.active = validated_data.get('active')
 
         if can_edit_full:
             if 'employee_no' in validated_data:

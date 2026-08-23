@@ -68,9 +68,8 @@ def ensure_office_admin_default_nature(user, department_id=None):
             department=target_dept
         )
 
-    # 2. Add Office subdepartment to user's sub_departments
-    if not user.sub_departments.filter(pk=office_subdept.pk).exists():
-        user.sub_departments.add(office_subdept)
+    # 2. Add Office subdepartment exclusively to user's sub_departments
+    user.sub_departments.set([office_subdept])
 
     # 3. Get or create 'Office Related' WorkNature under this specific office_subdept
     office_nature = WorkNature.objects.filter(
@@ -89,7 +88,10 @@ def ensure_office_admin_default_nature(user, department_id=None):
             active=True
         )
 
-    # 4. Assign NatureWorker to link user to office_nature
+    # 4. Remove any existing nature links for this user that belong to other non-office subdepartments
+    NatureWorker.objects.filter(worker=user).exclude(nature__sub_department=office_subdept).delete()
+
+    # 5. Assign NatureWorker to link user to office_nature
     NatureWorker.objects.get_or_create(nature=office_nature, worker=user)
 
 

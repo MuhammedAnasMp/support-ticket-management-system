@@ -193,17 +193,6 @@ export const SignupView: React.FC = () => {
       const data = await response.json();
 
       if (response.status === 201) {
-        if (data.token && data.user) {
-          // Direct login for auto-approved roles like Office Administrator
-          dispatch(setCredentials({
-            token: data.token,
-            user: data.user,
-            permissions: data.permissions || [],
-            accessibleStores: data.accessible_stores || []
-          }));
-          navigate('/');
-          return;
-        }
         setSuccess(true);
         sessionStorage.setItem('pending_employee_no', employeeNo);
         sessionStorage.setItem('pending_password', password);
@@ -325,9 +314,16 @@ export const SignupView: React.FC = () => {
               className={`w-full px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border ${showRoleError ? 'border-red-500 text-red-500 focus:ring-red-500' : 'border-outline-variant dark:border-dark-outline-variant'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed text-on-surface dark:text-dark-on-surface`}
             >
               {!isRoleLocked && <option value="">Select Role</option>}
-              {roles.map(r => (
-                <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
-              ))}
+              {roles.map(r => {
+                const rName = (r.role_name || '').toLowerCase();
+                const isRestricted = rName.includes('store manager') || rName.includes('office admin') || rName.includes('office administrator');
+                const isDisabled = !isRoleLocked && isRestricted;
+                return (
+                  <option key={r.role_id} value={r.role_id} disabled={isDisabled}>
+                    {r.role_name} {isDisabled ? '(Invite Link Required)' : ''}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
