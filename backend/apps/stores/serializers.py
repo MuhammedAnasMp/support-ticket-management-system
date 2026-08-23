@@ -53,6 +53,11 @@ class StoreSerializer(serializers.ModelSerializer):
 class ManagerSerializer(serializers.ModelSerializer):
     store = serializers.SerializerMethodField()
     store_id = serializers.CharField(write_only=True, required=False, allow_null=True)
+    accessible_stores = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Store.objects.all(),
+        required=False
+    )
     username = serializers.CharField(required=False)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     employee_no = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -62,9 +67,17 @@ class ManagerSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'user_id', 'employee_no', 'username', 'password', 'email', 'full_name', 'phone', 
-            'whatsapp_number', 'role', 'store', 'store_id', 'last_login'
+            'whatsapp_number', 'role', 'store', 'store_id', 'accessible_stores', 'last_login'
         ]
         depth = 1
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        from apps.stores.serializers import StoreSerializer
+        representation['accessible_stores'] = StoreSerializer(
+            instance.accessible_stores.all(), many=True
+        ).data
+        return representation
 
     def get_store(self, obj):
         store = getattr(obj, 'managed_store', None)
@@ -79,6 +92,7 @@ class ManagerSerializer(serializers.ModelSerializer):
         from apps.accounts.models import CustomUser, Role
         store_id = validated_data.pop('store_id', None)
         password = validated_data.pop('password', None)
+        accessible_stores = validated_data.pop('accessible_stores', None)
         
         try:
             role = Role.objects.get(role_name__icontains='Store Manager')
@@ -119,11 +133,15 @@ class ManagerSerializer(serializers.ModelSerializer):
             except Store.DoesNotExist:
                 pass
 
+        if accessible_stores is not None:
+            user.accessible_stores.set(accessible_stores)
+
         return user
 
     def update(self, instance, validated_data):
         store_id = validated_data.pop('store_id', None)
         password = validated_data.pop('password', None)
+        accessible_stores = validated_data.pop('accessible_stores', None)
         request = self.context.get('request')
         
         can_edit_full = True
@@ -159,6 +177,9 @@ class ManagerSerializer(serializers.ModelSerializer):
                     pass
         else:
             Store.objects.filter(manager=instance).update(manager=None)
+
+        if accessible_stores is not None:
+            instance.accessible_stores.set(accessible_stores)
 
         return instance
 

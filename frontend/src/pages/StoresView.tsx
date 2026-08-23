@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, MapPin, Store,
-  Building, ChevronRight, ChevronLeft, X, Loader2, AlertCircle,
+  Building, Building2, ChevronRight, ChevronLeft, X, Loader2, AlertCircle,
   Link as LinkIcon, Copy, Check, RefreshCw
 } from 'lucide-react';
 import type { RootState } from '../store';
@@ -331,8 +331,12 @@ export const StoresView: React.FC = () => {
     full_name: '',
     phone: '',
     whatsapp_number: '',
-    store_id: ''
+    store_id: '',
+    accessible_stores: [] as string[]
   });
+  const [mgrStoreFilter, setMgrStoreFilter] = useState('');
+  const [mgrAreaFilter, setMgrAreaFilter] = useState('');
+  const [mgrAreas, setMgrAreas] = useState<any[]>([]);
   const [areaForm, setAreaForm] = useState({ area_name: '' });
   const [deptForm, setDeptForm] = useState({ department_name: '' });
 
@@ -362,14 +366,16 @@ export const StoresView: React.FC = () => {
         const res = await fetch(`${API_URL}/stores/department/`, { headers });
         if (res.ok) setData(await res.json());
       } else if (subpage === 'managers') {
-        const [resManagers, resStores, resRoles] = await Promise.all([
+        const [resManagers, resStores, resRoles, resAreas] = await Promise.all([
           fetch(`${API_URL}/stores/managers/`, { headers }),
           fetch(`${API_URL}/stores/store/`, { headers }),
-          fetch(`${API_URL}/accounts/role/`, { headers })
+          fetch(`${API_URL}/accounts/role/`, { headers }),
+          fetch(`${API_URL}/stores/area/`, { headers })
         ]);
         if (resManagers.ok) setData(await resManagers.json());
         if (resStores.ok) setExtraData(await resStores.json());
         if (resRoles.ok) setRoles(await resRoles.json());
+        if (resAreas.ok) setMgrAreas(await resAreas.json());
       }
     } catch (err) {
       setErrorMsg('Failed to load data.');
@@ -401,8 +407,11 @@ export const StoresView: React.FC = () => {
       full_name: '',
       phone: '',
       whatsapp_number: '',
-      store_id: ''
+      store_id: '',
+      accessible_stores: []
     });
+    setMgrStoreFilter('');
+    setMgrAreaFilter('');
     setAreaForm({ area_name: '' });
     setDeptForm({ department_name: '' });
     setErrorMsg('');
@@ -545,6 +554,9 @@ export const StoresView: React.FC = () => {
     } else if (subpage === 'departments') {
       setDeptForm({ department_name: item.department_name });
     } else if (subpage === 'managers') {
+      const accStores = Array.isArray(item.accessible_stores)
+        ? item.accessible_stores.map((s: any) => String(s.store_id || s))
+        : [];
       setManagerForm({
         employee_no: item.employee_no || '',
         username: item.username || '',
@@ -553,8 +565,11 @@ export const StoresView: React.FC = () => {
         full_name: item.full_name || '',
         phone: item.phone || '',
         whatsapp_number: item.whatsapp_number || '',
-        store_id: item.store?.store_id || ''
+        store_id: item.store?.store_id || '',
+        accessible_stores: accStores
       });
+      setMgrStoreFilter('');
+      setMgrAreaFilter('');
     }
     setErrorMsg('');
     setShowModal(true);
@@ -1459,6 +1474,117 @@ export const StoresView: React.FC = () => {
                         </div>
                       );
                     })()}
+
+                    {/* Accessible Stores section */}
+                    <div className="flex flex-col flex-1 min-h-0 pt-3 border-t border-outline-variant/60 mt-2 space-y-2">
+                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                        <Building2 className="w-4 h-4" />
+                        Accessible Stores ({managerForm.accessible_stores.length})
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-2 shrink-0">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
+                          <input
+                            type="text"
+                            placeholder="Filter stores..."
+                            value={mgrStoreFilter}
+                            onChange={e => setMgrStoreFilter(e.target.value)}
+                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant rounded pl-8 pr-2 py-1.5 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary"
+                          />
+                        </div>
+                        <select
+                          value={mgrAreaFilter}
+                          onChange={e => setMgrAreaFilter(e.target.value)}
+                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant rounded px-2 py-1.5 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                        >
+                          <option value="">All Areas</option>
+                          <option value="NO_AREA">Unassigned Area</option>
+                          {mgrAreas.map((a: any) => (
+                            <option key={a.area_id} value={a.area_id}>{a.area_name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {(() => {
+                        const storeList: any[] = extraData || [];
+                        const filteredStores = storeList.filter((s: any) => {
+                          const matchesSearch = (s.store_name || '').toLowerCase().includes(mgrStoreFilter.toLowerCase());
+                          if (!matchesSearch) return false;
+                          if (!mgrAreaFilter) return true;
+                          if (mgrAreaFilter === 'NO_AREA') return !s.area;
+                          const storeAreaId = s.area?.area_id ?? s.area;
+                          return String(storeAreaId) === String(mgrAreaFilter);
+                        });
+
+                        return (
+                          <div className="flex flex-col flex-1 min-h-0">
+                            <div className="flex items-center justify-between gap-2 mb-1.5 shrink-0 text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant">
+                              <span>{filteredStores.length} store(s)</span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const filteredIds = filteredStores.map((s: any) => String(s.store_id));
+                                    const union = Array.from(new Set([...managerForm.accessible_stores.map(String), ...filteredIds]));
+                                    setManagerForm({ ...managerForm, accessible_stores: union });
+                                  }}
+                                  className="text-primary hover:underline font-semibold cursor-pointer border-none bg-transparent"
+                                >
+                                  + Select All
+                                </button>
+                                <span>|</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const filteredIdsSet = new Set(filteredStores.map((s: any) => String(s.store_id)));
+                                    const remaining = managerForm.accessible_stores.filter(id => !filteredIdsSet.has(String(id)));
+                                    setManagerForm({ ...managerForm, accessible_stores: remaining });
+                                  }}
+                                  className="text-error hover:underline font-semibold cursor-pointer border-none bg-transparent"
+                                >
+                                  - Deselect
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto border border-outline-variant rounded p-2.5 space-y-1.5 bg-surface-container-low dark:bg-dark-surface-container-low min-h-[160px] max-h-[240px]">
+                              {filteredStores.map((s: any) => {
+                                const checked = managerForm.accessible_stores.some(id => String(id) === String(s.store_id));
+                                const areaName = s.area?.area_name;
+                                return (
+                                  <label key={s.store_id} className="flex items-center justify-between gap-2 text-xs text-on-surface dark:text-dark-on-surface cursor-pointer hover:text-primary py-0.5 select-none">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={e => {
+                                          const sid = String(s.store_id);
+                                          const newList = e.target.checked
+                                            ? [...managerForm.accessible_stores.filter(id => String(id) !== sid), sid]
+                                            : managerForm.accessible_stores.filter(id => String(id) !== sid);
+                                          setManagerForm({ ...managerForm, accessible_stores: newList });
+                                        }}
+                                        className="w-3.5 h-3.5 text-primary border-outline-variant rounded focus:ring-primary shrink-0 cursor-pointer"
+                                      />
+                                      <span className="truncate">{s.store_id} - {s.store_name}</span>
+                                    </div>
+                                    {areaName && (
+                                      <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded shrink-0">
+                                        {areaName}
+                                      </span>
+                                    )}
+                                  </label>
+                                );
+                              })}
+                              {filteredStores.length === 0 && (
+                                <div className="text-center py-6 text-xs text-on-surface-variant">No stores match filter criteria</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </>
                 ) : (
                   <div>

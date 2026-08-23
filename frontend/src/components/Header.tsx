@@ -4,7 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu, User, LogOut, Sun, Moon, ChevronDown,
-  Mail, Phone, Shield, MessageSquare, Bell
+  Mail, Phone, Shield, MessageSquare, Bell, Maximize, Minimize
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { clearCredentials } from '../store/authSlice';
@@ -25,7 +25,24 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
   const dispatch = useDispatch();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => { });
+    } else {
+      document.exitFullscreen().catch(() => { });
+    }
+  };
 
   const { user, token } = useSelector((state: RootState) => state.auth);
 
@@ -209,7 +226,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
   return (
     <header className="sticky top-0 z-20 flex items-center justify-between px-2 py-1.5 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant shadow-sm transition-colors duration-200">
       {/* Left section: Hamburger & Breadcrumbs */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
         {!isSidebarOpen && (
           <button
             onClick={onToggleSidebar}
@@ -219,20 +236,20 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
             <Menu className="w-5 h-5" />
           </button>
         )}
-        <div className={isSidebarOpen ? "pl-2" : ""}>
-          <h2 className="text-lg font-bold text-on-surface dark:text-dark-on-surface tracking-tight leading-tight md:text-xl">
+        <div className={isSidebarOpen ? "pl-1" : ""}>
+          <h2 className="text-sm text-on-surface dark:text-dark-on-surface tracking-tight leading-tight md:text-lg">
             {pageTitle}
           </h2>
         </div>
       </div>
 
       {/* Right section: Action controls & Profile */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
         {/* Latest Notifications Dropdown Button */}
         <div className="relative" ref={notificationDropdownRef}>
           <button
             onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
-            className="p-2.5 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low cursor-pointer transition-colors relative"
+            className="p-1 mt-1 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low cursor-pointer transition-colors relative"
             aria-label="View notifications"
           >
             <Bell className="w-5 h-5" />
@@ -283,15 +300,14 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
                       <div
                         key={notif.notification_id}
                         onClick={() => handleNotificationClick(notif)}
-                        className={`flex gap-3 p-4 hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low transition-colors cursor-pointer text-left relative ${
-                          !notif.is_read ? 'bg-primary/5 dark:bg-primary/10' : ''
-                        }`}
+                        className={`flex gap-3 p-4 hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low transition-colors cursor-pointer text-left relative ${!notif.is_read ? 'bg-primary/5 dark:bg-primary/10' : ''
+                          }`}
                       >
                         {/* Status Dot */}
                         {!notif.is_read && (
                           <div className="absolute top-4 left-2 w-1.5 h-1.5 bg-primary rounded-full" />
                         )}
-                        
+
                         <div className="flex-1 min-w-0 pl-1">
                           <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface truncate">
                             {notif.title}
@@ -334,10 +350,20 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
           </AnimatePresence>
         </div>
 
+        {/* Fullscreen Toggle */}
+        <button
+          onClick={handleToggleFullscreen}
+          className="p-1 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low cursor-pointer transition-colors"
+          aria-label="Toggle Fullscreen"
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Mode"}
+        >
+          {isFullscreen ? <Minimize className="w-5 h-5 text-primary" /> : <Maximize className="w-5 h-5 text-on-surface-variant" />}
+        </button>
+
         {/* Inline Theme Switcher */}
         <button
           onClick={handleToggleTheme}
-          className="p-2.5 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low cursor-pointer transition-colors"
+          className="p-1 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-low dark:hover:bg-dark-surface-container-low cursor-pointer transition-colors"
           aria-label="Toggle dark mode"
         >
           {isDark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-indigo-600" />}

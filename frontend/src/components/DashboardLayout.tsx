@@ -13,6 +13,22 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   });
   const location = useLocation();
 
+  // Auto-request fullscreen mode on initial load / user interaction
+  useEffect(() => {
+    const triggerFullscreen = () => {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => { });
+      }
+    };
+    triggerFullscreen();
+    window.addEventListener('click', triggerFullscreen, { once: true });
+    window.addEventListener('pointerdown', triggerFullscreen, { once: true });
+    return () => {
+      window.removeEventListener('click', triggerFullscreen);
+      window.removeEventListener('pointerdown', triggerFullscreen);
+    };
+  }, []);
+
   // Map pathnames to human readable page titles
   const getPageTitle = (path: string): string => {
     if (path === '/') return 'Dashboard Overview';
@@ -38,19 +54,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       return formatSegment(segments[1] || 'stores');
     }
     if (segments[0] === 'maintenance') {
-      return `Maintenance: ${formatSegment(segments[1] || 'Natures')}`;
+      return `${formatSegment(segments[1] || 'Natures')}`;
     }
     if (segments[0] === 'workforce') {
-      return `Workforce: ${formatSegment(segments[1] || 'Employees')}`;
+      return `${formatSegment(segments[1] || 'Employees')}`;
     }
     if (segments[0] === 'expenses') {
-      return `Expense Approvals: ${formatSegment(segments[1] || 'Claims')}`;
+      return ` ${formatSegment(segments[1] || 'Claims')}`;
     }
     if (segments[0] === 'reports') {
-      return `Report: ${formatSegment(segments[1] || 'Overview')}`;
+      return ` ${formatSegment(segments[1] || 'Overview')}`;
     }
     if (segments[0] === 'admin') {
-      return `Administration: ${formatSegment(segments[1] || 'Settings')}`;
+      return ` ${formatSegment(segments[1] || 'Settings')}`;
     }
 
     return formatSegment(segments[segments.length - 1]);
