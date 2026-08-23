@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Plus, AlertTriangle, FileText,
     ChevronLeft, ChevronRight, RefreshCw, Download, Filter,
-    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User
+    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User, Smartphone, Monitor
 } from 'lucide-react';
 
 import { AgGridReact } from 'ag-grid-react';
@@ -664,99 +664,133 @@ export const TicketsView: React.FC = () => {
         }
     }, [isMobile, viewMode]);
 
-    const columnDefs = useMemo<ColDef<Ticket>[]>(() => [
-        {
-            headerName: 'Work Order',
-            field: 'work_order_no',
-            width: 130,
-            minWidth: 100,
-            pinned: isMobile ? null : 'left',
-            cellRenderer: (params: any) => (
-                <span className="font-mono text-xs font-semibold text-primary truncate block w-full">{params.value}</span>
-            )
-        },
-        {
-            headerName: 'Store',
-            valueGetter: params => params.data?.store?.store_name || '',
-            flex: 1,
-            minWidth: 120,
-            hide: isMobile,
-        },
-        {
-            headerName: 'Title',
-            field: 'title',
-            flex: 2,
-            minWidth: 160,
-            cellRenderer: (params: any) => (
-                <span className="font-medium text-on-surface truncate block w-full" title={params.value}>{params.value}</span>
-            )
-        },
-        {
-            headerName: 'Priority',
-            valueGetter: params => params.data?.priority?.priority_name || '',
-            comparator: (valueA, valueB, nodeA, nodeB) => {
-                const levelA = nodeA.data?.priority?.level ?? 0;
-                const levelB = nodeB.data?.priority?.level ?? 0;
-                return levelA - levelB;
+    const canSeeDeviceInfo = hasPermission('can_see_device_info') || hasPermission('maintenance.can_see_device_info');
+
+    const columnDefs = useMemo<ColDef<Ticket>[]>(() => {
+        const cols: ColDef<Ticket>[] = [
+            {
+                headerName: 'Work Order',
+                field: 'work_order_no',
+                width: 130,
+                minWidth: 100,
+                pinned: isMobile ? null : 'left',
+                cellRenderer: (params: any) => (
+                    <span className="font-mono text-xs font-semibold text-primary truncate block w-full">{params.value}</span>
+                )
             },
-            width: 110,
-            minWidth: 90,
-            hide: isMobile,
-            cellRenderer: (params: any) => {
-                const p = params.data?.priority;
-                if (!p) return null;
-                const isHigh = p.level >= 2;
-                return (
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
-                        {p.priority_name}
-                    </span>
-                );
+            {
+                headerName: 'Store',
+                valueGetter: params => params.data?.store?.store_name || '',
+                flex: 1,
+                minWidth: 120,
+                hide: isMobile,
+            },
+            {
+                headerName: 'Title',
+                field: 'title',
+                flex: 2,
+                minWidth: 160,
+                cellRenderer: (params: any) => (
+                    <span className="font-medium text-on-surface truncate block w-full" title={params.value}>{params.value}</span>
+                )
+            },
+            {
+                headerName: 'Priority',
+                valueGetter: params => params.data?.priority?.priority_name || '',
+                comparator: (valueA, valueB, nodeA, nodeB) => {
+                    const levelA = nodeA.data?.priority?.level ?? 0;
+                    const levelB = nodeB.data?.priority?.level ?? 0;
+                    return levelA - levelB;
+                },
+                width: 110,
+                minWidth: 90,
+                hide: isMobile,
+                cellRenderer: (params: any) => {
+                    const p = params.data?.priority;
+                    if (!p) return null;
+                    const isHigh = p.level >= 2;
+                    return (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${isHigh ? 'bg-error-container text-on-error-container' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                            {p.priority_name}
+                        </span>
+                    );
+                }
+            },
+            {
+                headerName: 'Status',
+                valueGetter: params => params.data?.status?.status_name || '',
+                comparator: (valueA, valueB, nodeA, nodeB) => {
+                    const orderA = nodeA.data?.status?.order ?? 0;
+                    const orderB = nodeB.data?.status?.order ?? 0;
+                    return orderA - orderB;
+                },
+                width: 130,
+                minWidth: 110,
+                cellRenderer: (params: any) => {
+                    const statusName = params.data?.status?.status_name;
+                    if (!statusName) return null;
+                    return (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${statusColor(statusName)}`}>
+                            {statusName}
+                        </span>
+                    );
+                }
             }
-        },
-        {
-            headerName: 'Status',
-            valueGetter: params => params.data?.status?.status_name || '',
-            comparator: (valueA, valueB, nodeA, nodeB) => {
-                const orderA = nodeA.data?.status?.order ?? 0;
-                const orderB = nodeB.data?.status?.order ?? 0;
-                return orderA - orderB;
-            },
-            width: 130,
-            minWidth: 110,
-            cellRenderer: (params: any) => {
-                const statusName = params.data?.status?.status_name;
-                if (!statusName) return null;
-                return (
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${statusColor(statusName)}`}>
-                        {statusName}
-                    </span>
-                );
-            }
-        },
-        {
-            headerName: 'Created',
-            valueGetter: params => {
-                if (!params.data?.created_date) return '';
-                return new Date(params.data.created_date).toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'short', day: 'numeric'
-                });
-            },
-            width: 120,
-            minWidth: 100,
-            hide: isMobile,
-        },
-        {
-            headerName: 'Age (Days)',
-            field: 'age_days',
-            valueFormatter: params => {
-                const val = Number(params.value);
-                return isNaN(val) ? '' : val.toFixed(1);
-            },
-            width: 110,
-            minWidth: 90,
-            hide: isMobile,
+        ];
+
+        if (canSeeDeviceInfo) {
+            cols.push({
+                headerName: 'Device Info',
+                field: 'device_info',
+                width: 140,
+                minWidth: 110,
+                hide: isMobile,
+                cellRenderer: (params: any) => {
+                    const val = params.value;
+                    if (!val) return <span className="text-outline-variant text-xs">-</span>;
+                    const isMobileOs = /iOS|Android/i.test(val);
+                    return (
+                        <span className="inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-medium shrink-0" title={`Created using ${val}`}>
+                            {isMobileOs ? (
+                                <Smartphone className="w-3 h-3 shrink-0 text-primary" />
+                            ) : (
+                                <Monitor className="w-3 h-3 shrink-0 text-primary" />
+                            )}
+                            <span className="truncate">{val}</span>
+                        </span>
+                    );
+                }
+            });
         }
-    ], [isMobile]);
+
+        cols.push(
+            {
+                headerName: 'Created',
+                valueGetter: params => {
+                    if (!params.data?.created_date) return '';
+                    return new Date(params.data.created_date).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric'
+                    });
+                },
+                width: 120,
+                minWidth: 100,
+                hide: isMobile,
+            },
+            {
+                headerName: 'Age (Days)',
+                field: 'age_days',
+                valueFormatter: params => {
+                    const val = Number(params.value);
+                    return isNaN(val) ? '' : val.toFixed(1);
+                },
+                width: 110,
+                minWidth: 90,
+                hide: isMobile,
+            }
+        );
+
+        return cols;
+    }, [isMobile, canSeeDeviceInfo]);
 
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
@@ -776,10 +810,114 @@ export const TicketsView: React.FC = () => {
 
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
     const defaultMonth = getCurrentMonthRange();
-    const isDefaultDateRange = fromDate === defaultMonth.fromDate && toDate === defaultMonth.toDate;
-    const hasActiveFilters = !!(search || filterStore || filterDept || filterStatus || filterPriority || !isDefaultDateRange);
+    const selectCls = 'text-xs bg-surface-container border border-outline-variant rounded px-2.5 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors min-h-[36px] w-full sm:w-auto sm:max-w-[160px] truncate';
 
-    const selectCls = 'text-xs bg-surface-container border border-outline-variant rounded px-2.5 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors min-h-[36px] max-w-[160px] truncate flex-shrink-0';
+    const exportToCSV = () => {
+        if (!tickets || tickets.length === 0) return;
+        const headers = [
+            'Ticket ID',
+            'Title',
+            'Status',
+            'Priority',
+            'Store',
+            'Department',
+            'Sub Department',
+            'Nature of Work',
+            'Created By',
+            'Assigned Workers',
+            'Created Date',
+            'Closed Date'
+        ];
+
+        const rows = tickets.map(t => [
+            t.ticket_id,
+            `"${(t.title || '').replace(/"/g, '""')}"`,
+            `"${(t.status?.status_name || '').replace(/"/g, '""')}"`,
+            `"${(t.priority?.priority_name || '').replace(/"/g, '""')}"`,
+            `"${(t.store?.store_name || '').replace(/"/g, '""')}"`,
+            `"${(t.department?.department_name || '').replace(/"/g, '""')}"`,
+            `"${((t as any).sub_department?.sub_department_name || (t as any).sub_department || '').replace(/"/g, '""')}"`,
+            `"${(t.nature?.nature_name || '').replace(/"/g, '""')}"`,
+            `"${(t.created_by?.full_name || '').replace(/"/g, '""')}"`,
+            `"${((t.allocations || []).map((a: any) => a.worker?.full_name).filter(Boolean).join(', ')).replace(/"/g, '""')}"`,
+            `"${t.created_date ? new Date(t.created_date).toLocaleString() : ''}"`,
+            `"${t.closed_date ? new Date(t.closed_date).toLocaleString() : ''}"`
+        ]);
+
+        const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `Tickets_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setOverflowOpen(false);
+    };
+
+    const exportToExcel = () => {
+        if (!tickets || tickets.length === 0) return;
+        const headers = [
+            'Ticket ID',
+            'Title',
+            'Status',
+            'Priority',
+            'Store',
+            'Department',
+            'Sub Department',
+            'Nature of Work',
+            'Created By',
+            'Assigned Workers',
+            'Created Date',
+            'Closed Date'
+        ];
+
+        const rows = tickets.map(t => [
+            t.ticket_id,
+            t.title || '',
+            t.status?.status_name || '',
+            t.priority?.priority_name || '',
+            t.store?.store_name || '',
+            t.department?.department_name || '',
+            (t as any).sub_department?.sub_department_name || (t as any).sub_department || '',
+            t.nature?.nature_name || '',
+            t.created_by?.full_name || '',
+            (t.allocations || []).map((a: any) => a.worker?.full_name).filter(Boolean).join(', '),
+            t.created_date ? new Date(t.created_date).toLocaleString() : '',
+            t.closed_date ? new Date(t.closed_date).toLocaleString() : ''
+        ]);
+
+        const tableContent = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <head>
+                <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+            </head>
+            <body>
+                <table border="1">
+                    <thead>
+                        <tr style="background-color: #005bbf; color: #ffffff; font-weight: bold;">
+                            ${headers.map(h => `<th>${h}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => `<tr>${r.map(cell => `<td>${String(cell).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`).join('')}</tr>`).join('')}
+                    </tbody>
+                </table>
+            </body>
+            </html>
+        `;
+
+        const blob = new Blob([tableContent], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Tickets_Export_${new Date().toISOString().slice(0, 10)}.xls`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setOverflowOpen(false);
+    };
 
     return (
         <div className={`flex flex-col gap-4 ${viewMode === 'table' ? 'sm:max-h-[calc(100vh-112px)] sm:overflow-hidden' : ''}`}>
@@ -898,10 +1036,10 @@ export const TicketsView: React.FC = () => {
                                                 transition={{ duration: 0.12 }}
                                                 className="absolute right-0 top-full mt-1 z-50 bg-surface-container border border-outline-variant rounded shadow-lg min-w-[160px] py-1"
                                             >
-                                                <button className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                                <button onClick={exportToCSV} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
                                                     <Download className="w-4 h-4 text-on-surface-variant" /> Export CSV
                                                 </button>
-                                                <button className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                                <button onClick={exportToExcel} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
                                                     <Download className="w-4 h-4 text-on-surface-variant" /> Export Excel
                                                 </button>
                                             </motion.div>
@@ -913,8 +1051,8 @@ export const TicketsView: React.FC = () => {
                     </div>
 
                     {/* Row 2: Filter dropdowns */}
-                    <div className="flex items-center gap-2 flex-wrap pb-0.5 w-full">
-                        <Filter className="w-3.5 h-3.5 text-on-surface-variant flex-shrink-0 hidden sm:block" />
+                    <div className="grid grid-cols-2 sm:flex sm:items-center sm:flex-wrap gap-2 pb-0.5 w-full [&>:last-child:nth-child(odd)]:col-span-2 sm:[&>:last-child:nth-child(odd)]:col-span-1">
+                        {/* <Filter className="w-3.5 h-3.5 text-on-surface-variant flex-shrink-0 hidden sm:block" /> */}
 
                         <select value={filterStore} onChange={e => { setFilterStore(e.target.value); setPage(1); }} className={selectCls}>
                             <option value="">All Stores</option>
@@ -994,7 +1132,7 @@ export const TicketsView: React.FC = () => {
                                             setSelectedTicket(ticket);
                                             setLastOpenedTicketId(ticket.ticket_id);
                                         }}
-                                        className={`text-left flex flex-col gap-2 p-3  border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${lastOpenedTicketId === ticket.ticket_id
+                                        className={`text-left flex flex-col gap-2 p-3 rounded border active:scale-[0.97] transition-all cursor-pointer shadow-xs ${lastOpenedTicketId === ticket.ticket_id
                                             ? 'bg-primary/5 border-primary'
                                             : 'bg-surface border-outline-variant'
                                             }`}
@@ -1296,7 +1434,7 @@ export const TicketsView: React.FC = () => {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(pageSize, tickets.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
+                                <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
                                     <AgGridReact<Ticket>
                                         theme={appTheme}
                                         rowData={tickets}

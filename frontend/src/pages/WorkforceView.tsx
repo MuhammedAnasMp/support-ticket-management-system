@@ -917,12 +917,22 @@ export const WorkforceView: React.FC = () => {
                   type="text"
                   placeholder="Search staff, ID, skills, rates..."
                   value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  onChange={e => {
+                    setSearch(e.target.value);
+                    if (gridApi) {
+                      gridApi.setGridOption('quickFilterText', e.target.value);
+                    }
+                  }}
                   className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-8 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
                 />
                 {search && (
                   <button
-                    onClick={() => setSearch('')}
+                    onClick={() => {
+                      setSearch('');
+                      if (gridApi) {
+                        gridApi.setGridOption('quickFilterText', '');
+                      }
+                    }}
                     className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1092,10 +1102,11 @@ export const WorkforceView: React.FC = () => {
 
             {/* Desktop View: Table */}
             <div className="hidden sm:block">
-              <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
+              <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
                 <AgGridReact
                   theme={appTheme}
                   rowData={filteredData}
+                  quickFilterText={search}
                   columnDefs={columnDefs}
                   defaultColDef={defaultColDef}
                   pagination={true}
@@ -1117,10 +1128,11 @@ export const WorkforceView: React.FC = () => {
             </div>
           </>
         ) : (
-          <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
+          <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
             <AgGridReact
               theme={appTheme}
               rowData={filteredData}
+              quickFilterText={search}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
               pagination={true}

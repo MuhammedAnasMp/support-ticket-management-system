@@ -65,6 +65,7 @@ class Store(models.Model):
         related_name='managed_store'
     )
     active = models.BooleanField(default=True)
+    store_updated_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         abbreviation_map = {

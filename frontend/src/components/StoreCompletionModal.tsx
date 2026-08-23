@@ -23,12 +23,22 @@ export const StoreCompletionModal: React.FC = () => {
   const [success, setSuccess] = useState(false);
 
   const managedStore = user?.managed_store;
+
+  const isOlderThan60Days = (dateStr?: string | null) => {
+    if (!dateStr) return true;
+    const updatedTime = new Date(dateStr).getTime();
+    if (isNaN(updatedTime)) return true;
+    const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
+    return (Date.now() - updatedTime) > sixtyDaysMs;
+  };
+
   const isStoreIncomplete = !!managedStore && (
     !managedStore.phone ||
     !managedStore.whatsapp_number ||
     !managedStore.address ||
     !managedStore.longitude ||
-    !managedStore.latitude
+    !managedStore.latitude ||
+    isOlderThan60Days((managedStore as any).store_updated_at)
   );
 
   const hasCheckedAutoOpen = useRef(false);
@@ -39,46 +49,23 @@ export const StoreCompletionModal: React.FC = () => {
       setIsOpen(false);
     }
   }, [token]);
-  console.log("dsf")
-  // Auto-open logic on load
-  useEffect(() => {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    if (!isMobile) {
-      return;
-    }
 
+  // Strict Auto-open logic on load (Desktop & Mobile)
+  useEffect(() => {
     if (!token || !user || !isStoreIncomplete || hasCheckedAutoOpen.current) {
       return;
     }
 
     hasCheckedAutoOpen.current = true;
 
-    // Set initial values from store profile (filling what exists)
-    setPhone(managedStore?.phone || '');
-    setWhatsappNumber(managedStore?.whatsapp_number || '');
+    // Contact numbers MUST show as BLANK for fresh verification
+    setPhone('');
+    setWhatsappNumber('');
     setAddress(managedStore?.address || '');
     setLatitude(managedStore?.latitude || '');
     setLongitude(managedStore?.longitude || '');
 
-    const today = new Date().toISOString().split('T')[0];
-    const storageKey = `store_popup_shows_${user.user_id}`;
-    const dataStr = localStorage.getItem(storageKey);
-    let count = 0;
-
-    if (dataStr) {
-      try {
-        const data = JSON.parse(dataStr);
-        if (data.date === today) {
-          count = data.count;
-        }
-      } catch (e) { }
-    }
-
-    if (count < 3) {
-      setIsOpen(true);
-      // Increment show count
-      localStorage.setItem(storageKey, JSON.stringify({ date: today, count: count + 1 }));
-    }
+    setIsOpen(true);
   }, [token, user, isStoreIncomplete, managedStore]);
 
   const handleUseCurrentLocation = () => {
@@ -276,8 +263,7 @@ export const StoreCompletionModal: React.FC = () => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 .bg-black/60 backdrop-blur-sm"
-        onClick={() => setIsOpen(false)}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
       />
 
       {/* Modal Content */}
@@ -290,15 +276,9 @@ export const StoreCompletionModal: React.FC = () => {
               Complete Location Details
             </h3>
             <p className="text-[10px] text-outline mt-0.5">
-              Please complete store location contact numbers and coordinates
+              Please complete store location contact numbers and coordinates to continue
             </p>
           </div>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="p-1 rounded-lg hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-outline cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {errorMsg && (

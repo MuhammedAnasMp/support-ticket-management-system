@@ -206,6 +206,7 @@ class Ticket(models.Model):
                                              null=True, blank=True, related_name='location_approved_tickets')
     location_approved_date = models.DateTimeField(null=True, blank=True)
     location_reject_reason = models.TextField(null=True, blank=True)
+    device_info = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
         permissions = [
@@ -261,6 +262,7 @@ class Ticket(models.Model):
             ("can_call_store", "Can call store"),
             ("can_view_my_instruction", "Can view my instruction"),
             ("can_view_all_instruction", "Can view all instruction"),
+            ("can_see_device_info", "Can see ticket device info"),
         ]
 
     def __str__(self):

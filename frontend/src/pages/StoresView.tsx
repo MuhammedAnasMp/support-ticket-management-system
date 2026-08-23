@@ -50,6 +50,13 @@ export const StoresView: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Manager Registration Link Modal State
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -199,31 +206,20 @@ export const StoresView: React.FC = () => {
       if (!item) return null;
       return (
         <div className="flex items-center gap-1.5 h-full">
-          {subpage === 'managers' && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenSwapModal(item);
-              }}
-              className="p-1.5 border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 rounded cursor-pointer transition-colors inline-flex"
-              title="Swap Store Location"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleOpenEdit(item);
-            }}
-            className="p-1.5 border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high text-on-surface dark:text-dark-on-surface rounded cursor-pointer transition-colors inline-flex"
-            title="Edit / Reassign"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </button>
-          <Can permission={deletePermission}>
+          <Can permission={deletePermission} className='flex gap-1'>
+            {subpage === 'managers' && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenSwapModal(item);
+                }}
+                className="p-1.5 border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 rounded cursor-pointer transition-colors inline-flex"
+                title="Swap Manager Location"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -258,7 +254,7 @@ export const StoresView: React.FC = () => {
           )
         }
       ];
-      if (canDeleteSubpage) {
+      if (canDeleteSubpage && !isMobile) {
         cols.push({ headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
       return cols;
@@ -267,19 +263,21 @@ export const StoresView: React.FC = () => {
         { headerName: 'Area ID', field: 'area_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
         { headerName: 'Area Name', field: 'area_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' }
       ];
-      if (canDeleteSubpage) {
+      if (canDeleteSubpage && !isMobile) {
         cols.push({ headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
       return cols;
     } else if (subpage === 'managers') {
       const cols: ColDef[] = [
+        { headerName: 'Employee ID', field: 'employee_no', width: 120, cellClass: 'font-mono text-xs font-semibold' },
         { headerName: 'Name', field: 'full_name', flex: 1.5, minWidth: 160, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Email / Username', field: 'email', flex: 1.5, minWidth: 160 },
+        { headerName: 'Username', field: 'username', width: 130 },
+        { headerName: 'Email', field: 'email', flex: 1.5, minWidth: 160 },
         { headerName: 'Phone', field: 'phone', width: 120 },
         { headerName: 'WhatsApp', field: 'whatsapp_number', width: 120 },
         { headerName: 'Assigned Store', field: 'store.store_name', flex: 1.5, minWidth: 160, valueGetter: (p: any) => p.data?.store?.store_name || 'No Store Assigned' }
       ];
-      if (canDeleteSubpage) {
+      if (canDeleteSubpage && !isMobile) {
         cols.push({ headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
       return cols;
@@ -289,12 +287,12 @@ export const StoresView: React.FC = () => {
         { headerName: 'Department ID', field: 'department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
         { headerName: 'Department Name', field: 'department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' }
       ];
-      if (canDeleteSubpage) {
+      if (canDeleteSubpage && !isMobile) {
         cols.push({ headerName: 'Actions', width: 110, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
       return cols;
     }
-  }, [subpage, hasPermission]);
+  }, [subpage, hasPermission, isMobile]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     sortable: true,
@@ -326,7 +324,9 @@ export const StoresView: React.FC = () => {
     active: true
   });
   const [managerForm, setManagerForm] = useState({
+    employee_no: '',
     username: '',
+    password: '',
     email: '',
     full_name: '',
     phone: '',
@@ -394,7 +394,9 @@ export const StoresView: React.FC = () => {
       active: true
     });
     setManagerForm({
+      employee_no: '',
       username: '',
+      password: '',
       email: '',
       full_name: '',
       phone: '',
@@ -544,7 +546,9 @@ export const StoresView: React.FC = () => {
       setDeptForm({ department_name: item.department_name });
     } else if (subpage === 'managers') {
       setManagerForm({
+        employee_no: item.employee_no || '',
         username: item.username || '',
+        password: '',
         email: item.email || '',
         full_name: item.full_name || '',
         phone: item.phone || '',
@@ -578,7 +582,10 @@ export const StoresView: React.FC = () => {
       bodyData = deptForm;
     } else if (subpage === 'managers') {
       endpoint = editItem ? `${API_URL}/stores/managers/${editItem.user_id}/` : `${API_URL}/stores/managers/`;
-      bodyData = managerForm;
+      bodyData = { ...managerForm };
+      if (editItem && !bodyData.password) {
+        delete bodyData.password;
+      }
 
       // Check if target selected store is currently assigned to another manager
       const selectedStoreObj = extraData.find((s: any) => String(s.store_id) === String(managerForm.store_id));
@@ -732,7 +739,7 @@ export const StoresView: React.FC = () => {
   const areaList = extraData.length > 0 ? extraData : (subpage === 'areas' ? data : []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {errorMsg && (
         <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-3">
           <AlertCircle className="w-5 h-5 shrink-0" />
@@ -770,20 +777,25 @@ export const StoresView: React.FC = () => {
 
           {subpage === 'managers' && (
             <>
-              <button
-                onClick={() => handleOpenSwapModal()}
-                className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Swap Managers
-              </button>
-              <button
-                onClick={() => setShowLinkModal(true)}
-                className="border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <LinkIcon className="w-4 h-4 text-primary" />
-                Generate Manager Link
-              </button>
+              <Can permission='stores.add_area'>
+
+                <button
+                  onClick={() => handleOpenSwapModal()}
+                  className="border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Swap Managers
+                </button>
+              </Can>
+              <Can permission='stores.add_area'>
+                <button
+                  onClick={() => setShowLinkModal(true)}
+                  className="border border-outline dark:border-dark-outline bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <LinkIcon className="w-4 h-4 text-primary" />
+                  Generate Manager Link
+                </button>
+              </Can>
             </>
           )}
 
@@ -872,7 +884,7 @@ export const StoresView: React.FC = () => {
 
           {/* Desktop View: Table */}
           <div className="hidden sm:block">
-            <div className="ag-theme-app w-full" style={{ height: 44 + Math.max(1, Math.min(itemsPerPage, filteredData.length)) * 52 + 10, maxHeight: 'calc(100vh - 280px)' }}>
+            <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
               <AgGridReact
                 theme={appTheme}
                 rowData={filteredData}
@@ -1194,9 +1206,9 @@ export const StoresView: React.FC = () => {
                   </div>
                 ) : subpage === 'managers' ? (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Full Name</label>
+                        <label className="block text-xs font-semibold text-outline mb-1">Full Name *</label>
                         <input
                           required
                           type="text"
@@ -1206,10 +1218,37 @@ export const StoresView: React.FC = () => {
                           className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                         />
                       </div>
+                      <Can permission="accounts.can_edit_full_manager_details">
+                        <div>
+                          <label className="block text-xs font-semibold text-outline mb-1">Employee ID</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. EMP-101"
+                            value={managerForm.employee_no}
+                            onChange={e => setManagerForm({ ...managerForm, employee_no: e.target.value })}
+                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                          />
+                        </div>
+                      </Can>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Can permission="accounts.can_edit_full_manager_details">
+                        <div>
+                          <label className="block text-xs font-semibold text-outline mb-1">Username (Login) *</label>
+                          <input
+                            required
+                            type="text"
+                            placeholder="e.g. john_manager"
+                            value={managerForm.username}
+                            onChange={e => setManagerForm({ ...managerForm, username: e.target.value })}
+                            className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                          />
+                        </div>
+                      </Can>
                       <div>
-                        <label className="block text-xs font-semibold text-outline mb-1">Email / Username</label>
+                        <label className="block text-xs font-semibold text-outline mb-1">Email</label>
                         <input
-                          required
                           type="email"
                           placeholder="e.g. john@example.com"
                           value={managerForm.email}
@@ -1218,6 +1257,22 @@ export const StoresView: React.FC = () => {
                         />
                       </div>
                     </div>
+
+                    <Can permission="accounts.can_edit_full_manager_details">
+                      <div>
+                        <label className="block text-xs font-semibold text-outline mb-1">
+                          Password {editItem ? '(Leave blank to keep current)' : '*'}
+                        </label>
+                        <input
+                          type="password"
+                          required={!editItem}
+                          placeholder={editItem ? '•••••••• (Leave blank to keep current)' : 'Set password'}
+                          value={managerForm.password}
+                          onChange={e => setManagerForm({ ...managerForm, password: e.target.value })}
+                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        />
+                      </div>
+                    </Can>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -1261,30 +1316,31 @@ export const StoresView: React.FC = () => {
                         )}
                       </div>
                     )}
+                    <Can permission="accounts.can_edit_full_manager_details">
 
-                    <div>
-                      <label className="block text-xs font-semibold text-outline mb-1">New Store / Location</label>
-                      <select
-                        value={managerForm.store_id}
-                        onChange={e => {
-                          setManagerForm({ ...managerForm, store_id: e.target.value });
-                          setConflictAction('swap');
-                          setConflictReassignStoreId('');
-                        }}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      >
-                        <option value="">No Store Assigned (Unassigned)</option>
-                        {extraData.map((s: any) => {
-                          const mgrName = s.manager?.full_name ? ` (Managed by ${s.manager.full_name})` : ' (Unmanaged)';
-                          return (
-                            <option key={s.store_id} value={s.store_id}>
-                              {s.store_id} -{s.store_name}{mgrName}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-
+                      <div>
+                        <label className="block text-xs font-semibold text-outline mb-1">New Store / Location</label>
+                        <select
+                          value={managerForm.store_id}
+                          onChange={e => {
+                            setManagerForm({ ...managerForm, store_id: e.target.value });
+                            setConflictAction('swap');
+                            setConflictReassignStoreId('');
+                          }}
+                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        >
+                          <option value="">No Store Assigned (Unassigned)</option>
+                          {extraData.map((s: any) => {
+                            const mgrName = s.manager?.full_name ? ` (Managed by ${s.manager.full_name})` : ' (Unmanaged)';
+                            return (
+                              <option key={s.store_id} value={s.store_id}>
+                                {s.store_id} -{s.store_name}{mgrName}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    </Can>
                     {(() => {
                       const selectedStoreObj = extraData.find((s: any) => String(s.store_id) === String(managerForm.store_id));
                       const targetManager = selectedStoreObj?.manager;
@@ -1418,23 +1474,45 @@ export const StoresView: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="px-3.5 py-2 border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium rounded transition-colors cursor-pointer
- cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={actionLoading}
-                    className="px-3.5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-70 shadow-xs cursor-pointer"
-                  >
-                    {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Save Changes
-                  </button>
+                <div className="flex justify-between items-center pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+                  {editItem ? (
+                    <Can permission={
+                      subpage === 'areas' ? 'stores.delete_area' :
+                        subpage === 'departments' ? 'stores.delete_department' :
+                          subpage === 'managers' ? 'accounts.delete_customuser' :
+                            'stores.delete_store'
+                    }>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDelete(editItem.store_id || editItem.area_id || editItem.department_id || editItem.user_id);
+                          setShowModal(false);
+                        }}
+                        className="px-3.5 py-2 bg-error-container/40 border border-error/30 text-on-error-container hover:bg-error-container text-xs font-medium rounded flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </Can>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="px-3.5 py-2 border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium rounded transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="px-3.5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-medium rounded flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-70 shadow-xs"
+                    >
+                      {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Save Changes</span>
+                    </button>
+                  </div>
                 </div>
               </form>
             </motion.div>

@@ -10,6 +10,9 @@ interface CanProps {
 
     // Optional: yellow badge instead of red
     isSuggestedPermission?: boolean;
+
+    // Optional: custom CSS classes for the wrapper element
+    className?: string;
 }
 
 // Global developer mode state
@@ -30,6 +33,7 @@ function Can({
     permission,
     children,
     isSuggestedPermission = false,
+    className = "",
 }: CanProps) {
     const { hasPermission } = usePermission();
 
@@ -113,12 +117,28 @@ function Can({
      * ALLOWED
      */
     if (allowed) {
+        if (!showDebug) {
+            if (className) {
+                return (
+                    <div
+                        className={className}
+                        data-permission={displayValue}
+                    >
+                        {children}
+                    </div>
+                );
+            }
+            return <>{children}</>;
+        }
+
+        const wrapperClass = className ? className : "inline-block";
+
         return (
             <div
                 className={`
                     relative
-                    inline-block
                     group
+                    ${wrapperClass}
                     ${showDebug
                         ? "border-2 border-green-500"
                         : ""
@@ -192,14 +212,14 @@ function Can({
      */
     return (
         <div
-            className="
+            className={`
                 relative
-                inline-block
                 group
                 opacity-50
                 border-2
                 border-red-500
-            "
+                ${className ? className : "inline-block"}
+            `}
         >
             {children}
 

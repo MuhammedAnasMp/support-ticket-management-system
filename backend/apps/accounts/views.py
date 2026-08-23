@@ -255,6 +255,9 @@ class LoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        from django.contrib.auth.models import update_last_login
+        update_last_login(None, user)
+
         # Generate or get token
         token, created = Token.objects.get_or_create(user=user)
 
@@ -294,6 +297,7 @@ class LoginView(APIView):
                 "active": user.active,
                 "is_superuser": user.is_superuser,
                 "profile_image": profile_image_url,
+                "last_login": user.last_login.isoformat() if user.last_login else None,
                 "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
@@ -330,6 +334,7 @@ class ProfileView(APIView):
                 'whatsapp_number': managed_store.whatsapp_number,
                 'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
                 'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+                'store_updated_at': managed_store.store_updated_at.isoformat() if managed_store.store_updated_at else None,
             }
 
         return Response({
@@ -347,6 +352,8 @@ class ProfileView(APIView):
                 "active": user.active,
                 "is_superuser": user.is_superuser,
                 "profile_image": profile_image_url,
+                "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
+                "last_login": user.last_login.isoformat() if user.last_login else None,
                 "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
@@ -367,6 +374,7 @@ class ProfileView(APIView):
         full_name = request.data.get('full_name')
         phone = request.data.get('phone')
         whatsapp_number = request.data.get('whatsapp_number')
+        password = request.data.get('password')
         profile_image = request.FILES.get('profile_image')
 
         # Validation
@@ -384,6 +392,7 @@ class ProfileView(APIView):
             if get_user_model().objects.filter(employee_no=employee_no).exclude(pk=user.pk).exists():
                 return Response({"error": "Employee number is already in use by another user."}, status=status.HTTP_400_BAD_REQUEST)
 
+        from django.utils import timezone
         updated = False
         if employee_no is not None:
             user.employee_no = employee_no
@@ -397,11 +406,15 @@ class ProfileView(APIView):
         if whatsapp_number is not None:
             user.whatsapp_number = whatsapp_number
             updated = True
+        if password and str(password).strip():
+            user.set_password(str(password).strip())
+            updated = True
         if profile_image is not None:
             user.profile_image = profile_image
             updated = True
 
         if updated:
+            user.profile_updated_at = timezone.now()
             user.save()
 
         # Build image URL if it exists
@@ -422,6 +435,7 @@ class ProfileView(APIView):
                 'whatsapp_number': managed_store.whatsapp_number,
                 'longitude': str(managed_store.longitude) if managed_store.longitude is not None else None,
                 'latitude': str(managed_store.latitude) if managed_store.latitude is not None else None,
+                'store_updated_at': managed_store.store_updated_at.isoformat() if managed_store.store_updated_at else None,
             }
 
         return Response({
@@ -439,6 +453,8 @@ class ProfileView(APIView):
                 "active": user.active,
                 "is_superuser": user.is_superuser,
                 "profile_image": profile_image_url,
+                "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
+                "last_login": user.last_login.isoformat() if user.last_login else None,
                 "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),

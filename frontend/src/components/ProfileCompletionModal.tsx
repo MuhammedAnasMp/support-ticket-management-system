@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Loader2, AlertCircle, Upload, X, CheckCircle2 } from 'lucide-react';
+import { Loader2, AlertCircle, Upload, X, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import type { RootState } from '../store';
 import { setCredentials } from '../store/authSlice';
 
@@ -15,6 +15,8 @@ export const ProfileCompletionModal: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
@@ -23,14 +25,23 @@ export const ProfileCompletionModal: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
 
-  // Check if profile is incomplete and needs completion (for Managers only)
-  const isManager = user?.role?.toLowerCase().includes('manager');
-  const isProfileIncomplete = !!isManager && (
-    !user?.employee_no ||
-    !user?.full_name ||
-    !user?.phone ||
-    !user?.whatsapp_number ||
-    !user?.profile_image
+  // Helper to check if updated date is older than 60 days (2 months)
+  const isOlderThan60Days = (dateStr?: string | null) => {
+    if (!dateStr) return true;
+    const updatedTime = new Date(dateStr).getTime();
+    if (isNaN(updatedTime)) return true;
+    const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
+    return (Date.now() - updatedTime) > sixtyDaysMs;
+  };
+
+  // Check if profile is incomplete or expired (for ALL users)
+  const isProfileIncomplete = !!user && (
+    !user.employee_no ||
+    !user.full_name ||
+    !user.phone ||
+    !user.whatsapp_number ||
+    !user.profile_image ||
+    isOlderThan60Days((user as any).profile_updated_at)
   );
 
   const hasCheckedAutoOpen = useRef(false);
@@ -62,7 +73,7 @@ export const ProfileCompletionModal: React.FC = () => {
     return () => window.removeEventListener('open-profile-edit', handleOpen);
   }, [user]);
 
-  // Auto-open logic on load
+  // Strict Auto-open logic on load (Every 2 months / incomplete)
   useEffect(() => {
     if (!token || !user || !isProfileIncomplete || hasCheckedAutoOpen.current) {
       return;
@@ -70,33 +81,15 @@ export const ProfileCompletionModal: React.FC = () => {
 
     hasCheckedAutoOpen.current = true;
 
-    // Set initial values from user profile (filling what exists)
+    // Set initial values from user profile (phone & whatsapp MUST show as BLANK for fresh verification)
     setEmployeeNo(user.employee_no || '');
     setFullName(user.full_name || '');
-    setPhone(user.phone || '');
-    setWhatsappNumber(user.whatsapp_number || '');
+    setPhone('');
+    setWhatsappNumber('');
     setImagePreview(user.profile_image || null);
 
-    const today = new Date().toISOString().split('T')[0];
-    const storageKey = `profile_popup_shows_${user.user_id}`;
-    const dataStr = localStorage.getItem(storageKey);
-    let count = 0;
-
-    if (dataStr) {
-      try {
-        const data = JSON.parse(dataStr);
-        if (data.date === today) {
-          count = data.count;
-        }
-      } catch (e) { }
-    }
-
-    if (count < 2) {
-      setIsManualOpen(false);
-      setIsOpen(true);
-      // Increment show count
-      localStorage.setItem(storageKey, JSON.stringify({ date: today, count: count + 1 }));
-    }
+    setIsManualOpen(false);
+    setIsOpen(true);
   }, [token, user, isProfileIncomplete]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,6 +118,9 @@ export const ProfileCompletionModal: React.FC = () => {
       formData.append('full_name', fullName);
       formData.append('phone', phone);
       formData.append('whatsapp_number', whatsappNumber);
+      if (password) {
+        formData.append('password', password);
+      }
       if (imageFile) {
         formData.append('profile_image', imageFile);
       }
@@ -168,8 +164,8 @@ export const ProfileCompletionModal: React.FC = () => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 .bg-black/60 backdrop-blur-sm"
-        onClick={() => setIsOpen(false)}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={isManualOpen ? () => setIsOpen(false) : undefined}
       />
 
       {/* Modal Content */}
@@ -182,15 +178,17 @@ export const ProfileCompletionModal: React.FC = () => {
               {isManualOpen ? 'Edit Your Profile' : 'Complete Your Profile'}
             </h3>
             <p className="text-[10px] text-outline mt-0.5">
-              {isManualOpen ? 'Update your account details below' : 'Please update your manager details to continue'}
+              {isManualOpen ? 'Update your account details below' : 'Please update your user profile details to continue'}
             </p>
           </div>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="p-1 rounded-lg hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-outline cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {isManualOpen && (
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-1 rounded-lg hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-outline cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {errorMsg && (
@@ -280,6 +278,29 @@ export const ProfileCompletionModal: React.FC = () => {
                   placeholder="8 or 10 digits"
                   className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                 />
+              </div>
+            </div>
+
+            {/* Password Field (Optional) */}
+            <div>
+              <label className="block text-xs font-semibold text-outline mb-1.5">
+                New Password <span className="text-[10px] text-outline font-normal">(Leave blank to keep current)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter new password to update"
+                  className="w-full text-xs bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant p-2.5 pr-10 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface p-1 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 

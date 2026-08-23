@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -159,6 +159,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [editWorkLogForm, setEditWorkLogForm] = useState({ hours: '', work_done: '' });
     const [editExpenseForm, setEditExpenseForm] = useState({ amount: '', remarks: '', expense_type_id: '' });
     const [editAllocationForm, setEditAllocationForm] = useState({ planned_hours: '', remarks: '' });
+    const [editAllocationVoiceFile, setEditAllocationVoiceFile] = useState<File | null>(null);
+    const [deleteExistingVoiceNote, setDeleteExistingVoiceNote] = useState(false);
+    const [isEditAssignRecordingPending, setIsEditAssignRecordingPending] = useState(false);
     const [expenseFiles, setExpenseFiles] = useState<Record<number, File[]>>({});
     const [replacingMediaId, setReplacingMediaId] = useState<number | null>(null);
     const [isFabOpen, setIsFabOpen] = useState(false);
@@ -189,9 +192,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         );
     }, [user, hasPermission]);
     const navigate = useNavigate();
-
     const uploadAbortRef = useRef<AbortController | null>(null);
-    // const [natureWorkers, setNatureWorkers] = useState<any[]>([]);
+
+    // Prevent background page scrolling on mobile/desktop while ticket modal is open
+    useEffect(() => {
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = originalOverflow;
+        };
+    }, []);
+
     // Load ticket sub-data on mount
     useEffect(() => {
         uploadAbortRef.current?.abort();
@@ -539,17 +550,39 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         if (!editingAllocation) return;
         setActionLoading(true);
         try {
+            const formData = new FormData();
+            formData.append('planned_hours', editAllocationForm.planned_hours);
+            formData.append('remarks', editAllocationForm.remarks);
+
+            if (editAllocationVoiceFile) {
+                formData.append('voice_note', editAllocationVoiceFile);
+            } else if (deleteExistingVoiceNote) {
+                formData.append('voice_note', '');
+            }
+
             const response = await fetch(`${API_URL}/maintenance/allocation/${editingAllocation.allocation_id}/`, {
                 method: 'PATCH',
-                headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ planned_hours: editAllocationForm.planned_hours, remarks: editAllocationForm.remarks })
+                headers: { Authorization: `Token ${token}` },
+                body: formData
             });
+
             if (response.ok) {
                 setEditingAllocation(null);
+                setEditAllocationVoiceFile(null);
+                setDeleteExistingVoiceNote(false);
                 await refreshTicketData();
+            } else {
+                const errData = await response.json().catch(() => ({}));
+                alert(Object.values(errData).flat().join(', ') || 'Failed to update allocation.');
+                setEditingAllocation(null);
+                setEditAllocationVoiceFile(null);
+                setDeleteExistingVoiceNote(false);
             }
         } catch (err) {
             console.error(err);
+            setEditingAllocation(null);
+            setEditAllocationVoiceFile(null);
+            setDeleteExistingVoiceNote(false);
         } finally {
             setActionLoading(false);
         }
@@ -1098,7 +1131,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     });
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 overscroll-contain">
             {/* Hidden Media replacement input */}
             <input
                 id="media-replacement-input"
@@ -1142,6 +1175,18 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
 
                     <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <Can permission="maintenance.can_see_device_info">
+                            {ticketDetails.device_info && (
+                                <div className="inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-medium shrink-0" title="Created using device">
+                                    {/iOS|Android/i.test(ticketDetails.device_info) ? (
+                                        <Smartphone className="w-3.5 h-3.5 shrink-0 text-primary" />
+                                    ) : (
+                                        <Monitor className="w-3.5 h-3.5 shrink-0 text-primary" />
+                                    )}
+                                    <span>{ticketDetails.device_info}</span>
+                                </div>
+                            )}
+                        </Can>
                         <button
                             onClick={() => setIsChatOpen(prev => !prev)}
                             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant hover:bg-surface-container-high text-xs font-semibold text-primary hover:text-primary-hover transition-all cursor-pointer active:scale-95 touch-manipulation"
@@ -1154,7 +1199,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                         <button
                             onClick={handleClose}
-                            className="p-2 rounded-lg text-outline hover:bg-surface-container-high active:scale-95 transition-transform min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer touch-manipulation"
+                            className="p-1 rounded-lg text-outline hover:bg-surface-container-high active:scale-95 transition-transform min-h-[15px] cursor-pointer touch-manipulation"
                             aria-label="Close Modal"
                         >
                             <X className="w-5 h-5" />
@@ -1208,6 +1253,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <span className="font-bold text-on-surface dark:text-dark-on-surface">{ticketDetails.store.store_name}</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-outline"><AlertCircle className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.nature.nature_name}</span></div>
+
                                             {(() => {
                                                 const lvl = ticketDetails.priority?.level ?? 1;
                                                 const badgeColorClass = lvl >= 3
@@ -1543,10 +1589,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             <AvatarCircle user={a.worker} size="md" />
                                                             <div className="min-w-0">
                                                                 <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">{a.worker.full_name}</p>
-                                                                <div className="flex items-center gap-2 text-[10px] text-outline">
+                                                                {/* <div className="flex items-center gap-2 text-[10px] text-outline">
                                                                     {a.worker.role && <span>{a.worker.role.role_name}</span>}
                                                                     {a.worker.employee_no && <span>· ID: {a.worker.employee_no}</span>}
-                                                                </div>
+                                                                </div> */}
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
@@ -1566,7 +1612,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             <span className="text-xs bg-primary/10 text-primary font-bold px-2.5 py-1.5 rounded-lg">{a.planned_hours}h Planned</span>
                                                             <Can permission="maintenance.change_allocation">
                                                                 <button
-                                                                    onClick={() => { setEditingAllocation(a); setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' }); }}
+                                                                    onClick={() => {
+                                                                        setEditingAllocation(a);
+                                                                        setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' });
+                                                                        setEditAllocationVoiceFile(null);
+                                                                        setDeleteExistingVoiceNote(false);
+                                                                    }}
                                                                     className="min-h-[15px] min-w-[44px] flex items-center justify-center rounded border border-outline-variant dark:border-dark-outline-variant hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface active:scale-95 transition-transform"
                                                                     aria-label="Edit Allocation"
                                                                 >
@@ -1577,23 +1628,23 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     </div>
 
                                                     {/* View All Instructions */}
-                                                    <Can permission="maintenance.can_view_all_instruction">
+                                                    <Can permission="maintenance.can_view_all_instruction" className="w-full">
                                                         {(!a.remarks && !a.voice_note) ? null : (
-                                                            <div className="mx-2 my-2 p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-xl space-y-2 text-xs">
+                                                            <div className="w-full p-2 bg-primary/5 dark:bg-primary/10 border-y border-outline-variant/40 space-y-1 text-xs box-border">
                                                                 {a.remarks && (
-                                                                    <p className="text-on-surface dark:text-dark-on-surface font-medium">{a.remarks}</p>
+                                                                    <p className="text-on-surface dark:text-dark-on-surface font-medium text-[11px] sm:text-xs leading-snug">{a.remarks}</p>
                                                                 )}
                                                                 {a.voice_note && (
-                                                                    <div className="border-primary/15 flex flex-col gap-1.5">
-                                                                        <span className="text-[10px] font-bold text-primary flex items-center gap-1.5">
-                                                                            <Headphones className="w-3.5 h-3.5 animate-pulse shrink-0 text-primary" />
+                                                                    <div className="w-full flex flex-col gap-0.5 box-border">
+                                                                        <span className="text-[9px] sm:text-[10px] font-bold text-primary flex items-center gap-1">
+                                                                            <Headphones className="w-3 h-3 shrink-0 text-primary" />
                                                                             <span>Instruction for {a.worker.full_name}:</span>
                                                                         </span>
                                                                         <audio
                                                                             src={getMediaUrl(a.voice_note)}
                                                                             controls
                                                                             preload="metadata"
-                                                                            className="w-full h-9 rounded-lg"
+                                                                            className="w-full min-w-full block h-8 rounded outline-none"
                                                                         />
                                                                     </div>
                                                                 )}
@@ -1603,23 +1654,23 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                                     {/* View My Instruction (if not superuser, doesn't have view_all_instruction, but is my worker card) */}
                                                     {!hasPermission('maintenance.can_view_all_instruction') && !user?.is_superuser && (user as any)?.user_id === a.worker.user_id && (
-                                                        <Can permission="maintenance.can_view_my_instruction">
+                                                        <Can permission="maintenance.can_view_my_instruction" className="w-full">
                                                             {(!a.remarks && !a.voice_note) ? null : (
-                                                                <div className="mx-2 my-2 p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-xl space-y-2 text-xs">
+                                                                <div className="w-full p-2 bg-primary/5 dark:bg-primary/10 border-y border-outline-variant/40 space-y-1 text-xs box-border">
                                                                     {a.remarks && (
-                                                                        <p className="text-on-surface dark:text-dark-on-surface font-medium">{a.remarks}</p>
+                                                                        <p className="text-on-surface dark:text-dark-on-surface font-medium text-[11px] sm:text-xs leading-snug">{a.remarks}</p>
                                                                     )}
                                                                     {a.voice_note && (
-                                                                        <div className="border-primary/15 flex flex-col gap-1.5">
-                                                                            <span className="text-[10px] font-bold text-primary flex items-center gap-1.5">
-                                                                                <Headphones className="w-3.5 h-3.5 animate-pulse shrink-0 text-primary" />
+                                                                        <div className="w-full flex flex-col gap-0.5 box-border">
+                                                                            <span className="text-[9px] sm:text-[10px] font-bold text-primary flex items-center gap-1">
+                                                                                <Headphones className="w-3 h-3 shrink-0 text-primary" />
                                                                                 <span>Instruction for {a.worker.full_name}:</span>
                                                                             </span>
                                                                             <audio
                                                                                 src={getMediaUrl(a.voice_note)}
                                                                                 controls
                                                                                 preload="metadata"
-                                                                                className="w-full h-9 rounded-lg"
+                                                                                className="w-full min-w-full block h-8 rounded outline-none"
                                                                             />
                                                                         </div>
                                                                     )}
@@ -2003,7 +2054,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             // Before Repair Media
                             {
                                 key: 'before-media',
-                                label: 'Before Repair Media',
+                                label: 'Before Repair',
                                 icon: <Camera className="w-4 h-4" />,
                                 color: 'bg-indigo-500 hover:bg-indigo-600 text-white',
                                 onClick: () => { setIsManageIssueMediaOpen(true); setIsFabOpen(false); },
@@ -2082,7 +2133,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                             {
                                 key: 'complete',
-                                label: 'Request Location Approval',
+                                label: 'Request Approval',
                                 icon: <CheckCircle2 className="w-4 h-4" />,
                                 color: 'bg-emerald-600 hover:bg-emerald-700 text-white',
                                 onClick: () => { handleMoveToNextStatus(); setIsFabOpen(false); },
@@ -2291,23 +2342,41 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                 {/* Speed-dial actions */}
                                 <AnimatePresence>
-                                    {isFabOpen && visibleActions.map((action, idx) => (
-                                        <Can key={action.key} permission={action.permission ? (action.permission as any) : true}>
-                                            <motion.button
-                                                initial={{ opacity: 0, y: 12, scale: 0.85 }}
-                                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                exit={{ opacity: 0, y: 8, scale: 0.85 }}
-                                                transition={{ delay: (visibleActions.length - 1 - idx) * 0.04, duration: 0.18 }}
-                                                onClick={action.onClick}
-                                                disabled={actionLoading}
-                                                className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full text-xs font-semibold shadow-lg cursor-pointer active:scale-95 transition-all disabled:opacity-50 whitespace-nowrap ${action.color}`}
-                                            >
-                                                {action.icon}
-                                                <span>{action.label}</span>
-                                            </motion.button>
-                                        </Can>
-                                    ))}
+                                    {isFabOpen && (() => {
+                                        const activeWorkerObj = allocations.find(a => a.worker.user_id === activeWorkerId)?.worker || (user as any);
+
+                                        return visibleActions.map((action, idx) => {
+                                            const isWorkerAction = action.key === 'log-hours' || action.key === 'log-expense';
+                                            const actionIcon = (isWorkerAction && activeWorkerObj)
+                                                ? <AvatarCircle user={activeWorkerObj} size="sm" />
+                                                : action.icon;
+
+                                            return (
+                                                <Can
+                                                    key={action.key}
+                                                    permission={action.permission ? (action.permission as any) : true}
+                                                >
+                                                    <motion.button
+                                                        initial={{ opacity: 0, y: 12, scale: 0.85 }}
+                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                        exit={{ opacity: 0, y: 8, scale: 0.85 }}
+                                                        transition={{
+                                                            delay: (visibleActions.length - 1 - idx) * 0.04,
+                                                            duration: 0.18
+                                                        }}
+                                                        onClick={action.onClick}
+                                                        disabled={actionLoading}
+                                                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full w-40 text-xs font-semibold shadow-lg cursor-pointer active:scale-95 transition-all disabled:opacity-50 whitespace-nowrap ${action.color}`}
+                                                    >
+                                                        {actionIcon}
+                                                        <span>{action.label}</span>
+                                                    </motion.button>
+                                                </Can>
+                                            );
+                                        });
+                                    })()}
                                 </AnimatePresence>
+
 
                                 {/* Main FAB toggle button */}
                                 <motion.button
@@ -2769,12 +2838,77 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
                                         <input type="text" className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" value={editAllocationForm.remarks} onChange={e => setEditAllocationForm({ ...editAllocationForm, remarks: e.target.value })} placeholder="Remarks (optional)" />
                                     </div>
+
+                                    {/* Voice Instruction Section */}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-outline mb-1.5">
+                                            Voice Instruction
+                                        </label>
+                                        {editingAllocation.voice_note && !deleteExistingVoiceNote && !editAllocationVoiceFile ? (
+                                            <div className="p-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant/60 rounded-lg space-y-2">
+                                                <div className="flex items-center justify-between text-xs font-semibold text-primary">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <Headphones className="w-4 h-4 text-primary" /> Current Voice Instruction
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDeleteExistingVoiceNote(true)}
+                                                        className="text-xs text-red-600 hover:bg-red-500/10 px-2 py-1 rounded flex items-center gap-1 cursor-pointer font-bold transition-colors"
+                                                        title="Delete current voice instruction"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                                <audio src={getMediaUrl(editingAllocation.voice_note)} controls className="w-full h-8 rounded" />
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {deleteExistingVoiceNote && (
+                                                    <div className="flex items-center justify-between p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                                        <span>Voice note marked for deletion. Record new audio below or save.</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setDeleteExistingVoiceNote(false)}
+                                                            className="text-[10px] underline hover:font-bold cursor-pointer"
+                                                        >
+                                                            Undo
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <VoiceRecorder
+                                                    onSave={(file) => {
+                                                        setEditAllocationVoiceFile(file);
+                                                        setDeleteExistingVoiceNote(false);
+                                                    }}
+                                                    onCancel={() => setEditAllocationVoiceFile(null)}
+                                                    onRecordingStateChange={setIsEditAssignRecordingPending}
+                                                    placeholderText="Record new voice instruction"
+                                                />
+                                                {editAllocationVoiceFile && (
+                                                    <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                                                        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-semibold truncate">
+                                                            <Headphones className="w-4 h-4 shrink-0 animate-pulse" />
+                                                            <span className="truncate">{editAllocationVoiceFile.name}</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setEditAllocationVoiceFile(null)}
+                                                            className="p-1 text-red-500 hover:bg-red-500/10 rounded cursor-pointer"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div className="flex justify-end gap-2 pt-2">
                                         <button type="button" onClick={() => { if (window.confirm('Are you sure you want to remove this worker allocation?')) handleDeleteAllocation(editingAllocation.allocation_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded-lg mr-auto flex items-center gap-2">
-                                            <Trash2 className="w-4 h-4" /> Remove
+                                            <Trash2 className="w-4 h-4" /> Remove Allocation
                                         </button>
                                         <button type="button" onClick={() => setEditingAllocation(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded-lg text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
-                                        <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                                        <button type="submit" disabled={actionLoading || isEditAssignRecordingPending} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                                             {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
                                         </button>
                                     </div>

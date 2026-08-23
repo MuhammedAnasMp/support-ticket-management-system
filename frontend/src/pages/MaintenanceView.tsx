@@ -52,6 +52,14 @@ export const MaintenanceView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'table' | 'flowchart'>('flowchart');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
   const [flowZoom, setFlowZoom] = useState<number>(1);
+  const [resetDragKey, setResetDragKey] = useState<number>(0);
+  const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // States
   const [data, setData] = useState<any[]>([]);
@@ -229,7 +237,7 @@ export const MaintenanceView: React.FC = () => {
     };
 
     if (subpage === 'natures') {
-      return [
+      const cols: ColDef[] = [
         { headerName: 'Nature ID', field: 'nature_id', width: 110, cellClass: 'font-mono text-xs' },
         { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
         { headerName: 'Nature Name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface', field: 'nature_name' },
@@ -262,26 +270,35 @@ export const MaintenanceView: React.FC = () => {
               {params.value ? 'Active' : 'Inactive'}
             </span>
           )
-        },
-        { headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+        }
       ];
+      if (!isMobile) {
+        cols.push({ headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false });
+      }
+      return cols;
     } else if (subpage === 'worker-assignments') {
-      return [
+      const cols: ColDef[] = [
         { headerName: 'ID', field: 'nature_worker_id', width: 90, cellClass: 'font-mono text-xs' },
         { headerName: 'Nature of Work', field: 'nature.nature_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface', valueGetter: p => p.data?.nature?.nature_name || 'N/A' },
-        { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' },
-        { headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+        { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' }
       ];
+      if (!isMobile) {
+        cols.push({ headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false });
+      }
+      return cols;
     } else if (subpage === 'sub-departments') {
-      return [
+      const cols: ColDef[] = [
         { headerName: 'ID', field: 'sub_department_id', width: 90, cellClass: 'font-mono text-xs' },
         { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
-        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false }
+        { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' }
       ];
+      if (!isMobile) {
+        cols.push({ headerName: 'Actions', width: 90, cellRenderer: editActionCellRenderer, sortable: false, filter: false });
+      }
+      return cols;
     }
     return [];
-  }, [subpage]);
+  }, [subpage, isMobile]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     sortable: true,
@@ -585,40 +602,40 @@ export const MaintenanceView: React.FC = () => {
   }, [allowedDepts, allowedSubs, allowedNatures, workerAssignments, search, selectedDeptFilter]);
 
   // Dynamic SVG Line calculation between Flowchart Tiers
+  const recalculateLines = () => {
+    if (!treeContainerRef.current) return;
+    const containerRect = treeContainerRef.current.getBoundingClientRect();
+    const childNodes = treeContainerRef.current.querySelectorAll<HTMLElement>('[data-parent-id]');
+    const newConnections: LineConnection[] = [];
+
+    childNodes.forEach(child => {
+      const parentId = child.getAttribute('data-parent-id');
+      if (!parentId) return;
+      const parent = treeContainerRef.current?.querySelector<HTMLElement>(`[data-node-id="${parentId}"]`);
+      if (!parent) return;
+
+      const pRect = parent.getBoundingClientRect();
+      const cRect = child.getBoundingClientRect();
+
+      const fromX = (pRect.left + pRect.width / 2 - containerRect.left) / flowZoom;
+      const fromY = (pRect.bottom - containerRect.top) / flowZoom;
+      const toX = (cRect.left + cRect.width / 2 - containerRect.left) / flowZoom;
+      const toY = (cRect.top - containerRect.top) / flowZoom;
+
+      newConnections.push({
+        id: `${parentId}->${child.getAttribute('data-node-id')}`,
+        fromX,
+        fromY,
+        toX,
+        toY
+      });
+    });
+
+    setConnections(newConnections);
+  };
+
   useLayoutEffect(() => {
     if (viewMode !== 'flowchart' || !treeContainerRef.current) return;
-
-    const recalculateLines = () => {
-      if (!treeContainerRef.current) return;
-      const containerRect = treeContainerRef.current.getBoundingClientRect();
-      const childNodes = treeContainerRef.current.querySelectorAll<HTMLElement>('[data-parent-id]');
-      const newConnections: LineConnection[] = [];
-
-      childNodes.forEach(child => {
-        const parentId = child.getAttribute('data-parent-id');
-        if (!parentId) return;
-        const parent = treeContainerRef.current?.querySelector<HTMLElement>(`[data-node-id="${parentId}"]`);
-        if (!parent) return;
-
-        const pRect = parent.getBoundingClientRect();
-        const cRect = child.getBoundingClientRect();
-
-        const fromX = (pRect.left + pRect.width / 2 - containerRect.left) / flowZoom;
-        const fromY = (pRect.bottom - containerRect.top) / flowZoom;
-        const toX = (cRect.left + cRect.width / 2 - containerRect.left) / flowZoom;
-        const toY = (cRect.top - containerRect.top) / flowZoom;
-
-        newConnections.push({
-          id: `${parentId}->${child.getAttribute('data-node-id')}`,
-          fromX,
-          fromY,
-          toX,
-          toY
-        });
-      });
-
-      setConnections(newConnections);
-    };
 
     const timeout = setTimeout(recalculateLines, 100);
     window.addEventListener('resize', recalculateLines);
@@ -626,7 +643,7 @@ export const MaintenanceView: React.FC = () => {
       clearTimeout(timeout);
       window.removeEventListener('resize', recalculateLines);
     };
-  }, [treeData, viewMode, flowZoom, selectedDeptFilter]);
+  }, [treeData, viewMode, flowZoom, selectedDeptFilter, resetDragKey]);
 
   const filteredData = data.filter(item => {
     const text = (item.nature_name || item.sub_department_name || item.worker?.full_name || '').toLowerCase();
@@ -656,9 +673,14 @@ export const MaintenanceView: React.FC = () => {
           <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant" />
           <input
             type="text"
-            placeholder="Search hierarchy..."
+            placeholder={viewMode === 'flowchart' ? 'Search hierarchy...' : 'Search table...'}
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => {
+              setSearch(e.target.value);
+              if (viewMode === 'table' && gridApi) {
+                gridApi.setGridOption('quickFilterText', e.target.value);
+              }
+            }}
             className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded pl-8 pr-3 py-2 focus:outline-none focus:border-primary"
           />
         </div>
@@ -779,47 +801,39 @@ export const MaintenanceView: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setFlowZoom(1)}
+                onClick={() => {
+                  setFlowZoom(1);
+                  setResetDragKey(prev => prev + 1);
+                  setTimeout(recalculateLines, 50);
+                }}
                 className="p-1 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded cursor-pointer ml-1 border-l border-outline-variant pl-1.5"
-                title="Reset Zoom"
+                title="Reset Diagram Layout & Zoom"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Diagram Canvas */}
-          <div className="relative overflow-auto p-5 min-h-[640px] bg-surface-container-lowest">
+          {/* Diagram Canvas Container */}
+          <div
+            onWheel={(e) => {
+              // Smooth scroll wheel zoom
+              const delta = e.deltaY < 0 ? 0.08 : -0.08;
+              setFlowZoom(prev => Math.min(2.0, Math.max(0.4, Number((prev + delta).toFixed(2)))));
+            }}
+            className="relative overflow-hidden p-6 h-[calc(100vh-220px)] min-h-[500px] bg-surface-container-lowest flex items-center justify-center select-none"
+          >
 
-            {/* Horizontal Dashed Level Division Guidelines */}
-            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between py-12 px-6 z-0 opacity-40">
-              <div className="border-b border-dashed border-outline flex justify-start">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
-                  L1: Department
-                </span>
-              </div>
-              <div className="border-b border-dashed border-outline flex justify-start">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
-                  L2: Sub-Department
-                </span>
-              </div>
-              <div className="border-b border-dashed border-outline flex justify-start">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
-                  L3: Work Nature
-                </span>
-              </div>
-              <div className="border-b border-dashed border-outline flex justify-start">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container-lowest px-2 -mb-2 border border-outline-variant rounded">
-                  L4: Assigned Technicians
-                </span>
-              </div>
-            </div>
-
-            {/* Tree Flow Graph Container */}
-            <div
+            {/* Tree Flow Graph Canvas - Instant Draggable Entire UI */}
+            <motion.div
+              key={`tree-canvas-${resetDragKey}`}
               ref={treeContainerRef}
-              style={{ transform: `scale(${flowZoom})`, transformOrigin: 'top center' }}
-              className="relative z-10 transition-transform duration-150 flex flex-col items-center gap-16 min-w-max pb-12"
+              drag
+              dragMomentum={false}
+              dragElastic={0}
+              onDrag={recalculateLines}
+              style={{ scale: flowZoom, transformOrigin: 'center center' }}
+              className="relative z-10 flex flex-col items-center justify-center gap-16 min-w-max pb-12 mx-auto cursor-grab active:cursor-grabbing touch-none select-none"
             >
               {/* Solid Continuous SVG Connector Lines */}
               <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
@@ -854,7 +868,7 @@ export const MaintenanceView: React.FC = () => {
                 </div>
               ) : (
                 treeData.map(dept => (
-                  <div key={dept.department_id} className="pl-32 flex flex-col items-center gap-14 w-full">
+                  <div key={dept.department_id} className="flex flex-col items-center justify-center gap-14 w-full">
 
                     {/* ── LEVEL 1: ROOT DEPARTMENT CARD ── */}
                     <div
@@ -1029,7 +1043,7 @@ export const MaintenanceView: React.FC = () => {
                   </div>
                 ))
               )}
-            </div>
+            </motion.div>
 
           </div>
         </div>
@@ -1038,10 +1052,11 @@ export const MaintenanceView: React.FC = () => {
            AG GRID TABLE VIEW
            ══════════════════════════════════════════════════════════════════════ */
         <div className="border border-outline-variant dark:border-dark-outline-variant bg-surface dark:bg-dark-surface rounded overflow-hidden flex flex-col">
-          <div className="ag-theme-app w-full h-[480px]">
+          <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
             <AgGridReact
               theme={appTheme}
-              rowData={filteredData}
+              rowData={data}
+              quickFilterText={search}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
               pagination={true}
@@ -1264,22 +1279,45 @@ export const MaintenanceView: React.FC = () => {
                   </>
                 )}
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={actionLoading}
-                    className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
-                  >
-                    {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    <span>Save Changes</span>
-                  </button>
+                <div className="flex justify-between items-center pt-3 border-t border-outline-variant">
+                  {editItem ? (
+                    <Can permission={
+                      activeModalType === 'natures' ? 'maintenance.delete_worknature' :
+                        activeModalType === 'worker-assignments' ? 'maintenance.delete_natureworker' :
+                          'stores.delete_subdepartment'
+                    }>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const id = editItem.nature_id || editItem.nature_worker_id || editItem.sub_department_id;
+                          handleDelete(id, activeModalType);
+                          setShowModal(false);
+                        }}
+                        className="bg-error-container/40 border border-error/30 text-on-error-container hover:bg-error-container text-xs font-medium px-3 py-2 rounded flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </Can>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Save Changes</span>
+                    </button>
+                  </div>
                 </div>
               </form>
             </motion.div>

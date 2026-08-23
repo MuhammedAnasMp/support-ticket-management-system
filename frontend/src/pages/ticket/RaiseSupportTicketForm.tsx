@@ -51,6 +51,16 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     const cameraPhotoInputRef = useRef<HTMLInputElement>(null);
     const cameraVideoInputRef = useRef<HTMLInputElement>(null);
 
+    // Prevent background page scrolling while modal is open
+    React.useEffect(() => {
+        if (!isOpen) return;
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = originalOverflow;
+        };
+    }, [isOpen]);
+
     // Re-sync/reset form when modal opens, availableDepartments changes, or stores changes
     React.useEffect(() => {
         if (isOpen) {
@@ -152,6 +162,24 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         setActionLoading(true);
         setErrorMessage(null);
 
+        const detectDeviceInfo = () => {
+            const ua = navigator.userAgent || '';
+            let os = 'Unknown OS';
+            if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS';
+            else if (/Android/i.test(ua)) os = 'Android';
+            else if (/Win/i.test(ua)) os = 'Windows';
+            else if (/Mac/i.test(ua)) os = 'macOS';
+            else if (/Linux/i.test(ua)) os = 'Linux';
+
+            let browser = '';
+            if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) browser = 'Chrome';
+            else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+            else if (/Edg/i.test(ua)) browser = 'Edge';
+            else if (/Firefox/i.test(ua)) browser = 'Firefox';
+
+            return browser ? `${os} (${browser})` : os;
+        };
+
         try {
             const response = await fetch(`${API_URL}/maintenance/ticket/`, {
                 method: 'POST',
@@ -164,7 +192,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                     department: createForm.department_id,
                     nature: createForm.nature_id,
                     title: createForm.title,
-                    description: createForm.description
+                    description: createForm.description,
+                    device_info: detectDeviceInfo()
                 })
             });
 
@@ -303,7 +332,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                             <option value="">Select Store</option>
                                             {stores.map(s => (
                                                 <option key={s.store_id} value={s.store_id}>
-                                                    {s.store_name}
+
+                                                    {s.store_id} - {s.store_name}
                                                 </option>
                                             ))}
                                         </select>
@@ -525,14 +555,14 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                                 >
                                                     {item.url && item.isImg ? (
                                                         <img src={item.url} alt="preview" className="w-full h-16 object-cover rounded mb-1" />
-                                                     ) : item.url && item.isAudio ? (
-                                                         <div className="w-full bg-surface-container flex flex-col items-center justify-center rounded mb-1 p-2 min-h-[64px]">
-                                                             <div className="flex items-center gap-1 mb-1 text-primary">
-                                                                 <Headphones className="w-4 h-4 animate-pulse shrink-0" />
-                                                                 <span className="text-[10px] font-bold">Voice Note</span>
-                                                             </div>
-                                                             <audio src={item.url} controls className="w-full h-8 rounded" />
-                                                         </div>
+                                                    ) : item.url && item.isAudio ? (
+                                                        <div className="w-full bg-surface-container flex flex-col items-center justify-center rounded mb-1 p-2 min-h-[64px]">
+                                                            <div className="flex items-center gap-1 mb-1 text-primary">
+                                                                <Headphones className="w-4 h-4 animate-pulse shrink-0" />
+                                                                <span className="text-[10px] font-bold">Voice Note</span>
+                                                            </div>
+                                                            <audio src={item.url} controls className="w-full h-8 rounded" />
+                                                        </div>
                                                     ) : (
                                                         <div className="w-full h-16 bg-surface-container flex items-center justify-center rounded mb-1">
                                                             {item.url && item.isVid ? (

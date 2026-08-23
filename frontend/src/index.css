@@ -139,6 +139,13 @@ body {
   color: #e3e3e4;
 }
 
+/* Mobile Typography Base Configuration */
+@media (max-width: 640px) {
+  html {
+    font-size: 106.25%; /* Increases mobile typography scale (~17px base) */
+  }
+}
+
 /* Custom Scrollbar for premium feel */
 ::-webkit-scrollbar {
   width: 8px;

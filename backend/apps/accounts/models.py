@@ -97,6 +97,7 @@ class CustomUser(AbstractUser):
     sub_departments = models.ManyToManyField(
         'stores.SubDepartment', blank=True, related_name='users')
     active = models.BooleanField(default=False)
+    profile_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         permissions = [
@@ -120,6 +121,8 @@ class CustomUser(AbstractUser):
             ("change_sub_departments", "Can change sub departments"),
             ("view_active", "Can view active"),
             ("change_active", "Can change active"),
+            ("can_edit_full_manager_details", "Can edit full manager details"),
+            ("can_edit_half_manager_details", "Can edit half manager details"),
         ]
 
     def __str__(self):

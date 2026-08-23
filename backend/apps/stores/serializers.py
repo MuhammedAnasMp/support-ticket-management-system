@@ -16,6 +16,11 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = '__all__'
 
+    def update(self, instance, validated_data):
+        from django.utils import timezone
+        instance.store_updated_at = timezone.now()
+        return super().update(instance, validated_data)
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['store_name'] = str(instance)
@@ -49,13 +54,15 @@ class ManagerSerializer(serializers.ModelSerializer):
     store = serializers.SerializerMethodField()
     store_id = serializers.CharField(write_only=True, required=False, allow_null=True)
     username = serializers.CharField(required=False)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    employee_no = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
     class Meta:
         from apps.accounts.models import CustomUser
         model = CustomUser
         fields = [
-            'user_id', 'username', 'email', 'full_name', 'phone', 
-            'whatsapp_number', 'role', 'store', 'store_id'
+            'user_id', 'employee_no', 'username', 'password', 'email', 'full_name', 'phone', 
+            'whatsapp_number', 'role', 'store', 'store_id', 'last_login'
         ]
         depth = 1
 
@@ -71,6 +78,7 @@ class ManagerSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         from apps.accounts.models import CustomUser, Role
         store_id = validated_data.pop('store_id', None)
+        password = validated_data.pop('password', None)
         
         try:
             role = Role.objects.get(role_name__icontains='Store Manager')
@@ -84,6 +92,7 @@ class ManagerSerializer(serializers.ModelSerializer):
         username = validated_data.get('username') or email
 
         user = CustomUser.objects.create(
+            employee_no=validated_data.get('employee_no'),
             username=username,
             email=email,
             full_name=validated_data.get('full_name'),
@@ -92,7 +101,10 @@ class ManagerSerializer(serializers.ModelSerializer):
             role=role,
             active=True
         )
-        user.set_password("123456")  # default password
+        if password:
+            user.set_password(password)
+        else:
+            user.set_password("123456")  # default password
         user.save()
 
         # Assign permission group
@@ -111,13 +123,27 @@ class ManagerSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         store_id = validated_data.pop('store_id', None)
+        password = validated_data.pop('password', None)
+        request = self.context.get('request')
         
+        can_edit_full = True
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            if not request.user.is_superuser and not request.user.has_perm('accounts.can_edit_full_manager_details'):
+                can_edit_full = False
+
         instance.full_name = validated_data.get('full_name', instance.full_name)
         instance.email = validated_data.get('email', instance.email)
         instance.phone = validated_data.get('phone', instance.phone)
         instance.whatsapp_number = validated_data.get('whatsapp_number', instance.whatsapp_number)
-        if 'username' in validated_data:
-            instance.username = validated_data.get('username')
+
+        if can_edit_full:
+            if 'employee_no' in validated_data:
+                instance.employee_no = validated_data.get('employee_no')
+            if 'username' in validated_data and validated_data.get('username'):
+                instance.username = validated_data.get('username')
+            if password:
+                instance.set_password(password)
+
         instance.save()
 
         if store_id is not None:

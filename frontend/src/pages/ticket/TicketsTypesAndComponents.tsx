@@ -42,6 +42,7 @@ export interface Ticket {
     location_approved_by?: UserStub | null;
     location_approved_date?: string | null;
     location_reject_reason?: string | null;
+    device_info?: string | null;
 }
 
 export interface Allocation {
