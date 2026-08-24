@@ -199,7 +199,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         const originalOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
         return () => {
-            document.body.style.overflow = originalOverflow;
+            document.body.style.overflow = (originalOverflow && originalOverflow !== 'hidden') ? originalOverflow : '';
         };
     }, []);
 
@@ -437,6 +437,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleClose = () => {
         uploadAbortRef.current?.abort();
         uploadAbortRef.current = null;
+        document.body.style.overflow = '';
         onClose();
     };
 

@@ -531,6 +531,13 @@ export const TicketsView: React.FC = () => {
         }
     }, [selectedTicket]);
 
+    // Ensure document.body overflow is restored whenever modals are closed (mobile scroll safety net)
+    useEffect(() => {
+        if (!selectedTicket && !isCreateModalOpen) {
+            document.body.style.overflow = '';
+        }
+    }, [selectedTicket, isCreateModalOpen]);
+
     // Load ticket from URL query parameter on refresh/load
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -1217,12 +1224,14 @@ export const TicketsView: React.FC = () => {
                                 />
                             </div>
                         </Can>
-                        <DateRangePickerCard
-                            fromDate={fromDate}
-                            toDate={toDate}
-                            onDateRangeChange={handleDateRangeChange}
-                            onReset={handleResetDates}
-                        />
+                        <div className="col-span-1 [&:nth-child(odd):last-child]:col-span-2 sm:w-auto">
+                            <DateRangePickerCard
+                                fromDate={fromDate}
+                                toDate={toDate}
+                                onDateRangeChange={handleDateRangeChange}
+                                onReset={handleResetDates}
+                            />
+                        </div>
                     </div>
 
                 </div>

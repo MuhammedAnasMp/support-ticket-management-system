@@ -6,7 +6,7 @@ import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, Edit2, Trash2, X, Loader2, AlertCircle,
+  Plus, Search, Edit2, Trash2, X, Loader2, AlertCircle, Menu,
   ChevronLeft, ChevronRight, AlertTriangle,
   LayoutList, GitFork, Building2, FolderTree, Wrench, User,
   ShieldAlert, ZoomIn, ZoomOut, RotateCcw
@@ -56,6 +56,14 @@ export const MaintenanceView: React.FC = () => {
   const [flowZoom, setFlowZoom] = useState<number>(1);
   const [resetDragKey, setResetDragKey] = useState<number>(0);
   const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+  const [isFabOpen, setIsFabOpen] = useState(false);
+
+  const getActionLabel = (isEdit = false) => {
+    const prefix = isEdit ? 'Edit ' : 'Add ';
+    if (subpage === 'natures') return prefix + 'Nature';
+    if (subpage === 'worker-assignments') return prefix + 'Assignment';
+    return prefix + 'Sub Department';
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 640);
@@ -702,7 +710,7 @@ export const MaintenanceView: React.FC = () => {
   const paginatedData = filteredData.slice(startIndex, endIndex);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-2">
       {/* Error Banner */}
       {errorMsg && (
         <div className="p-3 rounded bg-error-container text-on-error-container text-xs flex items-center gap-2 border border-error/30">
@@ -712,10 +720,10 @@ export const MaintenanceView: React.FC = () => {
       )}
 
       {/* Main Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
         {/* Search Input */}
-        <div className="relative max-w-xs w-full">
-          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant" />
+        <div className="relative shrink-0 w-full sm:w-[220px] md:w-[260px]">
+          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant pointer-events-none" />
           <input
             type="text"
             placeholder={viewMode === 'flowchart' ? 'Search hierarchy...' : 'Search table...'}
@@ -726,14 +734,28 @@ export const MaintenanceView: React.FC = () => {
                 gridApi.setGridOption('quickFilterText', e.target.value);
               }
             }}
-            className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded pl-8 pr-3 py-2 focus:outline-none focus:border-primary"
+            className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded pl-8 pr-8 py-2 focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                if (viewMode === 'table' && gridApi) {
+                  gridApi.setGridOption('quickFilterText', '');
+                }
+              }}
+              className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Table / Flowchart View Switcher */}
-          <div className="flex items-center bg-surface-container-low border border-outline-variant rounded p-0.5">
+        <div className="flex items-end justify-end gap-2 flex-wrap">
+          {/* Table / Flowchart View Switcher (Desktop Only) */}
+          <div className="hidden sm:flex items-center bg-surface-container-low border border-outline-variant rounded p-0.5">
             <button
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'table'
@@ -767,7 +789,7 @@ export const MaintenanceView: React.FC = () => {
                   setPriorityErrorMsg('');
                   setShowPriorityModal(true);
                 }}
-                className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors"
+                className="hidden sm:flex border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded items-center gap-2 cursor-pointer transition-colors"
               >
                 <AlertTriangle className="w-4 h-4 text-tertiary" />
                 <span>Manage Priorities</span>
@@ -783,10 +805,10 @@ export const MaintenanceView: React.FC = () => {
           }>
             <button
               onClick={handleOpenCreate}
-              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 cursor-pointer transition-colors"
+              className="hidden sm:flex bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded items-center gap-2 cursor-pointer transition-colors"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Configuration</span>
+              <span>{getActionLabel(false)}</span>
             </button>
           </Can>
         </div>
@@ -1190,7 +1212,7 @@ export const MaintenanceView: React.FC = () => {
             >
               <div className="flex items-center justify-between pb-3 border-b border-outline-variant">
                 <h3 className="text-base font-semibold text-on-surface">
-                  {editItem ? 'Edit Configuration' : 'Create Configuration'}
+                  {getActionLabel(Boolean(editItem))}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
@@ -1496,6 +1518,108 @@ export const MaintenanceView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Floating Action Button (FAB) Speed-Dial for Mobile Device */}
+      <div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+        {/* Speed-dial options */}
+        <AnimatePresence>
+          {isFabOpen && (
+            <div className="flex flex-col items-end gap-2 mb-1 w-48">
+              {/* View Switcher option */}
+              <motion.button
+                initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                onClick={() => {
+                  setViewMode(prev => prev === 'table' ? 'flowchart' : 'table');
+                  setIsFabOpen(false);
+                }}
+                className="w-full flex items-center justify-start gap-2 px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-full text-xs font-semibold shadow-md text-on-surface cursor-pointer active:scale-95 transition-transform"
+              >
+                {viewMode === 'table' ? (
+                  <>
+                    <GitFork className="w-4 h-4 text-primary shrink-0" />
+                    <span>Flowchart View</span>
+                  </>
+                ) : (
+                  <>
+                    <LayoutList className="w-4 h-4 text-primary shrink-0" />
+                    <span>Table View</span>
+                  </>
+                )}
+              </motion.button>
+
+              {subpage === 'natures' && (
+                <Can permission={['maintenance.add_priority', 'maintenance.change_priority']}>
+                  <motion.button
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                    onClick={() => {
+                      setPriorityErrorMsg('');
+                      setShowPriorityModal(true);
+                      setIsFabOpen(false);
+                    }}
+                    className="w-full flex items-center justify-start gap-2 px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-full text-xs font-semibold shadow-md text-on-surface cursor-pointer active:scale-95 transition-transform"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-tertiary shrink-0" />
+                    <span>Manage Priorities</span>
+                  </motion.button>
+                </Can>
+              )}
+
+              <Can permission={
+                subpage === 'natures' ? 'maintenance.add_worknature' :
+                  subpage === 'worker-assignments' ? 'maintenance.add_natureworker' :
+                    'stores.add_subdepartment'
+              }>
+                <motion.button
+                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                  onClick={() => {
+                    handleOpenCreate();
+                    setIsFabOpen(false);
+                  }}
+                  className="w-full flex items-center justify-start gap-2 px-3.5 py-2.5 bg-primary text-white rounded-full text-xs font-semibold shadow-md cursor-pointer active:scale-95 transition-transform"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span>{getActionLabel(false)}</span>
+                </motion.button>
+              </Can>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Main FAB toggle button */}
+        <motion.button
+          onClick={() => setIsFabOpen(prev => !prev)}
+          whileTap={{ scale: 0.9 }}
+          transition={{ duration: 0.2 }}
+          className="w-14 h-14 rounded-full bg-primary text-white shadow-xl flex items-center justify-center cursor-pointer hover:bg-primary-hover active:scale-95"
+          aria-label={isFabOpen ? 'Close actions' : 'Open actions'}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            {isFabOpen ? (
+              <motion.span key="close" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }} transition={{ duration: 0.15 }}>
+                <X className="w-6 h-6" />
+              </motion.span>
+            ) : (
+              <motion.span key="menu" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }} transition={{ duration: 0.15 }}>
+                <Menu className="w-6 h-6" />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </motion.button>
+      </div>
+
+      {/* FAB backdrop (close on outside click) */}
+      {isFabOpen && (
+        <div
+          className="sm:hidden fixed inset-0 z-30 bg-black/20"
+          onClick={() => setIsFabOpen(false)}
+        />
+      )}
     </div>
   );
 };

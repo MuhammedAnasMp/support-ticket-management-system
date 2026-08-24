@@ -938,7 +938,7 @@ export const WorkforceView: React.FC = () => {
       <div className="flex flex-col border border-outline-variant rounded overflow-hidden bg-surface-container">
 
         {/* Top Header & Toolbar Bar */}
-        <div className="bg-surface-container-low border-b border-outline-variant px-4 sm:py-3 flex flex-col gap-3">
+        <div className="bg-surface-container-low border-b border-outline-variant p-2 sm:py-3 flex flex-col">
 
           {/* Row 1: Search, Sub-tabs & Action Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -1029,7 +1029,7 @@ export const WorkforceView: React.FC = () => {
 
           {/* Row 2: Sub-tabs for Office Staff/Admin (Approved vs Unapproved) */}
           {(subpage === 'employees' || !subpage) && isOfficeStaffOrAdmin && (
-            <div className="flex items-center gap-2 pt-1 border-t border-outline-variant/60">
+            <div className="flex items-center gap-2 .py-2 border-t border-outline-variant/60">
               <button
                 type="button"
                 onClick={() => setEmployeeTab('approved')}
@@ -1039,7 +1039,7 @@ export const WorkforceView: React.FC = () => {
                   }`}
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span>Approved Employees</span>
+                <span>Approved</span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${employeeTab === 'approved' ? 'bg-on-primary/20 text-on-primary' : 'bg-surface-container-high text-on-surface-variant'
                   }`}>
                   {approvedCount}
@@ -1055,7 +1055,7 @@ export const WorkforceView: React.FC = () => {
                   }`}
               >
                 <UserLock className="w-3.5 h-3.5" />
-                <span>Unapproved / Pending</span>
+                <span>Unapproved</span>
                 {unapprovedCount > 0 ? (
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-error text-on-error animate-pulse">
                     {unapprovedCount}
@@ -2153,7 +2153,7 @@ export const WorkforceView: React.FC = () => {
             {/* Speed-dial options */}
             <AnimatePresence>
               {isFabOpen && (
-                <div className="flex flex-col items-end gap-2 mb-1">
+                <div className="flex flex-col items-end gap-2 mb-1 w-44">
                   <motion.button
                     initial={{ opacity: 0, y: 10, scale: 0.9 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -2167,9 +2167,9 @@ export const WorkforceView: React.FC = () => {
                       setShowLinkModal(true);
                       setIsFabOpen(false);
                     }}
-                    className="flex items-center gap-2 px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-full text-xs font-semibold shadow-md text-on-surface cursor-pointer active:scale-95 transition-transform"
+                    className="w-full flex items-center justify-start gap-2 px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-full text-xs font-semibold shadow-md text-on-surface cursor-pointer active:scale-95 transition-transform"
                   >
-                    <LinkIcon className="w-4 h-4 text-primary" />
+                    <LinkIcon className="w-4 h-4 text-primary shrink-0" />
                     <span>Registration Link</span>
                   </motion.button>
 
@@ -2181,9 +2181,9 @@ export const WorkforceView: React.FC = () => {
                       handleOpenCreateEmployee();
                       setIsFabOpen(false);
                     }}
-                    className="flex items-center gap-2 px-3.5 py-2.5 bg-primary text-white rounded-full text-xs font-semibold shadow-md cursor-pointer active:scale-95 transition-transform"
+                    className="w-full flex items-center justify-start gap-2 px-3.5 py-2.5 bg-primary text-white rounded-full text-xs font-semibold shadow-md cursor-pointer active:scale-95 transition-transform"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-4 h-4 shrink-0" />
                     <span>Add Employee</span>
                   </motion.button>
                 </div>

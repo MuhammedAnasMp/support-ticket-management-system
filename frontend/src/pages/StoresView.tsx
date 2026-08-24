@@ -2226,7 +2226,7 @@ export const StoresView: React.FC = () => {
 
           <button
             onClick={handleOpenCreate}
-            className="bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded flex items-center justify-center transition-all cursor-pointer"
+            className="bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
             title={`Add New ${subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : 'Store'}`}
           >
             <Plus className="w-6 h-6" />
