@@ -34,6 +34,7 @@ export interface UserDetails {
   tickets_created_count?: number;
   tickets_assigned_count?: number;
   managed_store?: ManagedStoreDetails | null;
+  is_superuser?: boolean;
 }
 
 export interface AuthState {
