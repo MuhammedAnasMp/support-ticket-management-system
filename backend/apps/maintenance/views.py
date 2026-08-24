@@ -60,6 +60,10 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
         # Exclude internal system 'office' subdepartments and 'office related' natures from management listing
         queryset = queryset.exclude(nature_name__iexact='office related').exclude(sub_department__sub_department_name__iexact='office')
 
+        department = self.request.query_params.get('department')
+        if department:
+            return queryset.filter(sub_department__department_id=department)
+
         if not user.is_superuser:
             user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
             can_view_all_depts = (
@@ -76,10 +80,6 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
                 else:
                     return WorkNature.objects.none()
 
-        department = self.request.query_params.get('department')
-        if department:
-            queryset = queryset.filter(
-                sub_department__department_id=department)
         return queryset
 
 
@@ -92,10 +92,6 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
     )
     serializer_class = NatureWorkerSerializer
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        return queryset.exclude(nature__nature_name__iexact='office related').exclude(nature__sub_department__sub_department_name__iexact='office')
-
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return NatureWorkerWriteSerializer
@@ -103,6 +99,11 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        queryset = queryset.exclude(
+            nature__nature_name__iexact='office related'
+        ).exclude(
+            nature__sub_department__sub_department_name__iexact='office'
+        )
         nature = self.request.query_params.get('nature')
         if nature:
             queryset = queryset.filter(nature_id=nature)

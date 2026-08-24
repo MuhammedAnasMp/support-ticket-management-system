@@ -1444,7 +1444,7 @@ export const StoresView: React.FC = () => {
                       </div>
                     </div>
 
-                    <Can permission="stores.delete_store">
+                    <Can permission="accounts.can_edit_full_manager_details">
                       <div className="p-3.5 rounded-lg border border-outline-variant bg-surface-container-low flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <div className={`p-2 rounded-full ${managerForm.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-tertiary-container text-on-tertiary-container'}`}>

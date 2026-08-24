@@ -320,7 +320,7 @@ export const SignupView: React.FC = () => {
                 const isDisabled = !isRoleLocked && isRestricted;
                 return (
                   <option key={r.role_id} value={r.role_id} disabled={isDisabled}>
-                    {r.role_name} {isDisabled ? '(Invite Link Required)' : ''}
+                    {r.role_name} {isDisabled ? '(Invitation Required | Contact Office Staff)' : ''}
                   </option>
                 );
               })}
