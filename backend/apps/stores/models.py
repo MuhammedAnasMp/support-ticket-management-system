@@ -83,6 +83,7 @@ class Store(models.Model):
 class Department(models.Model):
     department_id = models.AutoField(primary_key=True)
     department_name = models.CharField(max_length=255)
+    short_code = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         return self.department_name
@@ -100,7 +101,8 @@ class SubDepartment(models.Model):
     def delete(self, *args, **kwargs):
         if self.sub_department_name.lower().strip() == 'office':
             from django.core.exceptions import ValidationError
-            raise ValidationError('System sub-department "Office" cannot be deleted.')
+            raise ValidationError(
+                'System sub-department "Office" cannot be deleted.')
         super().delete(*args, **kwargs)
 
 
@@ -152,7 +154,8 @@ def check_store_manager_contact_pre(sender, instance, **kwargs):
 
     # Check if the newly assigned manager previously managed another store
     if instance.manager:
-        prev_store = Store.objects.filter(manager=instance.manager).exclude(pk=instance.pk).first()
+        prev_store = Store.objects.filter(
+            manager=instance.manager).exclude(pk=instance.pk).first()
         if prev_store:
             # Unassign previous store first to prevent DB OneToOne UNIQUE constraint violation
             prev_store.manager = None
@@ -177,7 +180,7 @@ def check_store_manager_contact_pre(sender, instance, **kwargs):
         if manager.is_active and getattr(manager, 'active', True):
             if not instance.phone and manager.phone:
                 instance.phone = manager.phone
-            
+
             # Use phone as fallback if whatsapp number is missing
             manager_wa = manager.whatsapp_number or manager.phone
             if not instance.whatsapp_number and manager_wa:
@@ -228,14 +231,14 @@ def update_store_contact_from_manager(sender, instance, created, **kwargs):
         if instance.is_active and getattr(instance, 'active', True):
             old_phone = getattr(instance, '_old_phone', None)
             old_whatsapp = getattr(instance, '_old_whatsapp', None)
-            
+
             updated = False
             # Update phone if store phone is empty OR matches the manager's old phone
             if (not store.phone or store.phone == old_phone) and instance.phone:
                 if store.phone != instance.phone:
                     store.phone = instance.phone
                     updated = True
-            
+
             # Update whatsapp if store whatsapp is empty OR matches the manager's old whatsapp
             manager_wa = instance.whatsapp_number or instance.phone
             old_wa = old_whatsapp or old_phone
@@ -243,6 +246,6 @@ def update_store_contact_from_manager(sender, instance, created, **kwargs):
                 if store.whatsapp_number != manager_wa:
                     store.whatsapp_number = manager_wa
                     updated = True
-                    
+
             if updated:
                 store.save(update_fields=['phone', 'whatsapp_number'])

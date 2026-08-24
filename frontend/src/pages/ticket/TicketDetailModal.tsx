@@ -1158,7 +1158,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 className={`relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full ${isChatOpen ? 'max-w-7xl' : 'max-w-4xl'} max-h-[92vh] sm:max-h-[90vh] flex flex-col rounded-t-xl sm:rounded shadow-2xl overflow-hidden transition-all duration-300`}
             >
                 {/* Header Toolbar Standard */}
-                <div className="sticky top-0 z-10 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant px-4 sm:px-5 py-2.5 flex items-center justify-between shrink-0">
+                <div className="sticky top-0 z-10 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant px-2 sm:px-5 py-2 flex items-center justify-between shrink-0">
                     <div className="flex flex-col items-start gap-1 sm:gap-1 min-w-0">
                         {isEditingTicket ? (
                             <input
@@ -1210,7 +1210,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {/* Parent split-screen container */}
                 <div className="flex flex-1 overflow-hidden relative">
                     {/* Modal Body Container */}
-                    <div className="p-4 sm:p-5 space-y-4 overflow-y-auto scrollbar-thin flex-1">
+                    <div className="p-2 sm:p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1">
                         {modalLoading ? (
                             /* Structural Skeleton Loader for Data Fetching */
                             <div className="space-y-4 animate-pulse">

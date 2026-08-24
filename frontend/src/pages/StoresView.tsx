@@ -1486,7 +1486,8 @@ export const StoresView: React.FC = () => {
                             onChange={e => setManagerForm({ ...managerForm, active: e.target.checked })}
                             className="sr-only peer"
                           />
-                          <div className="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                          <div className="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                          {/* <div className="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div> */}
                         </label>
                       </div>
                     </Can>
@@ -1801,7 +1802,7 @@ export const StoresView: React.FC = () => {
                             handleDelete(editItem.store_id || editItem.area_id || editItem.department_id || editItem.user_id);
                             setShowModal(false);
                           }}
-                          className="px-3.5 py-2 bg-error-container/40 border border-error/30 text-on-error-container hover:bg-error-container text-xs font-medium rounded flex items-center gap-1.5 transition-colors cursor-pointer"
+                          className="px-3.5 py-2 bg-red-500 border border-error/30 text-white font-semibold hover:bg-red-600 text-xs  rounded flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Delete</span>
@@ -1852,9 +1853,9 @@ export const StoresView: React.FC = () => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md rounded shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col"
+                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant/40 dark:border-dark-outline-variant/40 w-full max-w-md rounded shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col"
               >
-                <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant shrink-0">
+                <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40 dark:border-dark-outline-variant/40 shrink-0">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-primary" />
                     <h3 className="text-base font-bold text-on-surface dark:text-dark-on-surface">
@@ -1882,7 +1883,7 @@ export const StoresView: React.FC = () => {
                         placeholder="e.g. Hawally Area"
                         value={areaForm.area_name}
                         onChange={e => setAreaForm({ area_name: e.target.value })}
-                        className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant/40 dark:border-dark-outline-variant/40 p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       />
                       <button
                         type="submit"
@@ -1899,7 +1900,7 @@ export const StoresView: React.FC = () => {
                             setEditingAreaId(null);
                             setAreaForm({ area_name: '' });
                           }}
-                          className="px-3 py-2.5 border border-outline-variant text-xs font-semibold rounded hover:bg-surface-container-high cursor-pointer"
+                          className="px-3 py-2.5 border border-outline-variant/40 dark:border-dark-outline-variant/40 text-xs font-semibold rounded hover:bg-surface-container-high cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -1909,7 +1910,7 @@ export const StoresView: React.FC = () => {
                 </form>
 
                 {/* Display existing areas */}
-                <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-outline-variant dark:border-dark-outline-variant min-h-[140px]">
+                <div className="flex-1 overflow-y-auto space-y-2 pt-2 border-t border-outline-variant/40 dark:border-dark-outline-variant/40 min-h-[140px]">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[11px] font-bold text-outline uppercase tracking-wider">
                       Existing Areas ({areaList.length})
@@ -1923,11 +1924,11 @@ export const StoresView: React.FC = () => {
                       {areaList.map((area: any) => (
                         <div
                           key={area.area_id}
-                          className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/60 rounded hover:border-outline transition-colors text-xs"
+                          className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/40 dark:border-dark-outline-variant/40 rounded hover:border-outline transition-colors text-xs"
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
-                            <span className="font-mono text-[10px] text-outline"> have  {area.store_count} locations</span>
+                            <span className="font-mono text-[10px] text-outline">({area.store_count} locations)</span>
                           </div>
                           <div className="flex items-center gap-1">
                             <button
@@ -1956,11 +1957,11 @@ export const StoresView: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex justify-end pt-2 border-t border-outline-variant dark:border-dark-outline-variant shrink-0">
+                <div className="flex justify-end pt-2 border-t border-outline-variant/40 dark:border-dark-outline-variant/40 shrink-0">
                   <button
                     type="button"
                     onClick={() => setShowAreaModal(false)}
-                    className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold cursor-pointer"
+                    className="px-4 py-2 border border-outline-variant/40 dark:border-dark-outline-variant/40 rounded text-xs font-semibold cursor-pointer"
                   >
                     Close
                   </button>
@@ -1981,7 +1982,7 @@ export const StoresView: React.FC = () => {
                 animate={{ opacity: 0.5 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setShowLinkModal(false)}
-                className="absolute inset-0 bg-inverse-surface"
+                className="absolute inset-0 bg-black"
               />
 
               <motion.div
@@ -2075,7 +2076,7 @@ export const StoresView: React.FC = () => {
                 animate={{ opacity: 0.5 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setShowSwapModal(false)}
-                className="absolute inset-0 bg-inverse-surface"
+                className="absolute inset-0 bg-black"
               />
 
               <motion.div

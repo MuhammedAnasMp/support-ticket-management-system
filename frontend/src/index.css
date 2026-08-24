@@ -152,10 +152,10 @@ body {
   border-radius: 0.5rem;
 }
 
-/* Custom Scrollbar for premium feel */
+/* Custom Scrollbar — Micro thin (1px line), lighter in Light theme & darker in Dark theme */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 1px;
+  height: 1px;
 }
 
 ::-webkit-scrollbar-track {
@@ -163,16 +163,55 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.25);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+}
+
+.dark .scrollbar-thin {
+  scrollbar-color: rgba(0, 0, 0, 0.6) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 1px;
+  height: 1px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.85);
 }
 
 ::selection {

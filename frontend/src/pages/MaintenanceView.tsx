@@ -808,18 +808,17 @@ export const MaintenanceView: React.FC = () => {
           <div className="p-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-3 flex-wrap">
             {/* Show department filter ONLY when multiple departments exist */}
             {allowedDepts.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-on-surface-variant">Filter Dept:</span>
-                <select
+              <div className="flex items-center gap-2 min-w-[180px]">
+                <span className="text-xs font-medium text-on-surface-variant shrink-0">Filter Dept:</span>
+                <SearchableSelect
                   value={selectedDeptFilter}
-                  onChange={e => setSelectedDeptFilter(e.target.value)}
-                  className="bg-surface-container border border-outline text-on-surface text-xs rounded px-2.5 py-1 focus:outline-none focus:border-primary cursor-pointer"
-                >
-                  <option value="all">All Departments ({allowedDepts.length})</option>
-                  {allowedDepts.map(d => (
-                    <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
-                  ))}
-                </select>
+                  onChange={val => setSelectedDeptFilter(val)}
+                  placeholder={`All Departments (${allowedDepts.length})`}
+                  options={[
+                    { value: 'all', label: `All Departments (${allowedDepts.length})` },
+                    ...allowedDepts.map(d => ({ value: d.department_id, label: d.department_name }))
+                  ]}
+                />
               </div>
             )}
 
@@ -1180,7 +1179,7 @@ export const MaintenanceView: React.FC = () => {
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowModal(false)}
-              className="absolute inset-0 bg-inverse-surface"
+              className="absolute inset-0 bg-black"
             />
 
             <motion.div
@@ -1369,7 +1368,7 @@ export const MaintenanceView: React.FC = () => {
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowPriorityModal(false)}
-              className="absolute inset-0 bg-inverse-surface"
+              className="absolute inset-0 bg-black"
             />
 
             <motion.div
@@ -1405,15 +1404,13 @@ export const MaintenanceView: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div>
                     <label className="block text-xs text-on-surface-variant mb-1">Department</label>
-                    <select
+                    <SearchableSelect
                       required
                       value={priorityForm.department}
-                      onChange={e => setPriorityForm({ ...priorityForm, department: e.target.value })}
-                      className="w-full bg-surface border border-outline text-on-surface text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-primary cursor-pointer"
-                    >
-                      <option value="">Select Dept</option>
-                      {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                    </select>
+                      onChange={val => setPriorityForm({ ...priorityForm, department: val })}
+                      placeholder="Select Dept"
+                      options={allowedDepts.map(d => ({ value: d.department_id, label: d.department_name }))}
+                    />
                   </div>
 
                   <div>

@@ -89,7 +89,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           type="text"
           value={value ? String(value) : ''}
           required={required}
-          onChange={() => {}}
+          onChange={() => { }}
           tabIndex={-1}
           className="sr-only pointer-events-none opacity-0 absolute h-0 w-0"
           id={id}
@@ -112,7 +112,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
-        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-surface dark:bg-surface-container-high border border-outline-variant rounded-md shadow-lg overflow-hidden flex flex-col max-h-60 animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-surface dark:bg-surface-container-high border border-outline-variant rounded-md shadow-lg overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-100">
           {/* Search Box */}
           <div className="p-2 border-b border-outline-variant/60 bg-surface-container-low flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-on-surface-variant shrink-0" />
@@ -148,13 +148,12 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   <div
                     key={opt.value}
                     onClick={() => !opt.disabled && handleSelect(opt.value)}
-                    className={`px-3 py-2 flex items-center justify-between cursor-pointer transition-colors ${
-                      opt.disabled
+                    className={`px-3 py-2 flex items-center justify-between cursor-pointer transition-colors ${opt.disabled
                         ? 'opacity-40 cursor-not-allowed'
                         : isSelected
-                        ? 'bg-primary/10 text-primary font-medium'
-                        : 'hover:bg-surface-container-high text-on-surface'
-                    }`}
+                          ? 'bg-primary/10 text-primary font-medium'
+                          : 'hover:bg-surface-container-high text-on-surface'
+                      }`}
                   >
                     <span className="truncate">{opt.label}</span>
                     {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0 ml-2" />}

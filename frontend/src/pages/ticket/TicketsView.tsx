@@ -21,6 +21,7 @@ import { TicketDetailModal } from './TicketDetailModal';
 import { CreateTicketModal } from './RaiseSupportTicketForm';
 import { DateRangePickerCard } from './DateRangePickerCard';
 import { usePermission } from '@/hooks/usePermission';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import type { RootState } from '@/store';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -949,160 +950,273 @@ export const TicketsView: React.FC = () => {
             {/* Ticket List View */}
             <div className="flex flex-col border border-x-0 border-outline-variant rounded overflow-hidden bg-surface-container">
                 {/* Toolbar */}
-                <div className="bg-surface-container-low border-b border-outline-variant sm:p-3 flex flex-col gap-3">
-                    {/* Row 1: Search + Actions */}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                        <div className="flex items-center gap-2 flex-1 max-w-md w-full">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant pointer-events-none" />
-                                <input
-                                    type="text"
-                                    placeholder="Search work order, title..."
-                                    value={search}
-                                    onChange={e => { setSearch(e.target.value); setPage(1); }}
-                                    className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-8 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
-                                />
-                                {search && (
-                                    <button onClick={() => { setSearch(''); setPage(1); }}
-                                        className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors">
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                            </div>
-                            <button onClick={() => fetchTickets()} disabled={loading}
-                                className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium p-2 sm:px-3 sm:py-2 rounded flex items-center gap-2 transition-colors disabled:opacity-50 flex-shrink-0"
-                                title="Refresh data">
-                                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                                <span className="hidden sm:inline">Refresh</span>
-                            </button>
+                <div className="bg-surface-container-low border-b border-outline-variant  sm:p-3 flex flex-col gap-2">
+
+                    {/* ── Row 1 (always): Search + Actions ── */}
+                    <div className="flex items-center gap-2">
+                        {/* Search Input */}
+                        <div className="relative flex-1 min-w-0 2xl:w-[220px] 2xl:shrink-0 2xl:flex-none">
+                            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search work order..."
+                                value={search}
+                                onChange={e => { setSearch(e.target.value); setPage(1); }}
+                                className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-8 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
+                            />
+                            {search && (
+                                <button onClick={() => { setSearch(''); setPage(1); }}
+                                    className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors">
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
                         </div>
 
-                        <div className="hidden sm:flex items-center justify-end gap-3 w-auto flex-shrink-0">
-                            {/* View Mode Toggle: Table / Kanban */}
+                        {/* Filter Dropdowns — visible inline only on 2xl+ */}
+                        <div className="hidden 2xl:flex items-center flex-wrap gap-1.5 flex-1 min-w-0">
+                            <div className="min-w-[220px] max-w-[240px]">
+                                <SearchableSelect
+                                    value={filterStore}
+                                    onChange={val => { setFilterStore(val); setPage(1); }}
+                                    placeholder="All Stores"
+                                    options={[
+                                        { value: '', label: 'All Stores' },
+                                        ...stores.map(s => ({ value: s.store_id, label: `${s.store_id} - ${s.store_name}` }))
+                                    ]}
+                                />
+                            </div>
+                            {canCreateAllDepts && (
+                                <div className="min-w-[120px] max-w-[150px]">
+                                    <SearchableSelect
+                                        value={filterDept}
+                                        onChange={val => { setFilterDept(val); setPage(1); }}
+                                        placeholder="All Departments"
+                                        options={[
+                                            { value: '', label: 'All Departments' },
+                                            ...departments.map(d => ({ value: d.department_id, label: d.department_name }))
+                                        ]}
+                                    />
+                                </div>
+                            )}
+                            {!canCreateAllDepts && availableDepartments.length > 1 && (
+                                <div className="min-w-[120px] max-w-[150px]">
+                                    <SearchableSelect
+                                        value={filterDept}
+                                        onChange={val => { setFilterDept(val); setPage(1); }}
+                                        placeholder="Select Department"
+                                        options={availableDepartments.map(d => ({ value: d.department_id, label: d.department_name }))}
+                                    />
+                                </div>
+                            )}
+                            <Can permission='maintenance.can_filter_worker_ticket'>
+                                <div className="min-w-[110px] max-w-[140px]">
+                                    <SearchableSelect
+                                        value={filterSubDept}
+                                        onChange={val => { setFilterSubDept(val); setPage(1); }}
+                                        placeholder="Sub Dept"
+                                        options={[
+                                            { value: '', label: 'All Sub Depts' },
+                                            ...filteredSubDepartments.map(sd => ({ value: sd.sub_department_id, label: sd.sub_department_name }))
+                                        ]}
+                                    />
+                                </div>
+                            </Can>
+                            <Can permission={getAllowedStatusPermissions(statuses) as any}>
+                                <div className="min-w-[100px] max-w-[130px]">
+                                    <SearchableSelect
+                                        value={filterStatus}
+                                        onChange={val => { setFilterStatus(val); setPage(1); }}
+                                        placeholder="Status"
+                                        options={[
+                                            { value: '', label: 'All Statuses' },
+                                            ...statuses.filter(s => canViewStatus(s.status_name || '')).map(s => ({ value: s.status_name, label: s.status_name }))
+                                        ]}
+                                    />
+                                </div>
+                            </Can>
+                            <div className="min-w-[95px] max-w-[120px]">
+                                <SearchableSelect
+                                    value={filterPriority}
+                                    onChange={val => { setFilterPriority(val); setPage(1); }}
+                                    placeholder="Priority"
+                                    options={[
+                                        { value: '', label: 'All Priorities' },
+                                        ...uniquePriorityNames.map(pName => ({ value: pName, label: pName }))
+                                    ]}
+                                />
+                            </div>
+                            <Can permission='maintenance.can_filter_worker_ticket'>
+                                <div className="min-w-[110px] max-w-[140px]">
+                                    <SearchableSelect
+                                        value={filterWorker}
+                                        onChange={val => { setFilterWorker(val); setPage(1); }}
+                                        placeholder="Worker"
+                                        options={[
+                                            { value: '', label: 'All Workers' },
+                                            ...workers.map(w => ({ value: w.user_id, label: w.full_name || w.username }))
+                                        ]}
+                                    />
+                                </div>
+                            </Can>
+                            <DateRangePickerCard
+                                fromDate={fromDate}
+                                toDate={toDate}
+                                onDateRangeChange={handleDateRangeChange}
+                                onReset={handleResetDates}
+                            />
+                        </div>
+
+                        {/* Actions — always visible on sm+ */}
+                        <div className="hidden sm:flex items-center gap-1.5 shrink-0 ml-auto">
+                            <button onClick={() => fetchTickets()} disabled={loading}
+                                className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium p-2 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
+                                title="Refresh data">
+                                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                            </button>
+
                             <Can permission={['maintenance.switch_to_card_view']}>
-                                <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 flex-shrink-0">
+                                <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 shrink-0">
                                     <button
                                         onClick={() => handleViewModeChange('table')}
-                                        className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'table'
-                                            ? 'bg-primary text-on-primary shadow-xs'
-                                            : 'text-on-surface-variant hover:text-on-surface'
-                                            }`}
+                                        className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'table' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
                                         title="Table View"
                                     >
-                                        <LayoutList className="w-4 h-4" />
-                                        <span className="hidden sm:inline">Table</span>
+                                        <LayoutList className="w-3.5 h-3.5" />
                                     </button>
                                     <button
                                         onClick={() => handleViewModeChange('kanban')}
-                                        className={`p-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${viewMode === 'kanban'
-                                            ? 'bg-primary text-on-primary shadow-xs'
-                                            : 'text-on-surface-variant hover:text-on-surface'
-                                            }`}
+                                        className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'kanban' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
                                         title="Kanban Board View"
                                     >
-                                        <LayoutGrid className="w-4 h-4" />
-                                        <span className="hidden sm:inline">Card</span>
+                                        <LayoutGrid className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             </Can>
 
-                            {/* Actions Group (Raise Ticket, More) - hidden on mobile */}
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                                <Can permission={['maintenance.create_ticket', 'maintenance.add_ticket']}>
-                                    <button
-                                        onClick={() => {
-                                            setIsCreateModalOpen(true);
-                                            if (subpage !== 'create') navigate('/tickets/create');
-                                        }}
-                                        className="hidden sm:flex bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded items-center gap-2 transition-colors flex-shrink-0"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                        <span>Raise Ticket</span>
-                                    </button>
-                                </Can>
+                            <Can permission={['maintenance.create_ticket', 'maintenance.add_ticket']}>
+                                <button
+                                    onClick={() => { setIsCreateModalOpen(true); if (subpage !== 'create') navigate('/tickets/create'); }}
+                                    className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-2.5 py-1.5 rounded flex items-center gap-1.5 transition-colors shrink-0"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span className="hidden md:inline">Raise Ticket</span>
+                                </button>
+                            </Can>
 
-                                <div className="relative flex-shrink-0 hidden sm:block" ref={overflowRef}>
-                                    <button onClick={() => setOverflowOpen(o => !o)}
-                                        className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface p-2 rounded flex items-center justify-center transition-colors"
-                                        title="More actions">
-                                        <MoreVertical className="w-4 h-4" />
-                                    </button>
-                                    <AnimatePresence>
-                                        {overflowOpen && (
-                                            <motion.div
-                                                initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                                                transition={{ duration: 0.12 }}
-                                                className="absolute right-0 top-full mt-1 z-50 bg-surface-container border border-outline-variant rounded shadow-lg min-w-[160px] py-1"
-                                            >
-                                                <button onClick={exportToCSV} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
-                                                    <Download className="w-4 h-4 text-on-surface-variant" /> Export CSV
-                                                </button>
-                                                <button onClick={exportToExcel} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
-                                                    <Download className="w-4 h-4 text-on-surface-variant" /> Export Excel
-                                                </button>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
+                            <div className="relative shrink-0" ref={overflowRef}>
+                                <button onClick={() => setOverflowOpen(o => !o)}
+                                    className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface p-1.5 rounded flex items-center justify-center transition-colors"
+                                    title="More actions">
+                                    <MoreVertical className="w-3.5 h-3.5" />
+                                </button>
+                                <AnimatePresence>
+                                    {overflowOpen && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                                            transition={{ duration: 0.12 }}
+                                            className="absolute right-0 top-full mt-1 z-50 bg-surface-container border border-outline-variant rounded shadow-lg min-w-[160px] py-1"
+                                        >
+                                            <button onClick={exportToCSV} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                                <Download className="w-4 h-4 text-on-surface-variant" /> Export CSV
+                                            </button>
+                                            <button onClick={exportToExcel} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                                <Download className="w-4 h-4 text-on-surface-variant" /> Export Excel
+                                            </button>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         </div>
                     </div>
 
-                    {/* Row 2: Filter dropdowns */}
-                    <div className="grid grid-cols-2 sm:flex sm:items-center sm:flex-wrap gap-2 pb-0.5 w-full [&>:last-child:nth-child(odd)]:col-span-2 sm:[&>:last-child:nth-child(odd)]:col-span-1">
-                        {/* <Filter className="w-3.5 h-3.5 text-on-surface-variant flex-shrink-0 hidden sm:block" /> */}
-
-                        <select value={filterStore} onChange={e => { setFilterStore(e.target.value); setPage(1); }} className={selectCls}>
-                            <option value="">All Stores</option>
-                            {stores.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
-                        </select>
-
+                    {/* ── Row 2 (hidden on 2xl+): Filter Dropdowns ── */}
+                    <div className="2xl:hidden grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5">
+                        <div className="w-full sm:w-auto sm:min-w-[180px] sm:max-w-[240px]">
+                            <SearchableSelect
+                                value={filterStore}
+                                onChange={val => { setFilterStore(val); setPage(1); }}
+                                placeholder="All Stores"
+                                options={[
+                                    { value: '', label: 'All Stores' },
+                                    ...stores.map(s => ({ value: s.store_id, label: `${s.store_id} - ${s.store_name}` }))
+                                ]}
+                            />
+                        </div>
                         {canCreateAllDepts && (
-                            <select value={filterDept} onChange={e => { setFilterDept(e.target.value); setPage(1); }} className={selectCls}>
-                                <option value="">All Departments</option>
-                                {departments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                            </select>
+                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                                <SearchableSelect
+                                    value={filterDept}
+                                    onChange={val => { setFilterDept(val); setPage(1); }}
+                                    placeholder="All Departments"
+                                    options={[
+                                        { value: '', label: 'All Departments' },
+                                        ...departments.map(d => ({ value: d.department_id, label: d.department_name }))
+                                    ]}
+                                />
+                            </div>
                         )}
                         {!canCreateAllDepts && availableDepartments.length > 1 && (
-                            <select value={filterDept} onChange={e => { setFilterDept(e.target.value); setPage(1); }} className={selectCls}>
-                                {availableDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                            </select>
+                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                                <SearchableSelect
+                                    value={filterDept}
+                                    onChange={val => { setFilterDept(val); setPage(1); }}
+                                    placeholder="Select Department"
+                                    options={availableDepartments.map(d => ({ value: d.department_id, label: d.department_name }))}
+                                />
+                            </div>
                         )}
                         <Can permission='maintenance.can_filter_worker_ticket'>
-
-                            <select value={filterSubDept} onChange={e => { setFilterSubDept(e.target.value); setPage(1); }} className={selectCls}>
-                                <option value="">All Sub Departments</option>
-                                {filteredSubDepartments.map(sd => (
-                                    <option key={sd.sub_department_id} value={sd.sub_department_id}>
-                                        {sd.sub_department_name}
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                                <SearchableSelect
+                                    value={filterSubDept}
+                                    onChange={val => { setFilterSubDept(val); setPage(1); }}
+                                    placeholder="All Sub Depts"
+                                    options={[
+                                        { value: '', label: 'All Sub Depts' },
+                                        ...filteredSubDepartments.map(sd => ({ value: sd.sub_department_id, label: sd.sub_department_name }))
+                                    ]}
+                                />
+                            </div>
                         </Can>
-
                         <Can permission={getAllowedStatusPermissions(statuses) as any}>
-                            <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} className={selectCls}>
-                                <option value="">All Statuses</option>
-                                {statuses
-                                    .filter(s => canViewStatus(s.status_name || ''))
-                                    .map(s => <option key={s.status_id} value={s.status_name}>{s.status_name}</option>)}
-                            </select>
+                            <div className="w-full sm:w-auto sm:min-w-[110px] sm:max-w-[135px]">
+                                <SearchableSelect
+                                    value={filterStatus}
+                                    onChange={val => { setFilterStatus(val); setPage(1); }}
+                                    placeholder="All Statuses"
+                                    options={[
+                                        { value: '', label: 'All Statuses' },
+                                        ...statuses.filter(s => canViewStatus(s.status_name || '')).map(s => ({ value: s.status_name, label: s.status_name }))
+                                    ]}
+                                />
+                            </div>
                         </Can>
-
-                        <select value={filterPriority} onChange={e => { setFilterPriority(e.target.value); setPage(1); }} className={selectCls}>
-                            <option value="">All Priorities</option>
-                            {uniquePriorityNames.map(pName => <option key={pName} value={pName}>{pName}</option>)}
-                        </select>
-
+                        <div className="w-full sm:w-auto sm:min-w-[100px] sm:max-w-[125px]">
+                            <SearchableSelect
+                                value={filterPriority}
+                                onChange={val => { setFilterPriority(val); setPage(1); }}
+                                placeholder="All Priorities"
+                                options={[
+                                    { value: '', label: 'All Priorities' },
+                                    ...uniquePriorityNames.map(pName => ({ value: pName, label: pName }))
+                                ]}
+                            />
+                        </div>
                         <Can permission='maintenance.can_filter_worker_ticket'>
-                            <select value={filterWorker} onChange={e => { setFilterWorker(e.target.value); setPage(1); }} className={selectCls}>
-                                <option value="">All Workers</option>
-                                {workers.map(w => <option key={w.user_id} value={w.user_id}>{w.full_name || w.username}</option>)}
-                            </select>
+                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                                <SearchableSelect
+                                    value={filterWorker}
+                                    onChange={val => { setFilterWorker(val); setPage(1); }}
+                                    placeholder="All Workers"
+                                    options={[
+                                        { value: '', label: 'All Workers' },
+                                        ...workers.map(w => ({ value: w.user_id, label: w.full_name || w.username }))
+                                    ]}
+                                />
+                            </div>
                         </Can>
-
                         <DateRangePickerCard
                             fromDate={fromDate}
                             toDate={toDate}
@@ -1110,7 +1224,9 @@ export const TicketsView: React.FC = () => {
                             onReset={handleResetDates}
                         />
                     </div>
+
                 </div>
+
 
                 {/* AG Grid / Kanban Board / Skeleton / Empty State */}
                 {loading ? (
@@ -1200,8 +1316,8 @@ export const TicketsView: React.FC = () => {
                         {/* ── Desktop: kanban or grid ───────────────────────────────── */}
                         <div className={`hidden sm:block`}>
                             {viewMode === 'kanban' ? (
-                                <div className="p-4 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
-                                    <div className="flex gap-4 min-w-max items-start">
+                                <div className="p-2 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
+                                    <div className="flex gap-2 min-w-max items-start">
                                         {statuses
                                             .filter(s => canViewStatus(s.status_name))
                                             .map(status => {
@@ -1265,7 +1381,7 @@ export const TicketsView: React.FC = () => {
                                                         className={`w-72 sm:w-80 shrink-0 rounded-xl border flex flex-col max-h-[70vh] shadow-xs transition-all ${columnBorderBgClass}`}
                                                     >
                                                         {/* Column Header */}
-                                                        <div className="p-3 border-b border-outline-variant flex items-center justify-between bg-surface-container-high/50 rounded-t-xl sticky top-0 z-10 backdrop-blur-xs">
+                                                        <div className="p-2 border-b border-outline-variant flex items-center justify-between bg-surface-container-high/50 rounded-t-xl sticky top-0 z-10 backdrop-blur-xs">
                                                             <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${statusColor(status.status_name)}`}>
                                                                 {status.status_name}
                                                             </span>
@@ -1293,7 +1409,7 @@ export const TicketsView: React.FC = () => {
                                                         </div>
 
                                                         {/* Column Cards */}
-                                                        <div className="p-2.5 overflow-y-auto space-y-2.5 flex-1 scrollbar-thin">
+                                                        <div className="p-1.5 overflow-y-auto space-y-2.5 flex-1 scrollbar-thin">
                                                             {colTickets.length === 0 ? (
                                                                 <div className="py-8 text-center border-2 border-dashed border-outline-variant/60 rounded-lg">
                                                                     <p className="text-xs text-on-surface-variant italic">No {status.status_name.toLowerCase()} tickets</p>

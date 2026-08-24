@@ -204,11 +204,26 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         # Query parameter filters
         params = self.request.query_params
-        search = params.get('search')
+        search = (params.get('search') or '').strip()
         if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(work_order_no__icontains=search)
+            clean_search = search.lstrip('#')
+            search_q = (
+                Q(title__icontains=search) |
+                Q(work_order_no__icontains=search) |
+                Q(description__icontains=search) |
+                Q(store__store_name__icontains=search) |
+                Q(department__department_name__icontains=search) |
+                Q(nature__nature_name__icontains=search) |
+                Q(nature__sub_department__sub_department_name__icontains=search) |
+                Q(created_by__full_name__icontains=search) |
+                Q(created_by__employee_no__icontains=search) |
+                Q(created_by__username__icontains=search) |
+                Q(allocations__worker__full_name__icontains=search) |
+                Q(allocations__worker__username__icontains=search)
             )
+            if clean_search.isdigit():
+                search_q |= Q(ticket_id=int(clean_search)) | Q(store_id=int(clean_search))
+            queryset = queryset.filter(search_q).distinct()
 
         store = params.get('store')
         if store:
