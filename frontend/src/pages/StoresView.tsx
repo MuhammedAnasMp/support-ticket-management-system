@@ -13,6 +13,7 @@ import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-communi
 import type { ColDef } from 'ag-grid-community';
 import Can from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
+import { SearchableSelect } from '@/components/SearchableSelect';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -767,7 +768,18 @@ export const StoresView: React.FC = () => {
       if (response.ok) {
         fetchData();
       } else {
-        setErrorMsg('Failed to delete area.');
+        const errorRes = await response.json().catch(() => null);
+        let errorText = 'Failed to delete area.';
+        if (errorRes) {
+          if (typeof errorRes === 'string') errorText = errorRes;
+          else if (errorRes.detail) errorText = String(errorRes.detail);
+          else if (errorRes.non_field_errors) errorText = Array.isArray(errorRes.non_field_errors) ? errorRes.non_field_errors.join(', ') : String(errorRes.non_field_errors);
+          else if (typeof errorRes === 'object') {
+            const messages = Object.values(errorRes).flat();
+            if (messages.length > 0) errorText = messages.map(m => String(m)).join(', ');
+          }
+        }
+        setErrorMsg(errorText);
       }
     } catch (err) {
       setErrorMsg('Network error.');
@@ -791,7 +803,18 @@ export const StoresView: React.FC = () => {
       if (response.ok) {
         fetchData();
       } else {
-        setErrorMsg('Failed to delete item.');
+        const errorRes = await response.json().catch(() => null);
+        let errorText = 'Failed to delete item.';
+        if (errorRes) {
+          if (typeof errorRes === 'string') errorText = errorRes;
+          else if (errorRes.detail) errorText = String(errorRes.detail);
+          else if (errorRes.non_field_errors) errorText = Array.isArray(errorRes.non_field_errors) ? errorRes.non_field_errors.join(', ') : String(errorRes.non_field_errors);
+          else if (typeof errorRes === 'object') {
+            const messages = Object.values(errorRes).flat();
+            if (messages.length > 0) errorText = messages.map(m => String(m)).join(', ');
+          }
+        }
+        setErrorMsg(errorText);
       }
     } catch (err) {
       setErrorMsg('Network error.');
@@ -976,7 +999,7 @@ export const StoresView: React.FC = () => {
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="font-bold text-on-surface text-sm truncate">{item.store_name}</h4>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${item.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
                             }`}>
                             {item.active ? 'Active' : 'Inactive'}
                           </span>
@@ -1124,7 +1147,7 @@ export const StoresView: React.FC = () => {
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="p-1 rounded-lg text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer"
+                  className="p-1 rounded text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1132,7 +1155,7 @@ export const StoresView: React.FC = () => {
 
               {/* Inline Error Banner */}
               {errorMsg && (
-                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded-lg text-xs font-medium">
+                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 rounded text-xs font-medium">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{errorMsg}</span>
                 </div>
@@ -1169,16 +1192,14 @@ export const StoresView: React.FC = () => {
 
                     <div>
                       <label className="block text-xs font-semibold text-outline mb-1">Location Type</label>
-                      <select
+                      <SearchableSelect
                         required
                         disabled={!hasPermission('add_area')}
                         value={storeForm.type}
-                        onChange={e => setStoreForm({ ...storeForm, type: e.target.value })}
-                        className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                      >
-                        <option value="">Select Location Type</option>
-                        {STORE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                      </select>
+                        onChange={val => setStoreForm({ ...storeForm, type: val })}
+                        placeholder="Select Location Type"
+                        options={STORE_TYPES.map(t => ({ value: t.value, label: t.label }))}
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -1196,16 +1217,14 @@ export const StoresView: React.FC = () => {
                           </Can>
                         </div>
 
-                        <select
+                        <SearchableSelect
                           disabled={!hasPermission('add_area')}
                           required
                           value={storeForm.area}
-                          onChange={e => setStoreForm({ ...storeForm, area: e.target.value })}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                        >
-                          <option value="">Select Area</option>
-                          {areaList.map(a => <option key={a.area_id} value={a.area_id}>{a.area_name}</option>)}
-                        </select>
+                          onChange={val => setStoreForm({ ...storeForm, area: val })}
+                          placeholder="Select Area"
+                          options={areaList.map(a => ({ value: a.area_id, label: a.area_name }))}
+                        />
                       </div>
 
                       <div>
@@ -1365,7 +1384,7 @@ export const StoresView: React.FC = () => {
                       </div>
                       <Can permission="accounts.can_edit_full_manager_details">
                         <div>
-                          <label className="block text-xs font-semibold text-outline mb-1">Employee ID</label>
+                          <label className="block text-xs font-semibold text-outline mb-1">Employee ID (Login)</label>
                           <input
                             type="text"
                             placeholder="e.g. EMP-101"
@@ -1380,7 +1399,7 @@ export const StoresView: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <Can permission="accounts.can_edit_full_manager_details">
                         <div>
-                          <label className="block text-xs font-semibold text-outline mb-1">Username (Login) *</label>
+                          <label className="block text-xs font-semibold text-outline mb-1">Blog ID (Login) *</label>
                           <input
                             required
                             type="text"
@@ -1445,9 +1464,9 @@ export const StoresView: React.FC = () => {
                     </div>
 
                     <Can permission="accounts.can_edit_full_manager_details">
-                      <div className="p-3.5 rounded-lg border border-outline-variant bg-surface-container-low flex items-center justify-between gap-4">
+                      <div className="p-3.5 rounded border border-outline-variant bg-surface-container-low flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-full ${managerForm.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-tertiary-container text-on-tertiary-container'}`}>
+                          <div className={`p-2 rounded ${managerForm.active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-tertiary-container text-on-tertiary-container'}`}>
                             {managerForm.active ? <CheckCircle2 className="w-5 h-5" /> : <UserX className="w-5 h-5" />}
                           </div>
                           <div>
@@ -1467,13 +1486,13 @@ export const StoresView: React.FC = () => {
                             onChange={e => setManagerForm({ ...managerForm, active: e.target.checked })}
                             className="sr-only peer"
                           />
-                          <div className="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                          <div className="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
                         </label>
                       </div>
                     </Can>
 
                     {editItem && (
-                      <div className="p-3 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg flex items-center justify-between">
+                      <div className="p-3 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded flex items-center justify-between">
                         <div>
                           <span className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant dark:text-dark-on-surface-variant">
                             Previous / Current Store
@@ -1844,7 +1863,7 @@ export const StoresView: React.FC = () => {
                   </div>
                   <button
                     onClick={() => setShowAreaModal(false)}
-                    className="p-1 rounded-lg text-outline hover:bg-surface-container-high cursor-pointer"
+                    className="p-1 rounded text-outline hover:bg-surface-container-high cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -1863,12 +1882,12 @@ export const StoresView: React.FC = () => {
                         placeholder="e.g. Hawally Area"
                         value={areaForm.area_name}
                         onChange={e => setAreaForm({ area_name: e.target.value })}
-                        className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded-lg outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        className="flex-1 text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
                       />
                       <button
                         type="submit"
                         disabled={actionLoading}
-                        className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer shrink-0"
+                        className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded hover:bg-primary/95 flex items-center gap-1.5 cursor-pointer shrink-0"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingAreaId ? <Edit2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
                         {editingAreaId ? 'Save' : 'Add'}
@@ -1880,7 +1899,7 @@ export const StoresView: React.FC = () => {
                             setEditingAreaId(null);
                             setAreaForm({ area_name: '' });
                           }}
-                          className="px-3 py-2.5 border border-outline-variant text-xs font-semibold rounded-lg hover:bg-surface-container-high cursor-pointer"
+                          className="px-3 py-2.5 border border-outline-variant text-xs font-semibold rounded hover:bg-surface-container-high cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -1904,7 +1923,7 @@ export const StoresView: React.FC = () => {
                       {areaList.map((area: any) => (
                         <div
                           key={area.area_id}
-                          className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/60 rounded-lg hover:border-outline transition-colors text-xs"
+                          className="flex items-center justify-between p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant/60 rounded hover:border-outline transition-colors text-xs"
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
@@ -1941,7 +1960,7 @@ export const StoresView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowAreaModal(false)}
-                    className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold cursor-pointer"
+                    className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold cursor-pointer"
                   >
                     Close
                   </button>
@@ -1973,7 +1992,7 @@ export const StoresView: React.FC = () => {
               >
                 <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <div className="p-2 rounded bg-primary/10 text-primary">
                       <LinkIcon className="w-4 h-4" />
                     </div>
                     <div>
@@ -2067,7 +2086,7 @@ export const StoresView: React.FC = () => {
               >
                 <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                    <div className="p-2 rounded bg-primary/10 text-primary">
                       <RefreshCw className="w-4 h-4" />
                     </div>
                     <div>
@@ -2084,7 +2103,7 @@ export const StoresView: React.FC = () => {
                 </div>
 
                 {swapErrorMsg && (
-                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs rounded-lg flex items-center gap-2">
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs rounded flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{swapErrorMsg}</span>
                   </div>
@@ -2206,7 +2225,7 @@ export const StoresView: React.FC = () => {
 
           <button
             onClick={handleOpenCreate}
-            className="bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded-full flex items-center justify-center transition-all cursor-pointer"
+            className="bg-primary hover:bg-primary-hover active:scale-95 text-on-primary shadow-lg p-4 rounded flex items-center justify-center transition-all cursor-pointer"
             title={`Add New ${subpage === 'areas' ? 'Area' : subpage === 'departments' ? 'Department' : 'Store'}`}
           >
             <Plus className="w-6 h-6" />

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import Can from '@/hooks/Can';
+import { usePermission } from '@/hooks/usePermission';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -169,23 +171,9 @@ export const MaintenanceView: React.FC = () => {
         safeFetch('/accounts/customuser/')
       ]);
 
-      const filteredSubs = Array.isArray(subs)
-        ? subs.filter((s: any) => (s.sub_department_name || '').toLowerCase() !== 'office')
-        : [];
-      const filteredNatures = Array.isArray(natures)
-        ? natures.filter((n: any) => {
-          const nName = (n.nature_name || '').toLowerCase();
-          const sName = (n.sub_department_name || n.sub_department?.sub_department_name || '').toLowerCase();
-          return nName !== 'office related' && sName !== 'office';
-        })
-        : [];
-      const filteredWorkers = Array.isArray(workers)
-        ? workers.filter((w: any) => {
-          const nName = (w.nature_name || w.nature?.nature_name || '').toLowerCase();
-          const sName = (w.sub_department_name || w.nature?.sub_department_name || '').toLowerCase();
-          return nName !== 'office related' && sName !== 'office';
-        })
-        : [];
+      const filteredSubs = Array.isArray(subs) ? subs : [];
+      const filteredNatures = Array.isArray(natures) ? natures : [];
+      const filteredWorkers = Array.isArray(workers) ? workers : [];
 
       if (Array.isArray(depts)) setExtraDepts(depts);
       setExtraSubs(filteredSubs);
@@ -426,7 +414,18 @@ export const MaintenanceView: React.FC = () => {
       if (response.ok) {
         fetchData();
       } else {
-        setErrorMsg('Failed to delete item.');
+        const errorRes = await response.json().catch(() => null);
+        let errorText = 'Failed to delete item.';
+        if (errorRes) {
+          if (typeof errorRes === 'string') errorText = errorRes;
+          else if (errorRes.detail) errorText = String(errorRes.detail);
+          else if (errorRes.non_field_errors) errorText = Array.isArray(errorRes.non_field_errors) ? errorRes.non_field_errors.join(', ') : String(errorRes.non_field_errors);
+          else if (typeof errorRes === 'object') {
+            const messages = Object.values(errorRes).flat();
+            if (messages.length > 0) errorText = messages.map(m => String(m)).join(', ');
+          }
+        }
+        setErrorMsg(errorText);
       }
     } catch {
       setErrorMsg('Network error.');
@@ -475,17 +474,40 @@ export const MaintenanceView: React.FC = () => {
       if (response.ok) {
         await fetchPriorities();
       } else {
-        setPriorityErrorMsg('Failed to delete priority.');
+        const errorRes = await response.json().catch(() => null);
+        let errorText = 'Failed to delete priority.';
+        if (errorRes) {
+          if (typeof errorRes === 'string') errorText = errorRes;
+          else if (errorRes.detail) errorText = String(errorRes.detail);
+          else if (errorRes.non_field_errors) errorText = Array.isArray(errorRes.non_field_errors) ? errorRes.non_field_errors.join(', ') : String(errorRes.non_field_errors);
+          else if (typeof errorRes === 'object') {
+            const messages = Object.values(errorRes).flat();
+            if (messages.length > 0) errorText = messages.map(m => String(m)).join(', ');
+          }
+        }
+        setPriorityErrorMsg(errorText);
       }
     } catch {
       setPriorityErrorMsg('Network error.');
     }
   };
 
-  const getLoggedInUserDepartmentIds = (): Set<number> | null => {
+  const { hasPermission } = usePermission();
+
+  const canViewAllDepartmentTrees = useMemo(() => {
     const roleName = (user?.role as any)?.role_name?.toLowerCase() || (user?.role as string)?.toLowerCase();
-    if (roleName === 'admin' || roleName === 'administrator') return null;
-    if (!user?.sub_departments || user.sub_departments.length === 0) return null;
+    const isAdminRole = roleName === 'admin' || roleName === 'administrator' || roleName === 'main_admin' || roleName === 'main administrator';
+    return (
+      user?.is_superuser ||
+      isAdminRole ||
+      hasPermission('maintenance.view_all_department_tickets') ||
+      hasPermission('maintenance.create_ticket_all_departments')
+    );
+  }, [user, hasPermission]);
+
+  const getLoggedInUserDepartmentIds = (): Set<number> | null => {
+    if (canViewAllDepartmentTrees) return null;
+    if (!user?.sub_departments || user.sub_departments.length === 0) return new Set<number>();
     const deptIds = new Set<number>();
     user.sub_departments.forEach((sd: any) => {
       let sdObj = sd;
@@ -497,6 +519,11 @@ export const MaintenanceView: React.FC = () => {
       }
       if (sdObj) {
         const parentDeptId = Number(sdObj.department?.department_id ?? sdObj.department);
+        if (parentDeptId) {
+          deptIds.add(parentDeptId);
+        }
+      } else if (sd && typeof sd === 'object') {
+        const parentDeptId = Number(sd.department?.department_id ?? sd.department);
         if (parentDeptId) {
           deptIds.add(parentDeptId);
         }
@@ -1191,15 +1218,13 @@ export const MaintenanceView: React.FC = () => {
 
                     <div>
                       <label className="block text-xs font-medium text-on-surface-variant mb-1">Assigned Sub Department</label>
-                      <select
+                      <SearchableSelect
                         required
                         value={natureForm.sub_department}
-                        onChange={e => setNatureForm({ ...natureForm, sub_department: e.target.value })}
-                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
-                      >
-                        <option value="">Select Sub Department</option>
-                        {allowedSubs.map(s => <option key={s.sub_department_id} value={s.sub_department_id}>{s.sub_department_name}</option>)}
-                      </select>
+                        onChange={val => setNatureForm({ ...natureForm, sub_department: val })}
+                        placeholder="Select Sub Department"
+                        options={allowedSubs.map(s => ({ value: s.sub_department_id, label: s.sub_department_name }))}
+                      />
                     </div>
 
                     <div>
@@ -1216,15 +1241,13 @@ export const MaintenanceView: React.FC = () => {
                           <Plus className="w-3 h-3" /> Add Priority
                         </button>
                       </div>
-                      <select
+                      <SearchableSelect
                         required
                         value={natureForm.default_priority}
-                        onChange={e => setNatureForm({ ...natureForm, default_priority: e.target.value })}
-                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
-                      >
-                        <option value="">Select Default Priority</option>
-                        {natureFormPriorities.map(p => <option key={p.priority_id} value={p.priority_id}>{p.priority_name} (Lvl {p.level})</option>)}
-                      </select>
+                        onChange={val => setNatureForm({ ...natureForm, default_priority: val })}
+                        placeholder="Select Default Priority"
+                        options={natureFormPriorities.map(p => ({ value: p.priority_id, label: `${p.priority_name} (Lvl ${p.level})` }))}
+                      />
                     </div>
 
                     <div className="flex items-center gap-2 pt-1">
@@ -1244,43 +1267,37 @@ export const MaintenanceView: React.FC = () => {
                   <>
                     <div>
                       <label className="block text-xs font-medium text-on-surface-variant mb-1">Select Nature of Work</label>
-                      <select
+                      <SearchableSelect
                         required
                         value={workerAssignmentForm.nature}
-                        onChange={e => setWorkerAssignmentForm({ ...workerAssignmentForm, nature: e.target.value })}
-                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
-                      >
-                        <option value="">Select Nature</option>
-                        {allowedNatures.map(n => <option key={n.nature_id} value={n.nature_id}>{n.nature_name}</option>)}
-                      </select>
+                        onChange={val => setWorkerAssignmentForm({ ...workerAssignmentForm, nature: val })}
+                        placeholder="Select Nature"
+                        options={allowedNatures.map(n => ({ value: n.nature_id, label: n.nature_name }))}
+                      />
                     </div>
 
                     <div>
                       <label className="block text-xs font-medium text-on-surface-variant mb-1">Technician / Worker</label>
-                      <select
+                      <SearchableSelect
                         required
                         value={workerAssignmentForm.worker}
-                        onChange={e => setWorkerAssignmentForm({ ...workerAssignmentForm, worker: e.target.value })}
-                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
-                      >
-                        <option value="">Select Technician</option>
-                        {filteredUsers.map(u => <option key={u.user_id} value={u.user_id}>{u.full_name} ({u.employee_no})</option>)}
-                      </select>
+                        onChange={val => setWorkerAssignmentForm({ ...workerAssignmentForm, worker: val })}
+                        placeholder="Select Technician"
+                        options={filteredUsers.map(u => ({ value: u.user_id, label: `${u.full_name} (${u.employee_no || u.username})` }))}
+                      />
                     </div>
                   </>
                 ) : (
                   <>
                     <div>
                       <label className="block text-xs font-medium text-on-surface-variant mb-1">Parent Department</label>
-                      <select
+                      <SearchableSelect
                         required
                         value={subDeptForm.department}
-                        onChange={e => setSubDeptForm({ ...subDeptForm, department: e.target.value })}
-                        className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary cursor-pointer"
-                      >
-                        <option value="">Select Parent Department</option>
-                        {allowedDepts.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
-                      </select>
+                        onChange={val => setSubDeptForm({ ...subDeptForm, department: val })}
+                        placeholder="Select Parent Department"
+                        options={allowedDepts.map(d => ({ value: d.department_id, label: d.department_name }))}
+                      />
                     </div>
 
                     <div>

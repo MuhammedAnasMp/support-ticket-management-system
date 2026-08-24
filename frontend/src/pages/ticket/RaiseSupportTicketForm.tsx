@@ -4,6 +4,7 @@ import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCi
 import { API_URL } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
+import { SearchableSelect } from '@/components/SearchableSelect';
 
 const inputCls = "w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors placeholder:text-on-surface-variant/60";
 
@@ -323,40 +324,33 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                         <label className="block text-xs font-medium text-on-surface mb-1.5">
                                             Store <span className="text-error">*</span>
                                         </label>
-                                        <select
+                                        <SearchableSelect
                                             required
                                             value={createForm.store_id}
-                                            onChange={e => setCreateForm({ ...createForm, store_id: e.target.value })}
-                                            className={inputCls}
-                                        >
-                                            <option value="">Select Store</option>
-                                            {stores.map(s => (
-                                                <option key={s.store_id} value={s.store_id}>
-
-                                                    {s.store_id} - {s.store_name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            onChange={val => setCreateForm({ ...createForm, store_id: val })}
+                                            placeholder="Select Store"
+                                            options={stores.map(s => ({
+                                                value: s.store_id,
+                                                label: `${s.store_id} - ${s.store_name}`
+                                            }))}
+                                        />
                                     </div>
 
                                     <div>
                                         <label className="block text-xs font-medium text-on-surface mb-1.5">
                                             Department <span className="text-error">*</span>
                                         </label>
-                                        <select
+                                        <SearchableSelect
                                             required
                                             disabled={!canCreateAllDepts && availableDepartments.length <= 1}
                                             value={createForm.department_id}
-                                            onChange={e => setCreateForm({ ...createForm, department_id: e.target.value, nature_id: '' })}
-                                            className={inputCls}
-                                        >
-                                            {canCreateAllDepts && <option value="">Select Department</option>}
-                                            {availableDepartments.map(d => (
-                                                <option key={d.department_id} value={d.department_id}>
-                                                    {d.department_name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            onChange={val => setCreateForm({ ...createForm, department_id: val, nature_id: '' })}
+                                            placeholder="Select Department"
+                                            options={availableDepartments.map(d => ({
+                                                value: d.department_id,
+                                                label: d.department_name
+                                            }))}
+                                        />
                                     </div>
                                 </div>
 
@@ -365,31 +359,23 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                     <label className="block text-xs font-medium text-on-surface mb-1.5">
                                         Nature of Work <span className="text-error">*</span>
                                     </label>
-                                    <select
+                                    <SearchableSelect
                                         required
-                                        disabled={!createForm.department_id}
+                                        disabled={!createForm.department_id || loadingNatures}
                                         value={createForm.nature_id}
-                                        onChange={e => setCreateForm({ ...createForm, nature_id: e.target.value })}
-                                        className={inputCls}
-                                    >
-                                        <option value="">
-                                            {loadingNatures
+                                        onChange={val => setCreateForm({ ...createForm, nature_id: val })}
+                                        placeholder={
+                                            loadingNatures
                                                 ? 'Loading Natures of Work...'
                                                 : createForm.department_id
                                                     ? 'Select Nature of Work'
-                                                    : 'Select Department first'}
-                                        </option>
-                                        {filteredNatures.map(n => (
-                                            <option
-                                                key={n.nature_id}
-                                                value={n.nature_id}
-                                                className="capitalize"
-                                            >
-                                                {n.nature_name} [{n.sub_department?.sub_department_name || 'N/A'}]
-                                            </option>
-                                        ))}
-
-                                    </select>
+                                                    : 'Select Department first'
+                                        }
+                                        options={filteredNatures.map(n => ({
+                                            value: n.nature_id,
+                                            label: n.nature_name
+                                        }))}
+                                    />
                                 </div>
 
                                 {/* Issue Title */}
