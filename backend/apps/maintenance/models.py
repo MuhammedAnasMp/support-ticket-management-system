@@ -152,6 +152,15 @@ class WorkNature(models.Model):
     def __str__(self):
         return self.nature_name
 
+    def delete(self, *args, **kwargs):
+        is_office_nature = self.nature_name.lower().strip() == 'office related' or (
+            self.sub_department and self.sub_department.sub_department_name.lower().strip() == 'office'
+        )
+        if is_office_nature:
+            from django.core.exceptions import ValidationError
+            raise ValidationError('System work nature "Office Related" cannot be deleted.')
+        super().delete(*args, **kwargs)
+
 
 class NatureWorker(models.Model):
     nature_worker_id = models.AutoField(primary_key=True)

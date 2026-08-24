@@ -51,14 +51,28 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
             return WorkNatureWriteSerializer
         return WorkNatureSerializer
 
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        is_office_nature = instance.nature_name.lower().strip() == 'office related' or (
+            instance.sub_department and instance.sub_department.sub_department_name.lower().strip() == 'office'
+        )
+        if is_office_nature:
+            raise exceptions.ValidationError({'detail': 'System work nature "Office Related" cannot be modified or updated.'})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        is_office_nature = instance.nature_name.lower().strip() == 'office related' or (
+            instance.sub_department and instance.sub_department.sub_department_name.lower().strip() == 'office'
+        )
+        if is_office_nature:
+            raise exceptions.ValidationError({'detail': 'System work nature "Office Related" cannot be deleted.'})
+        instance.delete()
+
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
         if not user or user.is_anonymous:
             return WorkNature.objects.none()
-
-        # Exclude internal system 'office' subdepartments and 'office related' natures from management listing
-        queryset = queryset.exclude(nature_name__iexact='office related').exclude(sub_department__sub_department_name__iexact='office')
 
         department = self.request.query_params.get('department')
         if department:
@@ -99,11 +113,6 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        queryset = queryset.exclude(
-            nature__nature_name__iexact='office related'
-        ).exclude(
-            nature__sub_department__sub_department_name__iexact='office'
-        )
         nature = self.request.query_params.get('nature')
         if nature:
             queryset = queryset.filter(nature_id=nature)

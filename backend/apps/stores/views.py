@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, exceptions
 from .models import Store, Department, SubDepartment, Area
 from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer, SubDepartmentWriteSerializer
 
@@ -46,8 +46,17 @@ class SubDepartmentViewSet(viewsets.ModelViewSet):
         return SubDepartmentSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        return queryset.exclude(sub_department_name__iexact='office')
+        return super().get_queryset()
+
+    def perform_update(self, serializer):
+        if serializer.instance.sub_department_name.lower().strip() == 'office':
+            raise exceptions.ValidationError({'detail': 'System sub-department "Office" cannot be modified or updated.'})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.sub_department_name.lower().strip() == 'office':
+            raise exceptions.ValidationError({'detail': 'System sub-department "Office" cannot be deleted.'})
+        instance.delete()
 
 
 class ManagerViewSet(viewsets.ModelViewSet):

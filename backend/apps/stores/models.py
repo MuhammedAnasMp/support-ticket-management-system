@@ -97,6 +97,12 @@ class SubDepartment(models.Model):
     def __str__(self):
         return f"{self.department.department_name} - {self.sub_department_name}"
 
+    def delete(self, *args, **kwargs):
+        if self.sub_department_name.lower().strip() == 'office':
+            from django.core.exceptions import ValidationError
+            raise ValidationError('System sub-department "Office" cannot be deleted.')
+        super().delete(*args, **kwargs)
+
 
 @receiver(models.signals.post_save, sender=SubDepartment)
 def sync_subdepartment_to_worknature(sender, instance, created, **kwargs):
