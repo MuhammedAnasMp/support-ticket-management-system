@@ -311,17 +311,71 @@ export const StoresView: React.FC = () => {
       return cols;
     } else if (subpage === 'managers') {
       const cols: ColDef[] = [
-        { headerName: 'Employee ID', field: 'employee_no', width: 120, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Name', field: 'full_name', flex: 1.5, minWidth: 160, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Username', field: 'username', width: 130 },
-        { headerName: 'Email', field: 'email', flex: 1.5, minWidth: 160 },
-        { headerName: 'Phone', field: 'phone', width: 120 },
-        { headerName: 'WhatsApp', field: 'whatsapp_number', width: 120 },
-        { headerName: 'Assigned Store', field: 'store.store_name', flex: 1.5, minWidth: 160, valueGetter: (p: any) => p.data?.store?.store_name || 'No Store Assigned' },
+        {
+          headerName: 'Manager',
+          field: 'full_name',
+          flex: 1.8,
+          minWidth: 190,
+          cellRenderer: (params: any) => {
+            const user = params.data;
+            if (!user) return null;
+            const initials = (user.full_name || user.username || 'M')
+              .split(' ')
+              .map((n: string) => n[0])
+              .join('')
+              .toUpperCase()
+              .slice(0, 2);
+            return (
+              <div className="flex items-center gap-2.5 h-full">
+                {user.profile_image ? (
+                  <img
+                    src={user.profile_image}
+                    alt={user.full_name || ''}
+                    className="w-8 h-8 rounded-full object-cover border border-outline-variant shrink-0"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center border border-primary/20 shrink-0">
+                    {initials}
+                  </div>
+                )}
+                <div className="flex flex-col min-w-0">
+                  <span className="font-semibold text-xs text-on-surface truncate leading-tight">
+                    {user.full_name || user.username}
+                  </span>
+                  <span className="text-[10px] text-outline font-mono leading-tight">
+                    {user.employee_no ? `#${user.employee_no}` : user.username}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+        },
+        { headerName: 'Username', field: 'username', width: 120 },
+        { headerName: 'Email', field: 'email', flex: 1.2, minWidth: 150 },
+        { headerName: 'Phone', field: 'phone', width: 110 },
+        { headerName: 'WhatsApp', field: 'whatsapp_number', width: 110 },
+        { headerName: 'Assigned Store', field: 'store.store_name', flex: 1.4, minWidth: 150, valueGetter: (p: any) => p.data?.store?.store_name || 'No Store Assigned' },
+        {
+          headerName: 'Accessible Stores',
+          field: 'accessible_stores',
+          flex: 1.3,
+          minWidth: 140,
+          cellRenderer: (params: any) => {
+            const storeList = params.data?.accessible_stores || [];
+            const count = Array.isArray(storeList) ? storeList.length : 0;
+            return (
+              <div className="flex items-center gap-1.5 h-full">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] text-blue-800 font-medium tracking-wide h-4 ">
+                  {count} {count === 1 ? 'Store' : 'Stores'}
+                </span>
+              </div>
+            );
+          }
+        },
         {
           headerName: 'Status',
           field: 'active',
-          width: 120,
+          width: 110,
           cellRenderer: (params: any) => (
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
               }`}>
@@ -333,7 +387,6 @@ export const StoresView: React.FC = () => {
       if (canDeleteSubpage && !isMobile) {
         cols.push({ headerName: 'Actions', width: 160, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
-      return cols;
       return cols;
     } else {
       // departments
@@ -1022,16 +1075,32 @@ export const StoresView: React.FC = () => {
                         <span className="font-mono text-[10px] text-outline">ID: {item.area_id}</span>
                       </div>
                     ) : subpage === 'managers' ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-xs font-semibold truncate text-start">{item.full_name}</h4>
+                      <div className="flex items-center gap-3">
+                        {item.profile_image ? (
+                          <img
+                            src={item.profile_image}
+                            alt=""
+                            className="w-10 h-10 rounded-full object-cover border border-outline-variant shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center border border-primary/20 shrink-0">
+                            {(item.full_name || item.username || 'M').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="font-bold text-on-surface text-xs truncate text-start">{item.full_name || item.username}</h4>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 shrink-0">
+                              {item.accessible_stores?.length || 0} Stores
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-outline pt-0.5 text-start flex-wrap">
+                            <span>📧 {item.email || 'N/A'}</span>
+                            <span>·</span>
+                            <span>🏪 {item.store?.store_name || 'No Store Assigned'}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-outline pt-0.5 text-start">
-                          <span>📧 {item.email || 'N/A'}</span>
-                          <span>·</span>
-                          <span>🏪 {item.store?.store_name || 'No Store Assigned'}</span>
-                        </div>
-                      </>
+                      </div>
                     ) : (
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-on-surface text-sm truncate">{item.department_name}</span>
@@ -2083,7 +2152,7 @@ export const StoresView: React.FC = () => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded shadow-2xl overflow-hidden p-6 space-y-5"
+                className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg rounded shadow-2xl overflow-hidden p-4 space-y-5"
               >
                 <div className="flex items-center justify-between pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
                   <div className="flex items-center gap-2.5">
@@ -2112,7 +2181,7 @@ export const StoresView: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Manager A */}
-                  <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded space-y-2">
+                  <div className="p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded space-y-2">
                     <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager A</label>
                     <select
                       value={swapManagerA}
@@ -2137,7 +2206,7 @@ export const StoresView: React.FC = () => {
                   </div>
 
                   {/* Manager B */}
-                  <div className="p-3.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded space-y-2">
+                  <div className="p-2.5 bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded space-y-2">
                     <label className="block text-xs font-bold text-primary uppercase tracking-wider">Manager B</label>
                     <select
                       value={swapManagerB}
@@ -2166,7 +2235,7 @@ export const StoresView: React.FC = () => {
 
                 {/* Swap Result Preview */}
                 {swapManagerA && swapManagerB && (
-                  <div className="p-3.5 bg-primary/10 border border-primary/30 rounded space-y-2">
+                  <div className="p-3.5 bg-primary/10 border border-primary/30 rounded ">
                     <div className="text-xs font-bold text-primary flex items-center gap-1.5">
                       <RefreshCw className="w-3.5 h-3.5" />
                       <span>Swap Outcome Preview</span>
@@ -2184,7 +2253,7 @@ export const StoresView: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
+                <div className="flex justify-end gap-2  .border-t border-outline-variant dark:border-dark-outline-variant">
                   <button
                     type="button"
                     onClick={() => setShowSwapModal(false)}

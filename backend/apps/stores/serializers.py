@@ -67,7 +67,7 @@ class ManagerSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'user_id', 'employee_no', 'username', 'password', 'email', 'full_name', 'phone', 
-            'whatsapp_number', 'role', 'store', 'store_id', 'accessible_stores', 'active', 'last_login'
+            'whatsapp_number', 'role', 'store', 'store_id', 'accessible_stores', 'active', 'last_login', 'profile_image'
         ]
         depth = 1
 
