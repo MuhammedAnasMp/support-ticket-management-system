@@ -145,15 +145,27 @@ export const ReportsView: React.FC = () => {
   // Export State
   const [exportingFormat, setExportingFormat] = useState<string | null>(null);
 
-  // Search filter for field tree
+  // Search filter for field tree & mobile builder tab switcher
   const [fieldSearch, setFieldSearch] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+  const [mobileTab, setMobileTab] = useState<'fields' | 'config' | 'preview'>('fields');
 
   useEffect(() => {
     fetchSavedReports();
     fetchPrebuiltTemplates();
     fetchDataSources();
   }, [token]);
+
+  useEffect(() => {
+    if (subpage === 'history') {
+      fetchLogs();
+      setMode('history');
+    } else if (subpage === 'new') {
+      setMode('builder');
+    } else if (subpage === 'all') {
+      setMode('list');
+    }
+  }, [subpage]);
 
   const fetchPrebuiltTemplates = async () => {
     try {
@@ -520,41 +532,41 @@ export const ReportsView: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-surface text-on-surface select-none">
       {/* Header Bar */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-outline-variant bg-surface-container-low shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 border-b border-outline-variant bg-surface-container-low shrink-0 gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg text-primary">
+          <div className="p-2 bg-primary/10 rounded-lg text-primary shrink-0">
             <FileText className="w-5 h-5" />
           </div>
-          <div>
-            <h1 className="font-semibold text-base tracking-tight leading-tight">
+          <div className="min-w-0">
+            <h1 className="font-semibold text-sm sm:text-base tracking-tight leading-tight truncate">
               Universal Report Builder
             </h1>
-            <p className="text-xs text-on-surface-variant mt-0.5">
+            <p className="text-[11px] sm:text-xs text-on-surface-variant mt-0.5 truncate">
               Metadata-driven dynamic PDF, Excel, and CSV reporting engine
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto justify-start sm:justify-end">
           {mode === 'builder' ? (
             <>
               <button
                 onClick={() => setMode('list')}
-                className="px-3 py-1.5 rounded border border-outline-variant text-xs font-medium hover:bg-surface-container-high transition-colors"
+                className="px-2.5 sm:px-3 py-1.5 rounded border border-outline-variant text-xs font-medium hover:bg-surface-container-high transition-colors"
               >
                 Saved Reports
               </button>
               <button
                 onClick={runPreview}
                 disabled={previewLoading || !selectedSource}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 {previewLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                 Run Preview
               </button>
               <button
                 onClick={saveReport}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-primary text-primary text-xs font-medium hover:bg-primary/10 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded border border-primary text-primary text-xs font-medium hover:bg-primary/10 transition-colors"
               >
                 <Save className="w-3.5 h-3.5" />
                 Save Report
@@ -594,7 +606,7 @@ export const ReportsView: React.FC = () => {
                   setPreviewResult(null);
                   setMode('builder');
                 }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded bg-primary text-on-primary text-xs font-semibold hover:bg-primary/90 transition-colors"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 rounded bg-primary text-on-primary text-xs font-semibold hover:bg-primary/90 transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Create New Report
@@ -793,9 +805,34 @@ export const ReportsView: React.FC = () => {
         </div>
       ) : (
         /* Builder View */
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Mobile View Switcher Tabs (< lg screens) */}
+          <div className="flex lg:hidden border-b border-outline-variant bg-surface-container text-xs font-medium shrink-0">
+            <button
+              onClick={() => setMobileTab('fields')}
+              className={`flex-1 py-2 text-center transition-colors border-b-2 ${mobileTab === 'fields' ? 'border-primary text-primary font-semibold' : 'border-transparent text-on-surface-variant'
+                }`}
+            >
+              1. Fields
+            </button>
+            <button
+              onClick={() => setMobileTab('config')}
+              className={`flex-1 py-2 text-center transition-colors border-b-2 ${mobileTab === 'config' ? 'border-primary text-primary font-semibold' : 'border-transparent text-on-surface-variant'
+                }`}
+            >
+              2. Settings
+            </button>
+            <button
+              onClick={() => setMobileTab('preview')}
+              className={`flex-1 py-2 text-center transition-colors border-b-2 ${mobileTab === 'preview' ? 'border-primary text-primary font-semibold' : 'border-transparent text-on-surface-variant'
+                }`}
+            >
+              3. Preview
+            </button>
+          </div>
+
           {/* Left Panel: Field Browser */}
-          <div className="w-72 border-r border-outline-variant bg-surface-container-low flex flex-col shrink-0">
+          <div className={`w-full lg:w-72 border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-low ${mobileTab === 'fields' ? 'flex' : 'hidden lg:flex'} flex-col shrink-0 overflow-y-auto lg:overflow-hidden`}>
             <div className="p-3 border-b border-outline-variant space-y-2">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant block">
                 1. Select Data Source
@@ -843,7 +880,7 @@ export const ReportsView: React.FC = () => {
           </div>
 
           {/* Middle Panel: Config Tabs & Controls */}
-          <div className="w-96 border-r border-outline-variant bg-surface-container-low flex flex-col shrink-0">
+          <div className={`w-full lg:w-96 border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-low ${mobileTab === 'config' ? 'flex' : 'hidden lg:flex'} flex-col shrink-0 overflow-y-auto lg:overflow-hidden`}>
             {/* Report Metadata inputs */}
             <div className="p-3 border-b border-outline-variant space-y-2">
               <input
@@ -1207,9 +1244,9 @@ export const ReportsView: React.FC = () => {
           </div>
 
           {/* Right Panel: Live Preview & Export Bar */}
-          <div className="flex-1 flex flex-col overflow-hidden bg-surface-container">
+          <div className={`flex-1 ${mobileTab === 'preview' ? 'flex' : 'hidden lg:flex'} flex-col overflow-hidden bg-surface-container min-w-0`}>
             {/* Export Toolbar */}
-            <div className="px-4 py-2 border-b border-outline-variant bg-surface-container-low flex items-center justify-between shrink-0">
+            <div className="px-4 py-2 border-b border-outline-variant bg-surface-container-low flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2 text-xs font-semibold text-on-surface">
                 <Eye className="w-4 h-4 text-primary" />
                 <span>Live Data Preview</span>
