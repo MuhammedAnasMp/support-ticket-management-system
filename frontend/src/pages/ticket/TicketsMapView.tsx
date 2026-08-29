@@ -11,7 +11,9 @@ import {
     Filter,
     Store as StoreIcon,
     ChevronRight,
-    X
+    X,
+    Satellite,
+    Road
 } from 'lucide-react';
 import { getMediaUrl } from './TicketsTypesAndComponents';
 import type { Ticket } from './TicketsTypesAndComponents';
@@ -396,14 +398,14 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
                 ? `<span class="text-[9px] text-outline italic">Unassigned</span>`
                 : `<div class="flex items-center -space-x-2 overflow-hidden shrink-0" title="Assigned: ${assignedWorkers.map((w: any) => w.full_name || 'Worker').join(', ')}">
                     ${assignedWorkers.slice(0, 3).map((w: any, idx: number) => {
-                        const initials = (w.full_name || 'W').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?';
-                        const imgUrl = w.profile_image ? getMediaUrl(w.profile_image) : null;
-                        return `
+                    const initials = (w.full_name || 'W').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?';
+                    const imgUrl = w.profile_image ? getMediaUrl(w.profile_image) : null;
+                    return `
                             <div class="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center font-bold text-[8px] bg-primary/10 text-primary border border-primary/25 shadow-xs shrink-0" style="z-index: ${10 - idx}">
                                 ${imgUrl ? `<img src="${imgUrl}" alt="${w.full_name || ''}" class="w-full h-full object-cover" />` : `<span>${initials}</span>`}
                             </div>
                         `;
-                    }).join('')}
+                }).join('')}
                     ${assignedWorkers.length > 3 ? `<div class="w-6 h-6 rounded-full flex items-center justify-center font-bold text-[8px] bg-surface-container-high text-on-surface border border-outline-variant shrink-0" style="z-index: 0">+${assignedWorkers.length - 3}</div>` : ''}
                 </div>`;
 
@@ -520,7 +522,7 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
     };
 
     return (
-        <div className="relative w-full h-[calc(100vh-210px)] min-h-[500px] rounded-xl overflow-hidden border border-outline-variant bg-surface-container-lowest shadow-sm flex flex-col">
+        <div className="relative w-full h-[calc(100vh-210px)] min-h-[500px] rounded overflow-hidden border border-outline-variant bg-surface-container-lowest shadow-sm flex flex-col">
             {/* Custom Leaflet Tooltip Overrides */}
             <style>{`
                 .leaflet-hover-card-tooltip {
@@ -543,15 +545,12 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
             {/* Top Toolbar Controls (Floating Overlay) */}
             <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
                 {/* Left: User Area Filter Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto max-w-full py-1 scrollbar-none pointer-events-auto bg-surface/85 dark:bg-dark-surface/85 backdrop-blur-md border border-outline-variant/60 rounded-lg p-1.5 shadow-md">
-                    {/* <span className="text-[11px] font-bold text-on-surface px-1 flex items-center gap-1 shrink-0">
-                        <Filter className="w-3 h-3 text-primary" /> Areas:
-                    </span> */}
+                <div className="flex items-center gap-0.5 overflow-x-auto max-w-full scrollbar-none pointer-events-auto bg-surface-container border border-outline-variant rounded p-0.5 shrink-0">
                     <button
                         onClick={() => setSelectedAreaFilter(null)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all shrink-0 cursor-pointer ${selectedAreaFilter === null
+                        className={`px-2 py-1 rounded text-[10px] font-medium transition-colors shrink-0 cursor-pointer ${selectedAreaFilter === null
                             ? 'bg-primary text-on-primary shadow-xs'
-                            : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                            : 'text-on-surface-variant hover:text-on-surface'
                             }`}
                     >
                         All ({tickets.length})
@@ -559,17 +558,26 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
 
                     {areaSummaryPills.map(({ areaName, count }) => {
                         const isSelected = selectedAreaFilter === areaName;
+
                         return (
                             <button
                                 key={areaName}
-                                onClick={() => setSelectedAreaFilter(isSelected ? null : areaName)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${isSelected
+                                onClick={() =>
+                                    setSelectedAreaFilter(isSelected ? null : areaName)
+                                }
+                                className={`px-2 py-1 rounded text-[10px] font-medium transition-colors shrink-0 cursor-pointer flex items-center gap-1 ${isSelected
                                     ? 'bg-primary text-on-primary shadow-xs'
-                                    : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                                    : 'text-on-surface-variant hover:text-on-surface'
                                     }`}
                             >
                                 <span>{areaName}</span>
-                                <span className={`px-1 py-0.2 rounded-full text-[9px] ${isSelected ? 'bg-on-primary/20 text-on-primary' : 'bg-surface-container-high text-outline'}`}>
+
+                                <span
+                                    className={`px-1 rounded-full text-[9px] ${isSelected
+                                        ? 'bg-on-primary/20 text-on-primary'
+                                        : 'bg-surface-container-high text-outline'
+                                        }`}
+                                >
                                     {count}
                                 </span>
                             </button>
@@ -577,24 +585,28 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
                     })}
                 </div>
 
+
                 {/* Right: Map Type Switcher (Streets vs Satellite) */}
-                <div className="flex items-center gap-1 pointer-events-auto bg-surface/85 dark:bg-dark-surface/85 backdrop-blur-md border border-outline-variant/60 rounded-lg p-1 shadow-md">
-                    {/* <span className="text-[11px] font-bold text-on-surface px-1.5 flex items-center gap-1 hidden sm:flex">
-                        <Layers className="w-3.5 h-3.5 text-primary" /> Map Type:
-                    </span> */}
+                <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 shrink-0 pointer-events-auto">
                     {(['streets', 'satellite'] as MapTileType[]).map((type) => (
                         <button
                             key={type}
                             onClick={() => setTileType(type)}
-                            className={`px-2.5 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${tileType === type
+                            className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${tileType === type
                                 ? 'bg-primary text-on-primary shadow-xs'
-                                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                                : 'text-on-surface-variant hover:text-on-surface'
                                 }`}
+                            title={type === 'satellite' ? 'Satellite View' : 'Street View'}
                         >
-                            {type === 'streets' ? 'Streets' : 'Satellite'}
+                            {type === 'satellite' ? (
+                                <Satellite className="w-3.5 h-3.5" />
+                            ) : (
+                                <Road className="w-3.5 h-3.5" />
+                            )}
                         </button>
                     ))}
                 </div>
+
             </div>
 
             {/* Floating Navigation Controls (Bottom Right) */}
