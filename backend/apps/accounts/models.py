@@ -88,8 +88,10 @@ class CustomUser(AbstractUser):
                              blank=True, validators=[phone_validator])
     whatsapp_number = models.CharField(
         max_length=50, null=True, blank=True, validators=[whatsapp_validator])
+    from apps.accounts.validators import validate_profile_image_is_human
     profile_image = models.ImageField(
-        upload_to=get_profile_image_path, null=True, blank=True)
+        upload_to=get_profile_image_path, null=True, blank=True,
+        validators=[validate_profile_image_is_human])
     role = models.ForeignKey(
         Role, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     accessible_stores = models.ManyToManyField(

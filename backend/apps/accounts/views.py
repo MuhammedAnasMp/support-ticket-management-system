@@ -106,6 +106,17 @@ class SignupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Validate profile image contains a valid human portrait
+        from apps.accounts.validators import validate_profile_image_is_human
+        from django.core.exceptions import ValidationError
+        try:
+            validate_profile_image_is_human(profile_image)
+        except ValidationError as e:
+            return Response(
+                {"error": e.messages[0]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Validate phone (exactly 8 digits)
         if not re.match(r'^\d{8}$', phone):
             return Response(
@@ -429,6 +440,15 @@ class ProfileView(APIView):
             user.set_password(str(password).strip())
             updated = True
         if profile_image is not None:
+            from apps.accounts.validators import validate_profile_image_is_human
+            from django.core.exceptions import ValidationError
+            try:
+                validate_profile_image_is_human(profile_image)
+            except ValidationError as e:
+                return Response(
+                    {"error": e.messages[0]},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             user.profile_image = profile_image
             updated = True
 

@@ -294,6 +294,11 @@ export const SignupView: React.FC = () => {
             <span className={`text-xs mt-2 font-medium ${showImageError ? 'text-red-500 font-bold animate-pulse' : 'text-on-surface-variant dark:text-dark-on-surface-variant'}`}>
               Profile Photo (Required)
             </span>
+            {error && (error.toLowerCase().includes('face') || error.toLowerCase().includes('portrait') || error.toLowerCase().includes('person')) && (
+              <span className="text-xs text-red-500 font-bold mt-1 text-center max-w-xs">
+                {error}
+              </span>
+            )}
           </div>
 
           {/* Role Selection Dropdown */}

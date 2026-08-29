@@ -124,6 +124,16 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'hourly_rate', 'skills', 'effective_from', 'effective_to'
         ]
 
+    def validate_profile_image(self, value):
+        if value:
+            from apps.accounts.validators import validate_profile_image_is_human
+            from django.core.exceptions import ValidationError
+            try:
+                validate_profile_image_is_human(value)
+            except ValidationError as e:
+                raise serializers.ValidationError(e.messages[0])
+        return value
+
     def validate(self, attrs):
         active = attrs.get(
             'active', self.instance.active if self.instance else True)

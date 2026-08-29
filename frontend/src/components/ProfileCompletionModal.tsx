@@ -191,7 +191,7 @@ export const ProfileCompletionModal: React.FC = () => {
         </div>
 
         {errorMsg && (
-          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 rounded-xl text-xs flex items-center gap-2">
+          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 rounded text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="font-medium">{errorMsg}</span>
           </div>
@@ -224,6 +224,11 @@ export const ProfileCompletionModal: React.FC = () => {
                   onChange={handleImageChange}
                 />
               </label>
+              {errorMsg && (errorMsg.toLowerCase().includes('face') || errorMsg.toLowerCase().includes('portrait') || errorMsg.toLowerCase().includes('person')) && (
+                <span className="text-xs text-red-500 font-bold text-center max-w-xs mt-1">
+                  {errorMsg}
+                </span>
+              )}
             </div>
 
             {/* Employee No */}

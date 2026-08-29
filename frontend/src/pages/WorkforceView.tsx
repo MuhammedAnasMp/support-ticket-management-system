@@ -1488,6 +1488,11 @@ export const WorkforceView: React.FC = () => {
                           onChange={e => setProfileImage(e.target.files ? e.target.files[0] : null)}
                           className="text-xs text-on-surface-variant file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
                         />
+                        {errorMsg && (errorMsg.toLowerCase().includes('face') || errorMsg.toLowerCase().includes('portrait') || errorMsg.toLowerCase().includes('person')) && (
+                          <div className="text-xs text-red-500 font-bold mt-1">
+                            {errorMsg}
+                          </div>
+                        )}
                       </div>
                     </div>
 
