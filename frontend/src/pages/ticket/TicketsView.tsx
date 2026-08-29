@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Plus, AlertTriangle, FileText,
     ChevronLeft, ChevronRight, RefreshCw, Download, Filter,
-    MoreVertical, X, LayoutList, LayoutGrid, Building2, Clock, User, Smartphone, Monitor
+    MoreVertical, X, LayoutList, LayoutGrid, MapPin, Building2, Clock, User, Smartphone, Monitor
 } from 'lucide-react';
 
 import { AgGridReact } from 'ag-grid-react';
@@ -20,6 +20,7 @@ import type { Ticket } from './TicketsTypesAndComponents';
 import { TicketDetailModal } from './TicketDetailModal';
 import { CreateTicketModal } from './RaiseSupportTicketForm';
 import { DateRangePickerCard } from './DateRangePickerCard';
+import { TicketsMapView } from './TicketsMapView';
 import { usePermission } from '@/hooks/usePermission';
 import { SearchableSelect } from '@/components/SearchableSelect';
 import type { RootState } from '@/store';
@@ -139,13 +140,13 @@ export const TicketsView: React.FC = () => {
     const [pageSize, setPageSize] = useState(25);
     const [totalCount, setTotalCount] = useState(0);
 
-    // View mode (table or kanban) with localStorage persistence
-    const [viewMode, setViewMode] = useState<'table' | 'kanban'>(() => {
+    // View mode (table, kanban or map) with localStorage persistence
+    const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'map'>(() => {
         const saved = localStorage.getItem('ticket-view-mode');
-        return (saved === 'kanban' || saved === 'table') ? saved : 'table';
+        return (saved === 'kanban' || saved === 'table' || saved === 'map') ? saved : 'table';
     });
 
-    const handleViewModeChange = (mode: 'table' | 'kanban') => {
+    const handleViewModeChange = (mode: 'table' | 'kanban' | 'map') => {
         setViewMode(mode);
         localStorage.setItem('ticket-view-mode', mode);
     };
@@ -1081,24 +1082,29 @@ export const TicketsView: React.FC = () => {
                                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                             </button>
 
-                            <Can permission={['maintenance.switch_to_card_view']}>
-                                <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 shrink-0">
-                                    <button
-                                        onClick={() => handleViewModeChange('table')}
-                                        className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'table' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
-                                        title="Table View"
-                                    >
-                                        <LayoutList className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => handleViewModeChange('kanban')}
-                                        className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'kanban' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
-                                        title="Kanban Board View"
-                                    >
-                                        <LayoutGrid className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            </Can>
+                            <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 shrink-0">
+                                <button
+                                    onClick={() => handleViewModeChange('table')}
+                                    className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'table' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
+                                    title="Table View"
+                                >
+                                    <LayoutList className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => handleViewModeChange('kanban')}
+                                    className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'kanban' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
+                                    title="Kanban Board View"
+                                >
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => handleViewModeChange('map')}
+                                    className={`p-1.5 rounded text-xs font-medium flex items-center transition-colors cursor-pointer ${viewMode === 'map' ? 'bg-primary text-on-primary shadow-xs' : 'text-on-surface-variant hover:text-on-surface'}`}
+                                    title="Map View (Kuwait Areas)"
+                                >
+                                    <MapPin className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
 
                             <Can permission={['maintenance.create_ticket', 'maintenance.add_ticket']}>
                                 <button
@@ -1237,11 +1243,25 @@ export const TicketsView: React.FC = () => {
                 </div>
 
 
-                {/* AG Grid / Kanban Board / Skeleton / Empty State */}
+                {/* AG Grid / Kanban Board / Map View / Skeleton / Empty State */}
                 {loading ? (
                     <SkeletonGrid />
                 ) : tickets.length === 0 ? (
                     <EmptyState onClear={clearFilters} />
+                ) : viewMode === 'map' ? (
+                    <div className="pt-2">
+                        <TicketsMapView
+                            tickets={tickets}
+                            onSelectTicket={(t) => {
+                                setSelectedTicket(t);
+                                setLastOpenedTicketId(t.ticket_id);
+                            }}
+                            stores={stores}
+                            statuses={statuses}
+                            priorities={priorities}
+                            loading={loading}
+                        />
+                    </div>
                 ) : (
                     <>
                         {/* ── Mobile-only card grid ──────────────────────────────── */}

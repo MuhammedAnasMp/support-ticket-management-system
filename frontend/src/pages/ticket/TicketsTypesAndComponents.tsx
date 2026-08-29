@@ -20,7 +20,18 @@ export interface UserStub {
 export interface Ticket {
     ticket_id: number;
     work_order_no: string;
-    store: { store_id: string; store_name: string; manager?: any; phone?: string | null; whatsapp_number?: string | null };
+    store: {
+        store_id: string;
+        store_name: string;
+        type?: string | null;
+        latitude?: number | string | null;
+        longitude?: number | string | null;
+        area?: { area_id?: number; area_name?: string } | string | null;
+        address?: string | null;
+        manager?: any;
+        phone?: string | null;
+        whatsapp_number?: string | null;
+    };
     department: { department_id: number; department_name: string };
     nature: { nature_id: number; nature_name: string };
     priority: { priority_id: number; priority_name: string; level: number };
