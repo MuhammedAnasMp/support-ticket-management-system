@@ -48,3 +48,7 @@ openpyxl>=3.1.2
 xhtml2pdf>=0.2.15
 qrcode>=8.2
 
+huggingface_hub==1.29.0
+ultralytics==8.4.132
+torch==2.13.0
+torchvision==0.28.0
