@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
-  Home, Ticket, Store, Wrench, Users,
+  Home, Ticket, Store, Wrench, Users, FileBarChart2,
   ChevronDown, X, User, Shield, Building2
 } from 'lucide-react';
 import type { RootState } from '../store';
@@ -81,6 +81,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { title: 'Employees', path: '/workforce/employees', permission: 'accounts.view_customuser' },
         { title: 'Employee Rates', path: '/workforce/rates', permission: 'finance.view_employeerate' },
       ],
+    },
+    {
+      title: 'Reports',
+      icon: <FileBarChart2 className="w-4 h-4" />,
+      path: '/reports/all',
     }
   ];
 
