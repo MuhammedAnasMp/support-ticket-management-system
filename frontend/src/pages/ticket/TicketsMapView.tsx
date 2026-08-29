@@ -113,7 +113,7 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
     const tileLayerRef = useRef<L.TileLayer | null>(null);
     const markersGroupRef = useRef<L.LayerGroup | null>(null);
 
-    const [tileType, setTileType] = useState<MapTileType>('streets');
+    const [tileType, setTileType] = useState<MapTileType>('satellite');
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() =>
         typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
     );
@@ -359,21 +359,17 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
 
             bounds.extend([group.lat, group.lng]);
 
-            // Custom Leaflet DivIcon with priorities & badges
+            // Custom Leaflet DivIcon: direct location pin icon with priority color (no outer circle container)
             const markerHtml = `
-                <div class="relative group cursor-pointer flex items-center justify-center">
-                    ${isCritical ? `<div class="absolute -inset-2 rounded-full animate-ping opacity-60" style="background-color: ${priorityInfo.color}"></div>` : ''}
-                    <div class="relative flex items-center justify-center w-9 h-9 rounded-full shadow-lg border-2 transition-transform duration-200 hover:scale-110"
-                         style="background-color: ${priorityInfo.bg}; border-color: ${priorityInfo.border}; backdrop-filter: blur(4px);">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" style="color: ${priorityInfo.color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                            <circle cx="12" cy="10" r="3"/>
-                        </svg>
-                        <span class="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[10px] font-black text-white shadow-md leading-none"
-                              style="background-color: ${priorityInfo.border}">
-                            ${ticketCount}
-                        </span>
-                    </div>
+                <div class="relative group cursor-pointer flex items-center justify-center transition-transform duration-200 hover:scale-110 drop-shadow-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" style="color: ${priorityInfo.border}" viewBox="0 0 24 24" fill="${priorityInfo.color}" stroke="${priorityInfo.border}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                        <circle cx="12" cy="10" r="3" fill="#ffffff" stroke="none"/>
+                    </svg>
+                    <span class="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-black text-white shadow-md leading-none"
+                          style="background-color: ${priorityInfo.border}">
+                        ${ticketCount}
+                    </span>
                 </div>
             `;
 
