@@ -78,6 +78,9 @@ class ReportDefinition(models.Model):
         ordering = ['-updated_date']
         verbose_name = 'Report Definition'
         verbose_name_plural = 'Report Definitions'
+        permissions = [
+            ("can_generate_report", "Can generate report"),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.data_source})"

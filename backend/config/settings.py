@@ -17,6 +17,9 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Force Matplotlib to use headless Agg backend to prevent GUI thread hangs
+os.environ['MPLBACKEND'] = 'Agg'
+
 # Load default environment variables
 load_dotenv(BASE_DIR / '.env')
 

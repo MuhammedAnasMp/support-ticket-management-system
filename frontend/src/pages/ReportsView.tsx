@@ -5,7 +5,7 @@ import {
   FileText, Play, Download, Save, Plus, Trash2, ChevronRight,
   ChevronDown, Database, Filter, Layers, ArrowUpDown, Palette,
   Eye, Copy, FileSpreadsheet, FileCode, Check, RefreshCw, X,
-  Grid, ListFilter, SlidersHorizontal, Share2, History, Clock, Globe
+  Grid, ListFilter, SlidersHorizontal, Share2, History, Clock
 } from 'lucide-react';
 import type { RootState } from '../store';
 
@@ -109,9 +109,8 @@ export const ReportsView: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
-  // Sharing Modal & RTL state
+  // Sharing Modal state
   const [showShareModal, setShowShareModal] = useState(false);
-  const [isRtl, setIsRtl] = useState(false);
 
   // Builder data
   const [sources, setSources] = useState<DataSource[]>([]);
@@ -413,7 +412,8 @@ export const ReportsView: React.FC = () => {
         a.click();
         a.remove();
       } else {
-        alert('Export failed.');
+        const errData = await res.json().catch(() => ({}));
+        alert(`Export failed: ${errData.detail || 'Server error (' + res.status + ')'}`);
       }
     } catch (err) {
       alert('Network error during export.');
@@ -538,15 +538,6 @@ export const ReportsView: React.FC = () => {
         <div className="flex items-center gap-2">
           {mode === 'builder' ? (
             <>
-              <button
-                onClick={() => setIsRtl(!isRtl)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded border text-xs font-medium transition-colors ${isRtl ? 'bg-primary/10 border-primary text-primary' : 'border-outline-variant hover:bg-surface-container-high'
-                  }`}
-                title="Toggle Right-to-Left Layout (Arabic)"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                {isRtl ? 'RTL (Arabic)' : 'LTR (English)'}
-              </button>
               <button
                 onClick={() => setMode('list')}
                 className="px-3 py-1.5 rounded border border-outline-variant text-xs font-medium hover:bg-surface-container-high transition-colors"

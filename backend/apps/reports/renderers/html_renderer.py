@@ -78,6 +78,9 @@ class HtmlRenderer(BaseRenderer):
         rows = self.get_rows()
         aggregations = self.get_aggregations()
         col_count = len(columns)
+        orientation = self.get_orientation()
+        page_size = self.get_page_size()
+
         # Automatic landscape switch if > 6 columns and not explicitly forced to portrait
         if col_count > 6 and self.definition.get('page_orientation') != 'portrait':
             orientation = 'landscape'
@@ -168,9 +171,8 @@ class HtmlRenderer(BaseRenderer):
                 </div>
             </div>"""
 
-        rtl_attr = 'dir="rtl"' if self.is_rtl() else ''
         html = f"""<!DOCTYPE html>
-<html lang="en" {rtl_attr}>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>{self.get_title()}</title>
@@ -202,7 +204,6 @@ body {{
 .report-header h1 {{
     font-size: 15pt;
     font-weight: 700;
-    letter-spacing: -0.02em;
 }}
 .report-header .meta {{
     text-align: right;
@@ -244,7 +245,6 @@ body {{
     font-size: {th_font_size};
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.02em;
     border-bottom: 2px solid {theme['accent']};
     text-align: left;
     white-space: normal;

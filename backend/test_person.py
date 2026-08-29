@@ -1,17 +1,20 @@
-from huggingface_hub import hf_hub_download
-from ultralytics import YOLO
-from PIL import Image
+_model = None
 
-# Face detection model
-model_path = hf_hub_download(
-    repo_id="arnabdhar/YOLOv8-Face-Detection",
-    filename="model.pt"
-)
-
-model = YOLO(model_path)
+def get_face_model():
+    global _model
+    if _model is None:
+        from huggingface_hub import hf_hub_download
+        from ultralytics import YOLO
+        model_path = hf_hub_download(
+            repo_id="arnabdhar/YOLOv8-Face-Detection",
+            filename="model.pt"
+        )
+        _model = YOLO(model_path)
+    return _model
 
 
 def validate_human_photo(image_path):
+    model = get_face_model()
 
     image = Image.open(image_path).convert("RGB")
     width, height = image.size

@@ -49,9 +49,6 @@ class BaseRenderer(ABC):
     def get_page_size(self) -> str:
         return self.metadata.get('page_size', 'A4')
 
-    def is_rtl(self) -> bool:
-        return bool(self.metadata.get('is_rtl', False))
-
     def get_columns(self) -> list[dict]:
         return self.report_data.get('columns', [])
 
@@ -89,6 +86,4 @@ class BaseRenderer(ABC):
                 return value.split('T')[0] + ' ' + value.split('T')[1][:5]
             return value
 
-        val_str = str(value)
-        from ..arabic_utils import prepare_arabic_text
-        return prepare_arabic_text(val_str)
+        return str(value)

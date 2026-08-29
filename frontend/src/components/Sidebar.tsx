@@ -86,6 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       title: 'Reports',
       icon: <FileBarChart2 className="w-4 h-4" />,
       path: '/reports/all',
+      permission: 'reports.can_generate_report',
     }
   ];
 

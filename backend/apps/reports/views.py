@@ -22,10 +22,26 @@ from .renderers.excel_renderer import ExcelRenderer
 from .renderers.csv_renderer import CsvRenderer
 
 
+class CanGenerateReportPermission(permissions.BasePermission):
+    """
+    Allows access to users with 'reports.can_generate_report' permission,
+    superusers, or admin roles.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        role_name = getattr(getattr(request.user, 'role', None), 'role_name', '').lower()
+        if role_name in ('admin', 'administrator', 'main administrator'):
+            return True
+        return request.user.has_perm('reports.can_generate_report')
+
+
 class ReportScheduleViewSet(viewsets.ModelViewSet):
     """ViewSet for managing automated report schedules."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, CanGenerateReportPermission]
     serializer_class = ReportScheduleSerializer
 
     def get_queryset(self):
@@ -38,7 +54,7 @@ class ReportScheduleViewSet(viewsets.ModelViewSet):
 class ReportDefinitionViewSet(viewsets.ModelViewSet):
     """ViewSet for managing saved report definitions."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, CanGenerateReportPermission]
     serializer_class = ReportDefinitionSerializer
 
     def get_queryset(self):
@@ -74,7 +90,7 @@ class ReportDefinitionViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, CanGenerateReportPermission])
 def list_data_sources(request):
     """List all registered reportable data sources."""
     sources = registry.list_sources()
@@ -82,7 +98,7 @@ def list_data_sources(request):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, CanGenerateReportPermission])
 def get_source_fields(request, key):
     """Get hierarchical field tree for a data source."""
     rm = registry.get(key)
@@ -99,7 +115,7 @@ def get_source_fields(request, key):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, CanGenerateReportPermission])
 def preview_report(request):
     """Execute report definition and return preview data (JSON)."""
     serializer = ReportExecuteRequestSerializer(data=request.data)
@@ -133,7 +149,7 @@ def preview_report(request):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated, CanGenerateReportPermission])
 def export_report(request):
     """Export report to PDF, Excel, or CSV."""
     serializer = ReportExecuteRequestSerializer(data=request.data)
@@ -184,8 +200,14 @@ def export_report(request):
             duration_ms=report_data['duration_ms'],
         )
 
-        response = HttpResponse(output, content_type=renderer.content_type)
+        if isinstance(output, str):
+            output_bytes = output.encode('utf-8')
+        else:
+            output_bytes = output
+
+        response = HttpResponse(output_bytes, content_type=renderer.content_type)
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Length'] = str(len(output_bytes))
         return response
 
     except Exception as e:
