@@ -1,3 +1,5 @@
+from PIL import Image
+
 _model = None
 
 def get_face_model():

@@ -47,6 +47,10 @@ zope.interface==8.5
 openpyxl>=3.1.2
 xhtml2pdf>=0.2.15
 qrcode>=8.2
+matplotlib>=3.8.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
+oracledb>=2.0.0
 
 huggingface_hub==1.29.0
 ultralytics==8.4.132

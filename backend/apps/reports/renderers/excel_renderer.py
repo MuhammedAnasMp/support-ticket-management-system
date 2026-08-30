@@ -28,7 +28,8 @@ class ExcelRenderer(BaseRenderer):
 
         wb = Workbook()
         ws = wb.active
-        ws.title = self.get_title()[:31]  # Excel limit
+        import re
+        ws.title = re.sub(r'[\\/*?:\[\]]', '', self.get_title())[:31].strip() or 'Report'
 
         columns = self.get_columns()
         rows = self.get_rows()

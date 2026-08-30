@@ -107,3 +107,23 @@ class PasswordResetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['error'], 'Invalid or expired verification code.')
 
+
+from django.core.exceptions import ValidationError
+from django.test import TestCase
+import io
+from PIL import Image
+from apps.accounts.validators import validate_profile_image_is_human
+
+class ProfileImageValidatorTestCase(TestCase):
+    def test_validate_profile_image_import_and_execution(self):
+        img = Image.new('RGB', (100, 100), color='red')
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG')
+        buf.seek(0)
+        
+        with self.assertRaises(ValidationError) as cm:
+            validate_profile_image_is_human(buf)
+        
+        self.assertNotIn("name 'Image' is not defined", str(cm.exception))
+
+

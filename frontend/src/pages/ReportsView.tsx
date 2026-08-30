@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
   FileText, Play, Download, Save, Plus, Trash2, ChevronRight,
-  ChevronDown, Database, Filter, Layers, ArrowUpDown, Palette,
+  ChevronDown, ChevronUp, GripVertical, Database, Filter, Layers, ArrowUpDown, Palette,
   Eye, Copy, FileSpreadsheet, FileCode, Check, RefreshCw, X,
   Grid, ListFilter, SlidersHorizontal, Share2, History, Clock
 } from 'lucide-react';
@@ -149,6 +149,71 @@ export const ReportsView: React.FC = () => {
   const [fieldSearch, setFieldSearch] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [mobileTab, setMobileTab] = useState<'fields' | 'config' | 'preview'>('fields');
+
+  // Drag and Drop state for Columns & Filters reordering
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
+  const [dragOverColIndex, setDragOverColIndex] = useState<number | null>(null);
+
+  const [draggedFilterIndex, setDraggedFilterIndex] = useState<number | null>(null);
+  const [dragOverFilterIndex, setDragOverFilterIndex] = useState<number | null>(null);
+
+  const moveColumn = (fromIndex: number, direction: -1 | 1) => {
+    const toIndex = fromIndex + direction;
+    if (toIndex < 0 || toIndex >= reportDef.definition.columns.length) return;
+    setReportDef(prev => {
+      const cols = [...prev.definition.columns];
+      const [moved] = cols.splice(fromIndex, 1);
+      cols.splice(toIndex, 0, moved);
+      return { ...prev, definition: { ...prev.definition, columns: cols } };
+    });
+  };
+
+  const handleColumnDrop = (dropIndex: number) => {
+    if (draggedColIndex === null || draggedColIndex === dropIndex) return;
+    setReportDef(prev => {
+      const cols = [...prev.definition.columns];
+      const [moved] = cols.splice(draggedColIndex, 1);
+      cols.splice(dropIndex, 0, moved);
+      return { ...prev, definition: { ...prev.definition, columns: cols } };
+    });
+    setDraggedColIndex(null);
+    setDragOverColIndex(null);
+  };
+
+  const moveFilter = (fromIndex: number, direction: -1 | 1) => {
+    const toIndex = fromIndex + direction;
+    if (toIndex < 0 || toIndex >= reportDef.definition.filters.conditions.length) return;
+    setReportDef(prev => {
+      const conds = [...prev.definition.filters.conditions];
+      const [moved] = conds.splice(fromIndex, 1);
+      conds.splice(toIndex, 0, moved);
+      return {
+        ...prev,
+        definition: {
+          ...prev.definition,
+          filters: { ...prev.definition.filters, conditions: conds },
+        },
+      };
+    });
+  };
+
+  const handleFilterDrop = (dropIndex: number) => {
+    if (draggedFilterIndex === null || draggedFilterIndex === dropIndex) return;
+    setReportDef(prev => {
+      const conds = [...prev.definition.filters.conditions];
+      const [moved] = conds.splice(draggedFilterIndex, 1);
+      conds.splice(dropIndex, 0, moved);
+      return {
+        ...prev,
+        definition: {
+          ...prev.definition,
+          filters: { ...prev.definition.filters, conditions: conds },
+        },
+      };
+    });
+    setDraggedFilterIndex(null);
+    setDragOverFilterIndex(null);
+  };
 
   useEffect(() => {
     fetchSavedReports();
@@ -937,7 +1002,7 @@ export const ReportsView: React.FC = () => {
               {activeTab === 'columns' && (
                 <div className="space-y-2">
                   <div className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">
-                    Selected Report Columns
+                    Selected Report Columns ({reportDef.definition.columns.length})
                   </div>
                   {reportDef.definition.columns.length === 0 ? (
                     <p className="text-xs text-on-surface-variant/70 italic py-4 text-center">
@@ -945,17 +1010,61 @@ export const ReportsView: React.FC = () => {
                     </p>
                   ) : (
                     reportDef.definition.columns.map((col, idx) => (
-                      <div key={col.path} className="p-2 rounded border border-outline-variant bg-surface space-y-1.5 text-xs">
+                      <div
+                        key={col.path}
+                        draggable
+                        onDragStart={() => setDraggedColIndex(idx)}
+                        onDragOver={e => {
+                          e.preventDefault();
+                          setDragOverColIndex(idx);
+                        }}
+                        onDrop={e => {
+                          e.preventDefault();
+                          handleColumnDrop(idx);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedColIndex(null);
+                          setDragOverColIndex(null);
+                        }}
+                        className={`p-2 rounded border transition-all space-y-1.5 text-xs ${draggedColIndex === idx
+                            ? 'opacity-40 border-dashed border-primary bg-primary/5'
+                            : dragOverColIndex === idx
+                              ? 'border-primary ring-2 ring-primary/20 bg-surface'
+                              : 'border-outline-variant bg-surface hover:border-primary/40'
+                          }`}
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] text-primary truncate max-w-[200px]" title={col.path}>
-                            {col.path}
-                          </span>
-                          <button
-                            onClick={() => removeColumn(col.path)}
-                            className="text-red-500 hover:text-red-700 p-0.5"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <GripVertical className="w-3.5 h-3.5 text-on-surface-variant/50 shrink-0 cursor-grab active:cursor-grabbing" />
+                            <span className="font-mono text-[10px] text-primary truncate max-w-[150px]" title={col.path}>
+                              {col.path}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => moveColumn(idx, -1)}
+                              disabled={idx === 0}
+                              className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
+                              title="Move Up"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => moveColumn(idx, 1)}
+                              disabled={idx === reportDef.definition.columns.length - 1}
+                              className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
+                              title="Move Down"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => removeColumn(col.path)}
+                              className="text-red-500 hover:text-red-700 p-0.5 ml-1"
+                              title="Remove Column"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
@@ -1007,7 +1116,7 @@ export const ReportsView: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">
-                      Report Filter Conditions
+                      Report Filter Conditions ({reportDef.definition.filters.conditions.length})
                     </span>
                     <button
                       onClick={addFilter}
@@ -1023,12 +1132,55 @@ export const ReportsView: React.FC = () => {
                     </p>
                   ) : (
                     reportDef.definition.filters.conditions.map((cond, idx) => (
-                      <div key={idx} className="p-2 rounded border border-outline-variant bg-surface space-y-1.5 text-xs">
+                      <div
+                        key={idx}
+                        draggable
+                        onDragStart={() => setDraggedFilterIndex(idx)}
+                        onDragOver={e => {
+                          e.preventDefault();
+                          setDragOverFilterIndex(idx);
+                        }}
+                        onDrop={e => {
+                          e.preventDefault();
+                          handleFilterDrop(idx);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedFilterIndex(null);
+                          setDragOverFilterIndex(null);
+                        }}
+                        className={`p-2 rounded border transition-all space-y-1.5 text-xs ${draggedFilterIndex === idx
+                            ? 'opacity-40 border-dashed border-primary bg-primary/5'
+                            : dragOverFilterIndex === idx
+                              ? 'border-primary ring-2 ring-primary/20 bg-surface'
+                              : 'border-outline-variant bg-surface hover:border-primary/40'
+                          }`}
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-semibold text-on-surface-variant">Condition #{idx + 1}</span>
-                          <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <GripVertical className="w-3.5 h-3.5 text-on-surface-variant/50 shrink-0 cursor-grab active:cursor-grabbing" />
+                            <span className="text-[10px] font-semibold text-on-surface-variant">Condition #{idx + 1}</span>
+                          </div>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => moveFilter(idx, -1)}
+                              disabled={idx === 0}
+                              className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
+                              title="Move Up"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => moveFilter(idx, 1)}
+                              disabled={idx === reportDef.definition.filters.conditions.length - 1}
+                              className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
+                              title="Move Down"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700 p-0.5 ml-1" title="Remove Condition">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <select

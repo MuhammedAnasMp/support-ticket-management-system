@@ -48,6 +48,17 @@ def generate_chart_image(
     if not labels or not values or len(labels) != len(values):
         return None
 
+    # Sanitize None values and Decimal types to prevent unsupported operand errors
+    clean_pairs = [
+        (str(l if l is not None else 'Unknown'), float(v) if isinstance(v, Decimal) else (v if v is not None else 0))
+        for l, v in zip(labels, values)
+    ]
+    if not clean_pairs:
+        return None
+
+    labels = [p[0] for p in clean_pairs]
+    values = [p[1] for p in clean_pairs]
+
     # Limit to top 10 categories for readability
     if len(labels) > 10:
         labels = labels[:10]

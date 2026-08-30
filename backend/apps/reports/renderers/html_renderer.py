@@ -106,10 +106,10 @@ class HtmlRenderer(BaseRenderer):
             cell_padding = '3px 4px'
 
         # Proportional column width headers
-        total_weight = sum(c.get('width', 100) for c in columns) or 1
+        total_weight = sum((c.get('width') or 100) for c in columns) or 1
         th_cells = []
         for c in columns:
-            w = c.get('width', 100)
+            w = c.get('width') or 100
             pct = round((w / total_weight) * 100, 1)
             align = c.get('alignment', 'left')
             label = self.format_value(c.get('label', c['path']), c)

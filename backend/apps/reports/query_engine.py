@@ -532,7 +532,11 @@ def execute_report(data_source: str, definition: dict, user, runtime_filters=Non
             chart_qs = sec_qs.values(group_by).annotate(chart_val=agg_class(agg_field)).order_by('-chart_val')[:10]
 
             labels = [str(item[group_by] or 'Unknown') for item in chart_qs]
-            values = [float(item['chart_val']) if isinstance(item['chart_val'], Decimal) else item['chart_val'] for item in chart_qs]
+            values = [
+                float(item['chart_val']) if isinstance(item['chart_val'], Decimal)
+                else (item['chart_val'] if item['chart_val'] is not None else 0)
+                for item in chart_qs
+            ]
 
             from .chart_engine import generate_chart_image
             img_data = generate_chart_image(c_type, c_title, labels, values, theme=theme_key)
