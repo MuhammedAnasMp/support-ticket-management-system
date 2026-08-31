@@ -109,16 +109,17 @@ class ReportRegistry:
                         visited, path_prefix=f"{path_prefix}{rel_name}__"
                     )
 
-                fields.append({
-                    'name': rel_name,
-                    'path': f"{path_prefix}{rel_name}",
-                    'label': self._humanize(rel_name),
-                    'type': 'reverse_relation',
-                    'relation_type': 'one_to_many',
-                    'related_model': rel_key,
-                    'children': child_fields,
-                    'is_aggregatable': True,
-                })
+                if child_fields:
+                    fields.append({
+                        'name': rel_name,
+                        'path': f"{path_prefix}{rel_name}",
+                        'label': self._humanize(rel_name),
+                        'type': 'reverse_relation',
+                        'relation_type': 'one_to_many',
+                        'related_model': rel_key,
+                        'children': child_fields,
+                        'is_aggregatable': True,
+                    })
                 continue
 
             # Skip hidden fields
@@ -146,16 +147,17 @@ class ReportRegistry:
                         visited, path_prefix=f"{full_path}__"
                     )
 
-                fields.append({
-                    'name': field_name,
-                    'path': full_path,
-                    'label': self._humanize(field_name),
-                    'type': 'relation',
-                    'relation_type': 'foreign_key',
-                    'related_model': rel_key,
-                    'nullable': field.null,
-                    'children': child_fields,
-                })
+                if child_fields:
+                    fields.append({
+                        'name': field_name,
+                        'path': full_path,
+                        'label': self._humanize(field_name),
+                        'type': 'relation',
+                        'relation_type': 'foreign_key',
+                        'related_model': rel_key,
+                        'nullable': field.null,
+                        'children': child_fields,
+                    })
                 continue
 
             # M2M — skip for now (complex)

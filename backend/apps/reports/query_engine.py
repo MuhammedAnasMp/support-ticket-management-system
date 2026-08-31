@@ -230,6 +230,8 @@ class ReportQueryEngine:
 
         if operator in ('is_null', 'is_not_null'):
             value = True
+        elif value is None or (isinstance(value, str) and value.strip() == ''):
+            return None
 
         if operator == 'in' or operator == 'not_in':
             if isinstance(value, str):
@@ -300,6 +302,17 @@ class ReportQueryEngine:
 
         if not group_fields:
             return qs
+
+        # Automatically exclude NULL entries for reverse-relation group fields so empty orphan rows are omitted
+        for gf in group_fields:
+            if '__' in gf:
+                part = gf.split('__')[0]
+                try:
+                    field = self.model._meta.get_field(part)
+                    if field.auto_created or getattr(field, 'one_to_many', False) or getattr(field, 'many_to_many', False):
+                        qs = qs.filter(**{f"{gf}__isnull": False})
+                except Exception:
+                    pass
 
         qs = qs.values(*group_fields)
 
@@ -459,8 +472,71 @@ def execute_report(data_source: str, definition: dict, user, runtime_filters=Non
     columns = definition.get('columns', [])
 
     if is_grouped:
-        # Grouped results are already dicts from .values()
-        rows = list(qs)
+        raw_rows = list(qs)
+        grouping = definition.get('grouping', {})
+        group_fields = grouping.get('fields', [])
+        aggregations = grouping.get('aggregations', [])
+
+        effective_columns = []
+
+        # 1. Build column definitions for group fields
+        for gf in group_fields:
+            col_match = next((c for c in columns if c.get('path') == gf or c.get('path') == gf.replace('__', '.')), None)
+            label = col_match.get('label') if col_match else gf.replace('__', ' ').replace('.', ' ').title()
+            effective_columns.append({
+                'path': gf,
+                'label': label,
+                'type': 'text',
+                'alignment': 'left'
+            })
+
+        # 2. Build column definitions for group summary aggregations
+        for agg in aggregations:
+            agg_path = agg.get('path', '').replace('.', '__')
+            agg_func = agg.get('function', 'count').lower()
+            agg_label = agg.get('label', f"{agg_func.upper()} of {agg_path}")
+            agg_alias = ReportQueryEngine._safe_alias(agg_label)
+
+            effective_columns.append({
+                'path': agg_alias,
+                'label': agg_label,
+                'type': 'number',
+                'alignment': 'right'
+            })
+
+        # 3. Transform row dicts to normalize key accesses (dunder, dot, alias, agg_path)
+        rows = []
+        for r in raw_rows:
+            row_dict = dict(r)
+            # Normalize group field keys
+            for gf in group_fields:
+                dunder_path = gf.replace('.', '__')
+                dot_path = gf.replace('__', '.')
+                val = r.get(dunder_path) if dunder_path in r else r.get(dot_path)
+                row_dict[dunder_path] = val
+                row_dict[dot_path] = val
+
+            # Normalize aggregation keys
+            for agg in aggregations:
+                agg_path = agg.get('path', '')
+                agg_dunder = agg_path.replace('.', '__')
+                agg_dot = agg_path.replace('__', '.')
+                agg_func = agg.get('function', 'count').lower()
+                agg_label = agg.get('label', f"{agg_func.upper()} of {agg_path}")
+                agg_alias = ReportQueryEngine._safe_alias(agg_label)
+
+                agg_val = r.get(agg_alias)
+                if isinstance(agg_val, Decimal):
+                    agg_val = float(agg_val)
+
+                row_dict[agg_alias] = agg_val
+                row_dict[agg_label] = agg_val
+                row_dict[agg_dunder] = agg_val
+                row_dict[agg_dot] = agg_val
+
+            rows.append(row_dict)
+
+        columns = effective_columns
     else:
         rows = _extract_rows(qs, columns)
 
@@ -483,6 +559,14 @@ def execute_report(data_source: str, definition: dict, user, runtime_filters=Non
             except Exception:
                 aggregation_values[alias] = None
 
+    # Check for Period Comparison mode
+    comp_config = definition.get('comparison') or (runtime_filters.get('comparison') if runtime_filters else None)
+    is_comp_enabled = bool(comp_config and comp_config.get('enabled'))
+
+    cond_a, cond_b, label_a, label_b = [], [], "Period A", "Period B"
+    if is_comp_enabled:
+        cond_a, cond_b, label_a, label_b = _get_comparison_filter_bounds(comp_config)
+
     # Compute KPI Cards
     kpi_cards = []
     for kpi in definition.get('kpi_cards', []):
@@ -497,18 +581,55 @@ def execute_report(data_source: str, definition: dict, user, runtime_filters=Non
                 sec_qs = engine.model.objects.all()
                 sec_qs = engine._apply_security(sec_qs)
                 sec_qs = engine._apply_filters(sec_qs, definition.get('filters'))
-                val = sec_qs.aggregate(kpi_val=agg_class(path))['kpi_val']
-                val_formatted = float(val) if isinstance(val, Decimal) else (val or 0)
+
+                if is_comp_enabled:
+                    # Period A
+                    qs_a = engine._apply_filters(sec_qs, {'logic': 'AND', 'conditions': cond_a})
+                    val_a_raw = qs_a.aggregate(kpi_val=agg_class(path))['kpi_val']
+                    val_a = float(val_a_raw) if isinstance(val_a_raw, Decimal) else (val_a_raw or 0)
+
+                    # Period B
+                    qs_b = engine._apply_filters(sec_qs, {'logic': 'AND', 'conditions': cond_b})
+                    val_b_raw = qs_b.aggregate(kpi_val=agg_class(path))['kpi_val']
+                    val_b = float(val_b_raw) if isinstance(val_b_raw, Decimal) else (val_b_raw or 0)
+
+                    delta = round(val_a - val_b, 2)
+                    delta_pct = round(((val_a - val_b) / (val_b if val_b != 0 else 1)) * 100, 1) if val_b != 0 else (100.0 if val_a > 0 else 0.0)
+
+                    kpi_cards.append({
+                        'label': label,
+                        'value': val_a,
+                        'previous_value': val_b,
+                        'delta': delta,
+                        'delta_pct': delta_pct,
+                        'is_positive': delta >= 0,
+                        'label_a': label_a,
+                        'label_b': label_b,
+                        'color': color,
+                        'is_comparison': True,
+                    })
+                else:
+                    val = sec_qs.aggregate(kpi_val=agg_class(path))['kpi_val']
+                    val_formatted = float(val) if isinstance(val, Decimal) else (val or 0)
+                    kpi_cards.append({
+                        'label': label,
+                        'value': val_formatted,
+                        'color': color,
+                    })
             else:
                 val_formatted = len(rows)
+                kpi_cards.append({
+                    'label': label,
+                    'value': val_formatted,
+                    'color': color,
+                })
         except Exception:
             val_formatted = len(rows)
-
-        kpi_cards.append({
-            'label': label,
-            'value': val_formatted,
-            'color': color,
-        })
+            kpi_cards.append({
+                'label': label,
+                'value': val_formatted,
+                'color': color,
+            })
 
     # Generate Charts
     generated_charts = []
@@ -529,26 +650,55 @@ def execute_report(data_source: str, definition: dict, user, runtime_filters=Non
             sec_qs = engine._apply_filters(sec_qs, definition.get('filters'))
 
             agg_class = AGG_MAP.get(agg_func, Count)
-            chart_qs = sec_qs.values(group_by).annotate(chart_val=agg_class(agg_field)).order_by('-chart_val')[:10]
 
-            labels = [str(item[group_by] or 'Unknown') for item in chart_qs]
-            values = [
-                float(item['chart_val']) if isinstance(item['chart_val'], Decimal)
-                else (item['chart_val'] if item['chart_val'] is not None else 0)
-                for item in chart_qs
-            ]
+            if is_comp_enabled:
+                qs_a = engine._apply_filters(sec_qs, {'logic': 'AND', 'conditions': cond_a})
+                qs_b = engine._apply_filters(sec_qs, {'logic': 'AND', 'conditions': cond_b})
 
-            from .chart_engine import generate_chart_image
-            img_data = generate_chart_image(c_type, c_title, labels, values, theme=theme_key)
+                chart_qs_a = {item[group_by] or 'Unknown': (float(item['chart_val']) if isinstance(item['chart_val'], Decimal) else (item['chart_val'] or 0))
+                              for item in qs_a.values(group_by).annotate(chart_val=agg_class(agg_field))}
+                chart_qs_b = {item[group_by] or 'Unknown': (float(item['chart_val']) if isinstance(item['chart_val'], Decimal) else (item['chart_val'] or 0))
+                              for item in qs_b.values(group_by).annotate(chart_val=agg_class(agg_field))}
 
-            if img_data:
-                generated_charts.append({
-                    'title': c_title,
-                    'type': c_type,
-                    'image': img_data,
-                    'data': [{'label': l, 'value': v} for l, v in zip(labels, values)],
-                })
-        except Exception as e:
+                all_keys = list(dict.fromkeys(list(chart_qs_a.keys()) + list(chart_qs_b.keys())))[:10]
+                values_a = [chart_qs_a.get(k, 0) for k in all_keys]
+                values_b = [chart_qs_b.get(k, 0) for k in all_keys]
+
+                from .chart_engine import generate_comparison_chart_image
+                img_data = generate_comparison_chart_image(
+                    c_type, f"{c_title} ({label_a} vs {label_b})",
+                    all_keys, values_a, values_b,
+                    label_a=label_a, label_b=label_b, theme=theme_key
+                )
+
+                if img_data:
+                    generated_charts.append({
+                        'title': f"{c_title} ({label_a} vs {label_b})",
+                        'type': c_type,
+                        'image': img_data,
+                        'is_comparison': True,
+                    })
+            else:
+                chart_qs = sec_qs.values(group_by).annotate(chart_val=agg_class(agg_field)).order_by('-chart_val')[:10]
+
+                labels = [str(item[group_by] or 'Unknown') for item in chart_qs]
+                values = [
+                    float(item['chart_val']) if isinstance(item['chart_val'], Decimal)
+                    else (item['chart_val'] if item['chart_val'] is not None else 0)
+                    for item in chart_qs
+                ]
+
+                from .chart_engine import generate_chart_image
+                img_data = generate_chart_image(c_type, c_title, labels, values, theme=theme_key)
+
+                if img_data:
+                    generated_charts.append({
+                        'title': c_title,
+                        'type': c_type,
+                        'image': img_data,
+                        'data': [{'label': l, 'value': v} for l, v in zip(labels, values)],
+                    })
+        except Exception:
             pass
 
     return {
@@ -639,3 +789,80 @@ def _resolve_parts(current, parts: list[str]):
             return None
 
     return _resolve_parts(val, remaining)
+
+
+def _get_comparison_filter_bounds(comp_config: dict):
+    """
+    Compute date filter conditions for Period A and Period B based on comparison config.
+    Returns (cond_a, cond_b, label_a, label_b)
+    """
+    comp_type = comp_config.get('type', 'previous_month')
+    date_field = comp_config.get('date_field', 'created_date').replace('.', '__')
+    if date_field and not any(kw in date_field.lower() for kw in ('date', 'time', 'created', 'updated', 'at', 'on')):
+        date_field = 'work_date' if 'worklog' in date_field or 'work' in date_field else 'created_date'
+
+    from django.utils import timezone
+    import datetime
+
+    today = timezone.now().date()
+
+    if comp_type == 'previous_month':
+        # Period A: Current Month
+        first_a = today.replace(day=1)
+        # Period B: Previous Month
+        last_month = first_a - datetime.timedelta(days=1)
+        first_b = last_month.replace(day=1)
+
+        cond_a = [
+            {'path': date_field, 'operator': 'gte', 'value': first_a.isoformat()},
+            {'path': date_field, 'operator': 'lte', 'value': today.isoformat()}
+        ]
+        cond_b = [
+            {'path': date_field, 'operator': 'gte', 'value': first_b.isoformat()},
+            {'path': date_field, 'operator': 'lte', 'value': last_month.isoformat()}
+        ]
+        label_a = f"Current Month ({first_a.strftime('%b %Y')})"
+        label_b = f"Previous Month ({first_b.strftime('%b %Y')})"
+
+    elif comp_type == 'previous_year':
+        first_a = today.replace(month=1, day=1)
+        first_b = first_a.replace(year=first_a.year - 1)
+        last_b = today.replace(year=today.year - 1)
+
+        cond_a = [
+            {'path': date_field, 'operator': 'gte', 'value': first_a.isoformat()},
+            {'path': date_field, 'operator': 'lte', 'value': today.isoformat()}
+        ]
+        cond_b = [
+            {'path': date_field, 'operator': 'gte', 'value': first_b.isoformat()},
+            {'path': date_field, 'operator': 'lte', 'value': last_b.isoformat()}
+        ]
+        label_a = f"Current Year ({today.year})"
+        label_b = f"Previous Year ({today.year - 1})"
+
+    else:
+        # Custom Period A & B
+        range_a = comp_config.get('custom_period_a', [])
+        range_b = comp_config.get('custom_period_b', [])
+
+        cond_a = []
+        cond_b = []
+        if range_a:
+            if len(range_a) > 0 and range_a[0]:
+                cond_a.append({'path': date_field, 'operator': 'gte', 'value': str(range_a[0])})
+            if len(range_a) > 1 and range_a[1]:
+                cond_a.append({'path': date_field, 'operator': 'lte', 'value': str(range_a[1])})
+
+        if range_b:
+            if len(range_b) > 0 and range_b[0]:
+                cond_b.append({'path': date_field, 'operator': 'gte', 'value': str(range_b[0])})
+            if len(range_b) > 1 and range_b[1]:
+                cond_b.append({'path': date_field, 'operator': 'lte', 'value': str(range_b[1])})
+
+        str_a = f"{range_a[0]} to {range_a[1]}" if (range_a and len(range_a) > 1 and range_a[0] and range_a[1]) else (range_a[0] if (range_a and range_a[0]) else 'Custom Period A')
+        str_b = f"{range_b[0]} to {range_b[1]}" if (range_b and len(range_b) > 1 and range_b[0] and range_b[1]) else (range_b[0] if (range_b and range_b[0]) else 'Custom Period B')
+
+        label_a = f"Period A ({str_a})"
+        label_b = f"Period B ({str_b})"
+
+    return cond_a, cond_b, label_a, label_b

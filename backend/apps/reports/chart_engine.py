@@ -5,6 +5,7 @@ for inclusion in HTML and PDF reports using Matplotlib.
 
 import io
 import base64
+from decimal import Decimal
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for server rendering
 import matplotlib.pyplot as plt
@@ -131,6 +132,83 @@ def generate_chart_image(
     plt.tight_layout()
 
     # Save to buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+
+    base64_str = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return f"data:image/png;base64,{base64_str}"
+
+
+def generate_comparison_chart_image(
+    chart_type: str,
+    title: str,
+    labels: list[str],
+    values_a: list[float | int],
+    values_b: list[float | int],
+    label_a: str = "Period A",
+    label_b: str = "Period B",
+    theme: str = 'corporate_blue',
+    width: float = 6.5,
+    height: float = 3.2,
+) -> str | None:
+    """
+    Generate a dual-series comparison chart (Period A vs Period B) as base64 PNG data URI.
+    """
+    if not labels or not values_a or not values_b:
+        return None
+
+    import numpy as np
+    from decimal import Decimal
+
+    # Sanitize inputs
+    clean_a = [float(v) if isinstance(v, Decimal) else (v if v is not None else 0) for v in values_a]
+    clean_b = [float(v) if isinstance(v, Decimal) else (v if v is not None else 0) for v in values_b]
+    clean_labels = [str(l if l is not None else 'Unknown') for l in labels]
+
+    if len(clean_labels) > 10:
+        clean_labels = clean_labels[:10]
+        clean_a = clean_a[:10]
+        clean_b = clean_b[:10]
+
+    colors = THEME_PALETTES.get(theme, THEME_PALETTES['corporate_blue'])
+    color_a = colors[0]
+    color_b = colors[1] if len(colors) > 1 else '#94a3b8'
+
+    plt.close('all')
+    fig, ax = plt.subplots(figsize=(width, height), dpi=120)
+
+    fig.patch.set_facecolor('#ffffff')
+    ax.set_facecolor('#fafafa')
+
+    x = np.arange(len(clean_labels))
+    width_bar = 0.35
+
+    if chart_type.lower() == 'line':
+        ax.plot(clean_labels, clean_a, marker='o', color=color_a, label=label_a, linewidth=2)
+        ax.plot(clean_labels, clean_b, marker='s', color=color_b, label=label_b, linewidth=2, linestyle='--')
+        plt.xticks(rotation=20 if len(clean_labels) > 5 else 0, ha='right' if len(clean_labels) > 5 else 'center', fontsize=8)
+    else:
+        ax.bar(x - width_bar/2, clean_a, width_bar, label=label_a, color=color_a)
+        ax.bar(x + width_bar/2, clean_b, width_bar, label=label_b, color=color_b)
+        ax.set_xticks(x)
+        ax.set_xticklabels(clean_labels, rotation=20 if len(clean_labels) > 5 else 0, ha='right' if len(clean_labels) > 5 else 'center', fontsize=8)
+
+    ax.legend(fontsize=8, loc='upper right')
+    ax.set_axisbelow(True)
+    ax.yaxis.grid(True, color='#e5e7eb', linestyle='--', linewidth=0.7)
+
+    if title:
+        ax.set_title(title, fontsize=10, fontweight='bold', color='#111827', pad=10)
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#d1d5db')
+    ax.spines['bottom'].set_color('#d1d5db')
+
+    plt.tight_layout()
+
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
     plt.close(fig)

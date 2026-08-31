@@ -71,6 +71,31 @@ class ReportDefinitionViewSet(viewsets.ModelViewSet):
             shared_roles__contains=[role_name]
         ).distinct()
 
+    def _sanitize_definition(self, definition):
+        if not isinstance(definition, dict):
+            return definition
+        definition = dict(definition)
+        filters = definition.get('filters', {})
+        if isinstance(filters, dict) and 'conditions' in filters:
+            clean_conds = []
+            for cond in filters.get('conditions', []):
+                if isinstance(cond, dict):
+                    op = cond.get('operator', 'equals')
+                    val = cond.get('value')
+                    if op not in ('is_null', 'is_not_null') and (val is None or (isinstance(val, str) and str(val).strip() == '')):
+                        continue
+                    clean_conds.append(cond)
+            definition['filters']['conditions'] = clean_conds
+        return definition
+
+    def perform_create(self, serializer):
+        definition = self._sanitize_definition(serializer.validated_data.get('definition', {}))
+        serializer.save(created_by=self.request.user, definition=definition)
+
+    def perform_update(self, serializer):
+        definition = self._sanitize_definition(serializer.validated_data.get('definition', {}))
+        serializer.save(updated_by=self.request.user, definition=definition)
+
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
         report = self.get_object()

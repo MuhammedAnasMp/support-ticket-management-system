@@ -20,7 +20,7 @@ class StoreViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Store.objects.none()
 
-        if user.is_superuser:
+        if user.is_superuser or user.role.role_name == 'Management':
             return Store.objects.all().select_related('area', 'manager').order_by('store_name')
 
         accessible_store_ids = list(
@@ -50,12 +50,14 @@ class SubDepartmentViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         if serializer.instance.sub_department_name.lower().strip() == 'office':
-            raise exceptions.ValidationError({'detail': 'System sub-department "Office" cannot be modified or updated.'})
+            raise exceptions.ValidationError(
+                {'detail': 'System sub-department "Office" cannot be modified or updated.'})
         serializer.save()
 
     def perform_destroy(self, instance):
         if instance.sub_department_name.lower().strip() == 'office':
-            raise exceptions.ValidationError({'detail': 'System sub-department "Office" cannot be deleted.'})
+            raise exceptions.ValidationError(
+                {'detail': 'System sub-department "Office" cannot be deleted.'})
         instance.delete()
 
 

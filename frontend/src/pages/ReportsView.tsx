@@ -5,7 +5,7 @@ import {
   FileText, Play, Download, Save, Plus, Trash2, ChevronRight,
   ChevronDown, ChevronUp, GripVertical, Database, Filter, Layers, ArrowUpDown, Palette,
   Eye, Copy, FileSpreadsheet, FileCode, Check, RefreshCw, X,
-  Grid, ListFilter, SlidersHorizontal, Share2, History, Clock
+  Grid, ListFilter, SlidersHorizontal, Share2, History, Clock, Calendar
 } from 'lucide-react';
 import type { RootState } from '../store';
 
@@ -61,6 +61,14 @@ interface AggregationItem {
   label: string;
 }
 
+interface ComparisonConfig {
+  enabled: boolean;
+  type: 'previous_month' | 'previous_year' | 'custom';
+  date_field: string;
+  custom_period_a?: [string, string];
+  custom_period_b?: [string, string];
+}
+
 interface ReportDefinition {
   report_id?: number;
   name: string;
@@ -75,13 +83,14 @@ interface ReportDefinition {
       aggregations: AggregationItem[];
     };
     aggregations?: AggregationItem[];
+    comparison?: ComparisonConfig;
     watermark_text?: string;
     enable_qr?: boolean;
     enable_signatures?: boolean;
   };
-  theme: string;
-  page_orientation: 'portrait' | 'landscape';
-  page_size: 'A4' | 'A3' | 'Letter';
+  theme?: string;
+  page_orientation?: 'portrait' | 'landscape';
+  page_size?: 'A4' | 'A3' | 'Letter';
 }
 
 const DEFAULT_THEMES = [
@@ -534,7 +543,8 @@ export const ReportsView: React.FC = () => {
   // Render Recursive Field Tree
   const renderFieldTreeNodes = (nodes: FieldNode[]) => {
     return nodes.map(node => {
-      const isRelation = node.type === 'relation' || node.type === 'reverse_relation';
+      const hasChildren = Boolean(node.children && node.children.length > 0);
+      const isRelation = (node.type === 'relation' || node.type === 'reverse_relation') && hasChildren;
       const isExpanded = expandedNodes[node.path];
       const isSelected = reportDef.definition.columns.some(c => c.path === node.path);
 
@@ -1113,7 +1123,172 @@ export const ReportsView: React.FC = () => {
 
               {/* FILTERS TAB */}
               {activeTab === 'filters' && (
-                <div className="space-y-3">
+                <div className="space-y-4">
+                  {/* Period-over-Period Comparison Box */}
+                  <div className="p-3 rounded-lg border border-primary/20 bg-primary/5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Period Comparison Mode</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={reportDef.definition.comparison?.enabled || false}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setReportDef(prev => ({
+                            ...prev,
+                            definition: {
+                              ...prev.definition,
+                              comparison: {
+                                enabled: checked,
+                                type: prev.definition.comparison?.type || 'previous_month',
+                                date_field: prev.definition.comparison?.date_field || (prev.definition.columns[0]?.path || 'created_date'),
+                              },
+                            },
+                          }));
+                        }}
+                        className="rounded border-outline-variant text-primary focus:ring-primary h-4 w-4"
+                      />
+                    </div>
+
+                    {reportDef.definition.comparison?.enabled && (
+                      <div className="space-y-2 text-xs pt-1 border-t border-primary/10">
+                        <div>
+                          <label className="text-[9px] text-on-surface-variant block mb-0.5 font-medium">Comparison Mode</label>
+                          <select
+                            value={reportDef.definition.comparison?.type || 'previous_month'}
+                            onChange={e => {
+                              const val = e.target.value as any;
+                              setReportDef(prev => ({
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  comparison: { ...prev.definition.comparison!, type: val },
+                                },
+                              }));
+                            }}
+                            className="w-full text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface"
+                          >
+                            <option value="previous_month">Current Month vs Previous Month</option>
+                            <option value="previous_year">Current Year vs Previous Year</option>
+                            <option value="custom">Custom Date Ranges</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] text-on-surface-variant block mb-0.5 font-medium">Comparison Date Field</label>
+                          <select
+                            value={reportDef.definition.comparison?.date_field || 'created_date'}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setReportDef(prev => ({
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  comparison: { ...prev.definition.comparison!, date_field: val },
+                                },
+                              }));
+                            }}
+                            className="w-full text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface"
+                          >
+                            {reportDef.definition.columns.map(c => (
+                              <option key={c.path} value={c.path}>{c.label} ({c.path})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {reportDef.definition.comparison?.type === 'custom' && (
+                          <div className="space-y-2 pt-1.5 border-t border-primary/10">
+                            <div>
+                              <label className="text-[9px] text-on-surface-variant font-medium block">Period A Range (Current)</label>
+                              <div className="grid grid-cols-2 gap-1.5 mt-0.5">
+                                <input
+                                  type="date"
+                                  value={reportDef.definition.comparison?.custom_period_a?.[0] || ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setReportDef(prev => ({
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        comparison: {
+                                          ...prev.definition.comparison!,
+                                          custom_period_a: [val, prev.definition.comparison?.custom_period_a?.[1] || ''],
+                                        },
+                                      },
+                                    }));
+                                  }}
+                                  className="text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface"
+                                />
+                                <input
+                                  type="date"
+                                  value={reportDef.definition.comparison?.custom_period_a?.[1] || ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setReportDef(prev => ({
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        comparison: {
+                                          ...prev.definition.comparison!,
+                                          custom_period_a: [prev.definition.comparison?.custom_period_a?.[0] || '', val],
+                                        },
+                                      },
+                                    }));
+                                  }}
+                                  className="text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] text-on-surface-variant font-medium block">Period B Range (Compare To)</label>
+                              <div className="grid grid-cols-2 gap-1.5 mt-0.5">
+                                <input
+                                  type="date"
+                                  value={reportDef.definition.comparison?.custom_period_b?.[0] || ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setReportDef(prev => ({
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        comparison: {
+                                          ...prev.definition.comparison!,
+                                          custom_period_b: [val, prev.definition.comparison?.custom_period_b?.[1] || ''],
+                                        },
+                                      },
+                                    }));
+                                  }}
+                                  className="text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface"
+                                />
+                                <input
+                                  type="date"
+                                  value={reportDef.definition.comparison?.custom_period_b?.[1] || ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setReportDef(prev => ({
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        comparison: {
+                                          ...prev.definition.comparison!,
+                                          custom_period_b: [prev.definition.comparison?.custom_period_b?.[0] || '', val],
+                                        },
+                                      },
+                                    }));
+                                  }}
+                                  className="text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">
                       Report Filter Conditions ({reportDef.definition.filters.conditions.length})
@@ -1225,56 +1400,494 @@ export const ReportsView: React.FC = () => {
               {/* SORT & GROUP TAB */}
               {activeTab === 'grouping' && (
                 <div className="space-y-4">
+                  {/* SORT ORDER SECTION */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">
-                        Sort Order
-                      </span>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface">
+                        <ArrowUpDown className="w-3.5 h-3.5 text-primary" />
+                        <span>Sort Order</span>
+                      </div>
                       <button onClick={addSort} className="text-xs text-primary font-medium hover:underline flex items-center gap-1">
                         <Plus className="w-3 h-3" /> Add Sort Field
                       </button>
                     </div>
 
-                    {reportDef.definition.sorting.map((sort, idx) => (
-                      <div key={idx} className="flex items-center gap-2 mb-1.5 text-xs">
-                        <select
-                          value={sort.path}
-                          onChange={e => {
-                            const val = e.target.value;
+                    {reportDef.definition.sorting.length === 0 ? (
+                      <p className="text-xs text-on-surface-variant/70 italic p-2.5 rounded border border-dashed border-outline-variant bg-surface-container/50 text-center">
+                        No sort fields specified. Standard database ordering applied.
+                      </p>
+                    ) : (
+                      reportDef.definition.sorting.map((sort, idx) => (
+                        <div key={idx} className="flex items-center gap-2 mb-1.5 text-xs">
+                          <select
+                            value={sort.path}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setReportDef(prev => {
+                                const s = [...prev.definition.sorting];
+                                s[idx] = { ...s[idx], path: val };
+                                return { ...prev, definition: { ...prev.definition, sorting: s } };
+                              });
+                            }}
+                            className="flex-1 text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                          >
+                            {reportDef.definition.columns.map(c => (
+                              <option key={c.path} value={c.path}>{c.label}</option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={sort.direction}
+                            onChange={e => {
+                              const val = e.target.value as any;
+                              setReportDef(prev => {
+                                const s = [...prev.definition.sorting];
+                                s[idx] = { ...s[idx], direction: val };
+                                return { ...prev, definition: { ...prev.definition, sorting: s } };
+                              });
+                            }}
+                            className="text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                          >
+                            <option value="asc">ASC (A-Z)</option>
+                            <option value="desc">DESC (Z-A)</option>
+                          </select>
+
+                          <button onClick={() => removeSort(idx)} className="text-red-500 hover:text-red-700 p-0.5">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* GROUP BY SECTION */}
+                  <div className="pt-3 border-t border-outline-variant space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface">
+                        <Layers className="w-3.5 h-3.5 text-primary" />
+                        <span>Group Rows By Field</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setReportDef(prev => {
+                            const fields = prev.definition.grouping?.fields || [];
+                            const available = prev.definition.columns.find(c => !fields.includes(c.path));
+                            if (!available) return prev;
+                            return {
+                              ...prev,
+                              definition: {
+                                ...prev.definition,
+                                grouping: {
+                                  fields: [...fields, available.path],
+                                  aggregations: prev.definition.grouping?.aggregations || [],
+                                },
+                              },
+                            };
+                          });
+                        }}
+                        className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" /> Add Group Field
+                      </button>
+                    </div>
+
+                    {!reportDef.definition.grouping?.fields || reportDef.definition.grouping.fields.length === 0 ? (
+                      <p className="text-xs text-on-surface-variant/70 italic p-3 rounded border border-dashed border-outline-variant bg-surface-container/50 text-center">
+                        No grouping applied. Report will display raw detail rows.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {reportDef.definition.grouping.fields.map((fieldPath, idx) => (
+                          <div key={idx} className="flex items-center gap-2 text-xs p-2 rounded border border-outline-variant bg-surface">
+                            <span className="text-[10px] font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10">
+                              Group #{idx + 1}
+                            </span>
+                            <select
+                              value={fieldPath}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setReportDef(prev => {
+                                  const fields = [...(prev.definition.grouping?.fields || [])];
+                                  fields[idx] = val;
+                                  return {
+                                    ...prev,
+                                    definition: {
+                                      ...prev.definition,
+                                      grouping: {
+                                        fields,
+                                        aggregations: prev.definition.grouping?.aggregations || [],
+                                      },
+                                    },
+                                  };
+                                });
+                              }}
+                              className="flex-1 text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface-container"
+                            >
+                              {reportDef.definition.columns.map(c => (
+                                <option key={c.path} value={c.path}>{c.label} ({c.path})</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => {
+                                setReportDef(prev => {
+                                  const fields = (prev.definition.grouping?.fields || []).filter((_, i) => i !== idx);
+                                  return {
+                                    ...prev,
+                                    definition: {
+                                      ...prev.definition,
+                                      grouping: {
+                                        fields,
+                                        aggregations: prev.definition.grouping?.aggregations || [],
+                                      },
+                                    },
+                                  };
+                                });
+                              }}
+                              className="text-red-500 hover:text-red-700 p-1"
+                              title="Remove Group Field"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* GROUP AGGREGATIONS SECTION */}
+                  {reportDef.definition.grouping?.fields && reportDef.definition.grouping.fields.length > 0 && (
+                    <div className="pt-3 border-t border-outline-variant space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface">
+                          <Grid className="w-3.5 h-3.5 text-primary" />
+                          <span>Group Summary Metrics</span>
+                        </div>
+                        <button
+                          onClick={() => {
                             setReportDef(prev => {
-                              const s = [...prev.definition.sorting];
-                              s[idx] = { ...s[idx], path: val };
-                              return { ...prev, definition: { ...prev.definition, sorting: s } };
+                              const aggs = prev.definition.grouping?.aggregations || [];
+                              const firstCol = prev.definition.columns[0]?.path || '';
+                              return {
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  grouping: {
+                                    fields: prev.definition.grouping?.fields || [],
+                                    aggregations: [
+                                      ...aggs,
+                                      { path: firstCol, function: 'count', label: `COUNT of ${firstCol}` },
+                                    ],
+                                  },
+                                },
+                              };
                             });
                           }}
-                          className="flex-1 text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                          className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
                         >
-                          {reportDef.definition.columns.map(c => (
-                            <option key={c.path} value={c.path}>{c.label}</option>
-                          ))}
-                        </select>
-
-                        <select
-                          value={sort.direction}
-                          onChange={e => {
-                            const val = e.target.value as any;
-                            setReportDef(prev => {
-                              const s = [...prev.definition.sorting];
-                              s[idx] = { ...s[idx], direction: val };
-                              return { ...prev, definition: { ...prev.definition, sorting: s } };
-                            });
-                          }}
-                          className="text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
-                        >
-                          <option value="asc">ASC (A-Z)</option>
-                          <option value="desc">DESC (Z-A)</option>
-                        </select>
-
-                        <button onClick={() => removeSort(idx)} className="text-red-500 hover:text-red-700">
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Plus className="w-3 h-3" /> Add Metric
                         </button>
                       </div>
-                    ))}
+
+                      {(!reportDef.definition.grouping.aggregations || reportDef.definition.grouping.aggregations.length === 0) ? (
+                        <p className="text-xs text-on-surface-variant/70 italic p-2.5 rounded border border-dashed border-outline-variant bg-surface-container/50 text-center">
+                          No summary metrics configured. Add COUNT, SUM, or AVG for group totals.
+                        </p>
+                      ) : (
+                        reportDef.definition.grouping.aggregations.map((agg, idx) => (
+                          <div key={idx} className="p-2 rounded border border-outline-variant bg-surface space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold text-on-surface-variant">Summary Metric #{idx + 1}</span>
+                              <button
+                                onClick={() => {
+                                  setReportDef(prev => {
+                                    const aggs = (prev.definition.grouping?.aggregations || []).filter((_, i) => i !== idx);
+                                    return {
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        grouping: {
+                                          fields: prev.definition.grouping?.fields || [],
+                                          aggregations: aggs,
+                                        },
+                                      },
+                                    };
+                                  });
+                                }}
+                                className="text-red-500 hover:text-red-700 p-0.5"
+                                title="Remove Metric"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <select
+                                value={agg.function}
+                                onChange={e => {
+                                  const fn = e.target.value as any;
+                                  setReportDef(prev => {
+                                    const aggs = [...(prev.definition.grouping?.aggregations || [])];
+                                    aggs[idx] = { ...aggs[idx], function: fn };
+                                    return {
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        grouping: { fields: prev.definition.grouping?.fields || [], aggregations: aggs },
+                                      },
+                                    };
+                                  });
+                                }}
+                                className="text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container font-semibold"
+                              >
+                                <option value="count">COUNT</option>
+                                <option value="sum">SUM</option>
+                                <option value="avg">AVERAGE</option>
+                                <option value="min">MIN</option>
+                                <option value="max">MAX</option>
+                              </select>
+
+                              <select
+                                value={agg.path}
+                                onChange={e => {
+                                  const path = e.target.value;
+                                  setReportDef(prev => {
+                                    const aggs = [...(prev.definition.grouping?.aggregations || [])];
+                                    aggs[idx] = { ...aggs[idx], path };
+                                    return {
+                                      ...prev,
+                                      definition: {
+                                        ...prev.definition,
+                                        grouping: { fields: prev.definition.grouping?.fields || [], aggregations: aggs },
+                                      },
+                                    };
+                                  });
+                                }}
+                                className="text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                              >
+                                {reportDef.definition.columns.map(c => (
+                                  <option key={c.path} value={c.path}>{c.label}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <input
+                              type="text"
+                              placeholder="Metric Header Label"
+                              value={agg.label}
+                              onChange={e => {
+                                const label = e.target.value;
+                                setReportDef(prev => {
+                                  const aggs = [...(prev.definition.grouping?.aggregations || [])];
+                                  aggs[idx] = { ...aggs[idx], label };
+                                  return {
+                                    ...prev,
+                                    definition: {
+                                      ...prev.definition,
+                                      grouping: { fields: prev.definition.grouping?.fields || [], aggregations: aggs },
+                                    },
+                                  };
+                                });
+                              }}
+                              className="w-full text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                            />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Period Comparison Card inside Filters Tab */}
+                  <div className="pt-3 border-t border-outline-variant space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface">
+                        <Calendar className="w-3.5 h-3.5 text-primary" />
+                        <span>Period Comparison Mode</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={reportDef.definition.comparison?.enabled || false}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          const today = new Date().toISOString().split('T')[0];
+                          setReportDef(prev => ({
+                            ...prev,
+                            definition: {
+                              ...prev.definition,
+                              comparison: {
+                                enabled: checked,
+                                type: prev.definition.comparison?.type || 'previous_month',
+                                date_field: prev.definition.comparison?.date_field || reportDef.definition.columns[0]?.path || 'created_date',
+                                custom_period_a: prev.definition.comparison?.custom_period_a || [today, today],
+                                custom_period_b: prev.definition.comparison?.custom_period_b || [today, today],
+                              },
+                            },
+                          }));
+                        }}
+                        className="rounded border-outline-variant text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                      />
+                    </div>
+
+                    {reportDef.definition.comparison?.enabled && (
+                      <div className="p-3 rounded border border-primary/30 bg-primary/5 space-y-3 text-xs">
+                        <div>
+                          <label className="text-[10px] font-semibold text-on-surface-variant block mb-1">
+                            Comparison Preset
+                          </label>
+                          <select
+                            value={reportDef.definition.comparison?.type || 'previous_month'}
+                            onChange={e => {
+                              const val = e.target.value as any;
+                              const today = new Date().toISOString().split('T')[0];
+                              setReportDef(prev => ({
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  comparison: {
+                                    ...prev.definition.comparison!,
+                                    type: val,
+                                    custom_period_a: prev.definition.comparison?.custom_period_a || [today, today],
+                                    custom_period_b: prev.definition.comparison?.custom_period_b || [today, today],
+                                  },
+                                },
+                              }));
+                            }}
+                            className="w-full text-[11px] px-2.5 py-1.5 rounded border border-outline-variant bg-surface"
+                          >
+                            <option value="previous_month">Current Month vs Previous Month</option>
+                            <option value="previous_year">Current Year vs Previous Year</option>
+                            <option value="custom">Custom Date Ranges</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-semibold text-on-surface-variant block mb-1">
+                            Date Column to Compare
+                          </label>
+                          <select
+                            value={reportDef.definition.comparison?.date_field || 'created_date'}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setReportDef(prev => ({
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  comparison: { ...prev.definition.comparison!, date_field: val },
+                                },
+                              }));
+                            }}
+                            className="w-full text-[11px] px-2.5 py-1.5 rounded border border-outline-variant bg-surface"
+                          >
+                            {reportDef.definition.columns.map(c => (
+                              <option key={c.path} value={c.path}>{c.label} ({c.path})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {reportDef.definition.comparison?.type === 'custom' && (
+                          <div className="space-y-2.5 pt-2 border-t border-outline-variant/60">
+                            <div>
+                              <label className="text-[10px] font-bold text-primary block mb-1">
+                                Period A (Current Range)
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <span className="text-[9px] text-on-surface-variant block">From Date</span>
+                                  <input
+                                    type="date"
+                                    value={reportDef.definition.comparison?.custom_period_a?.[0] || ''}
+                                    onChange={e => {
+                                      const start = e.target.value;
+                                      setReportDef(prev => ({
+                                        ...prev,
+                                        definition: {
+                                          ...prev.definition,
+                                          comparison: {
+                                            ...prev.definition.comparison!,
+                                            custom_period_a: [start, prev.definition.comparison?.custom_period_a?.[1] || ''],
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface"
+                                  />
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-on-surface-variant block">To Date</span>
+                                  <input
+                                    type="date"
+                                    value={reportDef.definition.comparison?.custom_period_a?.[1] || ''}
+                                    onChange={e => {
+                                      const end = e.target.value;
+                                      setReportDef(prev => ({
+                                        ...prev,
+                                        definition: {
+                                          ...prev.definition,
+                                          comparison: {
+                                            ...prev.definition.comparison!,
+                                            custom_period_a: [prev.definition.comparison?.custom_period_a?.[0] || '', end],
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-secondary block mb-1">
+                                Period B (Comparison Base Range)
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <span className="text-[9px] text-on-surface-variant block">From Date</span>
+                                  <input
+                                    type="date"
+                                    value={reportDef.definition.comparison?.custom_period_b?.[0] || ''}
+                                    onChange={e => {
+                                      const start = e.target.value;
+                                      setReportDef(prev => ({
+                                        ...prev,
+                                        definition: {
+                                          ...prev.definition,
+                                          comparison: {
+                                            ...prev.definition.comparison!,
+                                            custom_period_b: [start, prev.definition.comparison?.custom_period_b?.[1] || ''],
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface"
+                                  />
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-on-surface-variant block">To Date</span>
+                                  <input
+                                    type="date"
+                                    value={reportDef.definition.comparison?.custom_period_b?.[1] || ''}
+                                    onChange={e => {
+                                      const end = e.target.value;
+                                      setReportDef(prev => ({
+                                        ...prev,
+                                        definition: {
+                                          ...prev.definition,
+                                          comparison: {
+                                            ...prev.definition.comparison!,
+                                            custom_period_b: [prev.definition.comparison?.custom_period_b?.[0] || '', end],
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="w-full text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1335,7 +1948,7 @@ export const ReportsView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Phase 4 Polish Controls */}
+                  {/* Dynamic Formatting Controls */}
                   <div className="space-y-3 pt-3 border-t border-outline-variant">
                     <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider block">
                       Output Controls & Security
@@ -1464,9 +2077,21 @@ export const ReportsView: React.FC = () => {
                           <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
                             {card.label}
                           </div>
-                          <div className="text-xl font-bold text-primary mt-1">
-                            {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
+                          <div className="text-xl font-bold text-primary mt-1 flex items-baseline justify-between">
+                            <span>{typeof card.value === 'number' ? card.value.toLocaleString() : card.value}</span>
+                            {card.is_comparison && (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${card.is_positive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                                }`}>
+                                {card.is_positive ? '▲ +' : '▼ '}
+                                {card.delta_pct}%
+                              </span>
+                            )}
                           </div>
+                          {card.is_comparison && (
+                            <div className="text-[10px] text-on-surface-variant/80 mt-1 truncate" title={`vs ${card.label_b}: ${card.previous_value}`}>
+                              vs {card.label_b}: <span className="font-semibold">{card.previous_value?.toLocaleString()}</span>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1489,7 +2114,7 @@ export const ReportsView: React.FC = () => {
                     <table className="w-full text-xs text-left border-collapse table-fixed">
                       <thead>
                         <tr className="bg-surface-container-high border-b border-outline-variant font-semibold text-on-surface text-[11px]">
-                          {previewResult.columns.map((col: any) => (
+                          {((previewResult.is_grouped && previewResult.columns?.length) ? previewResult.columns : reportDef.definition.columns).map((col: any) => (
                             <th key={col.path} className={`p-2.5 text-${col.alignment || 'left'} break-words`}>
                               {col.label}
                             </th>
@@ -1499,9 +2124,9 @@ export const ReportsView: React.FC = () => {
                       <tbody className="divide-y divide-outline-variant/40">
                         {previewResult.rows.map((row: any, rIdx: number) => (
                           <tr key={rIdx} className="hover:bg-surface-container-low transition-colors">
-                            {previewResult.columns.map((col: any) => (
+                            {((previewResult.is_grouped && previewResult.columns?.length) ? previewResult.columns : reportDef.definition.columns).map((col: any) => (
                               <td key={col.path} className={`p-2.5 text-${col.alignment || 'left'} break-words`}>
-                                {row[col.path] !== null && row[col.path] !== undefined ? String(row[col.path]) : '—'}
+                                {row[col.path] !== null && row[col.path] !== undefined ? String(row[col.path]) : ''}
                               </td>
                             ))}
                           </tr>
