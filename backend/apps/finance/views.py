@@ -65,8 +65,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or user.is_anonymous:
             return Expense.objects.none()
-        
-        if not user.is_superuser:
+
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if not user.is_superuser and not is_management:
             accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
                 queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
@@ -76,6 +80,33 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(ticket_id=ticket)
 
         return queryset
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            from rest_framework import exceptions
+            raise exceptions.PermissionDenied({'detail': 'Management role is view-only.'})
+        serializer.save()
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            from rest_framework import exceptions
+            raise exceptions.PermissionDenied({'detail': 'Management role is view-only.'})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            from rest_framework import exceptions
+            raise exceptions.PermissionDenied({'detail': 'Management role is view-only.'})
+        instance.delete()
 
 
 class ReconciliationViewSet(viewsets.ModelViewSet):
@@ -87,8 +118,12 @@ class ReconciliationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user or user.is_anonymous:
             return Reconciliation.objects.none()
-            
-        if not user.is_superuser:
+
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if not user.is_superuser and not is_management:
             accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
                 queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)

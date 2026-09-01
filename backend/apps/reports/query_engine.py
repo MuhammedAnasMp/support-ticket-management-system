@@ -230,6 +230,30 @@ class ReportQueryEngine:
 
         if operator in ('is_null', 'is_not_null'):
             value = True
+        elif operator in ('this_month', 'last_month', 'this_year', 'last_year'):
+            from django.utils import timezone
+            import datetime
+            today = timezone.now().date()
+            django_path = path.replace('.', '__')
+
+            if operator == 'this_month':
+                first = today.replace(day=1)
+                q = Q(**{f"{django_path}__gte": first, f"{django_path}__lte": today})
+            elif operator == 'last_month':
+                first_this = today.replace(day=1)
+                last_prev = first_this - datetime.timedelta(days=1)
+                first_prev = last_prev.replace(day=1)
+                q = Q(**{f"{django_path}__gte": first_prev, f"{django_path}__lte": last_prev})
+            elif operator == 'this_year':
+                first = today.replace(month=1, day=1)
+                q = Q(**{f"{django_path}__gte": first, f"{django_path}__lte": today})
+            elif operator == 'last_year':
+                first_prev = today.replace(year=today.year - 1, month=1, day=1)
+                last_prev = today.replace(year=today.year - 1, month=12, day=31)
+                q = Q(**{f"{django_path}__gte": first_prev, f"{django_path}__lte": last_prev})
+
+            return ~q if negate else q
+
         elif value is None or (isinstance(value, str) and value.strip() == ''):
             return None
 
@@ -238,8 +262,16 @@ class ReportQueryEngine:
                 value = [v.strip() for v in value.split(',')]
 
         if operator == 'range':
-            if isinstance(value, (list, tuple)) and len(value) == 2:
-                value = tuple(value)
+            django_path = path.replace('.', '__')
+            if isinstance(value, str) and ',' in value:
+                value = [v.strip() for v in value.split(',')]
+            if isinstance(value, (list, tuple)) and len(value) >= 2 and value[0] and value[1]:
+                q = Q(**{f"{django_path}__gte": value[0], f"{django_path}__lte": value[1]})
+                return ~q if negate else q
+            elif isinstance(value, (list, tuple)) and len(value) > 0 and value[0]:
+                return Q(**{f"{django_path}__gte": value[0]})
+            elif isinstance(value, (list, tuple)) and len(value) > 1 and value[1]:
+                return Q(**{f"{django_path}__lte": value[1]})
             else:
                 return None
 
@@ -567,6 +599,92 @@ def execute_report(data_source: str, definition: dict, user, runtime_filters=Non
     if is_comp_enabled:
         cond_a, cond_b, label_a, label_b = _get_comparison_filter_bounds(comp_config)
 
+        # Build dynamic comparative data table
+        grouping = definition.get('grouping', {})
+        group_fields = grouping.get('fields', [])
+        if not group_fields:
+            for col in columns:
+                p = col.get('path', '')
+                if any(kw in p.lower() for kw in ('store', 'location', 'department', 'nature', 'worker', 'user', 'role', 'type')):
+                    group_fields = [p]
+                    break
+            if not group_fields and columns:
+                group_fields = [columns[0].get('path', '')]
+
+        if group_fields:
+            group_field = group_fields[0]
+            group_field_dunder = group_field.replace('.', '__')
+
+            aggregations_cfg = grouping.get('aggregations', [])
+            if aggregations_cfg:
+                agg_target = aggregations_cfg[0]
+                agg_path = agg_target.get('path', '').replace('.', '__')
+                agg_func = agg_target.get('function', 'count').lower()
+                agg_label = agg_target.get('label', f"{agg_func.upper()} of {agg_path}")
+            else:
+                col_paths = [c.get('path', '') for c in columns]
+                amount_col = next((cp for cp in col_paths if any(kw in cp.lower() for kw in ('amount', 'cost', 'total', 'hours', 'labour'))), None)
+                if amount_col:
+                    agg_path = amount_col.replace('.', '__')
+                    agg_func = 'sum'
+                    agg_label = f"Total {amount_col.replace('__', ' ').replace('.', ' ').title()}"
+                else:
+                    agg_path = ''
+                    agg_func = 'count'
+                    agg_label = "Total Count"
+
+            agg_class = AGG_MAP.get(agg_func, Count)
+
+            sec_qs = engine.model.objects.all()
+            sec_qs = engine._apply_security(sec_qs)
+            sec_qs = engine._apply_filters(sec_qs, definition.get('filters'))
+
+            qs_a = engine._apply_filters(sec_qs, {'logic': 'AND', 'conditions': cond_a})
+            qs_b = engine._apply_filters(sec_qs, {'logic': 'AND', 'conditions': cond_b})
+
+            if not agg_path or agg_path == 'pk':
+                dict_a = {str(item[group_field_dunder] or 'Unknown'): float(item['val']) if isinstance(item['val'], Decimal) else (item['val'] or 0)
+                          for item in qs_a.values(group_field_dunder).annotate(val=agg_class()).order_by()}
+                dict_b = {str(item[group_field_dunder] or 'Unknown'): float(item['val']) if isinstance(item['val'], Decimal) else (item['val'] or 0)
+                          for item in qs_b.values(group_field_dunder).annotate(val=agg_class()).order_by()}
+            else:
+                dict_a = {str(item[group_field_dunder] or 'Unknown'): float(item['val']) if isinstance(item['val'], Decimal) else (item['val'] or 0)
+                          for item in qs_a.values(group_field_dunder).annotate(val=agg_class(agg_path)).order_by()}
+                dict_b = {str(item[group_field_dunder] or 'Unknown'): float(item['val']) if isinstance(item['val'], Decimal) else (item['val'] or 0)
+                          for item in qs_b.values(group_field_dunder).annotate(val=agg_class(agg_path)).order_by()}
+
+            all_keys = list(dict.fromkeys(list(dict_a.keys()) + list(dict_b.keys())))
+
+            col_group_label = next((c.get('label') for c in columns if c.get('path') == group_field), group_field.replace('__', ' ').replace('.', ' ').title())
+
+            comp_columns = [
+                {'path': group_field_dunder, 'label': col_group_label, 'type': 'text', 'alignment': 'left'},
+                {'path': 'val_b', 'label': f"{label_b} ({agg_label})", 'type': 'number', 'alignment': 'right', 'format': '.2f' if agg_func == 'sum' else None},
+                {'path': 'val_a', 'label': f"{label_a} ({agg_label})", 'type': 'number', 'alignment': 'right', 'format': '.2f' if agg_func == 'sum' else None},
+                {'path': 'diff', 'label': 'Difference (Variance)', 'type': 'number', 'alignment': 'right', 'format': '.2f' if agg_func == 'sum' else None},
+                {'path': 'growth', 'label': 'Growth (%)', 'type': 'text', 'alignment': 'right'},
+            ]
+
+            comp_rows = []
+            for key in all_keys:
+                vb = dict_b.get(key, 0)
+                va = dict_a.get(key, 0)
+                diff = round(va - vb, 2)
+                growth_pct = round(((va - vb) / vb * 100), 1) if vb != 0 else (100.0 if va > 0 else 0.0)
+                growth_str = f"{growth_pct:+.1f}%" if growth_pct != 0 else "0.0%"
+
+                comp_rows.append({
+                    group_field_dunder: str(key),
+                    'val_b': vb,
+                    'val_a': va,
+                    'diff': diff,
+                    'growth': growth_str,
+                })
+
+            rows = comp_rows
+            columns = comp_columns
+            is_grouped = True
+
     # Compute KPI Cards
     kpi_cards = []
     for kpi in definition.get('kpi_cards', []):
@@ -845,19 +963,26 @@ def _get_comparison_filter_bounds(comp_config: dict):
         range_a = comp_config.get('custom_period_a', [])
         range_b = comp_config.get('custom_period_b', [])
 
+        if isinstance(range_a, str) and ',' in range_a:
+            range_a = [v.strip() for v in range_a.split(',')]
+        if isinstance(range_b, str) and ',' in range_b:
+            range_b = [v.strip() for v in range_b.split(',')]
+
         cond_a = []
         cond_b = []
         if range_a:
-            if len(range_a) > 0 and range_a[0]:
-                cond_a.append({'path': date_field, 'operator': 'gte', 'value': str(range_a[0])})
-            if len(range_a) > 1 and range_a[1]:
-                cond_a.append({'path': date_field, 'operator': 'lte', 'value': str(range_a[1])})
+            if isinstance(range_a, (list, tuple)):
+                if len(range_a) > 0 and range_a[0]:
+                    cond_a.append({'path': date_field, 'operator': 'gte', 'value': str(range_a[0])})
+                if len(range_a) > 1 and range_a[1]:
+                    cond_a.append({'path': date_field, 'operator': 'lte', 'value': str(range_a[1])})
 
         if range_b:
-            if len(range_b) > 0 and range_b[0]:
-                cond_b.append({'path': date_field, 'operator': 'gte', 'value': str(range_b[0])})
-            if len(range_b) > 1 and range_b[1]:
-                cond_b.append({'path': date_field, 'operator': 'lte', 'value': str(range_b[1])})
+            if isinstance(range_b, (list, tuple)):
+                if len(range_b) > 0 and range_b[0]:
+                    cond_b.append({'path': date_field, 'operator': 'gte', 'value': str(range_b[0])})
+                if len(range_b) > 1 and range_b[1]:
+                    cond_b.append({'path': date_field, 'operator': 'lte', 'value': str(range_b[1])})
 
         str_a = f"{range_a[0]} to {range_a[1]}" if (range_a and len(range_a) > 1 and range_a[0] and range_a[1]) else (range_a[0] if (range_a and range_a[0]) else 'Custom Period A')
         str_b = f"{range_b[0]} to {range_b[1]}" if (range_b and len(range_b) > 1 and range_b[0] and range_b[1]) else (range_b[0] if (range_b and range_b[0]) else 'Custom Period B')

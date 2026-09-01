@@ -28,12 +28,15 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return CustomUser.objects.all()
 
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
         user_groups_lower = set(g.name.lower() for g in user.groups.all())
         can_view_all = (
             user.has_perm('maintenance.view_all_department_tickets') or
             user.has_perm('maintenance.create_ticket_all_departments') or
             'administrator' in user_groups_lower or
-            'main administrator' in user_groups_lower
+            'main administrator' in user_groups_lower or
+            'management' in user_groups_lower or
+            role_name in ('management', 'management team')
         )
         user_dept_ids = list(user.sub_departments.values_list(
             'department_id', flat=True))

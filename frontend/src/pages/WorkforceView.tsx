@@ -554,6 +554,18 @@ export const WorkforceView: React.FC = () => {
       String(employeeForm.role).toLowerCase().includes('office admin') ||
       String(employeeForm.role).toLowerCase().includes('office administrator')
     );
+  const isFormManagement = (formRoleObj && (
+    (formRoleObj.role_name || '').toLowerCase().includes('management')
+  )) || (
+    String(employeeForm.role).toLowerCase().includes('management')
+  );
+  const isFormGlobalRole = isFormOfficeAdmin || isFormManagement || (formRoleObj && (
+    (formRoleObj.role_name || '').toLowerCase().includes('admin') ||
+    (formRoleObj.role_name || '').toLowerCase().includes('administrator')
+  )) || (
+    String(employeeForm.role).toLowerCase().includes('admin') ||
+    String(employeeForm.role).toLowerCase().includes('administrator')
+  );
   const needsWorkingDepartments = (!isFormStoreManager && !isFormAreaManager) || !!isFormOfficeAdmin;
 
   const selectedSubDepts = subDepartments.filter(sd =>
@@ -804,8 +816,8 @@ export const WorkforceView: React.FC = () => {
         return;
       }
 
-      // 2. Accessible store is required
-      if (employeeForm.accessible_stores.length === 0) {
+      // 2. Accessible store is required (except for Management and global administrative roles)
+      if (employeeForm.accessible_stores.length === 0 && !isFormGlobalRole) {
         setErrorMsg("To approve this employee, you must assign at least one store allocation under the 'Store Access & Skills' tab.");
         setActionLoading(false);
         return;
@@ -1626,9 +1638,16 @@ export const WorkforceView: React.FC = () => {
                     </div>
 
                     <div className="flex flex-col flex-1 min-h-0 pt-3 border-t border-outline-variant/60">
-                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5 shrink-0">
-                        <Building2 className="w-4 h-4" />
-                        Accessible Stores ({employeeForm.accessible_stores.length})
+                      <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center justify-between gap-1.5 shrink-0">
+                        <span className="flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4" />
+                          Accessible Stores ({employeeForm.accessible_stores.length})
+                        </span>
+                        {isFormGlobalRole && (
+                          <span className="text-[10px] normal-case font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
+                            Global Access Role ({formRoleObj?.role_name || 'Management'}) — All Stores Included
+                          </span>
+                        )}
                       </h4>
 
                       <div className="grid grid-cols-2 gap-2 mb-2 shrink-0">

@@ -149,7 +149,11 @@ class TicketViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Ticket.objects.none()
 
-        if user.is_superuser:
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if user.is_superuser or is_management:
             pass
         else:
             # Filter by ticket status permissions.
@@ -168,8 +172,6 @@ class TicketViewSet(viewsets.ModelViewSet):
                     status_id__in=disallowed_status_ids)
 
             # Technicians only see tickets allocated to them
-            role_name = (user.role.role_name.lower() if hasattr(
-                user, 'role') and user.role else '')
             if role_name == 'technician':
                 queryset = queryset.filter(allocations__worker=user).distinct()
             else:
@@ -183,8 +185,6 @@ class TicketViewSet(viewsets.ModelViewSet):
                     return Ticket.objects.none()
 
                 # Check department level restriction
-                user_groups_lower = [
-                    g.lower().strip() for g in user.groups.values_list('name', flat=True)]
                 can_view_all_depts = (
                     user.has_perm('maintenance.view_all_department_tickets') or
                     user.has_perm('maintenance.create_ticket_all_departments') or
@@ -266,10 +266,31 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is view-only and cannot raise or create tickets.'})
+
         kwargs = {}
         if user and not user.is_anonymous:
             kwargs['created_by'] = user
         serializer.save(**kwargs)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is read-only and cannot edit tickets.'})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is read-only and cannot delete tickets.'})
+        instance.delete()
 
 
 class AllocationViewSet(viewsets.ModelViewSet):
@@ -287,7 +308,11 @@ class AllocationViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Allocation.objects.none()
 
-        if not user.is_superuser:
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if not user.is_superuser and not is_management:
             accessible_store_ids = list(
                 user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
@@ -302,6 +327,11 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is view-only and cannot perform create operations.'})
+
         kwargs = {}
         if user and not user.is_anonymous:
             kwargs['assigned_by'] = user
@@ -310,6 +340,12 @@ class AllocationViewSet(viewsets.ModelViewSet):
             allocation.worker.accessible_stores.add(allocation.ticket.store)
 
     def perform_update(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is view-only and cannot perform update operations.'})
+
         allocation = serializer.save()
         if allocation.worker and allocation.ticket and allocation.ticket.store:
             allocation.worker.accessible_stores.add(allocation.ticket.store)
@@ -330,7 +366,11 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return WorkLog.objects.none()
 
-        if not user.is_superuser:
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if not user.is_superuser and not is_management:
             accessible_store_ids = list(
                 user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
@@ -354,7 +394,11 @@ class TicketHistoryViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return TicketHistory.objects.none()
 
-        if not user.is_superuser:
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if not user.is_superuser and not is_management:
             accessible_store_ids = list(
                 user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
@@ -385,7 +429,11 @@ class TicketChatMessageViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return TicketChatMessage.objects.none()
 
-        if not user.is_superuser:
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        if not user.is_superuser and not is_management:
             accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
                 queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)

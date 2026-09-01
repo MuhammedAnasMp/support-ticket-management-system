@@ -20,7 +20,8 @@ class StoreViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Store.objects.none()
 
-        if user.is_superuser or user.role.role_name == 'Management':
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        if user.is_superuser or role_name in ('management', 'management team'):
             return Store.objects.all().select_related('area', 'manager').order_by('store_name')
 
         accessible_store_ids = list(

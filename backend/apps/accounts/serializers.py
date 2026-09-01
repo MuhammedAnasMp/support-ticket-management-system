@@ -146,11 +146,18 @@ class CustomUserSerializer(serializers.ModelSerializer):
                     {"role": "Role is required to approve this employee."}
                 )
 
-            # 2. Accessible store is required
+            # 2. Accessible store is required (except for Management and global administrative roles)
+            role_name = (role.role_name or '').strip().lower() if role else ''
+            is_global_role = any(r in role_name for r in [
+                'management', 'office admin', 'office administrator',
+                'administrator', 'main admin', 'main administrator'
+            ])
+
             stores = attrs.get('accessible_stores', [])
             if self.instance and 'accessible_stores' not in attrs:
                 stores = list(self.instance.accessible_stores.all())
-            if not stores:
+
+            if not stores and not is_global_role:
                 raise serializers.ValidationError(
                     {"accessible_stores": "To approve this employee, you must assign at least one store allocation."}
                 )

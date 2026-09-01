@@ -241,18 +241,12 @@ def _ticket_data_filter(user):
     """Row-level security for Ticket queries."""
     from django.db.models import Q
 
-    if user.is_superuser:
+    if not user or getattr(user, 'is_superuser', False):
         return Q()
 
     role_name = user.role.role_name.lower() if user.role else ''
 
-    if role_name in ('office administrator', 'admin'):
-        # Office admins see tickets for their departments
-        user_dept_ids = list(
-            user.sub_departments.values_list('department_id', flat=True).distinct()
-        )
-        if user_dept_ids:
-            return Q(department_id__in=user_dept_ids)
+    if role_name in ('office administrator', 'admin', 'management', 'management team'):
         return Q()
 
     if role_name == 'store manager':
@@ -268,8 +262,13 @@ def _ticket_data_filter(user):
 
 def _store_data_filter(user):
     from django.db.models import Q
-    if user.is_superuser:
+    if not user or getattr(user, 'is_superuser', False):
         return Q()
+
+    role_name = user.role.role_name.lower() if user.role else ''
+    if role_name in ('office administrator', 'admin', 'management', 'management team'):
+        return Q()
+
     store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
     if store_ids:
         return Q(store_id__in=store_ids)
@@ -278,8 +277,13 @@ def _store_data_filter(user):
 
 def _user_data_filter(user):
     from django.db.models import Q
-    if user.is_superuser:
+    if not user or getattr(user, 'is_superuser', False):
         return Q()
+
+    role_name = user.role.role_name.lower() if user.role else ''
+    if role_name in ('office administrator', 'admin', 'management', 'management team'):
+        return Q()
+
     return Q(active=True)
 
 

@@ -1289,6 +1289,104 @@ export const ReportsView: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Quick Date Presets & Custom Range Bar */}
+                  <div className="p-2.5 rounded-lg border border-outline-variant bg-surface space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5 text-primary" /> Quick Date Filter & Custom Range
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        { label: 'This Month', op: 'this_month' },
+                        { label: 'Last Month', op: 'last_month' },
+                        { label: 'This Year', op: 'this_year' },
+                        { label: 'Last Year', op: 'last_year' },
+                      ].map(preset => (
+                        <button
+                          key={preset.op}
+                          type="button"
+                          onClick={() => {
+                            const dateCol = reportDef.definition.columns.find(c => c.path.toLowerCase().includes('date') || c.path.toLowerCase().includes('created') || c.path.toLowerCase().includes('work') || c.path.toLowerCase().includes('expense'))?.path || 'created_date';
+                            setReportDef(prev => {
+                              const conds = prev.definition.filters.conditions.filter(c => c.path !== dateCol);
+                              return {
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  filters: {
+                                    ...prev.definition.filters,
+                                    conditions: [...conds, { path: dateCol, operator: preset.op, value: 'true' }]
+                                  }
+                                }
+                              };
+                            });
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded bg-surface-container hover:bg-primary/10 hover:text-primary transition-colors border border-outline-variant/60 font-medium"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-1 border-t border-outline-variant/50 grid grid-cols-2 gap-1.5 text-xs">
+                      <div>
+                        <span className="text-[9px] font-medium text-on-surface-variant block">From Date</span>
+                        <input
+                          type="date"
+                          onChange={e => {
+                            const start = e.target.value;
+                            if (!start) return;
+                            const dateCol = reportDef.definition.columns.find(c => c.path.toLowerCase().includes('date') || c.path.toLowerCase().includes('created') || c.path.toLowerCase().includes('work') || c.path.toLowerCase().includes('expense'))?.path || 'created_date';
+                            setReportDef(prev => {
+                              const existing = prev.definition.filters.conditions.find(c => c.path === dateCol && c.operator === 'range');
+                              const endVal = existing && Array.isArray(existing.value) ? existing.value[1] || '' : '';
+                              const conds = prev.definition.filters.conditions.filter(c => c.path !== dateCol || c.operator !== 'range');
+                              return {
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  filters: {
+                                    ...prev.definition.filters,
+                                    conditions: [...conds, { path: dateCol, operator: 'range', value: [start, endVal] }]
+                                  }
+                                }
+                              };
+                            });
+                          }}
+                          className="w-full text-[10px] px-1.5 py-0.5 rounded border border-outline-variant bg-surface-container"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-medium text-on-surface-variant block">To Date</span>
+                        <input
+                          type="date"
+                          onChange={e => {
+                            const end = e.target.value;
+                            if (!end) return;
+                            const dateCol = reportDef.definition.columns.find(c => c.path.toLowerCase().includes('date') || c.path.toLowerCase().includes('created') || c.path.toLowerCase().includes('work') || c.path.toLowerCase().includes('expense'))?.path || 'created_date';
+                            setReportDef(prev => {
+                              const existing = prev.definition.filters.conditions.find(c => c.path === dateCol && c.operator === 'range');
+                              const startVal = existing && Array.isArray(existing.value) ? existing.value[0] || '' : '';
+                              const conds = prev.definition.filters.conditions.filter(c => c.path !== dateCol || c.operator !== 'range');
+                              return {
+                                ...prev,
+                                definition: {
+                                  ...prev.definition,
+                                  filters: {
+                                    ...prev.definition.filters,
+                                    conditions: [...conds, { path: dateCol, operator: 'range', value: [startVal, end] }]
+                                  }
+                                }
+                              };
+                            });
+                          }}
+                          className="w-full text-[10px] px-1.5 py-0.5 rounded border border-outline-variant bg-surface-container"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-wider">
                       Report Filter Conditions ({reportDef.definition.filters.conditions.length})
@@ -1306,93 +1404,156 @@ export const ReportsView: React.FC = () => {
                       No filters applied. Report will return all permitted records.
                     </p>
                   ) : (
-                    reportDef.definition.filters.conditions.map((cond, idx) => (
-                      <div
-                        key={idx}
-                        draggable
-                        onDragStart={() => setDraggedFilterIndex(idx)}
-                        onDragOver={e => {
-                          e.preventDefault();
-                          setDragOverFilterIndex(idx);
-                        }}
-                        onDrop={e => {
-                          e.preventDefault();
-                          handleFilterDrop(idx);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedFilterIndex(null);
-                          setDragOverFilterIndex(null);
-                        }}
-                        className={`p-2 rounded border transition-all space-y-1.5 text-xs ${draggedFilterIndex === idx
-                            ? 'opacity-40 border-dashed border-primary bg-primary/5'
-                            : dragOverFilterIndex === idx
-                              ? 'border-primary ring-2 ring-primary/20 bg-surface'
-                              : 'border-outline-variant bg-surface hover:border-primary/40'
-                          }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <GripVertical className="w-3.5 h-3.5 text-on-surface-variant/50 shrink-0 cursor-grab active:cursor-grabbing" />
-                            <span className="text-[10px] font-semibold text-on-surface-variant">Condition #{idx + 1}</span>
-                          </div>
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={() => moveFilter(idx, -1)}
-                              disabled={idx === 0}
-                              className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
-                              title="Move Up"
-                            >
-                              <ChevronUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => moveFilter(idx, 1)}
-                              disabled={idx === reportDef.definition.filters.conditions.length - 1}
-                              className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
-                              title="Move Down"
-                            >
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700 p-0.5 ml-1" title="Remove Condition">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <select
-                          value={cond.path}
-                          onChange={e => updateFilter(idx, 'path', e.target.value)}
-                          className="w-full text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                    reportDef.definition.filters.conditions.map((cond, idx) => {
+                      const isDateField = cond.path && (cond.path.toLowerCase().includes('date') || cond.path.toLowerCase().includes('time') || cond.path.toLowerCase().includes('created') || cond.path.toLowerCase().includes('updated') || cond.path.toLowerCase().includes('at') || cond.path.toLowerCase().includes('on'));
+                      return (
+                        <div
+                          key={idx}
+                          draggable
+                          onDragStart={() => setDraggedFilterIndex(idx)}
+                          onDragOver={e => {
+                            e.preventDefault();
+                            setDragOverFilterIndex(idx);
+                          }}
+                          onDrop={e => {
+                            e.preventDefault();
+                            handleFilterDrop(idx);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedFilterIndex(null);
+                            setDragOverFilterIndex(null);
+                          }}
+                          className={`p-2 rounded border transition-all space-y-1.5 text-xs ${draggedFilterIndex === idx
+                              ? 'opacity-40 border-dashed border-primary bg-primary/5'
+                              : dragOverFilterIndex === idx
+                                ? 'border-primary ring-2 ring-primary/20 bg-surface'
+                                : 'border-outline-variant bg-surface hover:border-primary/40'
+                            }`}
                         >
-                          {reportDef.definition.columns.map(c => (
-                            <option key={c.path} value={c.path}>{c.label} ({c.path})</option>
-                          ))}
-                        </select>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <GripVertical className="w-3.5 h-3.5 text-on-surface-variant/50 shrink-0 cursor-grab active:cursor-grabbing" />
+                              <span className="text-[10px] font-semibold text-on-surface-variant">Condition #{idx + 1}</span>
+                              {isDateField && (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.2 bg-primary/10 text-primary rounded flex items-center gap-0.5">
+                                  <Calendar className="w-2.5 h-2.5" /> Date Field
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                onClick={() => moveFilter(idx, -1)}
+                                disabled={idx === 0}
+                                className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
+                                title="Move Up"
+                              >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => moveFilter(idx, 1)}
+                                disabled={idx === reportDef.definition.filters.conditions.length - 1}
+                                className="text-on-surface-variant hover:text-primary disabled:opacity-20 p-0.5"
+                                title="Move Down"
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700 p-0.5 ml-1" title="Remove Condition">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
 
-                        <div className="grid grid-cols-2 gap-1.5">
                           <select
-                            value={cond.operator}
-                            onChange={e => updateFilter(idx, 'operator', e.target.value)}
-                            className="text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                            value={cond.path}
+                            onChange={e => updateFilter(idx, 'path', e.target.value)}
+                            className="w-full text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
                           >
-                            <option value="equals">Equals</option>
-                            <option value="not_equals">Not Equals</option>
-                            <option value="contains">Contains</option>
-                            <option value="gte">Greater or Equal</option>
-                            <option value="lte">Less or Equal</option>
-                            <option value="is_null">Is Null</option>
-                            <option value="is_not_null">Is Not Null</option>
+                            {reportDef.definition.columns.map(c => (
+                              <option key={c.path} value={c.path}>{c.label} ({c.path})</option>
+                            ))}
                           </select>
 
-                          <input
-                            type="text"
-                            placeholder="Value"
-                            value={cond.value}
-                            onChange={e => updateFilter(idx, 'value', e.target.value)}
-                            className="text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
-                          />
+                          <div className="space-y-1.5">
+                            <select
+                              value={cond.operator}
+                              onChange={e => updateFilter(idx, 'operator', e.target.value)}
+                              className="w-full text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                            >
+                              {isDateField ? (
+                                <>
+                                  <option value="range">Date Range (From - To)</option>
+                                  <option value="gte">From Date (On or After)</option>
+                                  <option value="lte">To Date (On or Before)</option>
+                                  <option value="equals">Exact Date (=)</option>
+                                  <option value="this_month">This Month</option>
+                                  <option value="last_month">Last Month</option>
+                                  <option value="this_year">This Year</option>
+                                  <option value="last_year">Last Year</option>
+                                  <option value="is_null">Is Null / Empty</option>
+                                  <option value="is_not_null">Is Not Null</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="equals">Equals</option>
+                                  <option value="not_equals">Not Equals</option>
+                                  <option value="contains">Contains</option>
+                                  <option value="gte">Greater or Equal</option>
+                                  <option value="lte">Less or Equal</option>
+                                  <option value="is_null">Is Null</option>
+                                  <option value="is_not_null">Is Not Null</option>
+                                </>
+                              )}
+                            </select>
+
+                            {cond.operator === 'range' ? (
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <span className="text-[9px] text-on-surface-variant block">From Date</span>
+                                  <input
+                                    type="date"
+                                    value={Array.isArray(cond.value) ? cond.value[0] || '' : (typeof cond.value === 'string' && cond.value.includes(',') ? cond.value.split(',')[0] : cond.value || '')}
+                                    onChange={e => {
+                                      const start = e.target.value;
+                                      const end = Array.isArray(cond.value) ? cond.value[1] || '' : (typeof cond.value === 'string' && cond.value.includes(',') ? cond.value.split(',')[1] : '');
+                                      updateFilter(idx, 'value', [start, end]);
+                                    }}
+                                    className="w-full text-[10px] px-1.5 py-0.5 rounded border border-outline-variant bg-surface-container"
+                                  />
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-on-surface-variant block">To Date</span>
+                                  <input
+                                    type="date"
+                                    value={Array.isArray(cond.value) ? cond.value[1] || '' : (typeof cond.value === 'string' && cond.value.includes(',') ? cond.value.split(',')[1] : '')}
+                                    onChange={e => {
+                                      const end = e.target.value;
+                                      const start = Array.isArray(cond.value) ? cond.value[0] || '' : (typeof cond.value === 'string' && cond.value.includes(',') ? cond.value.split(',')[0] : '');
+                                      updateFilter(idx, 'value', [start, end]);
+                                    }}
+                                    className="w-full text-[10px] px-1.5 py-0.5 rounded border border-outline-variant bg-surface-container"
+                                  />
+                                </div>
+                              </div>
+                            ) : isDateField && ['gte', 'lte', 'equals'].includes(cond.operator) ? (
+                              <input
+                                type="date"
+                                value={cond.value || ''}
+                                onChange={e => updateFilter(idx, 'value', e.target.value)}
+                                className="w-full text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                              />
+                            ) : ['this_month', 'last_month', 'this_year', 'last_year', 'is_null', 'is_not_null'].includes(cond.operator) ? null : (
+                              <input
+                                type="text"
+                                placeholder="Value"
+                                value={cond.value || ''}
+                                onChange={e => updateFilter(idx, 'value', e.target.value)}
+                                className="w-full text-[11px] px-1.5 py-1 rounded border border-outline-variant bg-surface-container"
+                              />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -2045,6 +2206,160 @@ export const ReportsView: React.FC = () => {
                   <FileCode className="w-3 h-3" /> CSV
                 </button>
               </div>
+            </div>
+
+            {/* Live Period & Date Comparison Selector Bar */}
+            <div className="px-4 py-2 border-b border-outline-variant/60 bg-surface-container-low/70 space-y-2 text-xs shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-primary" /> Date & Period Comparison:
+                  </span>
+                  <select
+                    value={reportDef.definition.comparison?.enabled ? reportDef.definition.comparison.type : 'off'}
+                    onChange={e => {
+                      const val = e.target.value;
+                      const enabled = val !== 'off';
+                      const today = new Date().toISOString().split('T')[0];
+                      setReportDef(prev => ({
+                        ...prev,
+                        definition: {
+                          ...prev.definition,
+                          comparison: {
+                            enabled,
+                            type: enabled ? (val as any) : (prev.definition.comparison?.type || 'previous_month'),
+                            date_field: prev.definition.comparison?.date_field || reportDef.definition.columns[0]?.path || 'created_date',
+                            custom_period_a: prev.definition.comparison?.custom_period_a || [today, today],
+                            custom_period_b: prev.definition.comparison?.custom_period_b || [today, today],
+                          }
+                        }
+                      }));
+                    }}
+                    className="text-[11px] px-2 py-1 rounded border border-outline-variant bg-surface text-on-surface font-semibold focus:outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value="off">Disabled (Standard Detail Table)</option>
+                    <option value="previous_month">Current Month vs Previous Month</option>
+                    <option value="previous_year">Current Year vs Previous Year</option>
+                    <option value="custom">Custom Date Ranges (Period A vs B)</option>
+                  </select>
+                </div>
+
+                {reportDef.definition.comparison?.enabled ? (
+                  <div className="flex items-center gap-1.5 bg-primary/10 text-primary font-bold text-[10px] px-2.5 py-1 rounded-full border border-primary/30">
+                    <Check className="w-3 h-3 text-primary" />
+                    <span>Dynamic Side-by-Side Comparison Active</span>
+                  </div>
+                ) : (
+                  <span className="text-[10px] text-on-surface-variant/70 italic">
+                    Select a comparison preset to view dynamic date/store side-by-side columns
+                  </span>
+                )}
+              </div>
+
+              {/* Inline Custom Date Pickers when Custom mode is selected */}
+              {reportDef.definition.comparison?.enabled && reportDef.definition.comparison.type === 'custom' && (
+                <div className="p-2.5 rounded border border-primary/30 bg-surface/90 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-primary block mb-1">
+                      Period A Range (Current Period)
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <span className="text-[9px] text-on-surface-variant block font-medium">From Date</span>
+                        <input
+                          type="date"
+                          value={reportDef.definition.comparison.custom_period_a?.[0] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setReportDef(prev => ({
+                              ...prev,
+                              definition: {
+                                ...prev.definition,
+                                comparison: {
+                                  ...prev.definition.comparison!,
+                                  custom_period_a: [val, prev.definition.comparison?.custom_period_a?.[1] || '']
+                                }
+                              }
+                            }));
+                          }}
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-on-surface-variant block font-medium">To Date</span>
+                        <input
+                          type="date"
+                          value={reportDef.definition.comparison.custom_period_a?.[1] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setReportDef(prev => ({
+                              ...prev,
+                              definition: {
+                                ...prev.definition,
+                                comparison: {
+                                  ...prev.definition.comparison!,
+                                  custom_period_a: [prev.definition.comparison?.custom_period_a?.[0] || '', val]
+                                }
+                              }
+                            }));
+                          }}
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-on-surface block mb-1">
+                      Period B Range (Compare Base Period)
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <span className="text-[9px] text-on-surface-variant block font-medium">From Date</span>
+                        <input
+                          type="date"
+                          value={reportDef.definition.comparison.custom_period_b?.[0] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setReportDef(prev => ({
+                              ...prev,
+                              definition: {
+                                ...prev.definition,
+                                comparison: {
+                                  ...prev.definition.comparison!,
+                                  custom_period_b: [val, prev.definition.comparison?.custom_period_b?.[1] || '']
+                                }
+                              }
+                            }));
+                          }}
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-on-surface-variant block font-medium">To Date</span>
+                        <input
+                          type="date"
+                          value={reportDef.definition.comparison.custom_period_b?.[1] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setReportDef(prev => ({
+                              ...prev,
+                              definition: {
+                                ...prev.definition,
+                                comparison: {
+                                  ...prev.definition.comparison!,
+                                  custom_period_b: [prev.definition.comparison?.custom_period_b?.[0] || '', val]
+                                }
+                              }
+                            }));
+                          }}
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Preview Output */}
