@@ -972,16 +972,17 @@ export const MaintenanceView: React.FC = () => {
                                   <FolderTree className="w-3.5 h-3.5 shrink-0" />
                                   <span className="truncate">{sub.sub_department_name}</span>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEdit(sub, 'sub-departments')}
-                                    className="p-1 hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded cursor-pointer"
-                                    title="Edit Sub Dept"
-                                  >
-                                    <Edit2 className="w-3 h-3" />
-                                  </button>
-                                  <Can permission="stores.delete_subdepartment">
+                                <Can permission="stores.delete_subdepartment">
+                                  <div className="flex items-center gap-1">
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEdit(sub, 'sub-departments')}
+                                      className="p-1 hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded cursor-pointer"
+                                      title="Edit Sub Dept"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => handleDelete(sub.sub_department_id, 'sub-departments')}
@@ -990,8 +991,8 @@ export const MaintenanceView: React.FC = () => {
                                     >
                                       <Trash2 className="w-3 h-3" />
                                     </button>
-                                  </Can>
-                                </div>
+                                  </div>
+                                </Can>
                               </div>
 
                               <div className="w-full flex items-center justify-between pt-1.5 text-[10px]">

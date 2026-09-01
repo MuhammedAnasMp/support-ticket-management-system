@@ -21,7 +21,22 @@ class StoreViewSet(viewsets.ModelViewSet):
             return Store.objects.none()
 
         role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        if user.is_superuser or role_name in ('management', 'management team'):
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+
+        query_params = getattr(self.request, 'query_params', getattr(self.request, 'GET', {}))
+        all_param = str(query_params.get('all', '')).lower() in ('true', '1')
+
+        is_admin_or_office = (
+            user.is_superuser or
+            any(r in role_name for r in ['office', 'admin', 'management']) or
+            any('office' in g or 'admin' in g or 'management' in g for g in user_groups_lower) or
+            user.has_perm('accounts.change_customuser') or
+            user.has_perm('accounts.add_customuser') or
+            user.has_perm('stores.add_store') or
+            all_param
+        )
+
+        if is_admin_or_office:
             return Store.objects.all().select_related('area', 'manager').order_by('store_name')
 
         accessible_store_ids = list(

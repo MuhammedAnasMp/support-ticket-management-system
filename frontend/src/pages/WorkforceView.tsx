@@ -614,7 +614,7 @@ export const WorkforceView: React.FC = () => {
         const [resUsers, resRoles, resStores, resSubDepts, resSkills, resAreas, resDepts] = await Promise.all([
           fetch(`${API_URL}/accounts/customuser/`, { headers }),
           fetch(`${API_URL}/accounts/role/`, { headers }),
-          fetch(`${API_URL}/stores/store/`, { headers }),
+          fetch(`${API_URL}/stores/store/?all=true`, { headers }),
           fetch(`${API_URL}/stores/subdepartment/`, { headers }),
           fetch(`${API_URL}/maintenance/worknature/`, { headers }),
           fetch(`${API_URL}/stores/area/`, { headers }),
