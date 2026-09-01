@@ -993,7 +993,7 @@ export const TicketsView: React.FC = () => {
                                     ]}
                                 />
                             </div>
-                            {canCreateAllDepts && (
+                            <Can permission='maintenance.create_ticket_all_departments'>
                                 <div className="min-w-[120px] max-w-[150px]">
                                     <SearchableSelect
                                         value={filterDept}
@@ -1005,7 +1005,7 @@ export const TicketsView: React.FC = () => {
                                         ]}
                                     />
                                 </div>
-                            )}
+                            </Can>
                             {!canCreateAllDepts && availableDepartments.length > 1 && (
                                 <div className="min-w-[120px] max-w-[150px]">
                                     <SearchableSelect
