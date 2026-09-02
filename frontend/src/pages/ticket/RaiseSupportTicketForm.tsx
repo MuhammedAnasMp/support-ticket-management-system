@@ -1,12 +1,22 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCircle, Headphones, Camera, Video } from 'lucide-react';
-import { API_URL } from './TicketsTypesAndComponents';
+import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCircle, Headphones, Camera, Video, RotateCcw, RotateCw } from 'lucide-react';
+import { API_URL, RotatableVideoPlayer, rotateImageFile } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
 import { SearchableSelect } from '@/components/SearchableSelect';
 
 const inputCls = "w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors placeholder:text-on-surface-variant/60";
+
+interface CreateTicketAttachment {
+    id: string;
+    file: File;
+    rotation: number;
+    previewUrl: string;
+    isImg: boolean;
+    isVid: boolean;
+    isAudio: boolean;
+}
 
 interface CreateTicketModalProps {
     isOpen: boolean;
@@ -39,7 +49,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         title: '',
         description: ''
     });
-    const [createTicketFiles, setCreateTicketFiles] = useState<File[]>([]);
+    const [attachmentItems, setAttachmentItems] = useState<CreateTicketAttachment[]>([]);
+    const [pendingOrientationQueue, setPendingOrientationQueue] = useState<CreateTicketAttachment[] | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -62,7 +73,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         };
     }, [isOpen]);
 
-    // Re-sync/reset form when modal opens, availableDepartments changes, or stores changes
+    // Re-sync/reset form when modal opens
     React.useEffect(() => {
         if (isOpen) {
             setCreateForm({
@@ -72,38 +83,36 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                 title: '',
                 description: ''
             });
-            setCreateTicketFiles([]);
+            attachmentItems.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) {} });
+            setAttachmentItems([]);
             setErrorMessage(null);
         }
-    }, [isOpen, availableDepartments, stores]);
+    }, [isOpen, stores, availableDepartments]);
 
     const [localNatures, setLocalNatures] = useState<any[]>([]);
     const [loadingNatures, setLoadingNatures] = useState(false);
 
     // Fetch natures dynamically from API when department changes
     React.useEffect(() => {
-        if (!createForm.department_id || !token) {
+        if (!createForm.department_id) {
             setLocalNatures([]);
             return;
         }
         setLoadingNatures(true);
         fetch(`${API_URL}/maintenance/worknature/?department=${createForm.department_id}`, {
-            headers: { Authorization: `Token ${token}` }
+            headers: token ? { Authorization: `Token ${token}` } : {}
         })
-            .then(res => {
-                if (res.ok) return res.json();
-                throw new Error('Failed to load natures');
-            })
+            .then(res => res.json())
             .then(data => {
-                setLocalNatures(data);
+                if (Array.isArray(data)) setLocalNatures(data);
+                else if (data.results && Array.isArray(data.results)) setLocalNatures(data.results);
+                else setLocalNatures([]);
             })
             .catch(err => {
                 console.error(err);
                 setLocalNatures([]);
             })
-            .finally(() => {
-                setLoadingNatures(false);
-            });
+            .finally(() => setLoadingNatures(false));
     }, [createForm.department_id, token]);
 
     const filteredNatures = localNatures;
@@ -115,24 +124,55 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
 
     const isMediaRequired = selectedNature ? (selectedNature.media_required !== false) : false;
 
-    const filePreviews = useMemo(() => {
-        return createTicketFiles.map(file => {
+    const handleFileSelect = (files: FileList | File[]) => {
+        const newFiles = Array.from(files);
+        const queueItems: CreateTicketAttachment[] = newFiles.map((file, idx) => {
             const isImg = file.type.startsWith('image/');
             const isVid = file.type.startsWith('video/') && !file.name.endsWith('.webm');
             const isAudio = file.type.startsWith('audio/') || file.name.endsWith('.webm') || file.name.endsWith('.ogg') || file.name.endsWith('.wav');
-            const url = (isImg || isVid || isAudio) ? URL.createObjectURL(file) : null;
-            return { file, isImg, isVid, isAudio, url };
+            return {
+                id: `${file.name}-${Date.now()}-${idx}`,
+                file,
+                rotation: 0,
+                previewUrl: URL.createObjectURL(file),
+                isImg,
+                isVid,
+                isAudio
+            };
         });
-    }, [createTicketFiles]);
 
-    const handleFileSelect = (files: FileList | File[]) => {
-        const newFiles = Array.from(files);
-        setCreateTicketFiles(prev => [...prev, ...newFiles]);
+        const hasVisualMedia = queueItems.some(i => i.isImg || i.isVid);
+        if (hasVisualMedia) {
+            setPendingOrientationQueue(queueItems);
+        } else {
+            setAttachmentItems(prev => [...prev, ...queueItems]);
+        }
         setErrorMessage(null);
     };
 
+    const handleConfirmOrientationQueue = () => {
+        if (!pendingOrientationQueue) return;
+        setAttachmentItems(prev => [...prev, ...pendingOrientationQueue]);
+        setPendingOrientationQueue(null);
+    };
+
+    const handleCancelOrientationQueue = () => {
+        if (pendingOrientationQueue) {
+            pendingOrientationQueue.forEach(i => {
+                try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+            });
+        }
+        setPendingOrientationQueue(null);
+    };
+
     const handleRemoveFile = (index: number) => {
-        setCreateTicketFiles(prev => prev.filter((_, i) => i !== index));
+        setAttachmentItems(prev => {
+            const itemToRemove = prev[index];
+            if (itemToRemove?.previewUrl) {
+                try { URL.revokeObjectURL(itemToRemove.previewUrl); } catch (_) {}
+            }
+            return prev.filter((_, i) => i !== index);
+        });
     };
 
     const resetForm = () => {
@@ -143,7 +183,14 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             title: '',
             description: ''
         });
-        setCreateTicketFiles([]);
+        if (pendingOrientationQueue) {
+            pendingOrientationQueue.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) {} });
+            setPendingOrientationQueue(null);
+        }
+        attachmentItems.forEach(i => {
+            try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+        });
+        setAttachmentItems([]);
         setErrorMessage(null);
     };
 
@@ -155,7 +202,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (isMediaRequired && createTicketFiles.length < 1) {
+        if (isMediaRequired && attachmentItems.length < 1) {
             setErrorMessage('Please attach a minimum of 1 media files for the selected Work Nature.');
             return;
         }
@@ -206,8 +253,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             const createdTicket = await response.json();
 
             // Upload attached media files if present
-            if (createTicketFiles.length > 0 && createdTicket?.ticket_id) {
-                // Fetch categories to identify "Before Repair" category id
+            if (attachmentItems.length > 0 && createdTicket?.ticket_id) {
                 let categoryId: string | undefined = undefined;
                 try {
                     const catRes = await fetch(`${API_URL}/common/mediacategory/`, {
@@ -223,25 +269,29 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                             return !cDeptId || cDeptId === ticketDeptId;
                         }) || categories.find((c: any) => c.category_name.toLowerCase() === 'before repair');
 
-                        if (catObj) {
-                            categoryId = String(catObj.category_id);
-                        }
+                        if (catObj) categoryId = String(catObj.category_id);
                     }
                 } catch (catErr) {
                     console.error('Failed to load media categories:', catErr);
                 }
 
-                for (const file of createTicketFiles) {
+                for (const item of attachmentItems) {
+                    let fileToUpload = item.file;
+                    let rotToSave = item.rotation;
+
+                    if (item.rotation % 360 !== 0 && item.isImg) {
+                        fileToUpload = await rotateImageFile(item.file, item.rotation);
+                        rotToSave = 0;
+                    }
+
                     const formData = new FormData();
                     formData.append('ticket', String(createdTicket.ticket_id));
-                    formData.append('file_url', file);
-                    formData.append('file_name', file.name);
-                    if (categoryId) {
-                        formData.append('category', categoryId);
-                    }
-                    if (user?.user_id) {
-                        formData.append('uploaded_by', String(user.user_id));
-                    }
+                    formData.append('file_url', fileToUpload);
+                    formData.append('file_name', fileToUpload.name);
+                    if (categoryId) formData.append('category', categoryId);
+                    if (user?.user_id) formData.append('uploaded_by', String(user.user_id));
+                    if (rotToSave % 360 !== 0) formData.append('rotation', rotToSave.toString());
+
                     try {
                         await fetch(`${API_URL}/common/media/`, {
                             method: 'POST',
@@ -249,7 +299,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                             body: formData
                         });
                     } catch (mediaErr) {
-                        console.error('Failed to upload file:', file.name, mediaErr);
+                        console.error('Failed to upload file:', item.file.name, mediaErr);
                     }
                 }
             }
@@ -415,7 +465,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                             Attach Media  {isMediaRequired && <span className="text-error">* (Min 1 required)</span>}
                                         </label>
                                         <span className="text-[11px] text-on-surface-variant">
-                                            {createTicketFiles.length} file(s) attached
+                                            {attachmentItems.length} file(s) attached
                                         </span>
                                     </div>
 
@@ -524,51 +574,90 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                     <div className="mt-3">
                                         <VoiceRecorder
                                             onSave={(voiceFile) => {
-                                                setCreateTicketFiles(prev => [...prev, voiceFile]);
+                                                handleFileSelect([voiceFile]);
                                             }}
                                             onRecordingStateChange={setIsRecordingPending}
                                             placeholderText="Record a voice note explanation"
                                         />
                                     </div>
 
-                                    {/* Attached Files List */}
-                                    {filePreviews.length > 0 && (
-                                        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                            {filePreviews.map((item, idx) => (
+                                    {/* Attached Files List with Rotation Review */}
+                                    {attachmentItems.length > 0 && (
+                                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {attachmentItems.map((item, idx) => (
                                                 <div
-                                                    key={idx}
-                                                    className="relative group border border-outline-variant rounded p-1.5 bg-surface-container-low flex flex-col items-center justify-center text-center overflow-hidden min-h-[100px]"
+                                                    key={item.id}
+                                                    className="relative group border border-outline-variant rounded-lg p-2 bg-surface-container-low flex flex-col items-center justify-between text-center overflow-hidden min-h-[140px]"
                                                 >
-                                                    {item.url && item.isImg ? (
-                                                        <img src={item.url} alt="preview" className="w-full h-16 object-cover rounded mb-1" />
-                                                    ) : item.url && item.isAudio ? (
-                                                        <div className="w-full bg-surface-container flex flex-col items-center justify-center rounded mb-1 p-2 min-h-[64px]">
-                                                            <div className="flex items-center gap-1 mb-1 text-primary">
-                                                                <Headphones className="w-4 h-4 animate-pulse shrink-0" />
-                                                                <span className="text-[10px] font-bold">Voice Note</span>
+                                                    <div className="w-full h-28 bg-black/80 rounded flex items-center justify-center relative overflow-hidden p-1">
+                                                        {item.isImg ? (
+                                                            <img
+                                                                src={item.previewUrl}
+                                                                alt={item.file.name}
+                                                                style={{
+                                                                    transform: `rotate(${item.rotation}deg)`,
+                                                                    transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                                }}
+                                                                className="max-w-full max-h-full object-contain"
+                                                            />
+                                                        ) : item.isVid ? (
+                                                            <RotatableVideoPlayer
+                                                                src={item.previewUrl}
+                                                                rotation={item.rotation}
+                                                                className="w-full h-full"
+                                                            />
+                                                        ) : item.isAudio ? (
+                                                            <div className="w-full h-full flex flex-col items-center justify-center p-2 text-primary">
+                                                                <Headphones className="w-5 h-5 animate-pulse mb-1" />
+                                                                <audio src={item.previewUrl} controls className="w-full h-8" />
                                                             </div>
-                                                            <audio src={item.url} controls className="w-full h-8 rounded" />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-full h-16 bg-surface-container flex items-center justify-center rounded mb-1">
-                                                            {item.url && item.isVid ? (
-                                                                <video src={item.url} className="w-full h-full object-cover rounded" />
-                                                            ) : (
-                                                                <ImageIcon className="w-6 h-6 text-on-surface-variant" />
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    <span className="text-[10px] text-on-surface truncate w-full px-1" title={item.file.name}>
-                                                        {item.file.name}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={e => { e.stopPropagation(); handleRemoveFile(idx); }}
-                                                        className="absolute top-1 right-1 p-1 bg-error text-on-error rounded-full opacity-80 hover:opacity-100 transition-opacity"
-                                                        title="Remove file"
-                                                    >
-                                                        <Trash2 className="w-3 h-3" />
-                                                    </button>
+                                                        ) : (
+                                                            <div className="text-white text-xs font-semibold px-2 truncate">{item.file.name}</div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="w-full flex items-center justify-between pt-1 text-[10px]">
+                                                        <span className="font-medium text-on-surface truncate max-w-[120px]" title={item.file.name}>
+                                                            {item.file.name}
+                                                        </span>
+
+                                                        {(item.isImg || item.isVid) && (
+                                                            <div className="flex items-center gap-1 bg-surface-container-high px-1.5 py-0.5 rounded border border-outline-variant/60">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAttachmentItems(prev => prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation - 90 + 360) % 360 } : it));
+                                                                    }}
+                                                                    className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                                    title="Rotate 90° Left"
+                                                                >
+                                                                    <RotateCcw className="w-3 h-3" />
+                                                                </button>
+                                                                <span className="font-mono font-bold text-primary px-0.5">{item.rotation}°</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setAttachmentItems(prev => prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation + 90) % 360 } : it));
+                                                                    }}
+                                                                    className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                                    title="Rotate 90° Right"
+                                                                >
+                                                                    <RotateCw className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={e => { e.stopPropagation(); handleRemoveFile(idx); }}
+                                                            className="p-1 text-error hover:bg-error/10 rounded transition-colors"
+                                                            title="Remove file"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -609,12 +698,127 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                 )}
             </AnimatePresence>
 
+            {/* Review & Adjust Orientation Modal Popup */}
+            <AnimatePresence>
+                {pendingOrientationQueue && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.7 }}
+                            exit={{ opacity: 0 }}
+                            onClick={handleCancelOrientationQueue}
+                            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+                        />
+
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 12 }}
+                            className="relative bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant w-full max-w-xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden z-10 p-4 sm:p-5"
+                        >
+                            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/60">
+                                <div>
+                                    <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Review & Adjust Orientation</h3>
+                                    <p className="text-[11px] text-outline">Rotate image(s) or video(s) upright before attaching ({pendingOrientationQueue.length} selected)</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleCancelOrientationQueue}
+                                    className="p-1.5 rounded-full hover:bg-surface-container-high text-on-surface cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="py-4 overflow-y-auto max-h-[58vh] space-y-4 my-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {pendingOrientationQueue.map((item, idx) => (
+                                        <div key={item.id} className="bg-surface dark:bg-dark-surface p-3 rounded-xl border border-outline-variant dark:border-dark-outline-variant flex flex-col gap-2 relative">
+                                            <div className="w-full h-44 bg-black/80 rounded-lg overflow-hidden flex items-center justify-center relative p-1">
+                                                {item.isImg ? (
+                                                    <img
+                                                        src={item.previewUrl}
+                                                        alt={item.file.name}
+                                                        style={{
+                                                            transform: `rotate(${item.rotation}deg)`,
+                                                            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                        }}
+                                                        className="max-w-full max-h-full object-contain"
+                                                    />
+                                                ) : item.isVid ? (
+                                                    <RotatableVideoPlayer
+                                                        src={item.previewUrl}
+                                                        rotation={item.rotation}
+                                                        className="w-full h-full"
+                                                    />
+                                                ) : (
+                                                    <div className="text-white text-xs font-semibold">{item.file.name}</div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center justify-between pt-1">
+                                                <span className="text-[10px] font-medium text-on-surface truncate max-w-[140px]" title={item.file.name}>
+                                                    {item.file.name}
+                                                </span>
+
+                                                {(item.isImg || item.isVid) && (
+                                                    <div className="flex items-center gap-1 bg-surface-container-high px-2 py-1 rounded-lg border border-outline-variant/60">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPendingOrientationQueue(prev => prev ? prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation - 90 + 360) % 360 } : it) : null);
+                                                            }}
+                                                            className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                            title="Rotate 90° Left"
+                                                        >
+                                                            <RotateCcw className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <span className="text-[10px] font-mono font-bold text-primary px-1">{item.rotation}°</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPendingOrientationQueue(prev => prev ? prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation + 90) % 360 } : it) : null);
+                                                            }}
+                                                            className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                            title="Rotate 90° Right"
+                                                        >
+                                                            <RotateCw className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/60">
+                                <button
+                                    type="button"
+                                    onClick={handleCancelOrientationQueue}
+                                    className="px-4 py-2 rounded-xl border border-outline-variant text-xs font-medium text-on-surface hover:bg-surface-container-high cursor-pointer transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmOrientationQueue}
+                                    className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-medium hover:bg-primary-container cursor-pointer transition-colors"
+                                >
+                                    Attach Media
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
             <LiveCameraModal
                 isOpen={isCameraModalOpen}
                 initialMode={cameraModalMode}
                 onClose={() => setIsCameraModalOpen(false)}
                 onCapture={(capturedFile) => {
-                    setCreateTicketFiles(prev => [...prev, capturedFile]);
+                    handleFileSelect([capturedFile]);
                 }}
             />
         </>
