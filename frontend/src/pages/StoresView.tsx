@@ -416,6 +416,9 @@ export const StoresView: React.FC = () => {
     { value: 'FRESH', label: 'Fresh' },
     { value: 'COSTO', label: 'Costo' },
     { value: 'CAMP', label: 'Camp' },
+    { value: 'KITCHEN', label: 'Kitchen' },
+    { value: 'ROASTERY', label: 'Roastery' },
+    { value: 'FINE DINE', label: 'Fine Dine' },
   ];
 
   const [storeForm, setStoreForm] = useState({
