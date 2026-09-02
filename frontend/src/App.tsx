@@ -12,6 +12,8 @@ import type { RootState } from './store';
 import { setCredentials, clearCredentials } from './store/authSlice';
 import { enablePushNotifications } from './services/pushNotifications';
 
+import { LogoLoader } from './components/LogoLoader';
+
 // Page Views
 import { LoginView } from './pages/LoginView';
 import { SignupView } from './pages/SignupView';
@@ -114,16 +116,7 @@ const App: React.FC = () => {
   }, [token]);
 
   if (refetching) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-dark-surface">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium text-on-surface-variant dark:text-dark-on-surface-variant">
-            Loading profile...
-          </span>
-        </div>
-      </div>
-    );
+    return <LogoLoader fullScreen label="Loading profile..." />;
   }
 
   return (
