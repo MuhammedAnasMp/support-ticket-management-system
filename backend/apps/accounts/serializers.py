@@ -397,4 +397,11 @@ class CustomUserSerializer(serializers.ModelSerializer):
         else:
             representation['managed_store'] = None
 
+        # Count active tickets in 'In Progress' state for this worker
+        from apps.maintenance.models import Allocation
+        representation['in_progress_count'] = Allocation.objects.filter(
+            worker=instance,
+            ticket__status__status_name__iexact='in progress'
+        ).count()
+
         return representation

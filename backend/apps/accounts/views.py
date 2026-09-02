@@ -57,6 +57,13 @@ class CustomUserViewSet(viewsets.ModelViewSet):
                 ticket_to_date = f"{ticket_to_date} 23:59:59"
             qs = qs.filter(allocations__ticket__created_date__lte=ticket_to_date)
 
+        active_param = self.request.query_params.get('active')
+        if active_param is not None:
+            if active_param.lower() in ('true', '1'):
+                qs = qs.filter(active=True)
+            elif active_param.lower() in ('false', '0'):
+                qs = qs.filter(active=False)
+
         return qs.distinct()
 
 

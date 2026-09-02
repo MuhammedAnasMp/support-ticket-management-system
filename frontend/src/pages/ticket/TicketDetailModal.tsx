@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -250,6 +250,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     // Form states
     const [newAllocation, setNewAllocation] = useState({ worker_id: '', planned_hours: '4.0', remarks: '' });
     const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+    const [workerSearchQuery, setWorkerSearchQuery] = useState('');
     const [assignmentVoiceFile, setAssignmentVoiceFile] = useState<File | null>(null);
     const [isAssignRecordingPending, setIsAssignRecordingPending] = useState(false);
     const [hourlyRateToCreate, setHourlyRateToCreate] = useState('');
@@ -1756,7 +1757,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                 )}
                                                                 {a.voice_note && (
                                                                     <div className="w-full flex flex-col gap-0.5 box-border">
-                                                                        <span className="text-[9px] sm:text-[10px] font-bold text-primary flex items-center gap-1">
+                                                                        <span className="text-[px] sm:text-[12px] font-bold text-primary flex items-center gap-1">
                                                                             <Headphones className="w-3 h-3 shrink-0 text-primary" />
                                                                             <span>Instruction for {a.worker.full_name}:</span>
                                                                         </span>
@@ -2594,9 +2595,30 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <button
                                                     type="button"
                                                     onClick={() => setSelectedWorkerIds([])}
-                                                    className="text-[10px] text-error hover:underline cursor-pointer font-semibold"
+                                                    className="text-[13px] text-error hover:underline cursor-pointer font-semibold"
                                                 >
-                                                    Clear selection
+                                                    Clear
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Search Input Box */}
+                                        <div className="relative mb-2.5">
+                                            <input
+                                                type="text"
+                                                value={workerSearchQuery}
+                                                onChange={e => setWorkerSearchQuery(e.target.value)}
+                                                placeholder="Search workers by name or ID..."
+                                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant/80 rounded-lg pl-8 pr-7 py-2 text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary"
+                                            />
+                                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-outline" />
+                                            {workerSearchQuery && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setWorkerSearchQuery('')}
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-outline hover:text-on-surface rounded-full cursor-pointer"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
                                         </div>
@@ -2606,23 +2628,42 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             const allocatedIds = new Set(allocations.map(a => a.worker.user_id));
 
                                             const skilledList = natureWorkers
-                                                .filter((nw: any) => nw.worker && !allocatedIds.has(nw.worker.user_id))
+                                                .filter((nw: any) => nw.worker && nw.worker.active !== false && nw.worker.is_active !== false && !allocatedIds.has(nw.worker.user_id))
                                                 .map((nw: any) => {
                                                     const fullW = workers.find(w => Number(w.user_id) === Number(nw.worker.user_id));
                                                     return fullW ? { ...nw.worker, ...fullW } : nw.worker;
-                                                });
+                                                })
+                                                .filter((w: any) => w.active !== false && w.is_active !== false);
+
                                             const skilledMap = new Map(skilledList.map((w: any) => [w.user_id, w]));
                                             const uniqueSkilledList = Array.from(skilledMap.values());
                                             const skilledIds = new Set(uniqueSkilledList.map((w: any) => w.user_id));
 
                                             const otherInDeptList = workers.filter(w => {
+                                                if (w.active === false || w.is_active === false) return false;
                                                 if (skilledIds.has(w.user_id) || allocatedIds.has(w.user_id)) return false;
                                                 return isWorkerInDepartment(w, ticketDeptId);
                                             });
 
+                                            // Search Filter Query
+                                            const q = workerSearchQuery.trim().toLowerCase();
+                                            const filterBySearch = (list: any[]) => {
+                                                if (!q) return list;
+                                                return list.filter((w: any) => {
+                                                    const nameMatch = w.full_name ? String(w.full_name).toLowerCase().includes(q) : false;
+                                                    const empNoMatch = w.employee_no ? String(w.employee_no).toLowerCase().includes(q) : false;
+                                                    const phoneMatch = w.phone ? String(w.phone).toLowerCase().includes(q) : false;
+                                                    return nameMatch || empNoMatch || phoneMatch;
+                                                });
+                                            };
+
+                                            const finalSkilledList = filterBySearch(uniqueSkilledList);
+                                            const finalOtherInDeptList = filterBySearch(otherInDeptList);
+
                                             const renderWorkerRow = (w: any, isSkilled: boolean) => {
                                                 const idStr = String(w.user_id);
                                                 const isSelected = selectedWorkerIds.includes(idStr);
+                                                const inProgressCount = w.in_progress_count !== undefined && w.in_progress_count !== null ? Number(w.in_progress_count) : 0;
                                                 return (
                                                     <div
                                                         key={w.user_id}
@@ -2651,37 +2692,40 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             </div>
                                                             {w.employee_no && <p className="text-[10px] text-outline truncate">ID: {w.employee_no}</p>}
                                                         </div>
+                                                        <span className={`text-[12px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-auto flex items-center gap-1 border ${inProgressCount > 0 ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' : 'bg-surface-container-high text-outline border-outline-variant/40'}`}>
+                                                            {inProgressCount}
+                                                        </span>
                                                     </div>
                                                 );
                                             };
 
-                                            if (uniqueSkilledList.length === 0 && otherInDeptList.length === 0) {
+                                            if (finalSkilledList.length === 0 && finalOtherInDeptList.length === 0) {
                                                 return (
                                                     <p className="text-xs text-outline italic p-3 border border-dashed rounded-lg text-center">
-                                                        No available unallocated workers found for this department.
+                                                        {q ? `No workers found matching "${q}"` : 'No available unallocated workers found for this department.'}
                                                     </p>
                                                 );
                                             }
 
                                             return (
                                                 <div className="max-h-52 overflow-y-auto space-y-3 pr-1 border border-outline-variant/60 rounded-lg p-2 bg-surface-container-low dark:bg-dark-surface-container-low">
-                                                    {uniqueSkilledList.length > 0 && (
+                                                    {finalSkilledList.length > 0 && (
                                                         <div>
                                                             <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1.5 px-1">
                                                                 ⭐ Skilled — {selectedTicket.nature?.nature_name || 'Nature'}
                                                             </p>
                                                             <div className="space-y-1.5">
-                                                                {uniqueSkilledList.map((w: any) => renderWorkerRow(w, true))}
+                                                                {finalSkilledList.map((w: any) => renderWorkerRow(w, true))}
                                                             </div>
                                                         </div>
                                                     )}
-                                                    {otherInDeptList.length > 0 && (
+                                                    {finalOtherInDeptList.length > 0 && (
                                                         <div>
                                                             <p className="text-[10px] font-bold text-outline uppercase tracking-wider mb-1.5 px-1">
                                                                 Other Workers in Department
                                                             </p>
                                                             <div className="space-y-1.5">
-                                                                {otherInDeptList.map((w: any) => renderWorkerRow(w, false))}
+                                                                {finalOtherInDeptList.map((w: any) => renderWorkerRow(w, false))}
                                                             </div>
                                                         </div>
                                                     )}

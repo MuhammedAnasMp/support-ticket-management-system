@@ -116,7 +116,7 @@ class NatureWorkerViewSet(viewsets.ModelViewSet):
         nature = self.request.query_params.get('nature')
         if nature:
             queryset = queryset.filter(nature_id=nature)
-        return queryset
+        return queryset.filter(worker__active=True)
 
 
 class TicketViewSet(viewsets.ModelViewSet):
