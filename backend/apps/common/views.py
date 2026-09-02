@@ -316,8 +316,8 @@ def watermark_media_instance(media, extra_angle=0):
     if not location:
         location = "Maintenance"
 
-    ticket_no = f"TK: {media.ticket.ticket_id}" if (
-        media.ticket and media.ticket.ticket_id) else ""
+    ticket_no = f"WO: {media.ticket.work_order_no}" if (
+        media.ticket and media.ticket.work_order_no) else ""
 
     ext = os.path.splitext(file_path)[1].lower()
     if ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v']:
@@ -375,8 +375,7 @@ class MediaViewSet(viewsets.ModelViewSet):
             if os.path.exists(file_path):
                 ext = os.path.splitext(file_path)[1].lower()
                 if ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v']:
-                    # Stamp proof text and physically rotate video frames upright in a single pipeline
-                    watermark_media_instance(media, extra_angle=angle)
+                    rotate_video_file(file_path, angle)
                     media.rotation = 0
                 else:
                     try:
@@ -396,11 +395,8 @@ class MediaViewSet(viewsets.ModelViewSet):
                         current_rot = getattr(media, 'rotation', 0) or 0
                         media.rotation = (current_rot + angle) % 360
 
-                    try:
-                        watermark_media_instance(media)
-                    except Exception as w_err:
-                        print("Failed to watermark media after rotation:", w_err)
-
+        from django.utils import timezone
+        media.uploaded_date = timezone.now()
         media.save()
         return Response(MediaSerializer(media).data)
 

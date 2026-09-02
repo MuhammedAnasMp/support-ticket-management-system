@@ -81,7 +81,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 { priority_id: 3, priority_name: 'High', level: 3 },
                 { priority_id: 4, priority_name: 'Urgent', level: 4 }
             ];
-            return defaults.filter((v, i, a) => a.findIndex(t => t.priority_name === v.priority_name) === i);
+            return defaults.filter((v, i, a) => a.findIndex(t => t.priority_id === v.priority_id || (t.priority_name && v.priority_name && t.priority_name.toLowerCase() === v.priority_name.toLowerCase())) === i);
         }
         return [
             { priority_id: 1, priority_name: 'Low', level: 1 },
@@ -1388,8 +1388,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                         className={`appearance-none font-bold text-[11px] pl-2.5 pr-6 py-0.5 rounded border shadow-2xs outline-none cursor-pointer transition-colors ${badgeColorClass}`}
                                                                         title="Click to change ticket priority"
                                                                     >
-                                                                        {departmentPriorities.map(p => (
-                                                                            <option key={p.priority_id} value={p.priority_id} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-sans text-xs font-semibold py-1">
+                                                                        {departmentPriorities.map((p, idx) => (
+                                                                            <option key={`priority-opt-${p.priority_id || idx}-${p.priority_name}`} value={p.priority_id} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-sans text-xs font-semibold py-1">
                                                                                 {p.priority_name} Priority
                                                                             </option>
                                                                         ))}
@@ -1572,7 +1572,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     ) : null
                                                 )}
                                             </div>
-                                            <MediaGrid items={issueMedia} emptyLabel="No Before Repair media uploaded yet" />
+                                            <MediaGrid
+                                                items={issueMedia}
+                                                emptyLabel="No Before Repair media uploaded yet"
+                                                onDelete={(ticketDetails.status.status_name === 'Rejected' || user?.user_id === ticketDetails.created_by?.user_id || hasPermission('maintenance.update_before_repair')) ? handleDeleteMedia : undefined}
+                                                token={token}
+                                                onRefreshTicket={refreshTicketData}
+                                            />
                                         </div>
                                         <Divider />
                                     </>
@@ -1955,7 +1961,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 </button>
                                             </Can>
                                         </div>
-                                        <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" />
+                                        <MediaGrid
+                                            items={completedMedia}
+                                            emptyLabel="No completion media uploaded yet"
+                                            onDelete={(hasPermission('maintenance.update_after_repair') || user?.is_superuser) ? handleDeleteMedia : undefined}
+                                            token={token}
+                                            onRefreshTicket={refreshTicketData}
+                                        />
                                     </div>
                                 )}
                             </>

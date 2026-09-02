@@ -375,11 +375,17 @@ export const TicketsView: React.FC = () => {
                 fetch(`${API_URL}/finance/expensetype/`, { headers }),
                 fetch(`${API_URL}/maintenance/priority/`, { headers }),
             ]);
-            if (resStores.ok) setStores(await resStores.json());
+            if (resStores.ok) {
+                const sData = await resStores.json();
+                setStores(Array.isArray(sData) ? sData.filter((s: any) => s.active !== false) : sData);
+            }
             if (resDepts.ok) setDepartments(await resDepts.json());
             if (resSubDepts.ok) setSubDepartments(await resSubDepts.json());
             if (resStat.ok) setStatuses(await resStat.json());
-            if (resNat.ok) setNatures(await resNat.json());
+            if (resNat.ok) {
+                const nData = await resNat.json();
+                setNatures(Array.isArray(nData) ? nData.filter((n: any) => n.active !== false) : nData);
+            }
             if (resPrio.ok) setPriorities(await resPrio.json());
             if (resExp.ok) setExpenseTypes(await resExp.json());
         } catch (err) {
@@ -435,6 +441,7 @@ export const TicketsView: React.FC = () => {
             if (resWork.ok) {
                 const uList = await resWork.json();
                 setWorkers(uList.filter((u: any) => {
+                    const isActive = u.active !== false && u.is_active !== false;
                     const roleName = u.role?.role_name?.toLowerCase() ?? '';
                     const isTechnicianRole = roleName === 'technician' || roleName === 'worker' || roleName.includes('admin') || roleName.includes('administrator');
                     const hasTechnicalSubDept = Array.isArray(u.sub_departments) && u.sub_departments.some((sd: any) => {
@@ -442,7 +449,7 @@ export const TicketsView: React.FC = () => {
                         return name !== '';
                     });
                     const hasSkills = Array.isArray(u.skilled_natures) && u.skilled_natures.length > 0;
-                    return isTechnicianRole || hasTechnicalSubDept || hasSkills;
+                    return isActive && (isTechnicianRole || hasTechnicalSubDept || hasSkills);
                 }));
             }
         } catch (err) {
@@ -777,12 +784,12 @@ export const TicketsView: React.FC = () => {
                 headerName: 'Created',
                 valueGetter: params => {
                     if (!params.data?.created_date) return '';
-                    return new Date(params.data.created_date).toLocaleDateString('en-US', {
-                        year: 'numeric', month: 'short', day: 'numeric'
+                    return new Date(params.data.created_date).toLocaleString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
                     });
                 },
-                width: 120,
-                minWidth: 100,
+                width: 160,
+                minWidth: 140,
                 hide: isMobile,
             },
             {
@@ -1530,7 +1537,7 @@ export const TicketsView: React.FC = () => {
                                                                                     </div>
                                                                                     <div className="flex flex-col min-w-0 leading-tight">
                                                                                         <span className="font-semibold text-on-surface truncate max-w-[90px]">{ticket.created_by?.full_name?.split(' ')[0] || 'System'}</span>
-                                                                                        <span className="text-[9px] text-outline mt-0.5">{new Date(ticket.created_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                                                                        <span className="text-[9px] text-outline mt-0.5">{new Date(ticket.created_date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
                                                                                     </div>
                                                                                 </div>
 

@@ -325,6 +325,9 @@ class Ticket(models.Model):
                             raise ValidationError(rule.message)
 
     def save(self, *args, **kwargs):
+        if not self.work_order_no:
+            from .utils import generate_work_order_no
+            self.work_order_no = generate_work_order_no(self.store)
         if self.pk:
             old_instance = Ticket.objects.get(pk=self.pk)
             if old_instance.status != self.status:

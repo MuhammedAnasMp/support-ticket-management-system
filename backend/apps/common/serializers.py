@@ -11,10 +11,21 @@ class MediaCategorySerializer(serializers.ModelSerializer):
 
 
 class MediaSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Media
         fields = "__all__"
         depth = 1
+
+    def get_file_url(self, obj):
+        if not obj.file_url:
+            return ""
+        url = obj.file_url.url
+        if obj.uploaded_date:
+            ts = int(obj.uploaded_date.timestamp())
+            return f"{url}?v={ts}"
+        return url
 
 class MediaWriteSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.PrimaryKeyRelatedField(

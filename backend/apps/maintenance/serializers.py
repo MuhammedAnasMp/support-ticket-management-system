@@ -185,8 +185,8 @@ class TicketWriteSerializer(serializers.ModelSerializer):
                 status = s_obj
 
         if not data.get('work_order_no'):
-            import uuid, time
-            data['work_order_no'] = f"WO-{int(time.time())}-{uuid.uuid4().hex[:4].upper()}"
+            from .utils import generate_work_order_no
+            data['work_order_no'] = generate_work_order_no(data.get('store'))
 
         if priority and department and priority.department != department:
             from .models import Priority

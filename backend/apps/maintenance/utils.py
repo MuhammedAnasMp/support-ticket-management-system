@@ -252,3 +252,57 @@ def change_status(obj, new_status, changed_by=None, remarks=None):
             obj.save()
         finally:
             obj._bypass_status_rule = False
+
+
+def generate_work_order_no(store=None):
+    """
+    Generates a unique work order number for a ticket.
+    If store has a short_code:
+        Format: [short_code]-[DDMMYY]-[hhmmA/P] (e.g. WHD-250623-1026A)
+        If repeating:
+            Add seconds: [short_code]-[DDMMYY]-[hhmmssA/P] (e.g. WHD-250623-102645A)
+            If still colliding: append suffix (-1, -2, etc.) to guarantee uniqueness.
+    Else (no short_code):
+        Fall back to: WO-{timestamp}-{uuid}
+    """
+    import uuid
+    import time
+    from datetime import datetime
+    from django.utils import timezone
+
+    store_obj = store
+    if isinstance(store, (int, str)):
+        from apps.stores.models import Store
+        store_obj = Store.objects.filter(pk=store).first()
+
+    if store_obj and getattr(store_obj, 'short_code', None) and str(store_obj.short_code).strip():
+        short_code = str(store_obj.short_code).strip().upper()
+        now = timezone.localtime(timezone.now()) if timezone.is_aware(timezone.now()) else datetime.now()
+
+        date_str = now.strftime("%d%m%y")
+        am_pm = now.strftime("%p")[0].upper()  # 'A' for AM, 'P' for PM
+        time_no_sec = f"{now.strftime('%I%M')}{am_pm}"  # hhmmA/P, e.g. 1026A
+
+        candidate = f"{short_code}-{date_str}-{time_no_sec}"
+
+        from apps.maintenance.models import Ticket
+        if not Ticket.objects.filter(work_order_no=candidate).exists():
+            return candidate
+
+        # If work order number is repeating, add seconds
+        time_with_sec = f"{now.strftime('%I%M%S')}{am_pm}"  # hhmmssA/P, e.g. 102645A
+        candidate_sec = f"{short_code}-{date_str}-{time_with_sec}"
+
+        if not Ticket.objects.filter(work_order_no=candidate_sec).exists():
+            return candidate_sec
+
+        # If still repeating (same second collision), append suffix
+        counter = 1
+        while True:
+            candidate_suffix = f"{short_code}-{date_str}-{time_with_sec}-{counter}"
+            if not Ticket.objects.filter(work_order_no=candidate_suffix).exists():
+                return candidate_suffix
+            counter += 1
+
+    return f"WO-{int(time.time())}-{uuid.uuid4().hex[:4].upper()}"
+
