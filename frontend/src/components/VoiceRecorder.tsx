@@ -494,7 +494,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     };
 
     return (
-        <div className="bg-surface-container border border-outline-variant rounded p-3 w-full flex flex-col gap-2.5">
+        <div className="bg-surface-container border border-outline-variant rounded p-1 w-full flex flex-col gap-2.5">
             <div className="flex items-center gap-3 w-full min-h-[40px]">
 
                 {/* State 1: Active Recording Visualizer Graph Diagram */}

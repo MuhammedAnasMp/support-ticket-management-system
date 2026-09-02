@@ -130,29 +130,29 @@ else:
     print("<DEV>")
     print("<DEV>")
 
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-
     # DATABASES = {
-    #     "default": {
-    #         "ENGINE": "django.db.backends.postgresql",
-    #         "NAME": os.environ["DB_NAME"],
-    #         "USER": os.environ["DB_USER"],
-    #         "PASSWORD": os.environ["DB_PASSWORD"],
-    #         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-    #         "PORT": os.getenv("DB_PORT", "5432"),
-
-    #         "CONN_MAX_AGE": 60,
-
-    #         "OPTIONS": {
-    #             "connect_timeout": 10,
-    #         },
+    #     'default': {
+    #         'ENGINE': 'django.db.backends.sqlite3',
+    #         'NAME': BASE_DIR / 'db.sqlite3',
     #     }
     # }
+
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ["DB_NAME"],
+            "USER": os.environ["DB_USER"],
+            "PASSWORD": os.environ["DB_PASSWORD"],
+            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+
+            "CONN_MAX_AGE": 60,
+
+            "OPTIONS": {
+                "connect_timeout": 10,
+            },
+        }
+    }
 
 
 # Password validation
@@ -217,7 +217,8 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 
 env_cors = os.getenv('CORS_ALLOWED_ORIGINS')
 if env_cors:
-    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in env_cors.split(',') if origin.strip()]
+    CORS_ALLOWED_ORIGINS = [origin.strip()
+                            for origin in env_cors.split(',') if origin.strip()]
 
 if DEBUG:
     CSRF_TRUSTED_ORIGINS = [
@@ -237,7 +238,8 @@ else:
     ]
     env_csrf = os.getenv('CSRF_TRUSTED_ORIGINS')
     if env_csrf:
-        CSRF_TRUSTED_ORIGINS += [origin.strip() for origin in env_csrf.split(',') if origin.strip()]
+        CSRF_TRUSTED_ORIGINS += [origin.strip()
+                                 for origin in env_csrf.split(',') if origin.strip()]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

@@ -127,6 +127,16 @@ class CustomUser(AbstractUser):
             ("can_edit_half_manager_details", "Can edit half manager details"),
         ]
 
+    def clean(self):
+        super().clean()
+        if self.employee_no == "" or (isinstance(self.employee_no, str) and not self.employee_no.strip()):
+            self.employee_no = None
+
+    def save(self, *args, **kwargs):
+        if self.employee_no == "" or (isinstance(self.employee_no, str) and not self.employee_no.strip()):
+            self.employee_no = None
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.full_name if self.full_name else self.username
 

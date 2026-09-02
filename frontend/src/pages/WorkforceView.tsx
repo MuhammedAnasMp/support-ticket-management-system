@@ -892,8 +892,23 @@ export const WorkforceView: React.FC = () => {
         }
         fetchData();
       } else {
-        const errorRes = await response.json();
-        setErrorMsg(Object.values(errorRes).flat().join(', ') || 'Failed to save employee.');
+        const errorRes = await response.json().catch(() => null);
+        if (typeof errorRes === 'object' && errorRes !== null) {
+          if (errorRes.detail) {
+            setErrorMsg(String(errorRes.detail));
+          } else {
+            const formatted = Object.entries(errorRes)
+              .map(([key, val]) => {
+                const fieldName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const msg = Array.isArray(val) ? val.join(' ') : String(val);
+                return `${fieldName}: ${msg}`;
+              })
+              .join(' | ');
+            setErrorMsg(formatted || 'Failed to save employee.');
+          }
+        } else {
+          setErrorMsg('Failed to save employee.');
+        }
       }
     } catch (err) {
       setErrorMsg('Network error.');

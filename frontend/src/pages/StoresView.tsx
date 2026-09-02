@@ -765,8 +765,23 @@ export const StoresView: React.FC = () => {
         setShowModal(false);
         fetchData();
       } else {
-        const errorRes = await response.json();
-        setErrorMsg(Object.values(errorRes).flat().join(', ') || 'Failed to save changes.');
+        const errorRes = await response.json().catch(() => null);
+        if (typeof errorRes === 'object' && errorRes !== null) {
+          if (errorRes.detail) {
+            setErrorMsg(String(errorRes.detail));
+          } else {
+            const formatted = Object.entries(errorRes)
+              .map(([key, val]) => {
+                const fieldName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const msg = Array.isArray(val) ? val.join(' ') : String(val);
+                return `${fieldName}: ${msg}`;
+              })
+              .join(' | ');
+            setErrorMsg(formatted || 'Failed to save changes.');
+          }
+        } else {
+          setErrorMsg('Failed to save changes.');
+        }
       }
     } catch (err) {
       setErrorMsg('Network error.');

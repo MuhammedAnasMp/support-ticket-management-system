@@ -89,6 +89,39 @@ class ManagerSerializer(serializers.ModelSerializer):
         ).data
         return representation
 
+    def validate(self, attrs):
+        from apps.accounts.models import CustomUser
+        instance = getattr(self, 'instance', None)
+
+        emp_no = attrs.get('employee_no')
+        if emp_no and isinstance(emp_no, str) and emp_no.strip():
+            clean_emp_no = emp_no.strip()
+            qs = CustomUser.objects.filter(employee_no__iexact=clean_emp_no)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({'employee_no': 'A user with this Employee ID already exists.'})
+
+        username = attrs.get('username')
+        if username and isinstance(username, str) and username.strip():
+            clean_username = username.strip()
+            qs = CustomUser.objects.filter(username__iexact=clean_username)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({'username': 'A user with this username already exists.'})
+
+        email = attrs.get('email')
+        if email and isinstance(email, str) and email.strip():
+            clean_email = email.strip()
+            qs = CustomUser.objects.filter(email__iexact=clean_email)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({'email': 'A user with this email already exists.'})
+
+        return attrs
+
     def get_store(self, obj):
         store = getattr(obj, 'managed_store', None)
         if store:
@@ -168,7 +201,8 @@ class ManagerSerializer(serializers.ModelSerializer):
 
         if can_edit_full:
             if 'employee_no' in validated_data:
-                instance.employee_no = validated_data.get('employee_no')
+                emp_no = validated_data.get('employee_no')
+                instance.employee_no = emp_no.strip() if (emp_no and isinstance(emp_no, str) and emp_no.strip()) else None
             if 'username' in validated_data and validated_data.get('username'):
                 instance.username = validated_data.get('username')
             if password:

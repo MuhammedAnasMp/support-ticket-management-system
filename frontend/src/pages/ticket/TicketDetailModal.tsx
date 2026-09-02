@@ -1648,9 +1648,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 {ticketDetails.status.status_name.toLowerCase() !== 'rejected' && (
                                     <div>
                                         <SectionTitle icon={<User className="w-[18px] h-[18px]" />} label="Allocated" />
-                                        <div className="flex flex-col sm:flex-row sm:items-center  justify-start border-b border-outline-variant dark:border-dark-outline-variant pb-2.5 mb-3.5 gap-2.5">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant dark:border-dark-outline-variant pb-2.5 mb-3.5 gap-2.5">
                                             {allocations.length > 0 ? (
-                                                <div className="flex gap-2 overflow-x-auto pb-1 max-w-full scrollbar-thin">
+                                                <div className="flex gap-2 overflow-x-auto pb-1 flex-1 min-w-0 scrollbar-thin">
                                                     {[...allocations]
                                                         .sort((a, b) => {
                                                             const isA = (user as any)?.user_id === a.worker.user_id;
@@ -1667,7 +1667,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => setActiveWorkerId(a.worker.user_id)}
-                                                                        className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
+                                                                        className={`min-h-[15px] flex items-center gap-2 px-3 py-2 rounded text-xs font-semibold whitespace-nowrap border cursor-pointer active:scale-95 transition-all touch-manipulation ${a.worker.user_id === activeWorkerId ? 'bg-primary/10 border-primary text-primary' : 'bg-surface dark:bg-dark-surface border-outline-variant dark:border-dark-outline-variant text-outline'}`}
                                                                     >
                                                                         <AvatarCircle user={a.worker} size="sm" />
                                                                         <span>{(user as any)?.user_id === a.worker.user_id ? "You" : a.worker.full_name}</span>
@@ -1680,14 +1680,23 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <p className="text-xs text-outline italic">No personnel allocated to this ticket yet.</p>
                                             )}
 
-                                            <Can permission="maintenance.add_allocation">
-                                                <button
-                                                    onClick={() => setIsAssignModalOpen(true)}
-                                                    className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 bg-primary text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer shadow-xs shrink-0 hover:bg-primary-hover active:scale-95 transition-all touch-manipulation"
-                                                >
-                                                    <Plus className="w-4 h-4" /> Assign Worker
-                                                </button>
-                                            </Can>
+                                            {(() => {
+                                                const statusName = (ticketDetails.status?.status_name || '').toLowerCase();
+                                                const isAssignableStatus = ['open', 'approved', 'in progress'].includes(statusName);
+                                                if (!isAssignableStatus) return null;
+
+                                                return (
+                                                    <Can permission="maintenance.add_allocation">
+                                                        <button
+                                                            onClick={() => setIsAssignModalOpen(true)}
+                                                            // className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 bg-primary text-white text-xs font-semibold px-4 py-2 rounded cursor-pointer shadow-xs shrink-0 hover:bg-primary-hover active:scale-95 transition-all touch-manipulation ml-auto"
+                                                            className='min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 bg-primary text-white text-xs font-semibold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all'
+                                                        >
+                                                            <Plus className="w-4 h-4" /> Allocate
+                                                        </button>
+                                                    </Can>
+                                                );
+                                            })()}
                                         </div>
 
                                         {/* Selected Worker Panel */}
@@ -2554,10 +2563,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     isAssignModalOpen && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAssignModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
-                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg sm:max-w-xl lg:max-w-2xl max-h-[92vh] sm:max-h-[85vh] p-4 sm:p-6 rounded-t sm:rounded shadow-2xl overflow-y-auto flex flex-col">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Assign Worker</h3>
-                                    <button onClick={() => setIsAssignModalOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsAssignModalOpen(false)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 {/* <form onSubmit={handleAddAllocation} className="space-y-4">
                                 <div>
@@ -2708,7 +2717,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             }
 
                                             return (
-                                                <div className="max-h-52 overflow-y-auto space-y-3 pr-1 border border-outline-variant/60 rounded-lg p-2 bg-surface-container-low dark:bg-dark-surface-container-low">
+                                                <div className="max-h-80 sm:max-h-96 lg:max-h-[440px] overflow-y-auto space-y-3 pr-1 border border-outline-variant/60 rounded-xl p-3 bg-surface-container-low dark:bg-dark-surface-container-low shadow-inner">
                                                     {finalSkilledList.length > 0 && (
                                                         <div>
                                                             <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1.5 px-1">
@@ -2774,43 +2783,59 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     })()}
 
                                     <div className="grid grid-cols-1 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Planned Hours (Per Worker)</label>
-                                            <input
-                                                type="number"
-                                                step="0.5"
-                                                min="0.5"
-                                                required
-                                                value={newAllocation.planned_hours}
-                                                disabled={actionLoading}
-                                                onChange={e => setNewAllocation({ ...newAllocation, planned_hours: e.target.value })}
-                                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                                                placeholder="Planned hours"
-                                            />
-                                        </div>
+                                        <div className="grid grid-cols-[120px_1fr] gap-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-outline mb-1.5">
+                                                    Planned Hours
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    step="0.5"
+                                                    min="0.5"
+                                                    required
+                                                    value={newAllocation.planned_hours}
+                                                    disabled={actionLoading}
+                                                    onChange={e =>
+                                                        setNewAllocation({
+                                                            ...newAllocation,
+                                                            planned_hours: e.target.value
+                                                        })
+                                                    }
+                                                    className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                                                    placeholder="Hours"
+                                                />
+                                            </div>
 
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Assignment Remarks</label>
-                                            <input
-                                                type="text"
-                                                value={newAllocation.remarks}
-                                                disabled={actionLoading}
-                                                onChange={e => setNewAllocation({ ...newAllocation, remarks: e.target.value })}
-                                                className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                                                placeholder="Assignment instructions (optional)"
-                                            />
+                                            <div>
+                                                <label className="block text-xs font-semibold text-outline mb-1.5">
+                                                    Assignment Remarks
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={newAllocation.remarks}
+                                                    disabled={actionLoading}
+                                                    onChange={e =>
+                                                        setNewAllocation({
+                                                            ...newAllocation,
+                                                            remarks: e.target.value
+                                                        })
+                                                    }
+                                                    className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                                                    placeholder="Assignment instructions (optional)"
+                                                />
+                                            </div>
                                         </div>
 
                                         {/* Audio Recording Section */}
                                         <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">
+                                            {/* <label className="block text-xs font-semibold text-outline mb-1.5">
                                                 Voice Instructions (Optional)
-                                            </label>
+                                            </label> */}
                                             <VoiceRecorder
                                                 onSave={(file) => setAssignmentVoiceFile(file)}
                                                 onCancel={() => setAssignmentVoiceFile(null)}
                                                 onRecordingStateChange={setIsAssignRecordingPending}
-                                                placeholderText="Record audio instruction for assigned workers"
+                                                placeholderText="Record audio instruction (Optional)"
                                             />
                                             {assignmentVoiceFile && (
                                                 <div className="mt-2 flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
@@ -2831,7 +2856,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         </div>
                                     </div>
 
-                                    <div className="flex justify-end gap-2 pt-2">
+                                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/40 mt-2">
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -2839,17 +2864,23 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 setSelectedWorkerIds([]);
                                                 setAssignmentVoiceFile(null);
                                             }}
-                                            className="px-4 py-2 border border-outline-variant rounded-lg text-xs font-semibold hover:bg-surface-container-high transition-colors cursor-pointer"
+                                            className="px-5 py-2.5 border border-outline-variant/80 rounded-xl text-xs font-semibold hover:bg-surface-container-high active:scale-95 transition-all text-on-surface dark:text-dark-on-surface cursor-pointer shadow-2xs"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
                                             disabled={actionLoading || isAssignRecordingPending || selectedWorkerIds.length === 0}
-                                            className="px-4 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                            className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-primary/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                                         >
-                                            {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                            Assign {selectedWorkerIds.length > 1 ? `${selectedWorkerIds.length} Workers` : 'Worker'}
+                                            {actionLoading ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <UserPlus className="w-4 h-4" />
+                                            )}
+                                            <span>
+                                                Assign {selectedWorkerIds.length > 1 ? `${selectedWorkerIds.length} Workers` : 'Worker'}
+                                            </span>
                                         </button>
                                     </div>
                                 </form>
@@ -2863,10 +2894,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     isLogHoursModalOpen && activeWorkerId && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsLogHoursModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
-                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md sm:max-w-lg lg:max-w-xl max-h-[92vh] sm:max-h-[88vh] p-4 sm:p-6 rounded-t-xl sm:rounded-2xl shadow-2xl overflow-y-auto">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Log Work Hours</h3>
-                                    <button onClick={() => setIsLogHoursModalOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsLogHoursModalOpen(false)} className=" rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <p className="text-xs text-outline mb-4">
                                     Logging hours for:{' '}
@@ -2900,10 +2931,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     isAddExpenseModalOpen && activeWorkerId && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAddExpenseModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
-                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md sm:max-w-lg lg:max-w-xl max-h-[92vh] sm:max-h-[88vh] p-4 sm:p-6 rounded-t-xl sm:rounded-2xl shadow-2xl overflow-y-auto scrollbar-thin">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Add Expense</h3>
-                                    <button onClick={() => setIsAddExpenseModalOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsAddExpenseModalOpen(false)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <p className="text-xs text-outline mb-4">
                                     Adding expense for:{' '}
@@ -2997,7 +3028,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Allocation</h3>
-                                    <button onClick={() => setEditingAllocation(null)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setEditingAllocation(null)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <form onSubmit={handleUpdateAllocation} className="space-y-4">
                                     <div>
@@ -3096,7 +3127,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Work Log</h3>
-                                    <button onClick={() => setEditingWorkLog(null)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setEditingWorkLog(null)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <form onSubmit={handleUpdateWorkLog} className="space-y-4">
                                     <div>
@@ -3130,7 +3161,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Expense</h3>
-                                    <button onClick={() => setEditingExpense(null)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setEditingExpense(null)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <form onSubmit={handleUpdateExpense} className="space-y-4">
                                     <div>
@@ -3224,10 +3255,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     isManageIssueMediaOpen && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageIssueMediaOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
-                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-3 sm:p-3 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage Before Repair</h3>
-                                    <button onClick={() => setIsManageIssueMediaOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsManageIssueMediaOpen(false)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <div className="space-y-4">
                                     <MediaGrid items={issueMedia} emptyLabel="No Before Repair uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
@@ -3293,10 +3324,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     isManageCompletedMediaOpen && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageCompletedMediaOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
-                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
+                            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-3 sm:p-3 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage After Repair</h3>
-                                    <button onClick={() => setIsManageCompletedMediaOpen(false)} className="p-2 rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsManageCompletedMediaOpen(false)} className="rounded-lg text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <div className="space-y-4">
                                     <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
