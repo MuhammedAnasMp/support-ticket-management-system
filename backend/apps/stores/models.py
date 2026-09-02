@@ -29,6 +29,9 @@ class StoreType(models.TextChoices):
     FRESH = "FRESH", "Fresh"
     COSTO = "COSTO", "Costo"
     CAMP = "CAMP", "Camp"
+    KITCHEN = "KITCHEN", "Kitchen"
+    ROASTERY = "ROASTERY", "Roastery"
+    FINEDINE = "FINE DINE", "Fine Dine"
 
 
 class Store(models.Model):
@@ -75,6 +78,9 @@ class Store(models.Model):
             StoreType.CAMP: "CM",
             StoreType.WAREHOUSE: "WH",
             StoreType.COSTO: "CS",
+            StoreType.FINEDINE: "FB",
+            StoreType.ROASTERY: "RS",
+            StoreType.KITCHEN: "KT"
         }
         suffix = f" ({abbreviation_map[self.type]})" if self.type in abbreviation_map else ""
         return f"{self.store_name}{suffix}"

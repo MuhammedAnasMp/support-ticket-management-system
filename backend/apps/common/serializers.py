@@ -23,16 +23,15 @@ class MediaWriteSerializer(serializers.ModelSerializer):
     def validate(self, data):
         # Support both create and update
         ticket = data.get("ticket") or getattr(self.instance, "ticket", None)
-        category = data.get("category") or getattr(
-            self.instance, "category", None)
+        category = data.get("category") or getattr(self.instance, "category", None)
 
-        if ticket and category and category.department != ticket.department:
-            raise serializers.ValidationError({
-                "category": (
-                    f"Media Category '{category.category_name}' does not belong "
-                    f"to ticket department '{ticket.department.department_name}'."
-                )
-            })
+        if ticket and category and category.department_id != ticket.department_id:
+            matching_cat = MediaCategory.objects.filter(
+                department=ticket.department,
+                category_name__iexact=category.category_name
+            ).first()
+            if matching_cat:
+                data["category"] = matching_cat
 
         return data
 

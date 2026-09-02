@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.utils import timezone
 import os
+import shutil
 import hashlib
 import hmac
 from rest_framework.permissions import AllowAny
@@ -45,9 +46,266 @@ class MediaCategoryViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+from rest_framework.decorators import action
+
+def replace_or_copy(temp_path, target_path):
+    if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+        return False
+    try:
+        os.replace(temp_path, target_path)
+        return True
+    except (PermissionError, OSError):
+        pass
+
+    try:
+        shutil.copyfile(temp_path, target_path)
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+        return True
+    except Exception as err:
+        print("replace_or_copy error:", err)
+        return False
+
+
+def rotate_video_file(file_path, angle):
+    """
+    Rotates a video file using ffmpeg in Python.
+    """
+    if not os.path.exists(file_path):
+        return False
+
+    angle = angle % 360
+    if angle == 0:
+        return True
+
+    temp_path = file_path + ".tmp_rotated.mp4"
+    ffmpeg_cmd = "ffmpeg"
+    if os.path.exists(r"C:\ffmpeg\bin\ffmpeg.exe"):
+        ffmpeg_cmd = r"C:\ffmpeg\bin\ffmpeg.exe"
+
+    try:
+        cmd = [
+            ffmpeg_cmd, "-y", "-i", file_path,
+            "-c", "copy",
+            "-metadata:s:v:0", f"rotate={angle}",
+            temp_path
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            if replace_or_copy(temp_path, file_path):
+                return True
+    except Exception as e:
+        print("FFmpeg metadata video rotation error:", e)
+
+    try:
+        vf = "transpose=1"
+        if angle == 180:
+            vf = "transpose=1,transpose=1"
+        elif angle == 270:
+            vf = "transpose=2"
+
+        cmd = [
+            ffmpeg_cmd, "-y", "-i", file_path,
+            "-vf", vf,
+            "-c:a", "copy",
+            temp_path
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            if replace_or_copy(temp_path, file_path):
+                return True
+    except Exception as e:
+        print("FFmpeg transpose video rotation error:", e)
+
+    if os.path.exists(temp_path):
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+    return False
+
+
+def add_image_watermark(file_path, firstname, date_str, location):
+    """
+    Stamps proof text (First Name, Date/Time, Location) onto the bottom-right corner of an image file.
+    """
+    if not os.path.exists(file_path):
+        return False
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageOps
+        with Image.open(file_path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.convert('RGB')
+            W, H = img.size
+
+            font_size = max(11, int(min(W, H) * 0.022))
+            font_path = r"C:\Windows\Fonts\arial.ttf"
+            if not os.path.exists(font_path):
+                font_path = "arial.ttf"
+
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+            except Exception:
+                font = ImageFont.load_default()
+
+            lines = [
+                f"Uploaded by: {firstname}",
+                f"Date: {date_str}",
+                f"Location: {location}"
+            ]
+
+            draw = ImageDraw.Draw(img)
+            line_heights = []
+            line_widths = []
+            for line in lines:
+                bbox = draw.textbbox((0, 0), line, font=font)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+                line_widths.append(w)
+                line_heights.append(h + int(font_size * 0.2))
+
+            max_w = max(line_widths)
+            total_h = sum(line_heights)
+
+            padding = max(4, font_size // 3)
+            margin_right = max(6, W // 120)
+            margin_bottom = max(6, H // 120)
+
+            box_x2 = W - margin_right
+            box_y2 = H - margin_bottom
+            box_x1 = max(0, box_x2 - max_w - (padding * 2))
+            box_y1 = max(0, box_y2 - total_h - (padding * 2))
+
+            overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=(0, 0, 0, 160))
+
+            img = Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB')
+            draw = ImageDraw.Draw(img)
+
+            curr_y = box_y1 + padding
+            for i, line in enumerate(lines):
+                x = box_x1 + padding
+                draw.text((x + 1, curr_y + 1), line, font=font, fill=(0, 0, 0, 220))
+                draw.text((x, curr_y), line, font=font, fill=(255, 255, 255, 255))
+                curr_y += line_heights[i]
+
+            img.save(file_path, format='JPEG', quality=95)
+            return True
+    except Exception as e:
+        print("Image watermark error:", e)
+        return False
+
+
+def add_video_watermark(file_path, firstname, date_str, location):
+    """
+    Stamps proof text (First Name, Date/Time, Location) onto the bottom-right corner of a video file using FFmpeg.
+    """
+    if not os.path.exists(file_path):
+        return False
+
+    temp_path = file_path + ".tmp_watermarked.mp4"
+    ffmpeg_cmd = "ffmpeg"
+    if os.path.exists(r"C:\ffmpeg\bin\ffmpeg.exe"):
+        ffmpeg_cmd = r"C:\ffmpeg\bin\ffmpeg.exe"
+
+    font_path = r"C\:/Windows/Fonts/arial.ttf"
+    def clean_text(txt):
+        return str(txt).replace(":", "\\:").replace("'", "").replace('"', "")
+
+    line1 = clean_text(f"Uploaded by: {firstname}")
+    line2 = clean_text(f"Date: {date_str}")
+    line3 = clean_text(f"Location: {location}")
+
+    vf = (
+        f"drawtext=fontfile='{font_path}':text='{line1}':fontcolor=white:fontsize=12:"
+        f"box=1:boxcolor=black@0.65:boxborderw=3:x=w-tw-8:y=h-th-42,"
+        f"drawtext=fontfile='{font_path}':text='{line2}':fontcolor=white:fontsize=12:"
+        f"box=1:boxcolor=black@0.65:boxborderw=3:x=w-tw-8:y=h-th-25,"
+        f"drawtext=fontfile='{font_path}':text='{line3}':fontcolor=white:fontsize=12:"
+        f"box=1:boxcolor=black@0.65:boxborderw=3:x=w-tw-8:y=h-th-8"
+    )
+
+    try:
+        cmd = [
+            ffmpeg_cmd, "-y", "-i", file_path,
+            "-vf", vf,
+            "-c:a", "copy",
+            temp_path
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            # Fallback for silent / audio-less videos
+            cmd = [
+                ffmpeg_cmd, "-y", "-i", file_path,
+                "-vf", vf,
+                temp_path
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+
+        if res.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            if replace_or_copy(temp_path, file_path):
+                return True
+        else:
+            print("FFmpeg video watermark failed stderr:", res.stderr)
+    except Exception as e:
+        print("FFmpeg video watermark error:", e)
+
+    if os.path.exists(temp_path):
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+    return False
+
+
+def watermark_media_instance(media):
+    """
+    Helper to extract metadata and stamp proof text onto a Media file.
+    """
+    if not media or not media.file_url:
+        return False
+
+    file_path = media.file_url.path
+    if not os.path.exists(file_path):
+        return False
+
+    firstname = ""
+    if media.uploaded_by:
+        if media.uploaded_by.first_name and media.uploaded_by.first_name.strip():
+            firstname = media.uploaded_by.first_name.strip()
+        elif media.uploaded_by.full_name and media.uploaded_by.full_name.strip():
+            firstname = media.uploaded_by.full_name.strip().split()[0]
+        else:
+            firstname = media.uploaded_by.username
+    if not firstname:
+        firstname = "User"
+
+    dt = media.uploaded_date or timezone.now()
+    if timezone.is_aware(dt):
+        dt = timezone.localtime(dt)
+    date_str = dt.strftime("%d/%m/%Y %H:%M")
+
+    location = ""
+    if media.ticket and media.ticket.store:
+        location = media.ticket.store.store_name
+    if not location:
+        location = "Maintenance"
+
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v']:
+        return add_video_watermark(file_path, firstname, date_str, location)
+    elif ext in ['.jpg', '.jpeg', '.png', '.webp']:
+        return add_image_watermark(file_path, firstname, date_str, location)
+    return False
+
+
 class MediaViewSet(viewsets.ModelViewSet):
     queryset = Media.objects.all()
     serializer_class = MediaSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -62,6 +320,49 @@ class MediaViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(ticket_id=ticket)
 
         return queryset
+
+    @action(detail=True, methods=['post'], url_path='rotate')
+    def rotate_media(self, request, pk=None):
+        media = self.get_object()
+        angle = request.data.get('angle', 90)
+        try:
+            angle = int(angle)
+        except (ValueError, TypeError):
+            return Response({'detail': 'Invalid rotation angle.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if media.file_url:
+            file_path = media.file_url.path
+            if os.path.exists(file_path):
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v']:
+                    rotate_video_file(file_path, angle)
+                    current_rot = getattr(media, 'rotation', 0) or 0
+                    media.rotation = (current_rot + angle) % 360
+                else:
+                    try:
+                        from PIL import Image, ImageOps
+                        with Image.open(file_path) as img:
+                            img = ImageOps.exif_transpose(img)
+                            rotated_img = img.rotate(-angle, expand=True)
+                            fmt = img.format or 'JPEG'
+                            if fmt.upper() in ['JPEG', 'JPG']:
+                                rotated_img.save(file_path, format='JPEG', quality=95)
+                            else:
+                                rotated_img.save(file_path, format=fmt)
+                        media.rotation = 0
+                    except Exception as img_err:
+                        print("PIL rotation note:", img_err)
+                        current_rot = getattr(media, 'rotation', 0) or 0
+                        media.rotation = (current_rot + angle) % 360
+
+                # Stamp proof watermark AFTER media is rotated upright
+                try:
+                    watermark_media_instance(media)
+                except Exception as w_err:
+                    print("Failed to watermark media after rotation:", w_err)
+
+        media.save()
+        return Response(MediaSerializer(media).data)
 
 
 class NotificationViewSet(viewsets.ModelViewSet):

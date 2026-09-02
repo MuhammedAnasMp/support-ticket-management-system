@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Eye, FileText, Trash2, Headphones, X, Download, Play, Pause, Image as ImageIcon, Video } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Eye, FileText, Trash2, Headphones, X, Download, Play, Pause, Image as ImageIcon, Video, RotateCcw, RotateCw, RefreshCw, Save, Check, Loader2, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -98,6 +98,7 @@ export interface Media {
     media_id: number;
     file_name: string;
     file_url: string;
+    rotation?: number;
     uploaded_by: UserStub;
     uploaded_date: string;
     category: MediaCategory | null;
@@ -135,11 +136,13 @@ export const AvatarCircle: React.FC<{ user: UserStub; size?: 'sm' | 'md' | 'lg' 
     );
 };
 
-interface MediaGridProps {
+export interface MediaGridProps {
     items: Media[];
     emptyLabel: string;
     onEdit?: (mediaId: number) => void;
     onDelete?: (mediaId: number) => void;
+    token?: string | null;
+    onRefreshTicket?: () => void;
 }
 
 // ─── Compact Audio Card Component for Small Grid Cells ───────────────────────
@@ -161,30 +164,26 @@ const AudioGridCard: React.FC<{
             audioRef.current.pause();
             setIsPlaying(false);
         } else {
-            // Pause any other playing audio elements on the page
-            document.querySelectorAll('audio').forEach(a => {
-                if (a !== audioRef.current) a.pause();
-            });
-            audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+            audioRef.current.play();
+            setIsPlaying(true);
         }
     };
 
     return (
         <div
-            onClick={onSelectPreview || togglePlay}
-            className="relative aspect-video bg-primary/10 dark:bg-primary/20 rounded-lg overflow-hidden border border-primary/30 flex flex-col items-center justify-center p-1.5 group cursor-pointer hover:border-primary transition-all shadow-2xs"
+            onClick={onSelectPreview}
+            className="relative aspect-video bg-primary/5 dark:bg-primary/10 rounded-lg overflow-hidden border border-primary/20 flex flex-col items-center justify-center p-2 group cursor-pointer hover:border-primary transition-colors"
         >
             <audio
                 ref={audioRef}
                 src={url}
                 onEnded={() => setIsPlaying(false)}
                 onPause={() => setIsPlaying(false)}
-                onPlay={() => setIsPlaying(true)}
                 className="hidden"
             />
             {uploader && (
                 <div className="absolute top-1 left-1 z-20 pointer-events-none" title={`Uploaded by ${uploader.full_name}`}>
-                    <div className="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center font-bold text-[7px] bg-black/70 text-white border border-white/40 shadow-xs">
+                    <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center font-bold text-[8px] bg-black/70 text-white border border-white/40 shadow-xs">
                         {uploader.profile_image ? (
                             <img src={getMediaUrl(uploader.profile_image)} alt={uploader.full_name} className="w-full h-full object-cover" />
                         ) : (
@@ -197,11 +196,10 @@ const AudioGridCard: React.FC<{
             <button
                 type="button"
                 onClick={togglePlay}
-                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    isPlaying
-                        ? 'bg-primary text-on-primary scale-110 shadow-md animate-pulse'
-                        : 'bg-primary/20 hover:bg-primary text-primary hover:text-on-primary'
-                }`}
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isPlaying
+                    ? 'bg-primary text-on-primary scale-110 shadow-md animate-pulse'
+                    : 'bg-primary/20 hover:bg-primary text-primary hover:text-on-primary'
+                    }`}
                 title={isPlaying ? "Pause Voice Note" : "Play Voice Note"}
             >
                 {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
@@ -231,8 +229,190 @@ const AudioGridCard: React.FC<{
     );
 };
 
-export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete }) => {
-    const [previewItem, setPreviewItem] = useState<{ url: string; name: string } | null>(null);
+export const RotatableVideoPlayer: React.FC<{
+    src: string;
+    rotation?: number;
+    className?: string;
+    autoPlay?: boolean;
+    controls?: boolean;
+}> = ({ src, rotation = 0, className = '', autoPlay = false, controls = true }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [isPlaying, setIsPlaying] = useState(autoPlay);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [isMuted, setIsMuted] = useState(false);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const handleTimeUpdate = () => setCurrentTime(video.currentTime);
+        const handleLoadedMetadata = () => setDuration(video.duration || 0);
+        const handleEnded = () => setIsPlaying(false);
+
+        video.addEventListener('timeupdate', handleTimeUpdate);
+        video.addEventListener('loadedmetadata', handleLoadedMetadata);
+        video.addEventListener('ended', handleEnded);
+
+        return () => {
+            video.removeEventListener('timeupdate', handleTimeUpdate);
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            video.removeEventListener('ended', handleEnded);
+        };
+    }, [src]);
+
+    const togglePlay = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (isPlaying) {
+            video.pause();
+            setIsPlaying(false);
+        } else {
+            video.play();
+            setIsPlaying(true);
+        }
+    };
+
+    const toggleMute = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.muted = !isMuted;
+        setIsMuted(!isMuted);
+    };
+
+    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const video = videoRef.current;
+        if (!video) return;
+        const newTime = parseFloat(e.target.value);
+        video.currentTime = newTime;
+        setCurrentTime(newTime);
+    };
+
+    const formatTime = (seconds: number) => {
+        if (!seconds || isNaN(seconds)) return '0:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
+
+    if ((rotation % 360 === 0) && controls) {
+        return (
+            <video
+                src={src}
+                controls
+                autoPlay={autoPlay}
+                className={className}
+            />
+        );
+    }
+
+    const isRotatedVertical = rotation % 180 !== 0;
+
+    return (
+        <div className={`relative flex flex-col items-center justify-center bg-black/90 rounded-xl overflow-hidden ${className}`}>
+            <div className="relative w-full flex-1 flex items-center justify-center overflow-hidden p-2 min-h-[220px]">
+                <video
+                    ref={videoRef}
+                    src={src}
+                    autoPlay={autoPlay}
+                    playsInline
+                    muted={isMuted}
+                    onClick={togglePlay}
+                    style={{
+                        transform: `rotate(${rotation}deg) scale(${isRotatedVertical ? 0.7 : 1})`,
+                        transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                    className="max-w-full max-h-[65vh] object-contain cursor-pointer select-none"
+                />
+            </div>
+
+            {controls && (
+                <div className="w-full bg-black/85 backdrop-blur-md px-3 py-2 border-t border-white/10 flex items-center gap-2 text-white shrink-0 z-20">
+                    <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                        title={isPlaying ? 'Pause' : 'Play'}
+                    >
+                        {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
+                    </button>
+
+                    <span className="text-[10px] font-mono text-white/80 w-10 text-right">{formatTime(currentTime)}</span>
+
+                    <input
+                        type="range"
+                        min="0"
+                        max={duration || 100}
+                        step="0.1"
+                        value={currentTime}
+                        onChange={handleSeek}
+                        className="flex-1 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+
+                    <span className="text-[10px] font-mono text-white/80 w-10">{formatTime(duration)}</span>
+
+                    <button
+                        type="button"
+                        onClick={toggleMute}
+                        className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                        title={isMuted ? 'Unmute' : 'Mute'}
+                    >
+                        {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete, token, onRefreshTicket }) => {
+    const [previewItem, setPreviewItem] = useState<{ url: string; name: string; media_id?: number; rotation?: number } | null>(null);
+    const [rotation, setRotation] = useState<number>(0);
+    const [isSavingRotation, setIsSavingRotation] = useState(false);
+
+    const handleRotateLeft = () => setRotation(prev => (prev - 90 + 360) % 360);
+    const handleRotateRight = () => setRotation(prev => (prev + 90) % 360);
+    const handleResetRotation = () => setRotation(previewItem?.rotation || 0);
+
+    const openPreview = (item: { url: string; name: string; media_id?: number; rotation?: number }) => {
+        setRotation(item.rotation || 0);
+        setPreviewItem(item);
+    };
+
+    const handleSaveRotation = async () => {
+        if (!previewItem || !previewItem.media_id) return;
+        const currentSavedRot = previewItem.rotation || 0;
+        const angleDelta = (rotation - currentSavedRot + 360) % 360;
+        if (angleDelta === 0) return;
+
+        setIsSavingRotation(true);
+        try {
+            const authToken = token || localStorage.getItem('token');
+            const res = await fetch(`${API_URL}/common/media/${previewItem.media_id}/rotate/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(authToken ? { Authorization: `Token ${authToken}` } : {})
+                },
+                body: JSON.stringify({ angle: angleDelta })
+            });
+
+            if (!res.ok) throw new Error('Failed to save rotation on server.');
+
+            const updatedMedia = await res.json();
+            const freshUrl = `${getMediaUrl(updatedMedia.file_url)}?t=${Date.now()}`;
+            const newRot = updatedMedia.rotation !== undefined ? updatedMedia.rotation : rotation;
+            setPreviewItem({ ...previewItem, url: freshUrl, rotation: newRot });
+            setRotation(newRot);
+            if (onRefreshTicket) onRefreshTicket();
+        } catch (err: any) {
+            alert(err.message || 'Error saving rotation.');
+        } finally {
+            setTimeout(() => {
+                setIsSavingRotation(false);
+            }, 100);
+        }
+    };
 
     if (items.length === 0) {
         return (
@@ -245,25 +425,26 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
     return (
         <>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {items.map(m => {
+                {items.map((m, idx) => {
                     const url = getMediaUrl(m.file_url);
                     const isAudioItem = isAudio(m.file_name);
+                    const itemKey = m.media_id ? `media-${m.media_id}-${idx}` : `media-idx-${idx}`;
 
                     if (isAudioItem) {
                         return (
                             <AudioGridCard
-                                key={m.media_id}
+                                key={itemKey}
                                 url={url}
                                 fileName={m.file_name}
                                 uploader={m.uploaded_by}
                                 onDelete={onDelete ? () => onDelete(m.media_id) : undefined}
-                                onSelectPreview={() => setPreviewItem({ url, name: m.file_name })}
+                                onSelectPreview={() => openPreview({ url, name: m.file_name })}
                             />
                         );
                     }
 
                     return (
-                        <div key={m.media_id} className="relative aspect-video bg-surface dark:bg-dark-surface rounded-lg overflow-hidden border border-outline-variant dark:border-dark-outline-variant group">
+                        <div key={itemKey} className="relative aspect-video bg-surface dark:bg-dark-surface rounded-lg overflow-hidden border border-outline-variant dark:border-dark-outline-variant group">
                             {/* Uploader Profile Image Overlay (Top Left) */}
                             {m.uploaded_by && (
                                 <div className="absolute top-1 left-1 z-20 pointer-events-none" title={`Uploaded by ${m.uploaded_by.full_name}`}>
@@ -290,14 +471,14 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
 
                             <div
                                 onClick={() => {
-                                    setPreviewItem({ url, name: m.file_name });
+                                    openPreview({ url, name: m.file_name, media_id: m.media_id, rotation: m.rotation || 0 });
                                 }}
                                 className="block w-full h-full cursor-pointer relative"
                             >
                                 {isImage(m.file_name) ? (
-                                    <img src={url} alt={m.file_name} className="w-full h-full object-cover" />
+                                    <img src={url} alt={m.file_name} style={{ transform: `rotate(${m.rotation || 0}deg)` }} className="w-full h-full object-cover" />
                                 ) : isVideo(m.file_name) ? (
-                                    <video src={url} className="w-full h-full object-cover" muted />
+                                    <video src={url} style={{ transform: `rotate(${m.rotation || 0}deg)` }} className="w-full h-full object-cover" muted />
                                 ) : (
                                     <div className="flex items-center justify-center w-full h-full">
                                         <FileText className="w-6 h-6 text-outline" />
@@ -343,7 +524,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 0.85 }}
                             exit={{ opacity: 0 }}
-                            onClick={() => setPreviewItem(null)}
+                            onClick={() => { setPreviewItem(null); setRotation(0); }}
                             className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
                         />
 
@@ -355,7 +536,54 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                             className="relative max-w-4xl max-h-[85vh] w-full flex flex-col items-center justify-center z-10"
                         >
                             {/* Close & Action Buttons */}
-                            <div className="absolute -top-12 right-0 flex items-center gap-3">
+                            <div className="absolute -top-12 right-0 flex items-center gap-2">
+                                {/* Rotation Controls */}
+                                {(isImage(previewItem.name) || isVideo(previewItem.name)) && (
+                                    <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 mr-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleRotateLeft}
+                                            className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                            title="Rotate 90° Left (Counter-clockwise)"
+                                        >
+                                            <RotateCcw className="w-4 h-4" />
+                                        </button>
+                                        <span className="text-[10px] font-mono font-medium text-white/90 px-1">{rotation}°</span>
+                                        <button
+                                            type="button"
+                                            onClick={handleRotateRight}
+                                            className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                            title="Rotate 90° Right (Clockwise)"
+                                        >
+                                            <RotateCw className="w-4 h-4" />
+                                        </button>
+                                        {rotation !== (previewItem.rotation || 0) && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleResetRotation}
+                                                    className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors ml-1"
+                                                    title="Reset Rotation"
+                                                >
+                                                    <RefreshCw className="w-3.5 h-3.5" />
+                                                </button>
+                                                {previewItem.media_id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSaveRotation}
+                                                        disabled={isSavingRotation}
+                                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-md ml-1.5 disabled:opacity-50"
+                                                        title="Save rotated orientation permanently to server"
+                                                    >
+                                                        {isSavingRotation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                                        <span className="text-[10px] font-bold">Save Rotation</span>
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
                                 <a
                                     href={previewItem.url}
                                     download={previewItem.name}
@@ -367,7 +595,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                     <Download className="w-5 h-5" />
                                 </a>
                                 <button
-                                    onClick={() => setPreviewItem(null)}
+                                    onClick={() => { setPreviewItem(null); setRotation(0); }}
                                     className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
                                     title="Close"
                                 >
@@ -381,6 +609,10 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                     <img
                                         src={previewItem.url}
                                         alt={previewItem.name}
+                                        style={{
+                                            transform: `rotate(${rotation}deg)`,
+                                            transition: isSavingRotation ? 'none' : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                        }}
                                         className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none"
                                     />
                                 ) : isAudio(previewItem.name) ? (
@@ -390,11 +622,12 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                         <audio src={previewItem.url} controls autoPlay className="w-full h-10 rounded-lg" />
                                     </div>
                                 ) : isVideo(previewItem.name) ? (
-                                    <video
+                                    <RotatableVideoPlayer
                                         src={previewItem.url}
-                                        controls
+                                        rotation={rotation}
                                         autoPlay
-                                        className="max-w-full max-h-[75vh] object-contain rounded-md"
+                                        controls
+                                        className="w-full max-h-[75vh]"
                                     />
                                 ) : (
                                     <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
@@ -444,3 +677,57 @@ export const statusColor = (s: string) => {
         default: return 'bg-outline/10 text-outline';
     }
 };
+
+/**
+ * Physically rotates an image file on canvas by angleDegrees (90, 180, 270)
+ * and returns a new rotated File object before upload.
+ */
+export async function rotateImageFile(file: File, angleDegrees: number): Promise<File> {
+    if (!file || (angleDegrees % 360) === 0 || !file.type.startsWith('image/')) return file;
+
+    return new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return resolve(file);
+
+            const normAngle = ((angleDegrees % 360) + 360) % 360;
+
+            if (normAngle === 90 || normAngle === 270) {
+                canvas.width = img.height;
+                canvas.height = img.width;
+            } else {
+                canvas.width = img.width;
+                canvas.height = img.height;
+            }
+
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((normAngle * Math.PI) / 180);
+            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) return resolve(file);
+                    const rotatedFile = new File([blob], file.name, {
+                        type: file.type || 'image/jpeg',
+                        lastModified: Date.now()
+                    });
+                    resolve(rotatedFile);
+                },
+                file.type || 'image/jpeg',
+                0.92
+            );
+        };
+
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(file);
+        };
+
+        img.src = url;
+    });
+}

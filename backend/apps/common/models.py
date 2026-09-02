@@ -48,6 +48,7 @@ class Media(models.Model):
         'finance.Expense', on_delete=models.SET_NULL, null=True, blank=True, related_name='receipts')
     file_name = models.CharField(max_length=255)
     file_url = models.FileField(upload_to=get_media_upload_path)
+    rotation = models.IntegerField(default=0)
     uploaded_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -163,6 +164,22 @@ def send_push_on_notification_create(sender, instance, created, **kwargs):
 @receiver(models.signals.post_save, sender=Media)
 def compress_media_on_create(sender, instance, created, **kwargs):
     if created and instance.file_url:
+        if getattr(instance, 'rotation', 0) and instance.rotation % 360 != 0:
+            try:
+                import os
+                ext = os.path.splitext(instance.file_url.path)[1].lower()
+                if ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v']:
+                    from apps.common.views import rotate_video_file
+                    rotate_video_file(instance.file_url.path, instance.rotation)
+            except Exception as r_err:
+                print("Failed to rotate video on creation:", r_err)
+
+        try:
+            from apps.common.views import watermark_media_instance
+            watermark_media_instance(instance)
+        except Exception as w_err:
+            print("Failed to watermark media on creation:", w_err)
+
         try:
             from apps.common.services import compress_media_file_async
             file_path = instance.file_url.path

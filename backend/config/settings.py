@@ -130,29 +130,29 @@ else:
     print("<DEV>")
     print("<DEV>")
 
-    # DATABASES = {
-    #     'default': {
-    #         'ENGINE': 'django.db.backends.sqlite3',
-    #         'NAME': BASE_DIR / 'db.sqlite3',
-    #     }
-    # }
-
     DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ["DB_NAME"],
-            "USER": os.environ["DB_USER"],
-            "PASSWORD": os.environ["DB_PASSWORD"],
-            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-            "PORT": os.getenv("DB_PORT", "5432"),
-
-            "CONN_MAX_AGE": 60,
-
-            "OPTIONS": {
-                "connect_timeout": 10,
-            },
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
+
+    # DATABASES = {
+    #     "default": {
+    #         "ENGINE": "django.db.backends.postgresql",
+    #         "NAME": os.environ["DB_NAME"],
+    #         "USER": os.environ["DB_USER"],
+    #         "PASSWORD": os.environ["DB_PASSWORD"],
+    #         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+    #         "PORT": os.getenv("DB_PORT", "5432"),
+
+    #         "CONN_MAX_AGE": 60,
+
+    #         "OPTIONS": {
+    #             "connect_timeout": 10,
+    #         },
+    #     }
+    # }
 
 
 # Password validation
@@ -179,7 +179,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kuwait'
 
 USE_I18N = True
 
@@ -206,13 +206,18 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
 # CORS and CSRF Configuration
-if DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
-else:
-    CORS_ALLOWED_ORIGINS = [
-        origin.strip() for origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if origin.strip()
-    ]
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.zoyee\.in$",
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
+
+env_cors = os.getenv('CORS_ALLOWED_ORIGINS')
+if env_cors:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in env_cors.split(',') if origin.strip()]
 
 if DEBUG:
     CSRF_TRUSTED_ORIGINS = [
@@ -227,12 +232,20 @@ if DEBUG:
                                  for o in env_csrf.split(',') if o.strip()]
 else:
     CSRF_TRUSTED_ORIGINS = [
-        origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()
+        'https://prod.zoyee.in',
+        'https://wb.zoyee.in',
     ]
+    env_csrf = os.getenv('CSRF_TRUSTED_ORIGINS')
+    if env_csrf:
+        CSRF_TRUSTED_ORIGINS += [origin.strip() for origin in env_csrf.split(',') if origin.strip()]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
+
+# Max Upload Request Body Size Limits (100MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600
+FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

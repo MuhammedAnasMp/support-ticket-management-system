@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import {
     Send, Video, Mic, X, AlertCircle, Loader2, Play,
-    Square, Volume2, Film, ImageIcon, Paperclip, ChevronDown, History as HistoryIcon, Trash2, Camera
+    Square, Volume2, Film, ImageIcon, Paperclip, ChevronDown, History as HistoryIcon, Trash2, Camera, RotateCcw, RotateCw, RefreshCw
 } from 'lucide-react';
 import type { RootState } from '@/store';
-import { API_URL, AvatarCircle, MEDIA_BASE, getMediaUrl } from './TicketsTypesAndComponents';
+import { API_URL, AvatarCircle, MEDIA_BASE, getMediaUrl, rotateImageFile, RotatableVideoPlayer } from './TicketsTypesAndComponents';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
 
 interface ChatMessage {
@@ -40,6 +40,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
     const [file, setFile] = useState<File | null>(null);
     const [fileType, setFileType] = useState<'image' | 'video' | 'voice' | null>(null);
     const [filePreview, setFilePreview] = useState<string | null>(null);
+    const [draftRotation, setDraftRotation] = useState<number>(0);
     const [sending, setSending] = useState(false);
 
     // Voice recording states
@@ -244,6 +245,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
 
         setFile(selectedFile);
         setFileType(type);
+        setDraftRotation(0);
 
         // Generate preview
         const reader = new FileReader();
@@ -253,15 +255,74 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
         reader.readAsDataURL(selectedFile);
     };
 
+    const [pendingChatQueue, setPendingChatQueue] = useState<{
+        id: string;
+        file: File;
+        type: 'image' | 'video' | 'voice';
+        rotation: number;
+        previewUrl: string;
+    }[] | null>(null);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0];
-        if (selectedFile) attachSelectedFile(selectedFile);
+        const selectedFiles = Array.from(e.target.files || []);
+        if (selectedFiles.length === 0) return;
+
+        const queueItems = selectedFiles.map((fileItem, idx) => {
+            const mime = fileItem.type;
+            let type: 'image' | 'video' | 'voice' = 'image';
+            if (mime.startsWith('image/')) type = 'image';
+            else if (mime.startsWith('video/')) type = 'video';
+            else if (mime.startsWith('audio/')) type = 'voice';
+
+            return {
+                id: `${fileItem.name}-${Date.now()}-${idx}`,
+                file: fileItem,
+                type,
+                rotation: 0,
+                previewUrl: URL.createObjectURL(fileItem)
+            };
+        });
+
+        setPendingChatQueue(queueItems);
         e.target.value = '';
+    };
+
+    const handleConfirmChatQueue = async () => {
+        if (!pendingChatQueue || pendingChatQueue.length === 0) return;
+        const queueToUpload = [...pendingChatQueue];
+        setSending(true);
+        try {
+            for (const item of queueToUpload) {
+                let fileToSend = item.file;
+                if (item.rotation % 360 !== 0 && item.file.type.startsWith('image/')) {
+                    fileToSend = await rotateImageFile(item.file, item.rotation);
+                }
+                await uploadDirectly(fileToSend, item.type);
+            }
+            setPendingChatQueue(null);
+            setTimeout(() => {
+                queueToUpload.forEach(i => {
+                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+                });
+            }, 500);
+            fetchMessages();
+        } catch (err) {
+            console.error('Failed to send queue attachments:', err);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const handleCancelChatQueue = () => {
+        if (pendingChatQueue) {
+            pendingChatQueue.forEach(i => URL.revokeObjectURL(i.previewUrl));
+        }
+        setPendingChatQueue(null);
     };
 
     const triggerFileSelect = (type: 'image' | 'video' | 'voice') => {
         if (fileInputRef.current) {
-            let accept = 'image/*';
+            let accept = 'image/*,video/*,application/pdf';
             if (type === 'video') accept = 'video/*';
             if (type === 'voice') accept = 'audio/*';
             fileInputRef.current.accept = accept;
@@ -353,7 +414,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
         }
     };
 
-    const uploadDirectly = async (recordedFile: File, type: 'voice') => {
+    const uploadDirectly = async (recordedFile: File, type: 'voice' | 'image' | 'video') => {
         if (!token || !currentUser) return;
         setSending(true);
         const formData = new FormData();
@@ -368,7 +429,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                 body: formData
             });
 
-            if (!response.ok) throw new Error('Failed to send voice message.');
+            if (!response.ok) throw new Error('Failed to send file attachment.');
             const newMessage = await response.json();
 
             setMessages(prev => {
@@ -378,7 +439,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
             });
             setTimeout(scrollToBottom, 50);
         } catch (err: any) {
-            alert(err.message || 'Failed to deliver voice message.');
+            alert(err.message || 'Failed to deliver file attachment.');
         } finally {
             setSending(false);
         }
@@ -397,7 +458,11 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
         }
 
         if (file && fileType) {
-            formData.append(fileType, file);
+            let fileToSend = file;
+            if (fileType === 'image' && draftRotation % 360 !== 0) {
+                fileToSend = await rotateImageFile(file, draftRotation);
+            }
+            formData.append(fileType, fileToSend);
         }
 
         try {
@@ -431,6 +496,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
         setFile(null);
         setFileType(null);
         setFilePreview(null);
+        setDraftRotation(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -513,8 +579,8 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
 
                                     {/* Actual Bubble */}
                                     <div className={`p-2.5 rounded-2xl text-xs space-y-1.5 shadow-3xs ${isMe
-                                            ? 'bg-primary text-white rounded-tr-none'
-                                            : 'bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface rounded-tl-none'
+                                        ? 'bg-primary text-white rounded-tr-none'
+                                        : 'bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface rounded-tl-none'
                                         }`}>
                                         {/* Media Attachment Rendering */}
                                         {record.image && (
@@ -596,10 +662,28 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                 <div className="px-3 py-2 bg-surface-container-high dark:bg-dark-surface-container-high border-t border-outline-variant dark:border-dark-outline-variant flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2 min-w-0">
                         {fileType === 'image' && (
-                            <img src={filePreview} alt="upload preview" className="w-10 h-10 object-cover rounded border" />
+                            <img
+                                src={filePreview}
+                                alt="upload preview"
+                                style={{
+                                    transform: `rotate(${draftRotation}deg)`,
+                                    transition: 'transform 0.2s ease-in-out'
+                                }}
+                                className="w-10 h-10 object-cover rounded border"
+                            />
                         )}
                         {fileType === 'video' && (
-                            <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white"><Film className="w-4 h-4" /></div>
+                            <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white relative overflow-hidden border">
+                                <video
+                                    src={filePreview}
+                                    style={{
+                                        transform: `rotate(${draftRotation}deg) scale(${draftRotation % 180 !== 0 ? 0.75 : 1})`,
+                                        transition: 'transform 0.2s ease-in-out'
+                                    }}
+                                    className="w-full h-full object-cover"
+                                    muted
+                                />
+                            </div>
                         )}
                         {fileType === 'voice' && (
                             <div className="w-10 h-10 bg-primary/10 rounded flex items-center justify-center text-primary"><Volume2 className="w-4 h-4" /></div>
@@ -609,12 +693,36 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                             <p className="text-[8px] text-outline capitalize">{fileType} file ready</p>
                         </div>
                     </div>
-                    <button
-                        onClick={clearAttachment}
-                        className="p-1 rounded-full bg-outline-variant/40 hover:bg-outline-variant/60 text-on-surface cursor-pointer"
-                    >
-                        <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                        {(fileType === 'image' || fileType === 'video') && (
+                            <div className="flex items-center gap-1 bg-surface-container border border-outline-variant/60 rounded-lg px-1 py-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setDraftRotation(prev => (prev - 90 + 360) % 360)}
+                                    className="p-1 text-on-surface-variant hover:text-primary rounded cursor-pointer"
+                                    title="Rotate Left 90°"
+                                >
+                                    <RotateCcw className="w-3 h-3" />
+                                </button>
+                                <span className="text-[9px] font-mono text-outline">{draftRotation}°</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setDraftRotation(prev => (prev + 90) % 360)}
+                                    className="p-1 text-on-surface-variant hover:text-primary rounded cursor-pointer"
+                                    title="Rotate Right 90°"
+                                >
+                                    <RotateCw className="w-3 h-3" />
+                                </button>
+                            </div>
+                        )}
+                        <button
+                            type="button"
+                            onClick={clearAttachment}
+                            className="p-1 rounded-full bg-outline-variant/40 hover:bg-outline-variant/60 text-on-surface cursor-pointer"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -628,6 +736,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                     <input
                         ref={fileInputRef}
                         type="file"
+                        multiple
                         onChange={handleFileChange}
                         className="hidden"
                     />
@@ -771,12 +880,132 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                 </div>
             </form>
 
+            {/* Pre-Send Chat Attachments Review & Rotation Overlay */}
+            {pendingChatQueue && (
+                <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+                    <div
+                        onClick={handleCancelChatQueue}
+                        className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
+                    />
+                    <div className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg p-4 sm:p-5 rounded shadow-2xl z-10 max-h-[85vh] flex flex-col">
+                        <div className="flex items-center justify-between pb-3 border-b border-outline-variant/60">
+                            <div>
+                                <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Chat Attachments</h3>
+                                <p className="text-[11px] text-outline">Adjust orientation before sending ({pendingChatQueue.length} file{pendingChatQueue.length > 1 ? 's' : ''})</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleCancelChatQueue}
+                                disabled={sending}
+                                className="p-1.5 rounded-full hover:bg-surface-container-high text-on-surface cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="py-4 overflow-y-auto max-h-[55vh] space-y-3 my-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {pendingChatQueue.map((item, idx) => (
+                                    <div key={item.id} className="bg-surface dark:bg-dark-surface p-1 rounded border border-outline-variant dark:border-dark-outline-variant flex flex-col gap-2 relative">
+                                        <div className="w-full h-36 bg-black/80 rounded-lg overflow-hidden flex items-center justify-center relative p-1">
+                                            {item.type === 'image' ? (
+                                                <img
+                                                    src={item.previewUrl}
+                                                    alt={item.file.name}
+                                                    style={{
+                                                        transform: `rotate(${item.rotation}deg)`,
+                                                        transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                    }}
+                                                    className="max-w-full max-h-full object-contain"
+                                                />
+                                            ) : item.type === 'video' ? (
+                                                <RotatableVideoPlayer
+                                                    src={item.previewUrl}
+                                                    rotation={item.rotation}
+                                                    className="w-full h-full"
+                                                />
+                                            ) : (
+                                                <div className="text-white text-xs font-semibold">{item.file.name}</div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-1">
+                                            <span className="text-[10px] font-medium text-on-surface truncate max-w-[120px]" title={item.file.name}>
+                                                {item.file.name}
+                                            </span>
+
+                                            {(item.type === 'image' || item.type === 'video') && (
+                                                <div className="flex items-center gap-1 bg-surface-container-high px-1.5 py-0.5 rounded-lg border border-outline-variant/60">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPendingChatQueue(prev => prev ? prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation - 90 + 360) % 360 } : it) : null);
+                                                        }}
+                                                        className="p-0.5 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                        title="Rotate 90° Left"
+                                                    >
+                                                        <RotateCcw className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <span className="text-[10px] font-mono font-bold text-primary px-0.5">{item.rotation}°</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPendingChatQueue(prev => prev ? prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation + 90) % 360 } : it) : null);
+                                                        }}
+                                                        className="p-0.5 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                        title="Rotate 90° Right"
+                                                    >
+                                                        <RotateCw className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/60">
+                            <button
+                                type="button"
+                                onClick={handleCancelChatQueue}
+                                disabled={sending}
+                                className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold text-on-surface hover:bg-surface-container-high cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmChatQueue}
+                                disabled={sending}
+                                className="px-5 py-2.5 bg-primary text-white text-xs font-semibold rounded hover:bg-primary-hover active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                                {sending ? <Loader2 className="w-4 h-4 animate-spin text-current" /> : <Send className="w-3.5 h-3.5" />}
+                                Send Attachment{pendingChatQueue.length > 1 ? 's' : ''} ({pendingChatQueue.length})
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <LiveCameraModal
                 isOpen={isLiveCameraOpen}
                 initialMode={liveCameraMode}
                 onClose={() => setIsLiveCameraOpen(false)}
                 onCapture={(capturedFile) => {
-                    attachSelectedFile(capturedFile);
+                    const mime = capturedFile.type;
+                    let type: 'image' | 'video' | 'voice' = 'image';
+                    if (mime.startsWith('image/')) type = 'image';
+                    else if (mime.startsWith('video/')) type = 'video';
+                    else if (mime.startsWith('audio/')) type = 'voice';
+
+                    setPendingChatQueue([{
+                        id: `${capturedFile.name}-${Date.now()}`,
+                        file: capturedFile,
+                        type,
+                        rotation: 0,
+                        previewUrl: URL.createObjectURL(capturedFile)
+                    }]);
                 }}
             />
         </div>

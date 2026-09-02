@@ -1238,7 +1238,7 @@ export const StoresView: React.FC = () => {
                         <label className="block text-xs font-semibold text-outline mb-1">Location Code</label>
                         <input
                           required
-                          disabled={!!editItem}
+                          // disabled={!!editItem}
                           type="text"
                           placeholder="e.g. 803"
                           value={storeForm.store_id}

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -12,7 +12,7 @@ import Can, { permissionDebugEnabled } from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
 import {
     API_URL, type Ticket, type Allocation, type WorkLog, type Expense, type MediaCategory, type Media,
-    AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo
+    AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo, rotateImageFile, RotatableVideoPlayer
 } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
@@ -127,7 +127,106 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [actionLoading, setActionLoading] = useState(false);
     const [activeWorkerId, setActiveWorkerId] = useState<number | null>(null);
     const [selectedExpenseTypeId, setSelectedExpenseTypeId] = useState<string>('');
-    const [previewItem, setPreviewItem] = useState<{ url: string; name: string } | null>(null);
+    const [previewItem, setPreviewItem] = useState<{ url: string; name: string; media_id?: number; rotation?: number } | null>(null);
+    const [previewRotation, setPreviewRotation] = useState<number>(0);
+    const [isSavingPreviewRotation, setIsSavingPreviewRotation] = useState(false);
+
+    const handlePreviewRotateLeft = () => setPreviewRotation(prev => (prev - 90 + 360) % 360);
+    const handlePreviewRotateRight = () => setPreviewRotation(prev => (prev + 90) % 360);
+    const handlePreviewResetRotation = () => setPreviewRotation(previewItem?.rotation || 0);
+
+    const handleSavePreviewRotation = async () => {
+        if (!previewItem || !previewItem.media_id) return;
+        const currentSavedRot = previewItem.rotation || 0;
+        const angleDelta = (previewRotation - currentSavedRot + 360) % 360;
+        if (angleDelta === 0) return;
+
+        setIsSavingPreviewRotation(true);
+        try {
+            const res = await fetch(`${API_URL}/common/media/${previewItem.media_id}/rotate/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Token ${token}` } : {})
+                },
+                body: JSON.stringify({ angle: angleDelta })
+            });
+
+            if (!res.ok) throw new Error('Failed to save media rotation on server.');
+
+            const updatedMedia = await res.json();
+            const freshUrl = `${getMediaUrl(updatedMedia.file_url)}?t=${Date.now()}`;
+            const newRot = updatedMedia.rotation !== undefined ? updatedMedia.rotation : previewRotation;
+            setPreviewItem({ ...previewItem, url: freshUrl, rotation: newRot });
+            setPreviewRotation(newRot);
+            await refreshTicketData();
+        } catch (err: any) {
+            alert(err.message || 'Error saving media rotation.');
+        } finally {
+            setTimeout(() => {
+                setIsSavingPreviewRotation(false);
+            }, 100);
+        }
+    };
+
+    // Pre-Upload Image Review & Rotation Queue State
+    const [pendingUploadQueue, setPendingUploadQueue] = useState<{
+        id: string;
+        file: File;
+        rotation: number;
+        previewUrl: string;
+        categoryName: string;
+        workerId?: number;
+        expenseId?: number;
+    }[] | null>(null);
+
+    const queueFilesForReview = (files: File[], categoryName: string, workerId?: number, expenseId?: number) => {
+        if (!files || files.length === 0) return;
+
+        const queueItems = files.map((file, idx) => ({
+            id: `${file.name}-${Date.now()}-${idx}`,
+            file,
+            rotation: 0,
+            previewUrl: URL.createObjectURL(file),
+            categoryName,
+            workerId,
+            expenseId
+        }));
+        setPendingUploadQueue(queueItems);
+    };
+
+    const handleConfirmPendingUpload = async () => {
+        if (!pendingUploadQueue || pendingUploadQueue.length === 0) return;
+        const queueToUpload = [...pendingUploadQueue];
+        setActionLoading(true);
+        try {
+            for (const item of queueToUpload) {
+                let fileToUpload = item.file;
+                let rotToSave = item.rotation;
+                if (item.rotation % 360 !== 0 && item.file.type.startsWith('image/')) {
+                    fileToUpload = await rotateImageFile(item.file, item.rotation);
+                    rotToSave = 0;
+                }
+                await uploadMedia(fileToUpload, item.categoryName, item.workerId, item.expenseId, true, rotToSave);
+            }
+            setPendingUploadQueue(null);
+            setTimeout(() => {
+                queueToUpload.forEach(i => {
+                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+                });
+            }, 500);
+            await refreshTicketData();
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleCancelPendingUpload = () => {
+        if (pendingUploadQueue) {
+            pendingUploadQueue.forEach(i => URL.revokeObjectURL(i.previewUrl));
+        }
+        setPendingUploadQueue(null);
+    };
 
     const [isEditingTicket, setIsEditingTicket] = useState(false);
     const [editedTitle, setEditedTitle] = useState(selectedTicket.title);
@@ -813,7 +912,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         }
     };
 
-    const uploadMedia = async (file: File, categoryName: string, workerId?: number, expenseId?: number, skipRefresh = false): Promise<Media | null> => {
+    const uploadMedia = async (file: File, categoryName: string, workerId?: number, expenseId?: number, skipRefresh = false, rotation = 0): Promise<Media | null> => {
         if (!user) return null;
         if (!skipRefresh) setActionLoading(true);
         const signal = uploadAbortRef.current?.signal;
@@ -834,6 +933,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             formData.append('uploaded_by', (workerId || user.user_id).toString());
             if (cat) formData.append('category', cat.category_id.toString());
             if (expenseId) formData.append('expense', expenseId.toString());
+            if (rotation) formData.append('rotation', rotation.toString());
 
             const response = await fetch(`${API_URL}/common/media/`, {
                 method: 'POST',
@@ -845,6 +945,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 const createdMedia = await response.json();
                 if (!skipRefresh) await refreshTicketData();
                 return createdMedia;
+            } else {
+                let errText = `Upload failed (${response.status})`;
+                if (response.status === 413) {
+                    errText = `File is too large for the server (HTTP 413 Content Too Large). Please upload a smaller video or image, or increase Nginx client_max_body_size.`;
+                } else {
+                    const errData = await response.json().catch(() => ({}));
+                    if (errData?.detail) errText += `: ${errData.detail}`;
+                    else if (Object.keys(errData).length > 0) errText += `: ${JSON.stringify(errData)}`;
+                }
+                console.error("Upload Media failed:", response.status, errText);
+                alert(errText);
             }
         } catch (err: any) {
             if (err?.name !== 'AbortError') console.error(err);
@@ -855,20 +966,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const handleUploadIssueMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) uploadMedia(file, 'Before Repair');
+        const files = Array.from(e.target.files || []);
+        if (files.length > 0) {
+            queueFilesForReview(files, 'Before Repair');
+        }
         e.target.value = '';
     };
 
     const handleUploadCompletedMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) uploadMedia(file, 'After Repair');
+        const files = Array.from(e.target.files || []);
+        if (files.length > 0) {
+            queueFilesForReview(files, 'After Repair');
+        }
         e.target.value = '';
     };
 
-    const handleAddExpenseReceiptInEdit = async (file: File) => {
-        if (!editingExpense) return;
-        await uploadMedia(file, 'Bills', editingExpense.worker.user_id, editingExpense.expense_id);
+    const handleAddExpenseReceiptInEdit = (files: File[]) => {
+        if (!editingExpense || files.length === 0) return;
+        queueFilesForReview(files, 'Bills', editingExpense.worker.user_id, editingExpense.expense_id);
     };
 
     const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>, workerId: number) => {
@@ -906,9 +1021,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             if (response.ok) {
                 const createdExpense = await response.json();
                 if (validFiles.length > 0) {
-                    await Promise.all(
-                        validFiles.map(file => uploadMedia(file, 'Bills', workerId, createdExpense.expense_id, true))
-                    );
+                    queueFilesForReview(validFiles, 'Bills', workerId, createdExpense.expense_id);
                 }
                 setExpenseFiles(prev => { const next = { ...prev }; delete next[workerId]; return next; });
                 await refreshTicketData();
@@ -1776,7 +1889,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                                             href={url}
                                                                                                             onClick={(e) => {
                                                                                                                 e.preventDefault();
-                                                                                                                setPreviewItem({ url, name: r.file_name });
+                                                                                                                setPreviewItem({ url, name: r.file_name, media_id: r.media_id });
                                                                                                             }}
                                                                                                             className="relative w-12 h-12 rounded border border-outline-variant bg-surface dark:bg-dark-surface overflow-hidden flex items-center justify-center cursor-pointer hover:border-primary transition-colors shrink-0 group shadow-xs"
                                                                                                             title={r.file_name}
@@ -2677,7 +2790,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <button
                                             type="submit"
                                             disabled={actionLoading || isAssignRecordingPending || selectedWorkerIds.length === 0}
-                                            className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                            className="px-4 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                         >
                                             {actionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                                             Assign {selectedWorkerIds.length > 1 ? `${selectedWorkerIds.length} Workers` : 'Worker'}
@@ -3021,11 +3134,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         id={`receipt-edit-upload-${editingExpense.expense_id}`}
                                                         type="file"
                                                         accept="image/*,application/pdf"
+                                                        multiple
                                                         disabled={actionLoading}
                                                         className="sr-only"
                                                         onChange={e => {
-                                                            const file = e.target.files?.[0];
-                                                            if (file) handleAddExpenseReceiptInEdit(file);
+                                                            const files = Array.from(e.target.files || []);
+                                                            if (files.length > 0) handleAddExpenseReceiptInEdit(files);
                                                             e.target.value = '';
                                                         }}
                                                     />
@@ -3103,7 +3217,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             </label>
                                         </div>
 
-                                        <input type="file" accept="image/*,video/*" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" id="upload-issue-media-popup" />
+                                        <input type="file" accept="image/*,video/*" multiple onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" id="upload-issue-media-popup" />
                                         <input ref={issueCameraPhotoRef} type="file" accept="image/*" capture="environment" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" />
                                         <input ref={issueCameraVideoRef} type="file" accept="video/*" capture="environment" onChange={handleUploadIssueMedia} disabled={actionLoading} className="hidden" />
 
@@ -3172,7 +3286,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             </label>
                                         </div>
 
-                                        <input type="file" accept="image/*,video/*" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" id="upload-completed-media-popup" />
+                                        <input type="file" accept="image/*,video/*" multiple onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" id="upload-completed-media-popup" />
                                         <input ref={completedCameraPhotoRef} type="file" accept="image/*" capture="environment" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" />
                                         <input ref={completedCameraVideoRef} type="file" accept="video/*" capture="environment" onChange={handleUploadCompletedMedia} disabled={actionLoading} className="hidden" />
 
@@ -3187,7 +3301,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     )
                 }
 
-                {/* 9. MEDIA PREVIEW MODAL OVERLAY (FOR EXPENSE RECEIPTS) */}
+                {/* 9. MEDIA PREVIEW MODAL OVERLAY (FOR EXPENSE RECEIPTS & CHAT) */}
                 {
                     previewItem && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -3196,7 +3310,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 0.85 }}
                                 exit={{ opacity: 0 }}
-                                onClick={() => setPreviewItem(null)}
+                                onClick={() => { setPreviewItem(null); setPreviewRotation(0); }}
                                 className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
                             />
 
@@ -3208,7 +3322,54 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 className="relative max-w-4xl max-h-[85vh] w-full flex flex-col items-center justify-center z-10"
                             >
                                 {/* Close & Action Buttons */}
-                                <div className="absolute -top-12 right-0 flex items-center gap-3">
+                                <div className="absolute -top-12 right-0 flex items-center gap-2">
+                                    {/* Rotation Controls */}
+                                    {(isImage(previewItem.name) || isVideo(previewItem.name)) && (
+                                        <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 mr-2">
+                                            <button
+                                                type="button"
+                                                onClick={handlePreviewRotateLeft}
+                                                className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                                title="Rotate 90° Left (Counter-clockwise)"
+                                            >
+                                                <RotateCcw className="w-4 h-4" />
+                                            </button>
+                                            <span className="text-[10px] font-mono font-medium text-white/90 px-1">{previewRotation}°</span>
+                                            <button
+                                                type="button"
+                                                onClick={handlePreviewRotateRight}
+                                                className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                                title="Rotate 90° Right (Clockwise)"
+                                            >
+                                                <RotateCw className="w-4 h-4" />
+                                            </button>
+                                            {previewRotation !== (previewItem.rotation || 0) && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handlePreviewResetRotation}
+                                                        className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors ml-1"
+                                                        title="Reset Rotation"
+                                                    >
+                                                        <RefreshCw className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    {previewItem.media_id && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleSavePreviewRotation}
+                                                            disabled={isSavingPreviewRotation}
+                                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-md ml-1.5 disabled:opacity-50"
+                                                            title="Save rotated orientation permanently to server"
+                                                        >
+                                                            {isSavingPreviewRotation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                                            <span className="text-[10px] font-bold">Save Rotation</span>
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <a
                                         href={previewItem.url}
                                         download={previewItem.name}
@@ -3220,7 +3381,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <Download className="w-5 h-5" />
                                     </a>
                                     <button
-                                        onClick={() => setPreviewItem(null)}
+                                        onClick={() => { setPreviewItem(null); setPreviewRotation(0); }}
                                         className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
                                         title="Close"
                                     >
@@ -3234,14 +3395,19 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <img
                                             src={previewItem.url}
                                             alt={previewItem.name}
+                                            style={{
+                                                transform: `rotate(${previewRotation}deg)`,
+                                                transition: isSavingPreviewRotation ? 'none' : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                            }}
                                             className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none"
                                         />
                                     ) : isVideo(previewItem.name) ? (
-                                        <video
+                                        <RotatableVideoPlayer
                                             src={previewItem.url}
-                                            controls
+                                            rotation={previewRotation}
                                             autoPlay
-                                            className="max-w-full max-h-[75vh] object-contain rounded-md"
+                                            controls
+                                            className="w-full max-h-[75vh]"
                                         />
                                     ) : (
                                         <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
@@ -3283,6 +3449,123 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             />
                         </div>
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* 12. PRE-UPLOAD MEDIA ROTATION & REVIEW MODAL */}
+            <AnimatePresence>
+                {pendingUploadQueue && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.85 }}
+                            exit={{ opacity: 0 }}
+                            onClick={handleCancelPendingUpload}
+                            className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-4 sm:p-5 rounded-2xl shadow-2xl z-10 max-h-[90vh] flex flex-col"
+                        >
+                            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/60">
+                                <div>
+                                    <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Review & Adjust Orientation</h3>
+                                    <p className="text-[11px] text-outline">Rotate image(s) upright before uploading ({pendingUploadQueue.length} selected)</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleCancelPendingUpload}
+                                    disabled={actionLoading}
+                                    className="p-1.5 rounded-full hover:bg-surface-container-high text-on-surface cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="py-4 overflow-y-auto max-h-[60vh] space-y-4 my-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {pendingUploadQueue.map((item, idx) => (
+                                        <div key={item.id} className="bg-surface dark:bg-dark-surface p-3 rounded-xl border border-outline-variant dark:border-dark-outline-variant flex flex-col gap-2 relative">
+                                            <div className="w-full h-44 bg-black/80 rounded-lg overflow-hidden flex items-center justify-center relative p-1">
+                                                {item.file.type.startsWith('image/') ? (
+                                                    <img
+                                                        src={item.previewUrl}
+                                                        alt={item.file.name}
+                                                        style={{
+                                                            transform: `rotate(${item.rotation}deg)`,
+                                                            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                        }}
+                                                        className="max-w-full max-h-full object-contain"
+                                                    />
+                                                ) : item.file.type.startsWith('video/') ? (
+                                                    <RotatableVideoPlayer
+                                                        src={item.previewUrl}
+                                                        rotation={item.rotation}
+                                                        className="w-full h-full"
+                                                    />
+                                                ) : (
+                                                    <div className="text-white text-xs font-semibold">{item.file.name}</div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center justify-between pt-1">
+                                                <span className="text-[10px] font-medium text-on-surface truncate max-w-[140px]" title={item.file.name}>
+                                                    {item.file.name}
+                                                </span>
+
+                                                {(item.file.type.startsWith('image/') || item.file.type.startsWith('video/')) && (
+                                                    <div className="flex items-center gap-1 bg-surface-container-high px-2 py-1 rounded-lg border border-outline-variant/60">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPendingUploadQueue(prev => prev ? prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation - 90 + 360) % 360 } : it) : null);
+                                                            }}
+                                                            className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                            title="Rotate 90° Left"
+                                                        >
+                                                            <RotateCcw className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <span className="text-[10px] font-mono font-bold text-primary px-1">{item.rotation}°</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPendingUploadQueue(prev => prev ? prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation + 90) % 360 } : it) : null);
+                                                            }}
+                                                            className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                            title="Rotate 90° Right"
+                                                        >
+                                                            <RotateCw className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/60">
+                                <button
+                                    type="button"
+                                    onClick={handleCancelPendingUpload}
+                                    disabled={actionLoading}
+                                    className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold text-on-surface hover:bg-surface-container-high cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmPendingUpload}
+                                    disabled={actionLoading}
+                                    className="px-5 py-2.5 bg-primary text-white text-xs font-semibold rounded hover:bg-primary-hover active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                >
+                                    {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Upload Media ({pendingUploadQueue.length})
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
                 )}
             </AnimatePresence>
 
@@ -3610,7 +3893,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 initialMode={liveCameraMode}
                 onClose={() => setIsLiveCameraOpen(false)}
                 onCapture={(capturedFile) => {
-                    uploadMedia(capturedFile, liveCameraCategory);
+                    queueFilesForReview([capturedFile], liveCameraCategory);
                 }}
             />
         </div>

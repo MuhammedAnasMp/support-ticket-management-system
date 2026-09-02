@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Video, X, RefreshCw, Circle, Square, Check, Loader2 } from 'lucide-react';
+import { Camera, Video, X, RefreshCw, Circle, Square, Check, Loader2, RotateCcw, RotateCw } from 'lucide-react';
+import { rotateImageFile } from '../pages/ticket/TicketsTypesAndComponents';
 
 interface LiveCameraModalProps {
     isOpen: boolean;
@@ -26,6 +27,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
 
     // Captured Media Preview State
     const [capturedPreview, setCapturedPreview] = useState<{ url: string; file: File; type: 'photo' | 'video' } | null>(null);
+    const [photoRotation, setPhotoRotation] = useState<number>(0);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -141,6 +143,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const file = new File([blob], `photo_${timestamp}.jpg`, { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
+            setPhotoRotation(0);
             setCapturedPreview({ url, file, type: 'photo' });
             stopStream();
         }, 'image/jpeg', 0.92);
@@ -208,14 +211,19 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
         stopStream();
     };
 
-    const confirmCapturedMedia = () => {
+    const confirmCapturedMedia = async () => {
         if (capturedPreview) {
-            onCapture(capturedPreview.file);
+            let fileToUpload = capturedPreview.file;
+            if (capturedPreview.type === 'photo' && photoRotation % 360 !== 0) {
+                fileToUpload = await rotateImageFile(capturedPreview.file, photoRotation);
+            }
+            onCapture(fileToUpload);
             onClose();
         }
     };
 
     const retakeMedia = () => {
+        setPhotoRotation(0);
         setCapturedPreview(null);
     };
 
@@ -286,7 +294,15 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                         {capturedPreview && (
                             <div className="w-full h-full flex items-center justify-center bg-black">
                                 {capturedPreview.type === 'photo' ? (
-                                    <img src={capturedPreview.url} alt="Captured snapshot" className="w-full h-full object-contain" />
+                                    <img
+                                        src={capturedPreview.url}
+                                        alt="Captured snapshot"
+                                        style={{
+                                            transform: `rotate(${photoRotation}deg)`,
+                                            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                        }}
+                                        className="w-full h-full object-contain"
+                                    />
                                 ) : (
                                     <video src={capturedPreview.url} controls autoPlay className="w-full h-full object-contain" />
                                 )}
@@ -375,21 +391,44 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                             </div>
                         ) : (
                             /* Review & Accept / Retake Buttons */
-                            <div className="flex items-center justify-between gap-3">
-                                <button
-                                    type="button"
-                                    onClick={retakeMedia}
-                                    className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                                >
-                                    <RefreshCw className="w-4 h-4" /> Retake
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={confirmCapturedMedia}
-                                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
-                                >
-                                    <Check className="w-4 h-4" /> Use Media
-                                </button>
+                            <div className="flex flex-col gap-2">
+                                {capturedPreview.type === 'photo' && (
+                                    <div className="flex items-center justify-center gap-2 pb-1 border-b border-gray-800/80">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPhotoRotation(prev => (prev - 90 + 360) % 360)}
+                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                                            title="Rotate 90° Left"
+                                        >
+                                            <RotateCcw className="w-3.5 h-3.5" /> Rotate Left
+                                        </button>
+                                        <span className="text-xs font-mono font-medium text-gray-300 px-2">{photoRotation}°</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPhotoRotation(prev => (prev + 90) % 360)}
+                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                                            title="Rotate 90° Right"
+                                        >
+                                            <RotateCw className="w-3.5 h-3.5" /> Rotate Right
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-between gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={retakeMedia}
+                                        className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                        <RefreshCw className="w-4 h-4" /> Retake
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={confirmCapturedMedia}
+                                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                                    >
+                                        <Check className="w-4 h-4" /> Use Media
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
