@@ -279,6 +279,7 @@ export const StoresView: React.FC = () => {
     if (subpage === 'all' || !subpage) {
       const cols: ColDef[] = [
         { headerName: 'Store Code/ID', field: 'store_id', width: 130, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Short Code', field: 'short_code', width: 110, cellClass: 'font-mono text-xs font-bold text-primary', valueGetter: (p: any) => p.data?.short_code || '—' },
         { headerName: 'Name', field: 'store_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
         { headerName: 'Type', field: 'type', width: 140, valueGetter: (p: any) => { const map: Record<string, string> = { SUPER_MARKET: 'Super Market', HYPER_MARKET: 'Hyper Market', WAREHOUSE: 'Warehouse', FRESH: 'Fresh', COSTO: 'Costo', CAMP: 'Camp' }; return map[p.data?.type] || p.data?.type || 'N/A'; } },
         { headerName: 'Area', field: 'area.area_name', flex: 1, minWidth: 130, valueGetter: (p: any) => p.data?.area?.area_name || 'N/A' },
@@ -420,6 +421,7 @@ export const StoresView: React.FC = () => {
   const [storeForm, setStoreForm] = useState({
     store_id: '',
     store_name: '',
+    short_code: '',
     type: '',
     area: '',
     address: '',
@@ -497,6 +499,7 @@ export const StoresView: React.FC = () => {
     setStoreForm({
       store_id: '',
       store_name: '',
+      short_code: '',
       type: '',
       area: '',
       address: '',
@@ -648,6 +651,7 @@ export const StoresView: React.FC = () => {
       setStoreForm({
         store_id: item.store_id,
         store_name: stripStoreName(item.store_name),
+        short_code: item.short_code || '',
         type: item.type || '',
         area: item.area?.area_id || '',
         address: item.address || '',
@@ -1233,7 +1237,7 @@ export const StoresView: React.FC = () => {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {subpage === 'all' || !subpage ? (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-xs font-semibold text-outline mb-1">Location Code</label>
                         <input
@@ -1255,6 +1259,18 @@ export const StoresView: React.FC = () => {
                           value={storeForm.store_name}
                           onChange={e => setStoreForm({ ...storeForm, store_name: e.target.value })}
                           className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-outline mb-1">Short Code (Ticket Prefix) <span className="text-error">*</span></label>
+                        <input
+                          required
+                          maxLength={3}
+                          type="text"
+                          placeholder="e.g. SLM"
+                          value={storeForm.short_code}
+                          onChange={e => setStoreForm({ ...storeForm, short_code: e.target.value.toUpperCase().slice(0, 3) })}
+                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface font-mono uppercase font-bold"
                         />
                       </div>
                     </div>

@@ -37,6 +37,7 @@ class StoreType(models.TextChoices):
 class Store(models.Model):
     store_id = models.CharField(max_length=20, primary_key=True)
     store_name = models.CharField(max_length=255)
+    short_code = models.CharField(max_length=3, null=True, blank=True)
 
     type = models.CharField(
         max_length=20,

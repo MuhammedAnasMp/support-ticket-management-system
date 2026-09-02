@@ -12,9 +12,19 @@ class AreaSerializer(serializers.ModelSerializer):
 
 
 class StoreSerializer(serializers.ModelSerializer):
+    short_code = serializers.CharField(max_length=3, required=True, allow_blank=False)
+
     class Meta:
         model = Store
         fields = '__all__'
+
+    def validate_short_code(self, value):
+        if value:
+            val = value.strip().upper()
+            if len(val) > 3:
+                raise serializers.ValidationError("Short code cannot exceed 3 characters.")
+            return val
+        raise serializers.ValidationError("Short code is required.")
 
     def update(self, instance, validated_data):
         from django.utils import timezone

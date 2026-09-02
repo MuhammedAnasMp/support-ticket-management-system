@@ -212,7 +212,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             setPendingUploadQueue(null);
             setTimeout(() => {
                 queueToUpload.forEach(i => {
-                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) { }
                 });
             }, 500);
             await refreshTicketData();
@@ -3326,23 +3326,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     {/* Rotation Controls */}
                                     {(isImage(previewItem.name) || isVideo(previewItem.name)) && (
                                         <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 mr-2">
-                                            <button
-                                                type="button"
-                                                onClick={handlePreviewRotateLeft}
-                                                className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                                title="Rotate 90° Left (Counter-clockwise)"
-                                            >
-                                                <RotateCcw className="w-4 h-4" />
-                                            </button>
-                                            <span className="text-[10px] font-mono font-medium text-white/90 px-1">{previewRotation}°</span>
-                                            <button
-                                                type="button"
-                                                onClick={handlePreviewRotateRight}
-                                                className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                                title="Rotate 90° Right (Clockwise)"
-                                            >
-                                                <RotateCw className="w-4 h-4" />
-                                            </button>
                                             {previewRotation !== (previewItem.rotation || 0) && (
                                                 <>
                                                     <button
@@ -3367,6 +3350,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     )}
                                                 </>
                                             )}
+                                            <button
+                                                type="button"
+                                                onClick={handlePreviewRotateLeft}
+                                                className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                                title="Rotate 90° Left (Counter-clockwise)"
+                                            >
+                                                <RotateCcw className="w-4 h-4" />
+                                            </button>
+                                            <span className="text-[10px] font-mono font-medium text-white/90 px-1">{previewRotation}°</span>
+                                            <button
+                                                type="button"
+                                                onClick={handlePreviewRotateRight}
+                                                className="p-1.5 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                                title="Rotate 90° Right (Clockwise)"
+                                            >
+                                                <RotateCw className="w-4 h-4" />
+                                            </button>
+
                                         </div>
                                     )}
 

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import MediaCategory, Media, Notification
+from apps.accounts.models import CustomUser
 
 
 class MediaCategorySerializer(serializers.ModelSerializer):
@@ -16,6 +17,10 @@ class MediaSerializer(serializers.ModelSerializer):
         depth = 1
 
 class MediaWriteSerializer(serializers.ModelSerializer):
+    uploaded_by = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.all(), required=False
+    )
+
     class Meta:
         model = Media
         fields = "__all__"

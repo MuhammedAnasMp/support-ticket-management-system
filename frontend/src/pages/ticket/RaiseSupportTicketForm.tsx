@@ -126,10 +126,14 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
 
     const handleFileSelect = (files: FileList | File[]) => {
         const newFiles = Array.from(files);
+        if (newFiles.length === 0) return;
+
         const queueItems: CreateTicketAttachment[] = newFiles.map((file, idx) => {
-            const isImg = file.type.startsWith('image/');
-            const isVid = file.type.startsWith('video/') && !file.name.endsWith('.webm');
-            const isAudio = file.type.startsWith('audio/') || file.name.endsWith('.webm') || file.name.endsWith('.ogg') || file.name.endsWith('.wav');
+            const mime = file.type || '';
+            const ext = file.name.split('.').pop()?.toLowerCase() || '';
+            const isImg = mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp'].includes(ext);
+            const isVid = (mime.startsWith('video/') || ['mp4', 'mov', 'avi', 'mkv', 'm4v', '3gp'].includes(ext)) && !file.name.endsWith('.webm');
+            const isAudio = mime.startsWith('audio/') || ['webm', 'ogg', 'wav', 'mp3', 'm4a', 'aac'].includes(ext);
             return {
                 id: `${file.name}-${Date.now()}-${idx}`,
                 file,
@@ -141,27 +145,28 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             };
         });
 
+        // Always store items immediately in attachmentItems so selected media is never lost
+        setAttachmentItems(prev => [...prev, ...queueItems]);
+
         const hasVisualMedia = queueItems.some(i => i.isImg || i.isVid);
         if (hasVisualMedia) {
             setPendingOrientationQueue(queueItems);
-        } else {
-            setAttachmentItems(prev => [...prev, ...queueItems]);
         }
         setErrorMessage(null);
     };
 
     const handleConfirmOrientationQueue = () => {
         if (!pendingOrientationQueue) return;
-        setAttachmentItems(prev => [...prev, ...pendingOrientationQueue]);
+        setAttachmentItems(prev => {
+            return prev.map(item => {
+                const queued = pendingOrientationQueue.find(q => q.id === item.id);
+                return queued ? { ...item, rotation: queued.rotation } : item;
+            });
+        });
         setPendingOrientationQueue(null);
     };
 
     const handleCancelOrientationQueue = () => {
-        if (pendingOrientationQueue) {
-            pendingOrientationQueue.forEach(i => {
-                try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
-            });
-        }
         setPendingOrientationQueue(null);
     };
 
@@ -289,7 +294,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                     formData.append('file_url', fileToUpload);
                     formData.append('file_name', fileToUpload.name);
                     if (categoryId) formData.append('category', categoryId);
-                    if (user?.user_id) formData.append('uploaded_by', String(user.user_id));
+                    const uid = user?.user_id || user?.id;
+                    if (uid) formData.append('uploaded_by', String(uid));
                     if (rotToSave % 360 !== 0) formData.append('rotation', rotToSave.toString());
 
                     try {
