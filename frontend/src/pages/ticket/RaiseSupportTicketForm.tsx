@@ -207,8 +207,9 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (isMediaRequired && attachmentItems.length < 1) {
-            setErrorMessage('Please attach a minimum of 1 media files for the selected Work Nature.');
+        const visualMediaCount = attachmentItems.filter(item => item.isImg || item.isVid).length;
+        if (visualMediaCount < 1) {
+            setErrorMessage('Please attach at least 1 photo or video showing the issue (audio recording alone is not sufficient).');
             return;
         }
 
@@ -468,7 +469,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
                                         <label className="block text-xs font-medium text-on-surface">
-                                            Attach Media  {isMediaRequired && <span className="text-error">* (Min 1 required)</span>}
+                                            Attach Media <span className="text-error">* (At least 1 Photo or Video required)</span>
                                         </label>
                                         <span className="text-[11px] text-on-surface-variant">
                                             {attachmentItems.length} file(s) attached

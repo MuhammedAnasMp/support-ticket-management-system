@@ -308,7 +308,7 @@ def watermark_media_instance(media, extra_angle=0):
     dt = media.uploaded_date or timezone.now()
     if timezone.is_aware(dt):
         dt = timezone.localtime(dt)
-    date_str = dt.strftime("%d/%m/%Y %H:%M")
+    date_str = dt.strftime("%d/%m/%Y %I:%M %p")
 
     location = ""
     if media.ticket and media.ticket.store:
