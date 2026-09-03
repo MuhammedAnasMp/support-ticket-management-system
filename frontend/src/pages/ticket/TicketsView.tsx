@@ -832,32 +832,63 @@ export const TicketsView: React.FC = () => {
         if (!tickets || tickets.length === 0) return;
         const headers = [
             'Ticket ID',
+            'Work Order No',
             'Title',
+            'Description',
             'Status',
             'Priority',
+            'Store ID',
             'Store',
+            'Area',
             'Department',
             'Sub Department',
             'Nature of Work',
             'Created By',
-            'Assigned Workers',
             'Created Date',
-            'Closed Date'
+            'Approved By',
+            'Approved Date',
+            'Rejected By',
+            'Rejected Date',
+            'Reject Reason',
+            'Assigned Workers',
+            'Assigned By',
+            'Assigned Date',
+            'Closed By',
+            'Closed Date',
+            'Age (Days)',
+            'Device Info'
         ];
+
+        const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const fmtDate = (d: any) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
         const rows = tickets.map(t => [
             t.ticket_id,
-            `"${(t.title || '').replace(/"/g, '""')}"`,
-            `"${(t.status?.status_name || '').replace(/"/g, '""')}"`,
-            `"${(t.priority?.priority_name || '').replace(/"/g, '""')}"`,
-            `"${(t.store?.store_name || '').replace(/"/g, '""')}"`,
-            `"${(t.department?.department_name || '').replace(/"/g, '""')}"`,
-            `"${((t as any).sub_department?.sub_department_name || (t as any).sub_department || '').replace(/"/g, '""')}"`,
-            `"${(t.nature?.nature_name || '').replace(/"/g, '""')}"`,
-            `"${(t.created_by?.full_name || '').replace(/"/g, '""')}"`,
-            `"${((t.allocations || []).map((a: any) => a.worker?.full_name).filter(Boolean).join(', ')).replace(/"/g, '""')}"`,
-            `"${t.created_date ? new Date(t.created_date).toLocaleString() : ''}"`,
-            `"${t.closed_date ? new Date(t.closed_date).toLocaleString() : ''}"`
+            esc(t.work_order_no || ''),
+            esc(t.title || ''),
+            esc(t.description || ''),
+            esc(t.status?.status_name || ''),
+            esc(t.priority?.priority_name || ''),
+            esc(t.store?.store_id || ''),
+            esc(t.store?.store_name || ''),
+            esc(typeof t.store?.area === 'object' ? (t.store?.area as any)?.area_name || '' : t.store?.area || ''),
+            esc(t.department?.department_name || ''),
+            esc((t as any).sub_department?.sub_department_name || (t as any).sub_department || ''),
+            esc(t.nature?.nature_name || ''),
+            esc(t.created_by?.full_name || ''),
+            esc(fmtDate(t.created_date)),
+            esc(t.approved_by?.full_name || ''),
+            esc(fmtDate(t.approved_date)),
+            esc(t.rejected_by?.full_name || ''),
+            esc(fmtDate(t.rejected_date)),
+            esc(t.reject_reason || ''),
+            esc((t.allocations || []).map((a: any) => a.worker?.full_name).filter(Boolean).join(', ')),
+            esc((t.allocations || []).map((a: any) => a.assigned_by?.full_name).filter(Boolean).join(', ')),
+            esc((t.allocations || []).map((a: any) => fmtDate(a.assigned_date)).filter(Boolean).join(', ')),
+            esc(t.closed_by?.full_name || ''),
+            esc(fmtDate(t.closed_date)),
+            t.age_days != null ? t.age_days : '',
+            esc(t.device_info || '')
         ]);
 
         const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -875,32 +906,62 @@ export const TicketsView: React.FC = () => {
         if (!tickets || tickets.length === 0) return;
         const headers = [
             'Ticket ID',
+            'Work Order No',
             'Title',
+            'Description',
             'Status',
             'Priority',
+            'Store ID',
             'Store',
+            'Area',
             'Department',
             'Sub Department',
             'Nature of Work',
             'Created By',
-            'Assigned Workers',
             'Created Date',
-            'Closed Date'
+            'Approved By',
+            'Approved Date',
+            'Rejected By',
+            'Rejected Date',
+            'Reject Reason',
+            'Assigned Workers',
+            'Assigned By',
+            'Assigned Date',
+            'Closed By',
+            'Closed Date',
+            'Age (Days)',
+            'Device Info'
         ];
+
+        const fmtDate = (d: any) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
         const rows = tickets.map(t => [
             t.ticket_id,
+            t.work_order_no || '',
             t.title || '',
+            t.description || '',
             t.status?.status_name || '',
             t.priority?.priority_name || '',
+            t.store?.store_id || '',
             t.store?.store_name || '',
+            typeof t.store?.area === 'object' ? (t.store?.area as any)?.area_name || '' : t.store?.area || '',
             t.department?.department_name || '',
             (t as any).sub_department?.sub_department_name || (t as any).sub_department || '',
             t.nature?.nature_name || '',
             t.created_by?.full_name || '',
+            fmtDate(t.created_date),
+            t.approved_by?.full_name || '',
+            fmtDate(t.approved_date),
+            t.rejected_by?.full_name || '',
+            fmtDate(t.rejected_date),
+            t.reject_reason || '',
             (t.allocations || []).map((a: any) => a.worker?.full_name).filter(Boolean).join(', '),
-            t.created_date ? new Date(t.created_date).toLocaleString() : '',
-            t.closed_date ? new Date(t.closed_date).toLocaleString() : ''
+            (t.allocations || []).map((a: any) => a.assigned_by?.full_name).filter(Boolean).join(', '),
+            (t.allocations || []).map((a: any) => fmtDate(a.assigned_date)).filter(Boolean).join(', '),
+            t.closed_by?.full_name || '',
+            fmtDate(t.closed_date),
+            t.age_days != null ? t.age_days : '',
+            t.device_info || ''
         ]);
 
         const tableContent = `
