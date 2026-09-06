@@ -161,6 +161,7 @@ export const TicketsView: React.FC = () => {
     const [lastOpenedTicketId, setLastOpenedTicketId] = useState<number | null>(null);
     const modalWasOpen = useRef(false);
     const [loading, setLoading] = useState(true);
+    const [isExportingAll, setIsExportingAll] = useState(false);
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
     useEffect(() => {
@@ -828,8 +829,8 @@ export const TicketsView: React.FC = () => {
     const defaultMonth = getCurrentMonthRange();
     const selectCls = 'text-xs bg-surface-container border border-outline-variant rounded px-2.5 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors min-h-[36px] w-full sm:w-auto sm:max-w-[160px] truncate';
 
-    const exportToCSV = () => {
-        if (!tickets || tickets.length === 0) return;
+    const downloadTicketsCSV = (ticketList: Ticket[], fileNamePrefix = 'Tickets_Export') => {
+        if (!ticketList || ticketList.length === 0) return;
         const headers = [
             'Ticket ID',
             'Work Order No',
@@ -862,7 +863,7 @@ export const TicketsView: React.FC = () => {
         const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
         const fmtDate = (d: any) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
-        const rows = tickets.map(t => [
+        const rows = ticketList.map(t => [
             t.ticket_id,
             esc(t.work_order_no || ''),
             esc(t.title || ''),
@@ -873,7 +874,7 @@ export const TicketsView: React.FC = () => {
             esc(t.store?.store_name || ''),
             esc(typeof t.store?.area === 'object' ? (t.store?.area as any)?.area_name || '' : t.store?.area || ''),
             esc(t.department?.department_name || ''),
-            esc((t as any).sub_department?.sub_department_name || (t as any).sub_department || ''),
+            esc((t as any).sub_department?.sub_department_name || (t as any).sub_department || (t as any).nature?.sub_department?.sub_department_name || ''),
             esc(t.nature?.nature_name || ''),
             esc(t.created_by?.full_name || ''),
             esc(fmtDate(t.created_date)),
@@ -891,19 +892,20 @@ export const TicketsView: React.FC = () => {
             esc(t.device_info || '')
         ]);
 
-        const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-        const encodedUri = encodeURI(csvContent);
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.setAttribute('href', encodedUri);
-        link.setAttribute('download', `Tickets_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.href = url;
+        link.setAttribute('download', `${fileNamePrefix}_${new Date().toISOString().slice(0, 10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setOverflowOpen(false);
+        URL.revokeObjectURL(url);
     };
 
-    const exportToExcel = () => {
-        if (!tickets || tickets.length === 0) return;
+    const downloadTicketsExcel = (ticketList: Ticket[], fileNamePrefix = 'Tickets_Export') => {
+        if (!ticketList || ticketList.length === 0) return;
         const headers = [
             'Ticket ID',
             'Work Order No',
@@ -935,7 +937,7 @@ export const TicketsView: React.FC = () => {
 
         const fmtDate = (d: any) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
-        const rows = tickets.map(t => [
+        const rows = ticketList.map(t => [
             t.ticket_id,
             t.work_order_no || '',
             t.title || '',
@@ -946,7 +948,7 @@ export const TicketsView: React.FC = () => {
             t.store?.store_name || '',
             typeof t.store?.area === 'object' ? (t.store?.area as any)?.area_name || '' : t.store?.area || '',
             t.department?.department_name || '',
-            (t as any).sub_department?.sub_department_name || (t as any).sub_department || '',
+            (t as any).sub_department?.sub_department_name || (t as any).sub_department || (t as any).nature?.sub_department?.sub_department_name || '',
             t.nature?.nature_name || '',
             t.created_by?.full_name || '',
             fmtDate(t.created_date),
@@ -988,12 +990,123 @@ export const TicketsView: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `Tickets_Export_${new Date().toISOString().slice(0, 10)}.xls`);
+        link.setAttribute('download', `${fileNamePrefix}_${new Date().toISOString().slice(0, 10)}.xls`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+    };
+
+    const fetchAllFilteredTickets = async (): Promise<Ticket[]> => {
+        if (!token) return [];
+        const query = new URLSearchParams();
+        query.set('all', 'true');
+        if (debouncedSearch) query.set('search', debouncedSearch);
+        if (filterStore) query.set('store', filterStore);
+        if (filterDept) query.set('department', filterDept);
+        if (filterSubDept) query.set('sub_department', filterSubDept);
+        if (filterStatus) query.set('status', filterStatus);
+        if (filterPriority) query.set('priority', filterPriority);
+        if (filterWorker) query.set('worker', filterWorker);
+        if (!debouncedSearch) {
+            if (fromDate) query.set('from_date', fromDate);
+            if (toDate) query.set('to_date', toDate);
+        }
+
+        const response = await fetch(`${API_URL}/maintenance/ticket/?${query.toString()}`, {
+            headers: { Authorization: `Token ${token}` }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to load all tickets: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            return data;
+        }
+
+        let allResults: Ticket[] = Array.isArray(data?.results) ? [...data.results] : [];
+        let nextUrl = data?.next;
+        while (nextUrl) {
+            const nextRes = await fetch(nextUrl, {
+                headers: { Authorization: `Token ${token}` }
+            });
+            if (!nextRes.ok) break;
+            const nextData = await nextRes.json();
+            if (Array.isArray(nextData)) {
+                allResults = allResults.concat(nextData);
+                break;
+            } else if (nextData && Array.isArray(nextData.results)) {
+                allResults = allResults.concat(nextData.results);
+                nextUrl = nextData.next;
+            } else {
+                break;
+            }
+        }
+        return allResults;
+    };
+
+    const exportToCSV = () => {
+        if (!tickets || tickets.length === 0) {
+            setMessage({ text: 'No tickets found to export.', type: 'warning' });
+            setOverflowOpen(false);
+            return;
+        }
+        downloadTicketsCSV(tickets, 'Tickets_Export');
         setOverflowOpen(false);
+    };
+
+    const exportAllToCSV = async () => {
+        if (!token) return;
+        setIsExportingAll(true);
+        setOverflowOpen(false);
+        setMessage({ text: 'Exporting all table data without page limit...', type: 'warning' });
+        try {
+            const allTickets = await fetchAllFilteredTickets();
+            if (allTickets.length === 0) {
+                setMessage({ text: 'No tickets found to export.', type: 'warning' });
+                return;
+            }
+            downloadTicketsCSV(allTickets, 'Tickets_All_Export');
+            setMessage({ text: `Successfully exported all ${allTickets.length.toLocaleString()} tickets to CSV.`, type: 'success' });
+        } catch (err) {
+            console.error('Failed to export all tickets', err);
+            setMessage({ text: 'Failed to export all tickets. Please try again.', type: 'error' });
+        } finally {
+            setIsExportingAll(false);
+        }
+    };
+
+    const exportToExcel = () => {
+        if (!tickets || tickets.length === 0) {
+            setMessage({ text: 'No tickets found to export.', type: 'warning' });
+            setOverflowOpen(false);
+            return;
+        }
+        downloadTicketsExcel(tickets, 'Tickets_Export');
+        setOverflowOpen(false);
+    };
+
+    const exportAllToExcel = async () => {
+        if (!token) return;
+        setIsExportingAll(true);
+        setOverflowOpen(false);
+        setMessage({ text: 'Exporting all table data to Excel...', type: 'warning' });
+        try {
+            const allTickets = await fetchAllFilteredTickets();
+            if (allTickets.length === 0) {
+                setMessage({ text: 'No tickets found to export.', type: 'warning' });
+                return;
+            }
+            downloadTicketsExcel(allTickets, 'Tickets_All_Export');
+            setMessage({ text: `Successfully exported all ${allTickets.length.toLocaleString()} tickets to Excel.`, type: 'success' });
+        } catch (err) {
+            console.error('Failed to export all tickets', err);
+            setMessage({ text: 'Failed to export all tickets. Please try again.', type: 'error' });
+        } finally {
+            setIsExportingAll(false);
+        }
     };
 
     return (
@@ -1188,7 +1301,7 @@ export const TicketsView: React.FC = () => {
                                 <button onClick={() => setOverflowOpen(o => !o)}
                                     className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface p-1.5 rounded flex items-center justify-center transition-colors"
                                     title="More actions">
-                                    <MoreVertical className="w-3.5 h-3.5" />
+                                    {isExportingAll ? <RefreshCw className="w-3.5 h-3.5 text-primary animate-spin" /> : <MoreVertical className="w-3.5 h-3.5" />}
                                 </button>
                                 <AnimatePresence>
                                     {overflowOpen && (
@@ -1197,13 +1310,44 @@ export const TicketsView: React.FC = () => {
                                             animate={{ opacity: 1, scale: 1, y: 0 }}
                                             exit={{ opacity: 0, scale: 0.95, y: -4 }}
                                             transition={{ duration: 0.12 }}
-                                            className="absolute right-0 top-full mt-1 z-50 bg-surface-container border border-outline-variant rounded shadow-lg min-w-[160px] py-1"
+                                            className="absolute right-0 top-full mt-1 z-50 bg-surface-container border border-outline-variant rounded shadow-lg min-w-[175px] py-1"
                                         >
-                                            <button onClick={exportToCSV} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                            <button
+                                                onClick={exportToCSV}
+                                                className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
+                                            >
                                                 <Download className="w-4 h-4 text-on-surface-variant" /> Export CSV
                                             </button>
-                                            <button onClick={exportToExcel} className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors">
+                                            <button
+                                                onClick={exportAllToCSV}
+                                                disabled={isExportingAll}
+                                                className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                                            >
+                                                {isExportingAll ? (
+                                                    <RefreshCw className="w-4 h-4 text-primary animate-spin" />
+                                                ) : (
+                                                    <Download className="w-4 h-4 text-on-surface-variant" />
+                                                )}
+                                                <span>{isExportingAll ? 'Exporting All...' : 'Export All'}</span>
+                                            </button>
+                                            <div className="border-t border-outline-variant my-1" />
+                                            <button
+                                                onClick={exportToExcel}
+                                                className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
+                                            >
                                                 <Download className="w-4 h-4 text-on-surface-variant" /> Export Excel
+                                            </button>
+                                            <button
+                                                onClick={exportAllToExcel}
+                                                disabled={isExportingAll}
+                                                className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                                            >
+                                                {isExportingAll ? (
+                                                    <RefreshCw className="w-4 h-4 text-primary animate-spin" />
+                                                ) : (
+                                                    <Download className="w-4 h-4 text-on-surface-variant" />
+                                                )}
+                                                <span>{isExportingAll ? 'Exporting All Excel...' : 'Export All (Excel)'}</span>
                                             </button>
                                         </motion.div>
                                     )}
