@@ -18,4 +18,6 @@ urlpatterns = [
     path('export/', views.export_report, name='report-export'),
     path('logs/', views.generation_logs, name='report-logs'),
     path('templates/', views.list_templates, name='report-templates'),
+    path('dashboard-metrics/', views.dashboard_metrics, name='dashboard-metrics'),
 ]
+

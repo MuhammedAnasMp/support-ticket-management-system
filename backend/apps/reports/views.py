@@ -255,3 +255,24 @@ def list_templates(request):
     from .templates_registry import get_prebuilt_templates
     return Response(get_prebuilt_templates())
 
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def dashboard_metrics(request):
+    """Get dynamic role-tailored dashboard metrics and worker performance stats."""
+    from .metrics_engine import get_dashboard_metrics
+    from_date = request.query_params.get('from_date')
+    to_date = request.query_params.get('to_date')
+    store_id = request.query_params.get('store')
+    department_id = request.query_params.get('department')
+
+    metrics = get_dashboard_metrics(
+        user=request.user,
+        from_date_str=from_date,
+        to_date_str=to_date,
+        store_id=store_id,
+        department_id=department_id
+    )
+    return Response(metrics)
+
+
