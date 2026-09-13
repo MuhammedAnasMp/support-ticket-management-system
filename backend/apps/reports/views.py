@@ -263,6 +263,7 @@ def dashboard_metrics(request):
     from .metrics_engine import get_dashboard_metrics
     from_date = request.query_params.get('from_date')
     to_date = request.query_params.get('to_date')
+    date_type = request.query_params.get('date_type')
     store_id = request.query_params.get('store')
     department_id = request.query_params.get('department')
 
@@ -270,6 +271,7 @@ def dashboard_metrics(request):
         user=request.user,
         from_date_str=from_date,
         to_date_str=to_date,
+        date_type=date_type,
         store_id=store_id,
         department_id=department_id
     )

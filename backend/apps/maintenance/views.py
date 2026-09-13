@@ -1,4 +1,4 @@
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, F
 from rest_framework import viewsets, exceptions
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
@@ -272,17 +272,17 @@ class TicketViewSet(viewsets.ModelViewSet):
                 if from_date and to_date_val:
                     queryset = queryset.filter(
                         Q(approved_date__gte=from_date, approved_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
                     )
                 elif from_date:
                     queryset = queryset.filter(
                         Q(approved_date__gte=from_date) |
-                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date)
+                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__gt=F('created_date'))
                     )
                 elif to_date_val:
                     queryset = queryset.filter(
                         Q(approved_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Open', history__changed_date__lte=to_date_val)
+                        Q(history__status__status_name__iexact='Open', history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
                     )
                 queryset = queryset.distinct()
 
@@ -389,6 +389,28 @@ class TicketViewSet(viewsets.ModelViewSet):
                     queryset = queryset.filter(created_date__gte=from_date)
                 elif to_date_val:
                     queryset = queryset.filter(created_date__lte=to_date_val)
+        elif date_type and date_type != 'created':
+            # When from_date and to_date are not specified, filter by date_type stage/status
+            if date_type in ('open', 'approved'):
+                queryset = queryset.filter(
+                    Q(approved_date__isnull=False) | Q(status__status_name__iexact='Open')
+                ).distinct()
+            elif date_type in ('rejected', 'relected'):
+                queryset = queryset.filter(
+                    Q(rejected_date__isnull=False) | Q(status__status_name__iexact='Rejected')
+                ).distinct()
+            elif date_type == 'blocked':
+                queryset = queryset.filter(status__status_name__iexact='Blocked').distinct()
+            elif date_type in ('in_progress', 'in progress'):
+                queryset = queryset.filter(status__status_name__iexact='In Progress').distinct()
+            elif date_type in ('location_approval', 'location approval', 'location_approved'):
+                queryset = queryset.filter(
+                    Q(location_approved_date__isnull=False) | Q(status__status_name__iexact='Location Approval')
+                ).distinct()
+            elif date_type in ('closed', 'completed'):
+                queryset = queryset.filter(
+                    Q(closed_date__isnull=False) | Q(status__status_name__in=['Closed', 'Completed'])
+                ).distinct()
 
         return queryset
 

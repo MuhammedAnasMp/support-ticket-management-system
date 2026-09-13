@@ -37,6 +37,11 @@ export const DashboardView: React.FC = () => {
         return getCurrentMonthRange().toDate;
     });
 
+    const [dateType, setDateType] = useState<string>(() => {
+        const savedType = localStorage.getItem('ticket-filter-date-type');
+        return savedType || 'created';
+    });
+
     const [selectedStore, setSelectedStore] = useState<string>('');
     const [selectedDept, setSelectedDept] = useState<string>('');
     const [stores, setStores] = useState<any[]>([]);
@@ -45,9 +50,16 @@ export const DashboardView: React.FC = () => {
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
-    const handleDateChange = (from: string, to: string) => {
+    const handleDateChange = (from: string, to: string, type?: string) => {
         setFromDate(from);
         setToDate(to);
+        if (type) {
+            setDateType(type);
+            localStorage.setItem('ticket-filter-date-type', type);
+        } else {
+            setDateType('created');
+            localStorage.setItem('ticket-filter-date-type', 'created');
+        }
         if (from) localStorage.setItem('ticket-filter-from-date', from);
         else localStorage.removeItem('ticket-filter-from-date');
 
@@ -82,6 +94,7 @@ export const DashboardView: React.FC = () => {
             const query = new URLSearchParams();
             if (fromDate) query.set('from_date', fromDate);
             if (toDate) query.set('to_date', toDate);
+            if (dateType && dateType !== 'created') query.set('date_type', dateType);
             if (selectedStore) query.set('store', selectedStore);
             if (selectedDept) query.set('department', selectedDept);
 
@@ -98,7 +111,7 @@ export const DashboardView: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [token, fromDate, toDate, selectedStore, selectedDept]);
+    }, [token, fromDate, toDate, dateType, selectedStore, selectedDept]);
 
     useEffect(() => {
         fetchMetadata();
@@ -144,6 +157,7 @@ export const DashboardView: React.FC = () => {
             <DateFilterToolbar
                 fromDate={fromDate}
                 toDate={toDate}
+                dateType={dateType}
                 onDateChange={handleDateChange}
                 stores={stores}
                 selectedStore={selectedStore}

@@ -6,7 +6,8 @@ import { SearchableSelect, type SelectOption } from '../../../components/Searcha
 interface DateFilterToolbarProps {
     fromDate: string;
     toDate: string;
-    onDateChange: (from: string, to: string) => void;
+    dateType?: string;
+    onDateChange: (from: string, to: string, dateType?: string) => void;
     stores?: any[];
     selectedStore?: string;
     onStoreChange?: (storeId: string) => void;
@@ -20,6 +21,7 @@ interface DateFilterToolbarProps {
 export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
     fromDate,
     toDate,
+    dateType,
     onDateChange,
     stores = [],
     selectedStore = '',
@@ -167,7 +169,8 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                 <DateRangePickerCard
                     fromDate={fromDate}
                     toDate={toDate}
-                    onDateRangeChange={(from, to) => onDateChange(from, to)}
+                    dateType={dateType}
+                    onDateRangeChange={(from, to, dt) => onDateChange(from, to, dt)}
                     onReset={handleReset}
                 />
             </div>

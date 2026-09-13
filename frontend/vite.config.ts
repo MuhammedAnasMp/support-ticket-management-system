@@ -20,6 +20,11 @@ export default defineConfig(({ command }) => {
 
       injectManifest: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        rollupOptions: {
+          output: {
+            codeSplitting: false,
+          },
+        } as any,
       },
 
       registerType: 'autoUpdate',

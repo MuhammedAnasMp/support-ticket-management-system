@@ -36,11 +36,12 @@ def parse_date_range(from_date_str, to_date_str):
     return from_dt, to_dt
 
 
-def get_dashboard_metrics(user, from_date_str=None, to_date_str=None, store_id=None, department_id=None):
+def get_dashboard_metrics(user, from_date_str=None, to_date_str=None, date_type=None, store_id=None, department_id=None):
     """
     Computes dashboard metric dataset tailored to user's role and permission flags.
     """
     from_dt, to_dt = parse_date_range(from_date_str, to_date_str)
+    date_type_clean = (date_type or 'created').lower().strip()
     role_name = (user.role.role_name if user.role else '').strip()
     role_lower = role_name.lower()
 
@@ -54,11 +55,141 @@ def get_dashboard_metrics(user, from_date_str=None, to_date_str=None, store_id=N
     # Base ticket queryset
     ticket_qs = Ticket.objects.all()
 
-    # Date filtering (created_date within range)
-    if from_dt:
-        ticket_qs = ticket_qs.filter(created_date__gte=from_dt)
-    if to_dt:
-        ticket_qs = ticket_qs.filter(created_date__lte=to_dt)
+    # Date and Date-Type filtering
+    if from_dt or to_dt:
+        if date_type_clean in ('open', 'approved'):
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(approved_date__gte=from_dt, approved_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_dt, history__changed_date__lte=to_dt, history__changed_date__gt=F('created_date'))
+                )
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(approved_date__gte=from_dt) |
+                    Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_dt, history__changed_date__gt=F('created_date'))
+                )
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(approved_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Open', history__changed_date__lte=to_dt, history__changed_date__gt=F('created_date'))
+                )
+            ticket_qs = ticket_qs.distinct()
+
+        elif date_type_clean in ('rejected', 'relected'):
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(rejected_date__gte=from_dt, rejected_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_dt, history__changed_date__lte=to_dt)
+                )
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(rejected_date__gte=from_dt) |
+                    Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_dt)
+                )
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(rejected_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Rejected', history__changed_date__lte=to_dt)
+                )
+            ticket_qs = ticket_qs.distinct()
+
+        elif date_type_clean == 'blocked':
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(
+                    history__status__status_name__iexact='Blocked',
+                    history__changed_date__gte=from_dt,
+                    history__changed_date__lte=to_dt
+                )
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(
+                    history__status__status_name__iexact='Blocked',
+                    history__changed_date__gte=from_dt
+                )
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(
+                    history__status__status_name__iexact='Blocked',
+                    history__changed_date__lte=to_dt
+                )
+            ticket_qs = ticket_qs.distinct()
+
+        elif date_type_clean in ('in_progress', 'in progress'):
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(
+                    history__status__status_name__iexact='In Progress',
+                    history__changed_date__gte=from_dt,
+                    history__changed_date__lte=to_dt
+                )
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(
+                    history__status__status_name__iexact='In Progress',
+                    history__changed_date__gte=from_dt
+                )
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(
+                    history__status__status_name__iexact='In Progress',
+                    history__changed_date__lte=to_dt
+                )
+            ticket_qs = ticket_qs.distinct()
+
+        elif date_type_clean in ('location_approval', 'location approval', 'location_approved'):
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(location_approved_date__gte=from_dt, location_approved_date__lte=to_dt) |
+                    Q(history__location_approved_date__gte=from_dt, history__location_approved_date__lte=to_dt)
+                )
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(location_approved_date__gte=from_dt) |
+                    Q(history__location_approved_date__gte=from_dt)
+                )
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(location_approved_date__lte=to_dt) |
+                    Q(history__location_approved_date__lte=to_dt)
+                )
+            ticket_qs = ticket_qs.distinct()
+
+        elif date_type_clean in ('closed', 'completed'):
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(closed_date__gte=from_dt, closed_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_dt, history__changed_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_dt, history__changed_date__lte=to_dt)
+                )
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(closed_date__gte=from_dt) |
+                    Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_dt) |
+                    Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_dt)
+                )
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(
+                    Q(closed_date__lte=from_dt) |
+                    Q(history__status__status_name__iexact='Completed', history__changed_date__lte=to_dt) |
+                    Q(history__status__status_name__iexact='Closed', history__changed_date__lte=to_dt)
+                )
+            ticket_qs = ticket_qs.distinct()
+
+        else:
+            if from_dt and to_dt:
+                ticket_qs = ticket_qs.filter(created_date__gte=from_dt, created_date__lte=to_dt)
+            elif from_dt:
+                ticket_qs = ticket_qs.filter(created_date__gte=from_dt)
+            elif to_dt:
+                ticket_qs = ticket_qs.filter(created_date__lte=to_dt)
+    elif date_type_clean and date_type_clean != 'created':
+        if date_type_clean in ('open', 'approved'):
+            ticket_qs = ticket_qs.filter(Q(approved_date__isnull=False) | Q(status__status_name__iexact='Open')).distinct()
+        elif date_type_clean in ('rejected', 'relected'):
+            ticket_qs = ticket_qs.filter(Q(rejected_date__isnull=False) | Q(status__status_name__iexact='Rejected')).distinct()
+        elif date_type_clean == 'blocked':
+            ticket_qs = ticket_qs.filter(status__status_name__iexact='Blocked').distinct()
+        elif date_type_clean in ('in_progress', 'in progress'):
+            ticket_qs = ticket_qs.filter(status__status_name__iexact='In Progress').distinct()
+        elif date_type_clean in ('location_approval', 'location approval', 'location_approved'):
+            ticket_qs = ticket_qs.filter(Q(location_approved_date__isnull=False) | Q(status__status_name__iexact='Location Approval')).distinct()
+        elif date_type_clean in ('closed', 'completed'):
+            ticket_qs = ticket_qs.filter(Q(closed_date__isnull=False) | Q(status__status_name__in=['Closed', 'Completed'])).distinct()
 
     # Filter by user accessible stores if user is restricted
     if is_technician:

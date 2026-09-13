@@ -36,6 +36,18 @@ const formatDateStr = (d: Date | null | undefined): string => {
     return `${year}-${month}-${day}`;
 };
 
+const parseDateStr = (str: string): Date => {
+    if (!str) return new Date();
+    const parts = str.split('-');
+    if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        return new Date(year, month, day);
+    }
+    return new Date(str);
+};
+
 const PANEL_WIDTH = 400;
 
 export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
@@ -51,8 +63,8 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
 
     // Local draft — only committed to parent on "Apply"
     const [draft, setDraft] = useState([{
-        startDate: fromDate ? new Date(fromDate) : new Date(),
-        endDate: toDate ? new Date(toDate) : new Date(),
+        startDate: parseDateStr(fromDate),
+        endDate: parseDateStr(toDate),
         key: 'selection',
     }]);
 
@@ -61,8 +73,8 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
     // Re-sync draft when parent resets externally
     useEffect(() => {
         setDraft([{
-            startDate: fromDate ? new Date(fromDate) : new Date(),
-            endDate: toDate ? new Date(toDate) : new Date(),
+            startDate: parseDateStr(fromDate),
+            endDate: parseDateStr(toDate),
             key: 'selection',
         }]);
         setDraftDateType(dateType || 'created');
