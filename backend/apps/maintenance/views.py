@@ -260,14 +260,135 @@ class TicketViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(allocations__worker_id=worker).distinct()
 
         from_date = params.get('from_date')
-        if from_date:
-            queryset = queryset.filter(created_date__gte=from_date)
-
         to_date = params.get('to_date')
-        if to_date:
-            if len(to_date) == 10:
-                to_date = f"{to_date} 23:59:59"
-            queryset = queryset.filter(created_date__lte=to_date)
+        date_type = (params.get('date_type') or 'created').lower().strip()
+
+        if from_date or to_date:
+            to_date_val = to_date
+            if to_date_val and len(to_date_val) == 10:
+                to_date_val = f"{to_date_val} 23:59:59"
+
+            if date_type in ('open', 'approved'):
+                if from_date and to_date_val:
+                    queryset = queryset.filter(
+                        Q(approved_date__gte=from_date, approved_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                    )
+                elif from_date:
+                    queryset = queryset.filter(
+                        Q(approved_date__gte=from_date) |
+                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date)
+                    )
+                elif to_date_val:
+                    queryset = queryset.filter(
+                        Q(approved_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Open', history__changed_date__lte=to_date_val)
+                    )
+                queryset = queryset.distinct()
+
+            elif date_type in ('rejected', 'relected'):
+                if from_date and to_date_val:
+                    queryset = queryset.filter(
+                        Q(rejected_date__gte=from_date, rejected_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                    )
+                elif from_date:
+                    queryset = queryset.filter(
+                        Q(rejected_date__gte=from_date) |
+                        Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_date)
+                    )
+                elif to_date_val:
+                    queryset = queryset.filter(
+                        Q(rejected_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Rejected', history__changed_date__lte=to_date_val)
+                    )
+                queryset = queryset.distinct()
+
+            elif date_type == 'blocked':
+                if from_date and to_date_val:
+                    queryset = queryset.filter(
+                        history__status__status_name__iexact='Blocked',
+                        history__changed_date__gte=from_date,
+                        history__changed_date__lte=to_date_val
+                    )
+                elif from_date:
+                    queryset = queryset.filter(
+                        history__status__status_name__iexact='Blocked',
+                        history__changed_date__gte=from_date
+                    )
+                elif to_date_val:
+                    queryset = queryset.filter(
+                        history__status__status_name__iexact='Blocked',
+                        history__changed_date__lte=to_date_val
+                    )
+                queryset = queryset.distinct()
+
+            elif date_type in ('in_progress', 'in progress'):
+                if from_date and to_date_val:
+                    queryset = queryset.filter(
+                        history__status__status_name__iexact='In Progress',
+                        history__changed_date__gte=from_date,
+                        history__changed_date__lte=to_date_val
+                    )
+                elif from_date:
+                    queryset = queryset.filter(
+                        history__status__status_name__iexact='In Progress',
+                        history__changed_date__gte=from_date
+                    )
+                elif to_date_val:
+                    queryset = queryset.filter(
+                        history__status__status_name__iexact='In Progress',
+                        history__changed_date__lte=to_date_val
+                    )
+                queryset = queryset.distinct()
+
+            elif date_type in ('location_approval', 'location approval', 'location_approved'):
+                if from_date and to_date_val:
+                    queryset = queryset.filter(
+                        Q(location_approved_date__gte=from_date, location_approved_date__lte=to_date_val) |
+                        Q(history__location_approved_date__gte=from_date, history__location_approved_date__lte=to_date_val)
+                    )
+                elif from_date:
+                    queryset = queryset.filter(
+                        Q(location_approved_date__gte=from_date) |
+                        Q(history__location_approved_date__gte=from_date)
+                    )
+                elif to_date_val:
+                    queryset = queryset.filter(
+                        Q(location_approved_date__lte=to_date_val) |
+                        Q(history__location_approved_date__lte=to_date_val)
+                    )
+                queryset = queryset.distinct()
+
+            elif date_type in ('closed', 'completed'):
+                if from_date and to_date_val:
+                    queryset = queryset.filter(
+                        Q(closed_date__gte=from_date, closed_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                    )
+                elif from_date:
+                    queryset = queryset.filter(
+                        Q(closed_date__gte=from_date) |
+                        Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_date) |
+                        Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_date)
+                    )
+                elif to_date_val:
+                    queryset = queryset.filter(
+                        Q(closed_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Completed', history__changed_date__lte=to_date_val) |
+                        Q(history__status__status_name__iexact='Closed', history__changed_date__lte=to_date_val)
+                    )
+                queryset = queryset.distinct()
+
+            else:
+                # Default: created date
+                if from_date and to_date_val:
+                    queryset = queryset.filter(created_date__gte=from_date, created_date__lte=to_date_val)
+                elif from_date:
+                    queryset = queryset.filter(created_date__gte=from_date)
+                elif to_date_val:
+                    queryset = queryset.filter(created_date__lte=to_date_val)
 
         return queryset
 

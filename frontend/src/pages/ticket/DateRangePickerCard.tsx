@@ -5,10 +5,26 @@ import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { Calendar as CalendarIcon, Filter, RotateCcw, X } from 'lucide-react';
 
+export interface DateTypeOption {
+    value: string;
+    label: string;
+}
+
+export const DATE_TYPE_OPTIONS: DateTypeOption[] = [
+    { value: 'created', label: 'Created Date' },
+    { value: 'open', label: 'Open Date' },
+    { value: 'in_progress', label: 'In Progress Date' },
+    { value: 'blocked', label: 'Blocked Date' },
+    { value: 'location_approval', label: 'Location Approval Date' },
+    { value: 'rejected', label: 'Rejected Date' },
+    { value: 'closed', label: 'Closed / Completed Date' },
+];
+
 interface DateRangePickerCardProps {
     fromDate: string; // YYYY-MM-DD
     toDate: string; // YYYY-MM-DD
-    onDateRangeChange: (from: string, to: string) => void;
+    dateType?: string;
+    onDateRangeChange: (from: string, to: string, dateType: string) => void;
     onReset: () => void;
 }
 
@@ -25,6 +41,7 @@ const PANEL_WIDTH = 400;
 export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
     fromDate,
     toDate,
+    dateType = 'created',
     onDateRangeChange,
     onReset,
 }) => {
@@ -39,6 +56,8 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
         key: 'selection',
     }]);
 
+    const [draftDateType, setDraftDateType] = useState<string>(dateType || 'created');
+
     // Re-sync draft when parent resets externally
     useEffect(() => {
         setDraft([{
@@ -46,7 +65,8 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
             endDate: toDate ? new Date(toDate) : new Date(),
             key: 'selection',
         }]);
-    }, [fromDate, toDate]);
+        setDraftDateType(dateType || 'created');
+    }, [fromDate, toDate, dateType]);
 
     const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -105,27 +125,35 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
     };
 
     const handleApply = () => {
-        onDateRangeChange(formatDateStr(draft[0].startDate), formatDateStr(draft[0].endDate));
+        onDateRangeChange(formatDateStr(draft[0].startDate), formatDateStr(draft[0].endDate), draftDateType);
         setIsOpen(false);
     };
 
     const handleReset = () => {
         setDraft([{ startDate: new Date(), endDate: new Date(), key: 'selection' }]);
+        setDraftDateType('created');
         onReset();
         setIsOpen(false);
     };
 
     const activeLabel = React.useMemo(() => {
-        if (fromDate && toDate) {
-            if (fromDate === toDate) return `Date: ${fromDate}`;
-            return `${fromDate} → ${toDate}`;
-        }
-        if (fromDate) return `From: ${fromDate}`;
-        if (toDate) return `To: ${toDate}`;
-        return 'Date Range';
-    }, [fromDate, toDate]);
+        const selectedOpt = DATE_TYPE_OPTIONS.find(o => o.value === dateType);
+        const prefix = selectedOpt && dateType && dateType !== 'created'
+            ? `${selectedOpt.label.replace(' Date', '')}: `
+            : '';
 
-    const hasActive = Boolean(fromDate || toDate);
+        if (fromDate && toDate) {
+            if (fromDate === toDate) return `${prefix}${fromDate}`;
+            return `${prefix}${fromDate} → ${toDate}`;
+        }
+        if (fromDate) return `${prefix}From: ${fromDate}`;
+        if (toDate) return `${prefix}To: ${toDate}`;
+        return selectedOpt && dateType && dateType !== 'created'
+            ? selectedOpt.label
+            : 'Date Range';
+    }, [fromDate, toDate, dateType]);
+
+    const hasActive = Boolean(fromDate || toDate || (dateType && dateType !== 'created'));
 
     const panel = isOpen ? (
         <>
@@ -168,6 +196,25 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                     >
                         <X className="w-4 h-4" />
                     </button>
+                </div>
+
+                {/* Date Type Selector Dropdown */}
+                <div className="px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between gap-2">
+                    <label htmlFor="date-type-select" className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant shrink-0">
+                        Filter Date By:
+                    </label>
+                    <select
+                        id="date-type-select"
+                        value={draftDateType}
+                        onChange={(e) => setDraftDateType(e.target.value)}
+                        className="w-full text-xs font-semibold bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors"
+                    >
+                        {DATE_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
                 {/* Calendar — only updates draft, not parent */}

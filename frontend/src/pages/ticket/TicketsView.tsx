@@ -136,6 +136,10 @@ export const TicketsView: React.FC = () => {
         if (savedTo !== null) return savedTo;
         return getCurrentMonthRange().toDate;
     });
+    const [dateType, setDateType] = useState<string>(() => {
+        const savedType = localStorage.getItem('ticket-filter-date-type');
+        return savedType || 'created';
+    });
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [totalCount, setTotalCount] = useState(0);
@@ -412,6 +416,7 @@ export const TicketsView: React.FC = () => {
             if (!debouncedSearch) {
                 if (fromDate) query.set('from_date', fromDate);
                 if (toDate) query.set('to_date', toDate);
+                if (dateType && dateType !== 'created') query.set('date_type', dateType);
             }
             const response = await fetch(`${API_URL}/maintenance/ticket/?${query.toString()}`, {
                 headers: { Authorization: `Token ${token}` }
@@ -431,7 +436,7 @@ export const TicketsView: React.FC = () => {
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterSubDept, filterStatus, filterPriority, filterWorker, fromDate, toDate]);
+    }, [token, page, pageSize, debouncedSearch, filterStore, filterDept, filterSubDept, filterStatus, filterPriority, filterWorker, fromDate, toDate, dateType]);
 
     const fetchWorkersForRange = useCallback(async () => {
         if (!token) return;
@@ -595,14 +600,18 @@ export const TicketsView: React.FC = () => {
         fetchTickets();
     };
 
-    const handleDateRangeChange = (from: string, to: string) => {
+    const handleDateRangeChange = (from: string, to: string, type: string = 'created') => {
         setFromDate(from);
         setToDate(to);
+        setDateType(type);
         if (from) localStorage.setItem('ticket-filter-from-date', from);
         else localStorage.removeItem('ticket-filter-from-date');
 
         if (to) localStorage.setItem('ticket-filter-to-date', to);
         else localStorage.removeItem('ticket-filter-to-date');
+
+        if (type) localStorage.setItem('ticket-filter-date-type', type);
+        else localStorage.removeItem('ticket-filter-date-type');
 
         setPage(1);
     };
@@ -611,8 +620,10 @@ export const TicketsView: React.FC = () => {
         const { fromDate: defaultFrom, toDate: defaultTo } = getCurrentMonthRange();
         setFromDate(defaultFrom);
         setToDate(defaultTo);
+        setDateType('created');
         localStorage.setItem('ticket-filter-from-date', defaultFrom);
         localStorage.setItem('ticket-filter-to-date', defaultTo);
+        localStorage.setItem('ticket-filter-date-type', 'created');
         setPage(1);
     };
 
@@ -1011,6 +1022,7 @@ export const TicketsView: React.FC = () => {
         if (!debouncedSearch) {
             if (fromDate) query.set('from_date', fromDate);
             if (toDate) query.set('to_date', toDate);
+            if (dateType && dateType !== 'created') query.set('date_type', dateType);
         }
 
         const response = await fetch(`${API_URL}/maintenance/ticket/?${query.toString()}`, {
@@ -1250,6 +1262,7 @@ export const TicketsView: React.FC = () => {
                             <DateRangePickerCard
                                 fromDate={fromDate}
                                 toDate={toDate}
+                                dateType={dateType}
                                 onDateRangeChange={handleDateRangeChange}
                                 onReset={handleResetDates}
                             />
@@ -1446,6 +1459,7 @@ export const TicketsView: React.FC = () => {
                             <DateRangePickerCard
                                 fromDate={fromDate}
                                 toDate={toDate}
+                                dateType={dateType}
                                 onDateRangeChange={handleDateRangeChange}
                                 onReset={handleResetDates}
                             />
