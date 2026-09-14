@@ -146,6 +146,7 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
+        store = data.get('store') or (getattr(self.instance, 'store', None) if self.instance else None)
         department = data.get('department') or getattr(self.instance, 'department', None)
         nature = data.get('nature') or getattr(self.instance, 'nature', None)
         priority = data.get('priority') or getattr(self.instance, 'priority', None)
@@ -184,16 +185,17 @@ class TicketWriteSerializer(serializers.ModelSerializer):
                 data['status'] = s_obj
                 status = s_obj
 
-        if not data.get('work_order_no'):
+        if self.instance and getattr(self.instance, 'work_order_no', None) and 'work_order_no' not in data:
+            data['work_order_no'] = self.instance.work_order_no
+        elif not data.get('work_order_no'):
             from .utils import generate_work_order_no
-            data['work_order_no'] = generate_work_order_no(data.get('store'))
+            data['work_order_no'] = generate_work_order_no(store)
 
         if priority and department and priority.department != department:
             from .models import Priority
             matching_p = Priority.objects.filter(department=department).first()
             if matching_p:
                 data['priority'] = matching_p
-
 
         if nature and department and nature.sub_department.department != department:
             raise serializers.ValidationError(

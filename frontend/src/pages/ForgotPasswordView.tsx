@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  User, Lock, AlertCircle, ArrowRight, RefreshCw, 
+import {
+  User, Lock, AlertCircle, ArrowRight, RefreshCw,
   MessageSquare, CheckCircle2, ArrowLeft, KeyRound
 } from 'lucide-react';
 
@@ -15,7 +15,7 @@ export const ForgotPasswordView: React.FC = () => {
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [maskedWhatsapp, setMaskedWhatsapp] = useState('');
@@ -289,11 +289,12 @@ export const ForgotPasswordView: React.FC = () => {
 
             <div className="flex justify-between items-center mt-6 pt-6 border-t border-outline-variant dark:border-dark-outline-variant text-sm">
               <button
-                onClick={() => setStep(1)}
+                onClick={() => navigate(-1)}
                 className="text-on-surface-variant dark:text-dark-on-surface-variant hover:text-primary font-medium cursor-pointer"
               >
-                Change employee no.
+                {`<- Back`}
               </button>
+
               <button
                 onClick={handleRequestOtp}
                 disabled={loading}

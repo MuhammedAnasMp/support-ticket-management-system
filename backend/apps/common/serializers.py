@@ -48,6 +48,8 @@ class MediaWriteSerializer(serializers.ModelSerializer):
             ).first()
             if matching_cat:
                 data["category"] = matching_cat
+            else:
+                raise serializers.ValidationError({"category": f"Category '{category.category_name}' does not belong to department '{ticket.department.department_name}'."})
 
         return data
 

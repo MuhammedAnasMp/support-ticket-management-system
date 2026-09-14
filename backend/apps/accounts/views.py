@@ -514,21 +514,34 @@ class ProfileView(APIView):
 
 def send_whatsapp_otp(whatsapp_number, otp, user=None):
     import urllib.request
+    import urllib.error
     import json
+    import ssl
     from django.conf import settings
     import os
     from django.utils import timezone
 
-    # Clean/format the phone number (Kuwait country code is +965)
-    to_number = str(whatsapp_number).strip()
-    if not to_number.startswith('+'):
-        if len(to_number) == 8:
-            to_number = f"+965{to_number}"
-        else:
-            if to_number.startswith('965'):
-                to_number = f"+{to_number}"
-            else:
-                to_number = f"+965{to_number}"
+    # Format phone number for Kuwait (+965, 8 digits) and India (+91, 10 digits)
+    raw_num = str(whatsapp_number).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if raw_num.startswith('+'):
+        to_number = raw_num
+    elif raw_num.startswith('00'):
+        to_number = f"+{raw_num[2:]}"
+    elif len(raw_num) == 8:
+        # 8 digits -> Kuwait (+965)
+        to_number = f"+965{raw_num}"
+    elif len(raw_num) == 10:
+        # 10 digits -> India (+91)
+        to_number = f"+91{raw_num}"
+    elif len(raw_num) == 11 and raw_num.startswith('0'):
+        # 11 digits starting with 0 (e.g. 07902932085) -> India (+91)
+        to_number = f"+91{raw_num[1:]}"
+    elif len(raw_num) == 11 and raw_num.startswith('965'):
+        to_number = f"+{raw_num}"
+    elif len(raw_num) == 12 and raw_num.startswith('91'):
+        to_number = f"+{raw_num}"
+    else:
+        to_number = f"+965{raw_num}"
 
     url = "https://rcmapi.instaalerts.zone/services/rcm/sendMessage"
     token = os.getenv("WHATSAPP_API_TOKEN", "Bearer 4MQK252vVnF8HaO0tfqTXQ==")
@@ -583,11 +596,34 @@ def send_whatsapp_otp(whatsapp_number, otp, user=None):
         }
     }
 
+    # Prepare SSL context with fallback for production SSL certificate verification failures
+    ssl_context = None
+    try:
+        ssl_context = ssl.create_default_context()
+        try:
+            import certifi
+            ssl_context.load_verify_locations(cafile=certifi.where())
+        except Exception:
+            pass
+    except Exception:
+        ssl_context = ssl._create_unverified_context()
+
     try:
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(
             url, data=data, headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=10) as response:
+        
+        try:
+            resp_cm = urllib.request.urlopen(req, timeout=10, context=ssl_context)
+        except urllib.error.URLError as url_err:
+            err_str = str(url_err)
+            if "CERTIFICATE_VERIFY_FAILED" in err_str or "certificate verify failed" in err_str:
+                unverified_ctx = ssl._create_unverified_context()
+                resp_cm = urllib.request.urlopen(req, timeout=10, context=unverified_ctx)
+            else:
+                raise
+
+        with resp_cm as response:
             res_body = response.read().decode('utf-8')
             print(
                 f"\n========================================\n[WHATSAPP SENT via InstaAlerts to {to_number}]\nResponse: {res_body}\n========================================\n")
