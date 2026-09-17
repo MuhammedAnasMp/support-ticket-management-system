@@ -282,7 +282,8 @@ class Ticket(models.Model):
 
     def delete(self, *args, **kwargs):
         from django.core.exceptions import ValidationError
-        raise ValidationError('Tickets cannot be deleted to preserve system audit log and tracking integrity.')
+        raise ValidationError(
+            'Tickets cannot be deleted to preserve system audit log and tracking integrity.')
 
     def clean(self):
         super().clean()

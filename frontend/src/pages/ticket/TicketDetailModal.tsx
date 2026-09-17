@@ -297,6 +297,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const issueCameraPhotoRef = useRef<HTMLInputElement>(null);
     const issueCameraVideoRef = useRef<HTMLInputElement>(null);
     const completedCameraPhotoRef = useRef<HTMLInputElement>(null);
+    const completedCameraVideoRef = useRef<HTMLInputElement>(null);
     const [isChatOpen, setIsChatOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 640);
     const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
     const [chatMessageCount, setChatMessageCount] = useState<number>(0);
@@ -4249,7 +4250,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                             {/* Modal Body - Expense Breakdown */}
                             <div className="p-4 overflow-y-auto space-y-4 flex-1 scrollbar-thin">
-                                <Can permission={['maintenance.can_view_expance_for_ticket', 'can_view_expance_for_ticket']}>
+                                <Can permission={['maintenance.can_view_expance_for_ticket', 'can_view_expance_for_ticket'] as any}>
                                     {(() => {
                                         let totalLaborHours = 0;
                                         let totalLaborCost = 0;
