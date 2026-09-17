@@ -74,6 +74,8 @@ export interface WorkLog {
     hourly_rate: string;
     labour_amount: string;
     work_done: string;
+    is_claimed?: boolean;
+    claim?: any;
 }
 
 export interface Expense {
@@ -86,6 +88,8 @@ export interface Expense {
     approved: boolean;
     receipt?: Media | null;
     receipts?: Media[] | null;
+    is_claimed?: boolean;
+    claim?: any;
 }
 
 export interface MediaCategory {

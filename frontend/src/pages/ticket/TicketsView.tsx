@@ -128,13 +128,11 @@ export const TicketsView: React.FC = () => {
     const [filterSubDept, setFilterSubDept] = useState('');
     const [fromDate, setFromDate] = useState<string>(() => {
         const savedFrom = localStorage.getItem('ticket-filter-from-date');
-        if (savedFrom !== null) return savedFrom;
-        return getCurrentMonthRange().fromDate;
+        return savedFrom || '';
     });
     const [toDate, setToDate] = useState<string>(() => {
         const savedTo = localStorage.getItem('ticket-filter-to-date');
-        if (savedTo !== null) return savedTo;
-        return getCurrentMonthRange().toDate;
+        return savedTo || '';
     });
     const [dateType, setDateType] = useState<string>(() => {
         const savedType = localStorage.getItem('ticket-filter-date-type');
@@ -617,13 +615,12 @@ export const TicketsView: React.FC = () => {
     };
 
     const handleResetDates = () => {
-        const { fromDate: defaultFrom, toDate: defaultTo } = getCurrentMonthRange();
-        setFromDate(defaultFrom);
-        setToDate(defaultTo);
+        setFromDate('');
+        setToDate('');
         setDateType('created');
-        localStorage.setItem('ticket-filter-from-date', defaultFrom);
-        localStorage.setItem('ticket-filter-to-date', defaultTo);
-        localStorage.setItem('ticket-filter-date-type', 'created');
+        localStorage.removeItem('ticket-filter-from-date');
+        localStorage.removeItem('ticket-filter-to-date');
+        localStorage.removeItem('ticket-filter-date-type');
         setPage(1);
     };
 

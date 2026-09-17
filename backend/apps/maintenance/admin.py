@@ -44,6 +44,9 @@ class TicketAdmin(admin.ModelAdmin):
     search_fields = ('work_order_no', 'title',
                      'description', 'created_by__username')
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Allocation)
 class AllocationAdmin(admin.ModelAdmin):

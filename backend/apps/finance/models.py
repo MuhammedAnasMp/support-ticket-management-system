@@ -71,6 +71,35 @@ class EmployeeRate(models.Model):
             super().save(*args, **kwargs)
 
 
+class WorkerClaim(models.Model):
+    STATUS_CHOICES = [
+        ('Pending', 'Pending'),
+        ('Approved', 'Approved'),
+        ('Paid', 'Paid'),
+        ('Rejected', 'Rejected'),
+    ]
+
+    claim_id = models.AutoField(primary_key=True)
+    worker = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='worker_claims')
+    ticket = models.ForeignKey(
+        'maintenance.Ticket', on_delete=models.CASCADE, related_name='worker_claims')
+    claim_date = models.DateTimeField(auto_now_add=True)
+    total_claimed_amount = models.DecimalField(decimal_places=2, max_digits=12, default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_claims')
+    remarks = models.TextField(blank=True, null=True)
+
+    class Meta:
+        permissions = [
+            ('approve_workerclaim', 'Can approve worker claim'),
+        ]
+
+    def __str__(self):
+        return f"Claim {self.claim_id} - Ticket {self.ticket.work_order_no} ({self.worker.username})"
+
+
 class Expense(models.Model):
     expense_id = models.AutoField(primary_key=True)
     ticket = models.ForeignKey(
@@ -89,6 +118,9 @@ class Expense(models.Model):
                                     null=True, blank=True, related_name='approved_expenses')
     responsible_store = models.ForeignKey(
         'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    is_claimed = models.BooleanField(default=False)
+    claim = models.ForeignKey(
+        WorkerClaim, on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
 
     class Meta:
         permissions = [
@@ -133,6 +165,10 @@ class Reconciliation(models.Model):
     expense_total = models.DecimalField(decimal_places=2, max_digits=12)
     material_total = models.DecimalField(decimal_places=2, max_digits=12)
     grand_total = models.DecimalField(decimal_places=2, max_digits=12)
+    claimed_labour_total = models.DecimalField(decimal_places=2, max_digits=12, default=0)
+    claimed_expense_total = models.DecimalField(decimal_places=2, max_digits=12, default=0)
+    total_claimed_amount = models.DecimalField(decimal_places=2, max_digits=12, default=0)
+    net_payable_amount = models.DecimalField(decimal_places=2, max_digits=12, default=0)
     remarks = models.TextField(blank=True, null=True)
     verified_date = models.DateTimeField(auto_now_add=True)
     completed = models.BooleanField(default=False)
@@ -159,3 +195,4 @@ class Reconciliation(models.Model):
 
     def __str__(self):
         return f"Reconciliation {self.reconciliation_id} - Ticket {self.ticket.work_order_no}"
+

@@ -434,13 +434,11 @@ class TicketViewSet(viewsets.ModelViewSet):
             raise exceptions.PermissionDenied({'detail': 'Management role is read-only and cannot edit tickets.'})
         serializer.save()
 
+    def destroy(self, request, *args, **kwargs):
+        raise exceptions.PermissionDenied({'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})
+
     def perform_destroy(self, instance):
-        user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
-        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is read-only and cannot delete tickets.'})
-        instance.delete()
+        raise exceptions.PermissionDenied({'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})
 
 
 class AllocationViewSet(viewsets.ModelViewSet):
@@ -532,6 +530,34 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(ticket_id=ticket)
 
         return queryset
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
+        serializer.save()
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
+        if serializer.instance.is_claimed:
+            raise exceptions.PermissionDenied({'detail': 'This work log has been claimed and cannot be modified.'})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        if role_name in ('management', 'management team') or 'management' in user_groups_lower:
+            raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
+        if instance.is_claimed:
+            raise exceptions.PermissionDenied({'detail': 'This work log has been claimed and cannot be deleted.'})
+        instance.delete()
 
 
 class TicketHistoryViewSet(viewsets.ModelViewSet):

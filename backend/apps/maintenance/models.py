@@ -158,7 +158,8 @@ class WorkNature(models.Model):
         )
         if is_office_nature:
             from django.core.exceptions import ValidationError
-            raise ValidationError('System work nature "Office Related" cannot be deleted.')
+            raise ValidationError(
+                'System work nature "Office Related" cannot be deleted.')
         super().delete(*args, **kwargs)
 
 
@@ -272,10 +273,16 @@ class Ticket(models.Model):
             ("can_view_my_instruction", "Can view my instruction"),
             ("can_view_all_instruction", "Can view all instruction"),
             ("can_see_device_info", "Can see ticket device info"),
+            ("can_view_expance_for_ticket",
+             "Can view the all expance the having in a tickets with detaild view when ticket"),
         ]
 
     def __str__(self):
         return f"{self.work_order_no} - {self.title}"
+
+    def delete(self, *args, **kwargs):
+        from django.core.exceptions import ValidationError
+        raise ValidationError('Tickets cannot be deleted to preserve system audit log and tracking integrity.')
 
     def clean(self):
         super().clean()
@@ -360,7 +367,8 @@ class Allocation(models.Model):
     assigned_date = models.DateTimeField(auto_now_add=True)
     planned_hours = models.DecimalField(max_digits=5, decimal_places=2)
     remarks = models.TextField(null=True, blank=True)
-    voice_note = models.FileField(upload_to='allocation_voice_notes/', null=True, blank=True)
+    voice_note = models.FileField(
+        upload_to='allocation_voice_notes/', null=True, blank=True)
 
     class Meta:
         permissions = [
@@ -400,6 +408,9 @@ class WorkLog(models.Model):
     labour_amount = models.DecimalField(max_digits=10, decimal_places=2)
     work_done = models.TextField()
     created_date = models.DateTimeField(auto_now_add=True)
+    is_claimed = models.BooleanField(default=False)
+    claim = models.ForeignKey(
+        'finance.WorkerClaim', on_delete=models.SET_NULL, null=True, blank=True, related_name='work_logs')
 
     class Meta:
         permissions = [

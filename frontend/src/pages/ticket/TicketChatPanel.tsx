@@ -302,7 +302,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
             setPendingChatQueue(null);
             setTimeout(() => {
                 queueToUpload.forEach(i => {
-                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) { }
                 });
             }, 500);
             fetchMessages();
@@ -516,7 +516,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                     <HistoryIcon className="w-5 h-5 text-primary" />
                     <div>
                         <h3 className="text-xs font-bold text-on-surface">Ticket Chatroom</h3>
-                        <p className="text-[9px] text-outline">Group conversation thread</p>
+                        {/* <p className="text-[9px] text-outline">Group conversation thread</p> */}
                     </div>
                 </div>
                 {onClose && (
