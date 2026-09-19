@@ -92,15 +92,31 @@ export const WorkforceView: React.FC = () => {
       return null;
     }
     const deptIds = new Set<number>();
-    user.sub_departments.forEach((sdName: string) => {
-      const found = subDepartments.find(
-        (sd) => sd.sub_department_name.toLowerCase() === sdName.toLowerCase()
-      );
-      if (found) {
-        const deptId = found.department?.department_id ?? found.department;
-        if (deptId) {
-          deptIds.add(Number(deptId));
+    user.sub_departments.forEach((sd: any) => {
+      let deptId: number | null = null;
+      if (typeof sd === 'object' && sd !== null) {
+        const d = sd.department?.department_id ?? sd.department;
+        if (d && !isNaN(Number(d))) {
+          deptId = Number(d);
         }
+      }
+      if (!deptId && subDepartments.length > 0) {
+        const targetId = typeof sd === 'object' ? (sd.sub_department_id ?? sd.id) : sd;
+        if (targetId !== undefined && targetId !== null && !isNaN(Number(targetId))) {
+          const found = subDepartments.find((s) => Number(s.sub_department_id) === Number(targetId));
+          if (found) {
+            deptId = Number(found.department?.department_id ?? found.department);
+          }
+        }
+        if (!deptId && typeof sd === 'string' && isNaN(Number(sd))) {
+          const matches = subDepartments.filter((s) => s.sub_department_name?.toLowerCase() === sd.toLowerCase());
+          if (matches.length > 0) {
+            deptId = Number(matches[0].department?.department_id ?? matches[0].department);
+          }
+        }
+      }
+      if (deptId && !isNaN(deptId)) {
+        deptIds.add(deptId);
       }
     });
     return deptIds.size > 0 ? deptIds : null;

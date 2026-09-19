@@ -317,16 +317,32 @@ export const TicketsView: React.FC = () => {
         if (!user?.sub_departments || user.sub_departments.length === 0) return null;
         const deptIds = new Set<number>();
         user.sub_departments.forEach((sd: any) => {
-            let sdObj = sd;
-            if (typeof sd === 'string' || typeof sd === 'number') {
-                sdObj = subDepartments.find(item =>
-                    item.sub_department_id === Number(sd) ||
-                    item.sub_department_name.toLowerCase() === String(sd).toLowerCase()
-                );
+            let parentDeptId: number | null = null;
+            if (typeof sd === 'object' && sd !== null) {
+                const d = sd.department?.department_id ?? sd.department;
+                if (d && !isNaN(Number(d))) {
+                    parentDeptId = Number(d);
+                }
             }
-            if (sdObj) {
-                const parentDeptId = Number(sdObj.department?.department_id ?? sdObj.department);
-                if (parentDeptId) deptIds.add(parentDeptId);
+            if (!parentDeptId && subDepartments.length > 0) {
+                const targetId = typeof sd === 'object' ? (sd.sub_department_id ?? sd.id) : sd;
+                if (targetId !== undefined && targetId !== null && !isNaN(Number(targetId))) {
+                    const match = subDepartments.find(item => Number(item.sub_department_id) === Number(targetId));
+                    if (match) {
+                        parentDeptId = Number(match.department?.department_id ?? match.department);
+                    }
+                }
+                if (!parentDeptId && typeof sd === 'string' && isNaN(Number(sd))) {
+                    const matches = subDepartments.filter(item =>
+                        item.sub_department_name?.toLowerCase() === sd.toLowerCase()
+                    );
+                    if (matches.length > 0) {
+                        parentDeptId = Number(matches[0].department?.department_id ?? matches[0].department);
+                    }
+                }
+            }
+            if (parentDeptId && !isNaN(parentDeptId)) {
+                deptIds.add(parentDeptId);
             }
         });
         return deptIds.size > 0 ? deptIds : null;
@@ -351,9 +367,12 @@ export const TicketsView: React.FC = () => {
             if (allowedDeptIds) {
                 return allowedDeptIds.has(sdDeptId);
             }
-            return true;
+            if (!canCreateAllDepts && userDepartmentIds) {
+                return userDepartmentIds.has(Number(sdDeptId));
+            }
+            return canCreateAllDepts;
         });
-    }, [subDepartments, filterDept, canCreateAllDepts, availableDepartments]);
+    }, [subDepartments, filterDept, canCreateAllDepts, availableDepartments, userDepartmentIds]);
 
     useEffect(() => {
         if (filterDept && filterSubDept) {

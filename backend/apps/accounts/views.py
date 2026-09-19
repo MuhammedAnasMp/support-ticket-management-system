@@ -338,7 +338,18 @@ class LoginView(APIView):
                 "profile_image": profile_image_url,
                 "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
                 "last_login": user.last_login.isoformat() if user.last_login else None,
-                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
+                "sub_departments": [
+                    {
+                        "sub_department_id": sd.sub_department_id,
+                        "sub_department_name": sd.sub_department_name,
+                        "department": {
+                            "department_id": sd.department.department_id,
+                            "department_name": sd.department.department_name,
+                            "short_code": sd.department.short_code,
+                        }
+                    }
+                    for sd in user.sub_departments.select_related('department').all()
+                ],
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
                 "tickets_assigned_count": user.allocations.count(),
@@ -394,7 +405,18 @@ class ProfileView(APIView):
                 "profile_image": profile_image_url,
                 "profile_updated_at": user.profile_updated_at.isoformat() if user.profile_updated_at else None,
                 "last_login": user.last_login.isoformat() if user.last_login else None,
-                "sub_departments": [sd.sub_department_name for sd in user.sub_departments.all()],
+                "sub_departments": [
+                    {
+                        "sub_department_id": sd.sub_department_id,
+                        "sub_department_name": sd.sub_department_name,
+                        "department": {
+                            "department_id": sd.department.department_id,
+                            "department_name": sd.department.department_name,
+                            "short_code": sd.department.short_code,
+                        }
+                    }
+                    for sd in user.sub_departments.select_related('department').all()
+                ],
                 "natures": [sn.nature.nature_name for sn in user.skilled_natures.select_related('nature').all()],
                 "tickets_created_count": user.created_tickets.count(),
                 "tickets_assigned_count": user.allocations.count(),
