@@ -339,12 +339,21 @@ export const TicketsView: React.FC = () => {
     }, [departments, userDepartmentIds, canCreateAllDepts]);
 
     const filteredSubDepartments = useMemo(() => {
-        if (!filterDept) return subDepartments;
+        const allowedDeptIds = !canCreateAllDepts && availableDepartments.length > 0
+            ? new Set(availableDepartments.map(d => String(d.department_id)))
+            : null;
+
         return subDepartments.filter(sd => {
-            const sdDeptId = sd.department?.department_id ?? sd.department;
-            return String(sdDeptId) === String(filterDept);
+            const sdDeptId = String(sd.department?.department_id ?? sd.department);
+            if (filterDept) {
+                return sdDeptId === String(filterDept);
+            }
+            if (allowedDeptIds) {
+                return allowedDeptIds.has(sdDeptId);
+            }
+            return true;
         });
-    }, [subDepartments, filterDept]);
+    }, [subDepartments, filterDept, canCreateAllDepts, availableDepartments]);
 
     useEffect(() => {
         if (filterDept && filterSubDept) {
