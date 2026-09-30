@@ -311,7 +311,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
 
                         {/* Recording Timer Badge */}
                         {isRecording && (
-                            <div className="absolute top-3 left-3 bg-red-600/90 text-white px-3 py-1 rounded-full text-xs font-mono font-bold flex items-center gap-2 shadow-lg animate-pulse">
+                            <div className="absolute top-3 left-3 bg-red-600/90 text-white px-3 py-1 rounded-full text-xs  font-bold flex items-center gap-2 shadow-lg animate-pulse">
                                 <span className="w-2 h-2 rounded-full bg-white" />
                                 <span>REC {formatTime(recordingTime)}</span>
                             </div>
@@ -338,18 +338,16 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => setMode('photo')}
-                                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
-                                        mode === 'photo' ? 'bg-primary text-on-primary' : 'bg-gray-800 text-gray-400 hover:text-white'
-                                    }`}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${mode === 'photo' ? 'bg-primary text-on-primary' : 'bg-gray-800 text-gray-400 hover:text-white'
+                                        }`}
                                 >
                                     <Camera className="w-3.5 h-3.5" /> Photo
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setMode('video')}
-                                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
-                                        mode === 'video' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-                                    }`}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${mode === 'video' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+                                        }`}
                                 >
                                     <Video className="w-3.5 h-3.5" /> Video
                                 </button>
@@ -402,7 +400,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                                         >
                                             <RotateCcw className="w-3.5 h-3.5" /> Rotate Left
                                         </button>
-                                        <span className="text-xs font-mono font-medium text-gray-300 px-2">{photoRotation}°</span>
+                                        <span className="text-xs  font-medium text-gray-300 px-2">{photoRotation}°</span>
                                         <button
                                             type="button"
                                             onClick={() => setPhotoRotation(prev => (prev + 90) % 360)}

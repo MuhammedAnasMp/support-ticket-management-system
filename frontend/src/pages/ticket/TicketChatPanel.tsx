@@ -704,7 +704,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                                 >
                                     <RotateCcw className="w-3 h-3" />
                                 </button>
-                                <span className="text-[9px] font-mono text-outline">{draftRotation}°</span>
+                                <span className="text-[9px]  text-outline">{draftRotation}°</span>
                                 <button
                                     type="button"
                                     onClick={() => setDraftRotation(prev => (prev + 90) % 360)}
@@ -946,7 +946,7 @@ export const TicketChatPanel: React.FC<TicketChatPanelProps> = ({ ticketId, onCl
                                                     >
                                                         <RotateCcw className="w-3.5 h-3.5" />
                                                     </button>
-                                                    <span className="text-[10px] font-mono font-bold text-primary px-0.5">{item.rotation}°</span>
+                                                    <span className="text-[10px]  font-bold text-primary px-0.5">{item.rotation}°</span>
                                                     <button
                                                         type="button"
                                                         onClick={() => {

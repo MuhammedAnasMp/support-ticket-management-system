@@ -728,7 +728,7 @@ export const TicketsView: React.FC = () => {
                 minWidth: 100,
                 pinned: isMobile ? null : 'left',
                 cellRenderer: (params: any) => (
-                    <span className="font-mono text-xs font-semibold text-primary truncate block w-full">{params.value}</span>
+                    <span className=" text-xs font-semibold text-primary truncate block w-full">{params.value}</span>
                 )
             },
             {
@@ -803,7 +803,7 @@ export const TicketsView: React.FC = () => {
                     if (!val) return <span className="text-outline-variant text-xs">-</span>;
                     const isMobileOs = /iOS|Android/i.test(val);
                     return (
-                        <span className="inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-medium shrink-0" title={`Created using ${val}`}>
+                        <span className="inline-flex items-center gap-1  text-[11px] px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-medium shrink-0" title={`Created using ${val}`}>
                             {isMobileOs ? (
                                 <Smartphone className="w-3 h-3 shrink-0 text-primary" />
                             ) : (
@@ -1549,7 +1549,7 @@ export const TicketsView: React.FC = () => {
                                         <p className="text-xs font-semibold text-on-surface leading-snug line-clamp-2 flex-1">{ticket.title}</p>
 
                                         <div className="flex items-center justify-between">
-                                            <span className="font-mono text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
+                                            <span className=" text-[10px] font-bold text-primary">{ticket.work_order_no}</span>
                                             {ticket.age_days !== undefined && (
                                                 <span className="text-[10px] text-outline">
                                                     Age: {Number(ticket.age_days).toFixed(1)}d
@@ -1725,7 +1725,7 @@ export const TicketsView: React.FC = () => {
                                                                         >
                                                                             <div className="flex items-center justify-between gap-2">
                                                                                 <div className="flex items-center gap-1.5 min-w-0">
-                                                                                    <span className="font-mono text-xs font-bold text-primary truncate">
+                                                                                    <span className=" text-xs font-bold text-primary truncate">
                                                                                         {ticket.work_order_no}
                                                                                     </span>
                                                                                     {ticket.age_days !== undefined && (

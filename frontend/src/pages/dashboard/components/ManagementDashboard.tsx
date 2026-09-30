@@ -75,7 +75,7 @@ export const ManagementDashboard: React.FC<ManagementDashboardProps> = ({ data, 
                             <div key={d.department_id} className="space-y-1">
                                 <div className="flex justify-between text-xs font-medium">
                                     <span className="text-on-surface">{d.department_name}</span>
-                                    <span className="text-on-surface-variant font-mono">{d.ticket_count} tickets (${d.total_cost})</span>
+                                    <span className="text-on-surface-variant ">{d.ticket_count} tickets (${d.total_cost})</span>
                                 </div>
                                 <div className="w-full bg-surface-container-high h-2 rounded overflow-hidden">
                                     <div
@@ -104,7 +104,7 @@ export const ManagementDashboard: React.FC<ManagementDashboardProps> = ({ data, 
                                     </span>
                                     <span className="text-xs font-medium text-on-surface">{s.store_name}</span>
                                 </div>
-                                <div className="text-right font-mono text-xs">
+                                <div className="text-right  text-xs">
                                     <div className="font-semibold text-on-surface">{s.total_cost.toLocaleString()}</div>
                                     <div className="text-[10px] text-on-surface-variant">{s.completed} Tickets Resolved</div>
                                 </div>

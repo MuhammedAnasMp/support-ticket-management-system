@@ -73,8 +73,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     if (segments[0] === 'workforce') {
       return `${formatSegment(segments[1] || 'Employees')}`;
     }
-    if (segments[0] === 'expenses') {
-      return ` ${formatSegment(segments[1] || 'Claims')}`;
+    if (segments[0] === 'expenses' || segments[0] === 'finance') {
+      return `Finance — ${formatSegment(segments[1] || 'Claims')}`;
     }
     if (segments[0] === 'reports') {
       return ` ${formatSegment(segments[1] || 'Overview')}`;

@@ -54,7 +54,7 @@ export const WorkerPerformanceTable: React.FC<WorkerPerformanceTableProps> = ({
                 <div className="flex flex-col justify-center py-1">
                     <span className="font-medium text-on-surface text-xs leading-tight">{params.data?.worker_name}</span>
                     {params.data?.employee_no && (
-                        <span className="text-[10px] text-on-surface-variant font-mono leading-tight">
+                        <span className="text-[10px] text-on-surface-variant  leading-tight">
                             EMP: {params.data.employee_no}
                         </span>
                     )}
@@ -67,7 +67,7 @@ export const WorkerPerformanceTable: React.FC<WorkerPerformanceTableProps> = ({
             flex: 1,
             minWidth: 130,
             cellRenderer: (params: any) => (
-                <span className="font-mono text-on-surface text-xs">{params.value || 0} hrs</span>
+                <span className=" text-on-surface text-xs">{params.value || 0} hrs</span>
             )
         },
         {
@@ -76,7 +76,7 @@ export const WorkerPerformanceTable: React.FC<WorkerPerformanceTableProps> = ({
             flex: 1,
             minWidth: 110,
             cellRenderer: (params: any) => (
-                <span className="font-mono text-on-surface text-xs">{params.value || 0} hrs</span>
+                <span className=" text-on-surface text-xs">{params.value || 0} hrs</span>
             )
         },
         {
@@ -122,7 +122,7 @@ export const WorkerPerformanceTable: React.FC<WorkerPerformanceTableProps> = ({
             cellRenderer: (params: any) => {
                 const val = params.value || 0;
                 return (
-                    <span className={`font-mono font-semibold text-xs ${val >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    <span className={` font-semibold text-xs ${val >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>
                         {val}%
                     </span>
                 );

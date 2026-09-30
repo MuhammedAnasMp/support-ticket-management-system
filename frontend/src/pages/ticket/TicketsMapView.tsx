@@ -427,7 +427,7 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
                         <!-- WO Number & Status & Age -->
                         <div class="flex items-center justify-between gap-2 text-[11px]">
                             <div class="flex items-center gap-1 min-w-0">
-                                <span class="font-mono text-xs font-bold text-primary truncate">${topTicket.work_order_no}</span>
+                                <span class=" text-xs font-bold text-primary truncate">${topTicket.work_order_no}</span>
                                 ${ageStr ? `<span class="text-[10px] text-outline shrink-0">${ageStr}</span>` : ''}
                             </div>
                             <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant shrink-0">
@@ -686,7 +686,7 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
                                             className="p-3 bg-surface-container border border-outline-variant hover:border-primary/50 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md space-y-2 group"
                                         >
                                             <div className="flex items-center justify-between gap-2">
-                                                <span className="font-mono text-xs font-bold text-primary group-hover:underline">
+                                                <span className=" text-xs font-bold text-primary group-hover:underline">
                                                     {ticket.work_order_no}
                                                 </span>
                                                 <span

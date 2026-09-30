@@ -83,7 +83,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                 title: '',
                 description: ''
             });
-            attachmentItems.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) {} });
+            attachmentItems.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) { } });
             setAttachmentItems([]);
             setErrorMessage(null);
         }
@@ -174,7 +174,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         setAttachmentItems(prev => {
             const itemToRemove = prev[index];
             if (itemToRemove?.previewUrl) {
-                try { URL.revokeObjectURL(itemToRemove.previewUrl); } catch (_) {}
+                try { URL.revokeObjectURL(itemToRemove.previewUrl); } catch (_) { }
             }
             return prev.filter((_, i) => i !== index);
         });
@@ -189,11 +189,11 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             description: ''
         });
         if (pendingOrientationQueue) {
-            pendingOrientationQueue.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) {} });
+            pendingOrientationQueue.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) { } });
             setPendingOrientationQueue(null);
         }
         attachmentItems.forEach(i => {
-            try { URL.revokeObjectURL(i.previewUrl); } catch (_) {}
+            try { URL.revokeObjectURL(i.previewUrl); } catch (_) { }
         });
         setAttachmentItems([]);
         setErrorMessage(null);
@@ -641,7 +641,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                                                 >
                                                                     <RotateCcw className="w-3 h-3" />
                                                                 </button>
-                                                                <span className="font-mono font-bold text-primary px-0.5">{item.rotation}°</span>
+                                                                <span className=" font-bold text-primary px-0.5">{item.rotation}°</span>
                                                                 <button
                                                                     type="button"
                                                                     onClick={(e) => {
@@ -780,7 +780,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                                         >
                                                             <RotateCcw className="w-3.5 h-3.5" />
                                                         </button>
-                                                        <span className="text-[10px] font-mono font-bold text-primary px-1">{item.rotation}°</span>
+                                                        <span className="text-[10px]  font-bold text-primary px-1">{item.rotation}°</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => {

@@ -569,7 +569,7 @@ export const ReportsView: React.FC = () => {
                   {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
               ) : (
-                <span className="w-3.5 h-3.5 text-on-surface-variant font-mono text-[9px] flex items-center justify-center">
+                <span className="w-3.5 h-3.5 text-on-surface-variant  text-[9px] flex items-center justify-center">
                   {node.type === 'integer' || node.type === 'decimal' ? '#' : node.type === 'date' || node.type === 'datetime' ? '📅' : 'T'}
                 </span>
               )}
@@ -719,7 +719,7 @@ export const ReportsView: React.FC = () => {
                         <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-primary text-on-primary">
                           {tpl.category}
                         </span>
-                        <span className="text-[10px] text-on-surface-variant font-mono">{tpl.data_source}</span>
+                        <span className="text-[10px] text-on-surface-variant ">{tpl.data_source}</span>
                       </div>
                       <h3 className="font-semibold text-sm text-on-surface mb-1">{tpl.name}</h3>
                       <p className="text-xs text-on-surface-variant line-clamp-2 mb-3">{tpl.description}</p>
@@ -854,9 +854,9 @@ export const ReportsView: React.FC = () => {
                 <tbody className="divide-y divide-outline-variant/40">
                   {logs.map(log => (
                     <tr key={log.log_id} className="hover:bg-surface-container-low transition-colors">
-                      <td className="p-3 font-mono text-[10px] text-on-surface-variant">#{log.log_id}</td>
+                      <td className="p-3  text-[10px] text-on-surface-variant">#{log.log_id}</td>
                       <td className="p-3 font-semibold text-on-surface">{log.report_name}</td>
-                      <td className="p-3 font-mono text-[10px] text-primary">{log.data_source}</td>
+                      <td className="p-3  text-[10px] text-primary">{log.data_source}</td>
                       <td className="p-3">
                         <span className={`uppercase font-bold text-[9px] px-2 py-0.5 rounded ${log.export_format === 'pdf' ? 'bg-red-500/10 text-red-600' :
                           log.export_format === 'excel' ? 'bg-emerald-500/10 text-emerald-600' :
@@ -865,8 +865,8 @@ export const ReportsView: React.FC = () => {
                           {log.export_format}
                         </span>
                       </td>
-                      <td className="p-3 font-mono">{log.row_count.toLocaleString()}</td>
-                      <td className="p-3 font-mono text-[11px] text-on-surface-variant">{log.duration_ms} ms</td>
+                      <td className="p-3 ">{log.row_count.toLocaleString()}</td>
+                      <td className="p-3  text-[11px] text-on-surface-variant">{log.duration_ms} ms</td>
                       <td className="p-3">{log.generated_by_name}</td>
                       <td className="p-3 text-on-surface-variant text-[11px]">
                         {new Date(log.generated_date).toLocaleString()}
@@ -1037,16 +1037,16 @@ export const ReportsView: React.FC = () => {
                           setDragOverColIndex(null);
                         }}
                         className={`p-2 rounded border transition-all space-y-1.5 text-xs ${draggedColIndex === idx
-                            ? 'opacity-40 border-dashed border-primary bg-primary/5'
-                            : dragOverColIndex === idx
-                              ? 'border-primary ring-2 ring-primary/20 bg-surface'
-                              : 'border-outline-variant bg-surface hover:border-primary/40'
+                          ? 'opacity-40 border-dashed border-primary bg-primary/5'
+                          : dragOverColIndex === idx
+                            ? 'border-primary ring-2 ring-primary/20 bg-surface'
+                            : 'border-outline-variant bg-surface hover:border-primary/40'
                           }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <GripVertical className="w-3.5 h-3.5 text-on-surface-variant/50 shrink-0 cursor-grab active:cursor-grabbing" />
-                            <span className="font-mono text-[10px] text-primary truncate max-w-[150px]" title={col.path}>
+                            <span className=" text-[10px] text-primary truncate max-w-[150px]" title={col.path}>
                               {col.path}
                             </span>
                           </div>
@@ -1424,10 +1424,10 @@ export const ReportsView: React.FC = () => {
                             setDragOverFilterIndex(null);
                           }}
                           className={`p-2 rounded border transition-all space-y-1.5 text-xs ${draggedFilterIndex === idx
-                              ? 'opacity-40 border-dashed border-primary bg-primary/5'
-                              : dragOverFilterIndex === idx
-                                ? 'border-primary ring-2 ring-primary/20 bg-surface'
-                                : 'border-outline-variant bg-surface hover:border-primary/40'
+                            ? 'opacity-40 border-dashed border-primary bg-primary/5'
+                            : dragOverFilterIndex === idx
+                              ? 'border-primary ring-2 ring-primary/20 bg-surface'
+                              : 'border-outline-variant bg-surface hover:border-primary/40'
                             }`}
                         >
                           <div className="flex items-center justify-between">
@@ -2177,7 +2177,7 @@ export const ReportsView: React.FC = () => {
                 <Eye className="w-4 h-4 text-primary" />
                 <span>Live Data Preview</span>
                 {previewResult && (
-                  <span className="text-[10px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                  <span className="text-[10px]  bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                     {previewResult.row_count} rows ({previewResult.duration_ms}ms)
                   </span>
                 )}
@@ -2282,7 +2282,7 @@ export const ReportsView: React.FC = () => {
                               }
                             }));
                           }}
-                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface "
                         />
                       </div>
                       <div>
@@ -2303,7 +2303,7 @@ export const ReportsView: React.FC = () => {
                               }
                             }));
                           }}
-                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface "
                         />
                       </div>
                     </div>
@@ -2332,7 +2332,7 @@ export const ReportsView: React.FC = () => {
                               }
                             }));
                           }}
-                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface "
                         />
                       </div>
                       <div>
@@ -2353,7 +2353,7 @@ export const ReportsView: React.FC = () => {
                               }
                             }));
                           }}
-                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface font-mono"
+                          className="w-full text-[10px] px-1.5 py-1 rounded border border-outline-variant bg-surface "
                         />
                       </div>
                     </div>

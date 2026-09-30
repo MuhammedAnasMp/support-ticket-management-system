@@ -73,22 +73,32 @@ class EmployeeRate(models.Model):
 
 class WorkerClaim(models.Model):
     STATUS_CHOICES = [
-        ('Pending', 'Pending'),
+        ('Draft', 'Draft'),
+        ('Submitted', 'Submitted'),
         ('Approved', 'Approved'),
-        ('Paid', 'Paid'),
         ('Rejected', 'Rejected'),
+        ('Rework', 'Rework'),
+        ('Paid', 'Paid'),
     ]
 
     claim_id = models.AutoField(primary_key=True)
     worker = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='worker_claims')
     ticket = models.ForeignKey(
-        'maintenance.Ticket', on_delete=models.CASCADE, related_name='worker_claims')
+        'maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='worker_claims')
     claim_date = models.DateTimeField(auto_now_add=True)
-    total_claimed_amount = models.DecimalField(decimal_places=2, max_digits=12, default=0)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
+    total_claimed_amount = models.DecimalField(
+        decimal_places=2, max_digits=12, default=0)
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='Draft')
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_claims')
+    reject_reason = models.TextField(blank=True, null=True)
+    submitted_at = models.DateTimeField(blank=True, null=True)
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='submitted_claims')
+    period_from = models.DateField(blank=True, null=True)
+    period_to = models.DateField(blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -97,7 +107,8 @@ class WorkerClaim(models.Model):
         ]
 
     def __str__(self):
-        return f"Claim {self.claim_id} - Ticket {self.ticket.work_order_no} ({self.worker.username})"
+        ticket_str = f"Ticket {self.ticket.work_order_no}" if self.ticket else "Multi-Ticket Bundle"
+        return f"Bundle {self.claim_id} ({self.worker.username}) - {ticket_str}"
 
 
 class Expense(models.Model):
@@ -106,6 +117,8 @@ class Expense(models.Model):
         'maintenance.Ticket', on_delete=models.CASCADE, related_name='expenses')
     worker = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='expenses')
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_expenses')
     expense_type = models.ForeignKey(
         ExpenseType, on_delete=models.PROTECT, related_name='expenses')
     amount = models.DecimalField(decimal_places=2, max_digits=10)
@@ -150,8 +163,6 @@ class Expense(models.Model):
         return f"Expense {self.expense_id} - {self.amount}"
 
     def save(self, *args, **kwargs):
-        if self.expense_type and not self.expense_type.approve_required:
-            self.approved = True
         super().save(*args, **kwargs)
 
 
@@ -165,10 +176,14 @@ class Reconciliation(models.Model):
     expense_total = models.DecimalField(decimal_places=2, max_digits=12)
     material_total = models.DecimalField(decimal_places=2, max_digits=12)
     grand_total = models.DecimalField(decimal_places=2, max_digits=12)
-    claimed_labour_total = models.DecimalField(decimal_places=2, max_digits=12, default=0)
-    claimed_expense_total = models.DecimalField(decimal_places=2, max_digits=12, default=0)
-    total_claimed_amount = models.DecimalField(decimal_places=2, max_digits=12, default=0)
-    net_payable_amount = models.DecimalField(decimal_places=2, max_digits=12, default=0)
+    claimed_labour_total = models.DecimalField(
+        decimal_places=2, max_digits=12, default=0)
+    claimed_expense_total = models.DecimalField(
+        decimal_places=2, max_digits=12, default=0)
+    total_claimed_amount = models.DecimalField(
+        decimal_places=2, max_digits=12, default=0)
+    net_payable_amount = models.DecimalField(
+        decimal_places=2, max_digits=12, default=0)
     remarks = models.TextField(blank=True, null=True)
     verified_date = models.DateTimeField(auto_now_add=True)
     completed = models.BooleanField(default=False)
@@ -196,3 +211,188 @@ class Reconciliation(models.Model):
     def __str__(self):
         return f"Reconciliation {self.reconciliation_id} - Ticket {self.ticket.work_order_no}"
 
+
+class LedgerGroup(models.Model):
+    ledger_group_id = models.AutoField(primary_key=True)
+    group_name = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_ledger_groups')
+    total_amount = models.DecimalField(
+        decimal_places=2, max_digits=14, default=0)
+    remarks = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Ledger Group #{self.ledger_group_id} - {self.group_name}"
+
+
+class Ledger(models.Model):
+    STATUS_CHOICES = [
+        ('Draft', 'Draft'),
+        ('Submitted', 'Submitted'),
+        ('In Review', 'In Review'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+        ('Rework', 'Rework'),
+        ('Paid', 'Paid'),
+    ]
+
+    ledger_id = models.AutoField(primary_key=True)
+    ledger_group = models.ForeignKey(
+        LedgerGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='ledgers')
+    store = models.ForeignKey(
+        'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='ledgers')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_ledgers')
+    created_at = models.DateTimeField(auto_now_add=True)
+    bundles = models.ManyToManyField(
+        WorkerClaim, related_name='ledgers', blank=True)
+    expenses = models.ManyToManyField(
+        'finance.Expense', related_name='ledgers', blank=True)
+    total_amount = models.DecimalField(
+        decimal_places=2, max_digits=14, default=0)
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='Draft')
+    remarks = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Ledger #{self.ledger_id} - Total: {self.total_amount} ({self.status})"
+
+
+class ApprovalWorkflow(models.Model):
+    ENTITY_CHOICES = [
+        ('Bundle', 'Bundle (WorkerClaim)'),
+        ('Ledger', 'Ledger'),
+        ('Expense', 'Expense'),
+    ]
+
+    workflow_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100)
+    entity_type = models.CharField(max_length=30, choices=ENTITY_CHOICES)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['entity_type'],
+                condition=models.Q(is_active=True),
+                name='unique_active_workflow_per_entity'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.entity_type})"
+
+
+class ApprovalStep(models.Model):
+    step_id = models.AutoField(primary_key=True)
+    workflow = models.ForeignKey(
+        ApprovalWorkflow, on_delete=models.CASCADE, related_name='steps')
+    step_order = models.PositiveIntegerField()
+    step_name = models.CharField(max_length=100)
+    assigned_role = models.ForeignKey(
+        'accounts.Role', on_delete=models.PROTECT, related_name='approval_steps')
+    is_final_step = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['step_order']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['workflow', 'step_order'],
+                name='unique_step_order_per_workflow'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.workflow.name} - Step {self.step_order}: {self.step_name} ({self.assigned_role.role_name})"
+
+
+class ApprovalInstance(models.Model):
+    STATUS_CHOICES = [
+        ('Pending', 'Pending'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+        ('Rework', 'Rework'),
+    ]
+
+    instance_id = models.AutoField(primary_key=True)
+    step = models.ForeignKey(
+        ApprovalStep, on_delete=models.PROTECT, related_name='approval_instances')
+    claim = models.ForeignKey(
+        WorkerClaim, on_delete=models.CASCADE, null=True, blank=True, related_name='approval_instances')
+    ledger = models.ForeignKey(
+        Ledger, on_delete=models.CASCADE, null=True, blank=True, related_name='approval_instances')
+    expense = models.ForeignKey(
+        'finance.Expense', on_delete=models.CASCADE, null=True, blank=True, related_name='approval_instances')
+    action_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approvals_actioned')
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='Pending')
+    comments = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    actioned_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        target = f"Bundle {self.claim_id}" if self.claim else (
+            f"Ledger #{self.ledger_id}" if self.ledger else f"Expense #{self.expense_id}")
+        return f"Approval for {target} at Step '{self.step.step_name}': {self.status}"
+
+
+class AuditEvent(models.Model):
+    event_id = models.BigAutoField(primary_key=True)
+    entity_name = models.CharField(max_length=50)
+    entity_id = models.CharField(max_length=50)
+    action = models.CharField(max_length=50)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_events')
+    timestamp = models.DateTimeField(auto_now_add=True)
+    payload = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        actor_name = self.actor.username if self.actor else "System"
+        return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {actor_name} -> {self.action} on {self.entity_name}#{self.entity_id}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError(
+                "AuditEvent records are immutable and cannot be updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "AuditEvent records are immutable and cannot be deleted.")
+
+
+class Payment(models.Model):
+    PAYMENT_METHOD_CHOICES = [
+        ('Cash', 'Cash'),
+        ('Bank Transfer', 'Bank Transfer'),
+        ('Check', 'Check'),
+        ('Digital Wallet', 'Digital Wallet'),
+        ('Other', 'Other'),
+    ]
+
+    payment_id = models.AutoField(primary_key=True)
+    claim = models.ForeignKey(
+        WorkerClaim, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
+    ledger = models.ForeignKey(
+        Ledger, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
+    expense = models.ForeignKey(
+        Expense, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
+    amount_paid = models.DecimalField(decimal_places=2, max_digits=12)
+    payment_method = models.CharField(
+        max_length=30, choices=PAYMENT_METHOD_CHOICES, default='Cash')
+    transaction_reference = models.CharField(
+        max_length=100, blank=True, null=True)
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_payments')
+    paid_at = models.DateTimeField(auto_now_add=True)
+    remarks = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Payment #{self.payment_id} - Amount: {self.amount_paid} ({self.payment_method})"

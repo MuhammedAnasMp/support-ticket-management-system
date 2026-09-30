@@ -278,13 +278,13 @@ export const StoresView: React.FC = () => {
 
     if (subpage === 'all' || !subpage) {
       const cols: ColDef[] = [
-        { headerName: 'Store Code/ID', field: 'store_id', width: 130, cellClass: 'font-mono text-xs font-semibold' },
-        { headerName: 'Short Code', field: 'short_code', width: 110, cellClass: 'font-mono text-xs font-bold text-primary', valueGetter: (p: any) => p.data?.short_code || '—' },
+        { headerName: 'Store Code/ID', field: 'store_id', width: 130, cellClass: ' text-xs font-semibold' },
+        { headerName: 'Short Code', field: 'short_code', width: 110, cellClass: ' text-xs font-bold text-primary', valueGetter: (p: any) => p.data?.short_code || '—' },
         { headerName: 'Name', field: 'store_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
         { headerName: 'Type', field: 'type', width: 140, valueGetter: (p: any) => { const map: Record<string, string> = { SUPER_MARKET: 'Super Market', HYPER_MARKET: 'Hyper Market', WAREHOUSE: 'Warehouse', FRESH: 'Fresh', COSTO: 'Costo', CAMP: 'Camp' }; return map[p.data?.type] || p.data?.type || 'N/A'; } },
         { headerName: 'Area', field: 'area.area_name', flex: 1, minWidth: 130, valueGetter: (p: any) => p.data?.area?.area_name || 'N/A' },
         { headerName: 'Manager', field: 'manager.full_name', flex: 1.2, minWidth: 150, valueGetter: (p: any) => p.data?.manager?.full_name || 'N/A' },
-        { headerName: 'GPS Coord', field: 'latitude', flex: 1.2, minWidth: 160, cellClass: 'font-mono text-xs text-outline', valueGetter: (p: any) => p.data?.latitude && p.data?.longitude ? `${p.data.latitude}, ${p.data.longitude}` : 'No Coordinates' },
+        { headerName: 'GPS Coord', field: 'latitude', flex: 1.2, minWidth: 160, cellClass: ' text-xs text-outline', valueGetter: (p: any) => p.data?.latitude && p.data?.longitude ? `${p.data.latitude}, ${p.data.longitude}` : 'No Coordinates' },
         {
           headerName: 'Status',
           field: 'active',
@@ -303,7 +303,7 @@ export const StoresView: React.FC = () => {
       return cols;
     } else if (subpage === 'areas') {
       const cols: ColDef[] = [
-        { headerName: 'Area ID', field: 'area_id', width: 120, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Area ID', field: 'area_id', width: 120, cellClass: ' text-xs font-semibold' },
         { headerName: 'Area Name', field: 'area_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' }
       ];
       if (canDeleteSubpage && !isMobile) {
@@ -343,7 +343,7 @@ export const StoresView: React.FC = () => {
                   <span className="font-semibold text-xs text-on-surface truncate leading-tight">
                     {user.full_name || user.username}
                   </span>
-                  <span className="text-[10px] text-outline font-mono leading-tight">
+                  <span className="text-[10px] text-outline  leading-tight">
                     {user.employee_no ? `#${user.employee_no}` : user.username}
                   </span>
                 </div>
@@ -392,7 +392,7 @@ export const StoresView: React.FC = () => {
     } else {
       // departments
       const cols: ColDef[] = [
-        { headerName: 'Department ID', field: 'department_id', width: 140, cellClass: 'font-mono text-xs font-semibold' },
+        { headerName: 'Department ID', field: 'department_id', width: 140, cellClass: ' text-xs font-semibold' },
         { headerName: 'Department Name', field: 'department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' }
       ];
       if (canDeleteSubpage && !isMobile) {
@@ -1080,7 +1080,7 @@ export const StoresView: React.FC = () => {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-outline">
-                          <span className="font-mono text-[10px] font-semibold">Code: {item.store_id}</span>
+                          <span className=" text-[10px] font-semibold">Code: {item.store_id}</span>
                           <span>·</span>
                           <span>📍 {item.area?.area_name || 'No Area'}</span>
                           {item.manager && (
@@ -1094,7 +1094,7 @@ export const StoresView: React.FC = () => {
                     ) : subpage === 'areas' ? (
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-on-surface text-sm truncate">{item.area_name}</span>
-                        <span className="font-mono text-[10px] text-outline">ID: {item.area_id}</span>
+                        <span className=" text-[10px] text-outline">ID: {item.area_id}</span>
                       </div>
                     ) : subpage === 'managers' ? (
                       <div className="flex items-center gap-3">
@@ -1126,7 +1126,7 @@ export const StoresView: React.FC = () => {
                     ) : (
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-on-surface text-sm truncate">{item.department_name}</span>
-                        <span className="font-mono text-[10px] text-outline">ID: {item.department_id}</span>
+                        <span className=" text-[10px] text-outline">ID: {item.department_id}</span>
                       </div>
                     )}
                   </div>
@@ -1288,7 +1288,7 @@ export const StoresView: React.FC = () => {
                           placeholder="e.g. SLM"
                           value={storeForm.short_code}
                           onChange={e => setStoreForm({ ...storeForm, short_code: e.target.value.toUpperCase().slice(0, 3) })}
-                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface font-mono uppercase font-bold"
+                          className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant p-2.5 rounded outline-none focus:border-primary text-on-surface dark:text-dark-on-surface  uppercase font-bold"
                         />
                       </div>
                     </div>
@@ -1606,7 +1606,7 @@ export const StoresView: React.FC = () => {
                           </span>
                         </div>
                         {editItem?.store && (
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
+                          <span className="text-[10px]  px-2 py-0.5 rounded bg-primary/10 text-primary">
                             ID #{editItem.store.store_id}
                           </span>
                         )}
@@ -2031,7 +2031,7 @@ export const StoresView: React.FC = () => {
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-on-surface dark:text-dark-on-surface">{area.area_name}</span>
-                            <span className="font-mono text-[10px] text-outline">({area.store_count} locations)</span>
+                            <span className=" text-[10px] text-outline">({area.store_count} locations)</span>
                           </div>
                           <div className="flex items-center gap-1">
                             <button
@@ -2136,7 +2136,7 @@ export const StoresView: React.FC = () => {
                         type="text"
                         readOnly
                         value={getGeneratedLink()}
-                        className="w-full text-xs font-mono bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-primary focus:outline-none"
+                        className="w-full text-xs  bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant p-2.5 rounded text-primary focus:outline-none"
                       />
                       <button
                         type="button"

@@ -229,7 +229,7 @@ export const ForgotPasswordView: React.FC = () => {
                   value={otp}
                   onChange={(e) => handleOtpChange(e.target.value)}
                   placeholder="123456"
-                  className="w-full text-center tracking-widest font-mono text-lg px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  className="w-full text-center tracking-widest  text-lg px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant dark:border-dark-outline-variant rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                 />
               </div>
 

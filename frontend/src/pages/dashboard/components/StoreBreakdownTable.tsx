@@ -105,7 +105,7 @@ export const StoreBreakdownTable: React.FC<StoreBreakdownTableProps> = ({
                 flex: 1.2,
                 minWidth: 120,
                 cellRenderer: (params: any) => (
-                    <span className="font-mono font-semibold text-on-surface text-xs">
+                    <span className=" font-semibold text-on-surface text-xs">
                         ${Number(params.value || 0).toLocaleString()}
                     </span>
                 )

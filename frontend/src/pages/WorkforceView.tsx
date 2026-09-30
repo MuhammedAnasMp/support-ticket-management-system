@@ -327,7 +327,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Employee ID',
           field: 'employee_no',
           width: 120,
-          cellClass: 'font-mono text-xs font-medium text-primary',
+          cellClass: ' text-xs font-medium text-primary',
         },
         {
           headerName: 'Full Name',
@@ -388,7 +388,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Hourly Rate',
           field: 'hourly_rate',
           width: 120,
-          cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 font-mono',
+          cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 ',
           valueFormatter: params => params.value ? `${params.value} KWD/hr` : '-'
         }
       ];
@@ -409,26 +409,26 @@ export const WorkforceView: React.FC = () => {
           field: 'worker.employee_no',
           valueGetter: params => params.data?.worker?.employee_no || '',
           width: 130,
-          cellClass: 'font-mono text-xs text-primary'
+          cellClass: ' text-xs text-primary'
         },
         {
           headerName: 'Hourly Rate',
           field: 'hourly_rate',
           width: 140,
-          cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 font-mono',
+          cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 ',
           valueFormatter: params => `${params.value} KWD/hr`
         },
         {
           headerName: 'Effective From',
           field: 'effective_from',
           width: 140,
-          cellClass: 'text-on-surface-variant font-mono'
+          cellClass: 'text-on-surface-variant '
         },
         {
           headerName: 'Effective To',
           field: 'effective_to',
           width: 140,
-          cellClass: 'text-on-surface-variant font-mono',
+          cellClass: 'text-on-surface-variant ',
           valueFormatter: params => params.value || 'Ongoing'
         },
         {
@@ -473,7 +473,7 @@ export const WorkforceView: React.FC = () => {
           field: 'worker.employee_no',
           valueGetter: params => params.data?.worker?.employee_no || '',
           width: 140,
-          cellClass: 'font-mono text-xs text-primary'
+          cellClass: ' text-xs text-primary'
         },
         {
           headerName: 'Maintenance Nature Skill',
@@ -573,15 +573,15 @@ export const WorkforceView: React.FC = () => {
   const isFormManagement = (formRoleObj && (
     (formRoleObj.role_name || '').toLowerCase().includes('management')
   )) || (
-    String(employeeForm.role).toLowerCase().includes('management')
-  );
+      String(employeeForm.role).toLowerCase().includes('management')
+    );
   const isFormGlobalRole = isFormOfficeAdmin || isFormManagement || (formRoleObj && (
     (formRoleObj.role_name || '').toLowerCase().includes('admin') ||
     (formRoleObj.role_name || '').toLowerCase().includes('administrator')
   )) || (
-    String(employeeForm.role).toLowerCase().includes('admin') ||
-    String(employeeForm.role).toLowerCase().includes('administrator')
-  );
+      String(employeeForm.role).toLowerCase().includes('admin') ||
+      String(employeeForm.role).toLowerCase().includes('administrator')
+    );
   const needsWorkingDepartments = (!isFormStoreManager && !isFormAreaManager) || !!isFormOfficeAdmin;
 
   const selectedSubDepts = subDepartments.filter(sd =>
@@ -1160,7 +1160,7 @@ export const WorkforceView: React.FC = () => {
                         <p className="text-xs text-on-surface-variant truncate">{item.email}</p>
 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-outline pt-0.5">
-                          {item.phone && <span className="font-mono">📞 {item.phone}</span>}
+                          {item.phone && <span className="">📞 {item.phone}</span>}
                           {item.employee_no && <span>· ID: {item.employee_no}</span>}
                           {item.hourly_rate && <span className="font-semibold text-emerald-600 dark:text-emerald-400">· {item.hourly_rate} KWD/hr</span>}
                         </div>
@@ -1985,9 +1985,9 @@ export const WorkforceView: React.FC = () => {
                               {employeeForm.rates && employeeForm.rates.length > 0 ? (
                                 employeeForm.rates.map((r: any) => (
                                   <tr key={r.rate_id} className="hover:bg-surface-container-high transition-colors">
-                                    <td className="px-4 py-3 font-semibold text-emerald-600 dark:text-emerald-400 font-mono">{r.hourly_rate} KWD/hr</td>
-                                    <td className="px-4 py-3 font-mono text-on-surface-variant">{r.effective_from}</td>
-                                    <td className="px-4 py-3 font-mono text-on-surface-variant">{r.effective_to || 'Present'}</td>
+                                    <td className="px-4 py-3 font-semibold text-emerald-600 dark:text-emerald-400 ">{r.hourly_rate} KWD/hr</td>
+                                    <td className="px-4 py-3  text-on-surface-variant">{r.effective_from}</td>
+                                    <td className="px-4 py-3  text-on-surface-variant">{r.effective_to || 'Present'}</td>
                                   </tr>
                                 ))
                               ) : (
@@ -2170,7 +2170,7 @@ export const WorkforceView: React.FC = () => {
                       type="text"
                       readOnly
                       value={getGeneratedLink()}
-                      className="w-full text-xs font-mono bg-surface-container border border-outline-variant p-2.5 rounded text-primary focus:outline-none"
+                      className="w-full text-xs  bg-surface-container border border-outline-variant p-2.5 rounded text-primary focus:outline-none"
                     />
                     <button
                       type="button"

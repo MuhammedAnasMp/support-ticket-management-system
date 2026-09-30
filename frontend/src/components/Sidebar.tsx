@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
   Home, Ticket, Store, Wrench, Users, FileBarChart2,
-  ChevronDown, X, User, Shield, Building2
+  ChevronDown, X, User, Shield, Building2, Receipt
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
@@ -80,6 +80,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       subItems: [
         { title: 'Employees', path: '/workforce/employees', permission: 'accounts.view_customuser' },
         { title: 'Employee Rates', path: '/workforce/rates', permission: 'finance.view_employeerate' },
+      ],
+    },
+    {
+      title: 'Finance System',
+      icon: <Receipt className="w-4 h-4" />,
+      subItems: [
+        { title: 'Expenses', path: '/finance/expenses' },
+        { title: 'Worker Claims', path: '/finance/bundles' },
+        { title: 'Ledger Batches', path: '/finance/ledgers' },
+        { title: 'Disbursements & Audit', path: '/finance/payments' },
       ],
     },
     {
@@ -284,7 +294,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 transition={{ duration: 0.15, ease: 'easeInOut' }}
                 className="overflow-hidden space-y-2 pt-2 mt-2 border-t border-outline-variant text-xs text-on-surface-variant"
               >
-                <div className="flex items-center gap-2 font-mono text-[10px]">
+                <div className="flex items-center gap-2  text-[10px]">
                   <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
                   <span>Emp ID: <span className="font-semibold text-on-surface">{user.employee_no}</span></span>
                 </div>

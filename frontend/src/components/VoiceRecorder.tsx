@@ -504,7 +504,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-error"></span>
                         </span>
-                        <span className="font-mono text-xs font-semibold text-on-surface w-10 shrink-0 select-none">
+                        <span className=" text-xs font-semibold text-on-surface w-10 shrink-0 select-none">
                             {formatTime(recordingTime)}
                         </span>
 
@@ -541,7 +541,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                                 className="w-full h-7 block cursor-pointer"
                                 title="Click to seek audio"
                             />
-                            <span className="font-mono text-[11px] text-on-surface-variant font-medium shrink-0 select-none">
+                            <span className=" text-[11px] text-on-surface-variant font-medium shrink-0 select-none">
                                 {formatTime(audioPlayerRef.current?.currentTime || recordingTime)}
                             </span>
                         </div>

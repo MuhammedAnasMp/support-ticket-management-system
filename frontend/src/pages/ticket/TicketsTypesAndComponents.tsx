@@ -90,6 +90,9 @@ export interface Expense {
     receipts?: Media[] | null;
     is_claimed?: boolean;
     claim?: any;
+    status_display?: string;
+    reject_reason?: string | null;
+    approval_instances?: any[];
 }
 
 export interface MediaCategory {
@@ -126,15 +129,15 @@ export const isVideo = (name: string) => !isAudio(name) && /\.(mp4|mov|avi|mkv|w
 
 // ─── Reusable Components ──────────────────────────────────────────────────────
 
-export const AvatarCircle: React.FC<{ user: UserStub; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
+export const AvatarCircle: React.FC<{ user?: UserStub | null; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
     const [imgError, setImgError] = useState(false);
     const sizeClass = { sm: 'w-7 h-7 text-[10px]', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-lg' }[size];
-    const imgUrl = user.profile_image && !imgError ? getMediaUrl(user.profile_image) : null;
-    const initials = user.full_name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
+    const imgUrl = user?.profile_image && !imgError ? getMediaUrl(user.profile_image) : null;
+    const initials = user?.full_name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || (user as any)?.username?.[0]?.toUpperCase() || '?';
     return (
         <div className={`${sizeClass} rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center font-bold bg-primary/20 text-primary border-2 border-primary/30`}>
             {imgUrl
-                ? <img src={imgUrl} alt={user.full_name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+                ? <img src={imgUrl} alt={user?.full_name || 'User'} className="w-full h-full object-cover" onError={() => setImgError(true)} />
                 : <span>{initials}</span>
             }
         </div>
@@ -342,7 +345,7 @@ export const RotatableVideoPlayer: React.FC<{
                         {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
                     </button>
 
-                    <span className="text-[10px] font-mono text-white/80 w-10 text-right">{formatTime(currentTime)}</span>
+                    <span className="text-[10px]  text-white/80 w-10 text-right">{formatTime(currentTime)}</span>
 
                     <input
                         type="range"
@@ -354,7 +357,7 @@ export const RotatableVideoPlayer: React.FC<{
                         className="flex-1 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-primary"
                     />
 
-                    <span className="text-[10px] font-mono text-white/80 w-10">{formatTime(duration)}</span>
+                    <span className="text-[10px]  text-white/80 w-10">{formatTime(duration)}</span>
 
                     <button
                         type="button"
@@ -370,35 +373,65 @@ export const RotatableVideoPlayer: React.FC<{
     );
 };
 
-export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete, token, onRefreshTicket }) => {
-    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+export interface MediaPreviewModalProps {
+    items: any[];
+    initialIndex?: number;
+    previewIndex?: number | null;
+    onClose: () => void;
+    token?: string | null;
+    onDelete?: (mediaId: number) => void;
+    onRefreshTicket?: () => void;
+}
+
+export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
+    items,
+    initialIndex = 0,
+    previewIndex: controlledIndex,
+    onClose,
+    token,
+    onDelete,
+    onRefreshTicket
+}) => {
+    const [currentIndex, setCurrentIndex] = useState<number>(
+        controlledIndex !== undefined && controlledIndex !== null ? controlledIndex : initialIndex
+    );
     const [customPreviewUrls, setCustomPreviewUrls] = useState<Record<number, string>>({});
     const [rotation, setRotation] = useState<number>(0);
     const [isSavingRotation, setIsSavingRotation] = useState(false);
 
-    const openPreviewIndex = (idx: number) => {
-        setPreviewIndex(idx);
+    useEffect(() => {
+        if (controlledIndex !== undefined && controlledIndex !== null) {
+            setCurrentIndex(controlledIndex);
+            const item = items[controlledIndex];
+            setRotation(item ? item.rotation || 0 : 0);
+        }
+    }, [controlledIndex, items]);
+
+    useEffect(() => {
+        if (currentIndex >= 0 && currentIndex < items.length) {
+            const item = items[currentIndex];
+            setRotation(item ? item.rotation || 0 : 0);
+        }
+    }, [currentIndex, items]);
+
+    const openIndex = (idx: number) => {
+        setCurrentIndex(idx);
         const item = items[idx];
         setRotation(item ? item.rotation || 0 : 0);
     };
 
-    const closePreview = () => {
-        setPreviewIndex(null);
-        setRotation(0);
-    };
-
     const handlePrevPreview = (e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
-        if (previewIndex === null || items.length <= 1) return;
-        const prevIdx = (previewIndex - 1 + items.length) % items.length;
-        openPreviewIndex(prevIdx);
+        if (items.length <= 1) return;
+        const prevIdx = (currentIndex - 1 + items.length) % items.length;
+        openIndex(prevIdx);
     };
 
     const handleNextPreview = (e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
-        if (previewIndex === null || items.length <= 1) return;
-        const nextIdx = (previewIndex + 1) % items.length;
-        openPreviewIndex(nextIdx);
+        if (items.length <= 1) return;
+        const nextIdx = (currentIndex + 1) % items.length;
+        openIndex(nextIdx);
     };
 
     const touchStartX = useRef<number | null>(null);
@@ -414,7 +447,6 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
         const deltaX = e.changedTouches[0].clientX - touchStartX.current;
         const deltaY = e.changedTouches[0].clientY - touchStartY.current;
 
-        // Swiping gesture detection (threshold 35px)
         if (Math.abs(deltaX) > 35 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
             if (deltaX < 0) {
                 handleNextPreview();
@@ -427,28 +459,27 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
     };
 
     useEffect(() => {
-        if (previewIndex === null) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'ArrowLeft') {
                 handlePrevPreview();
             } else if (e.key === 'ArrowRight') {
                 handleNextPreview();
             } else if (e.key === 'Escape') {
-                closePreview();
+                onClose();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [previewIndex, items]);
+    }, [currentIndex, items, onClose]);
 
     const handleRotateLeft = () => setRotation(prev => (prev - 90 + 360) % 360);
     const handleRotateRight = () => setRotation(prev => (prev + 90) % 360);
 
-    const currentItem = previewIndex !== null && items[previewIndex] ? items[previewIndex] : null;
-    const currentUrl = currentItem
-        ? (customPreviewUrls[currentItem.media_id] || getMediaUrl(currentItem.file_url))
-        : '';
-    const currentName = currentItem ? currentItem.file_name : '';
+    const currentItem = currentIndex >= 0 && currentIndex < items.length ? items[currentIndex] : null;
+    if (!currentItem) return null;
+
+    const currentUrl = customPreviewUrls[currentItem.media_id] || getMediaUrl(currentItem.file_url);
+    const currentName = currentItem.file_name || '';
 
     const handleResetRotation = () => setRotation(currentItem?.rotation || 0);
 
@@ -497,6 +528,214 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
         }
     };
 
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                {/* Backdrop */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.85 }}
+                    exit={{ opacity: 0 }}
+                    onClick={onClose}
+                    className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
+                />
+
+                {/* Modal Box */}
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="relative max-w-4xl h-[75vh] sm:h-[80vh] w-full flex flex-col items-center justify-center z-10"
+                >
+                    {/* Top Action Header Bar */}
+                    <div className="w-full flex items-center justify-between gap-2 mb-2 shrink-0 z-30 px-1">
+                        {/* Left: Counter Indicator */}
+                        <div className="flex items-center gap-2">
+                            {items.length > 1 && (
+                                <span className="px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-full border border-white/20 text-white text-[11px] font-bold shadow-md select-none">
+                                    {currentIndex + 1} / {items.length}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Right: Action Controls */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                            {/* Rotation Controls */}
+                            {(isImage(currentName) || isVideo(currentName)) && (
+                                <div className="flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-full border border-white/20">
+                                    {rotation !== (currentItem.rotation || 0) && (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={handleResetRotation}
+                                                className="p-1 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                                title="Reset Rotation"
+                                            >
+                                                <RefreshCw className="w-3.5 h-3.5" />
+                                            </button>
+                                            {currentItem.media_id && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSaveRotation}
+                                                    disabled={isSavingRotation}
+                                                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-md disabled:opacity-50"
+                                                    title="Save rotated orientation permanently to server"
+                                                >
+                                                    {isSavingRotation ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                                    <span className="hidden sm:inline">Save</span>
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={handleRotateLeft}
+                                        className="p-1 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                        title="Rotate 90° Left"
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                    </button>
+                                    <span className="text-[10px] font-medium text-white/90 px-0.5">{rotation}°</span>
+                                    <button
+                                        type="button"
+                                        onClick={handleRotateRight}
+                                        className="p-1 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                        title="Rotate 90° Right"
+                                    >
+                                        <RotateCw className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            )}
+
+                            {onDelete && currentItem.media_id && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const mId = currentItem.media_id!;
+                                        onClose();
+                                        onDelete(mId);
+                                    }}
+                                    className="p-1.5 rounded-full bg-red-600/80 hover:bg-red-600 text-white cursor-pointer transition-colors"
+                                    title="Delete File"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            )}
+                            <a
+                                href={currentUrl}
+                                download={currentName}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                title="Download File"
+                            >
+                                <Download className="w-4 h-4" />
+                            </a>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
+                                title="Close"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Left Chevron (Previous) */}
+                    {items.length > 1 && (
+                        <button
+                            type="button"
+                            onClick={handlePrevPreview}
+                            className="absolute left-1 sm:-left-14 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all z-30 cursor-pointer shadow-xl hover:scale-110 active:scale-95 flex items-center justify-center"
+                            title="Previous media (Left Arrow)"
+                        >
+                            <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                    )}
+
+                    {/* Right Chevron (Next) */}
+                    {items.length > 1 && (
+                        <button
+                            type="button"
+                            onClick={handleNextPreview}
+                            className="absolute right-1 sm:-right-14 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all z-30 cursor-pointer shadow-xl hover:scale-110 active:scale-95 flex items-center justify-center"
+                            title="Next media (Right Arrow)"
+                        >
+                            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                    )}
+
+                    {/* Media Display Container */}
+                    <div
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={handleTouchEnd}
+                        className="w-full h-full flex justify-center items-center overflow-hidden rounded-lg bg-black/85 shadow-2xl p-2 touch-pan-y"
+                    >
+                        {isImage(currentName) ? (
+                            <img
+                                key={currentUrl}
+                                src={currentUrl}
+                                alt={currentName}
+                                style={{
+                                    transform: `rotate(${rotation}deg)`,
+                                    transition: isSavingRotation ? 'none' : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                }}
+                                className="max-w-full max-h-full object-contain rounded-md select-none pointer-events-none"
+                            />
+                        ) : isAudio(currentName) ? (
+                            <div className="flex flex-col items-center justify-center p-6 bg-surface-container dark:bg-dark-surface-container rounded-xl border border-outline-variant max-w-md w-full text-center shadow-lg">
+                                <Headphones className="w-10 h-10 text-primary mb-2 animate-pulse" />
+                                <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider mb-3">{currentName}</p>
+                                <audio src={currentUrl} controls autoPlay className="w-full h-10 rounded-lg" />
+                            </div>
+                        ) : isVideo(currentName) ? (
+                            <RotatableVideoPlayer
+                                key={currentUrl}
+                                src={currentUrl}
+                                rotation={rotation}
+                                autoPlay
+                                controls
+                                className="w-full h-full max-h-full"
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
+                                <FileText className="w-12 h-12 text-primary mb-3 animate-pulse" />
+                                <p className="text-xs font-bold text-on-surface uppercase tracking-wider mb-1">{currentName}</p>
+                                <p className="text-[11px] text-outline mb-4">Preview not supported for this file format.</p>
+                                <a
+                                    href={currentUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded hover:bg-primary-hover active:scale-95 transition-all"
+                                >
+                                    Open in New Tab
+                                </a>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Caption/Filename */}
+                    <div className="absolute -bottom-10 inset-x-0 text-center text-xs font-medium text-white/80 select-none truncate px-4">
+                        {currentName}
+                    </div>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
+};
+
+export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete, token, onRefreshTicket }) => {
+    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+    const openPreviewIndex = (idx: number) => {
+        setPreviewIndex(idx);
+    };
+
+    const closePreview = () => {
+        setPreviewIndex(null);
+    };
+
     if (items.length === 0) {
         return (
             <div className="py-6 text-center text-xs text-outline border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-xl">
@@ -509,7 +748,7 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
         <>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {items.map((m, idx) => {
-                    const url = customPreviewUrls[m.media_id] || getMediaUrl(m.file_url);
+                    const url = getMediaUrl(m.file_url);
                     const isAudioItem = isAudio(m.file_name);
                     const itemKey = m.media_id ? `media-${m.media_id}-${idx}` : `media-idx-${idx}`;
 
@@ -597,201 +836,16 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
             </div>
 
             {/* Media Preview Modal Overlay */}
-            <AnimatePresence>
-                {previewIndex !== null && currentItem && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        {/* Backdrop */}
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 0.85 }}
-                            exit={{ opacity: 0 }}
-                            onClick={closePreview}
-                            className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
-                        />
-
-                        {/* Modal Box */}
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="relative max-w-4xl h-[75vh] sm:h-[80vh] w-full flex flex-col items-center justify-center z-10"
-                        >
-                            {/* Top Action Header Bar */}
-                            <div className="w-full flex items-center justify-between gap-2 mb-2 shrink-0 z-30 px-1">
-                                {/* Left: Counter Indicator */}
-                                <div className="flex items-center gap-2">
-                                    {items.length > 1 && (
-                                        <span className="px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-full border border-white/20 text-white text-[11px] font-mono font-bold shadow-md select-none">
-                                            {previewIndex + 1} / {items.length}
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* Right: Action Controls */}
-                                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                                    {/* Rotation Controls */}
-                                    {(isImage(currentName) || isVideo(currentName)) && (
-                                        <div className="flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-full border border-white/20">
-                                            {rotation !== (currentItem.rotation || 0) && (
-                                                <>
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleResetRotation}
-                                                        className="p-1 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                                        title="Reset Rotation"
-                                                    >
-                                                        <RefreshCw className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    {currentItem.media_id && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleSaveRotation}
-                                                            disabled={isSavingRotation}
-                                                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-md disabled:opacity-50"
-                                                            title="Save rotated orientation permanently to server"
-                                                        >
-                                                            {isSavingRotation ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                                                            <span className="hidden sm:inline">Save</span>
-                                                        </button>
-                                                    )}
-                                                </>
-                                            )}
-                                            <button
-                                                type="button"
-                                                onClick={handleRotateLeft}
-                                                className="p-1 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                                title="Rotate 90° Left"
-                                            >
-                                                <RotateCcw className="w-3.5 h-3.5" />
-                                            </button>
-                                            <span className="text-[10px] font-mono font-medium text-white/90 px-0.5">{rotation}°</span>
-                                            <button
-                                                type="button"
-                                                onClick={handleRotateRight}
-                                                className="p-1 rounded-full hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                                title="Rotate 90° Right"
-                                            >
-                                                <RotateCw className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {onDelete && currentItem.media_id && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const mId = currentItem.media_id!;
-                                                closePreview();
-                                                onDelete(mId);
-                                            }}
-                                            className="p-1.5 rounded-full bg-red-600/80 hover:bg-red-600 text-white cursor-pointer transition-colors"
-                                            title="Delete File"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    )}
-                                    <a
-                                        href={currentUrl}
-                                        download={currentName}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                        title="Download File"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                    </a>
-                                    <button
-                                        type="button"
-                                        onClick={closePreview}
-                                        className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors"
-                                        title="Close"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Left Chevron (Previous) */}
-                            {items.length > 1 && (
-                                <button
-                                    type="button"
-                                    onClick={handlePrevPreview}
-                                    className="absolute left-1 sm:-left-14 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all z-30 cursor-pointer shadow-xl hover:scale-110 active:scale-95 flex items-center justify-center"
-                                    title="Previous media (Left Arrow)"
-                                >
-                                    <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-                                </button>
-                            )}
-
-                            {/* Right Chevron (Next) */}
-                            {items.length > 1 && (
-                                <button
-                                    type="button"
-                                    onClick={handleNextPreview}
-                                    className="absolute right-1 sm:-right-14 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all z-30 cursor-pointer shadow-xl hover:scale-110 active:scale-95 flex items-center justify-center"
-                                    title="Next media (Right Arrow)"
-                                >
-                                    <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-                                </button>
-                            )}
-
-                            {/* Media Display Container */}
-                            <div
-                                onTouchStart={handleTouchStart}
-                                onTouchEnd={handleTouchEnd}
-                                className="w-full h-full flex justify-center items-center overflow-hidden rounded-lg bg-black/85 shadow-2xl p-2 touch-pan-y"
-                            >
-                                {isImage(currentName) ? (
-                                    <img
-                                        key={currentUrl}
-                                        src={currentUrl}
-                                        alt={currentName}
-                                        style={{
-                                            transform: `rotate(${rotation}deg)`,
-                                            transition: isSavingRotation ? 'none' : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-                                        }}
-                                        className="max-w-full max-h-full object-contain rounded-md select-none pointer-events-none"
-                                    />
-                                ) : isAudio(currentName) ? (
-                                    <div className="flex flex-col items-center justify-center p-6 bg-surface-container dark:bg-dark-surface-container rounded-xl border border-outline-variant max-w-md w-full text-center shadow-lg">
-                                        <Headphones className="w-10 h-10 text-primary mb-2 animate-pulse" />
-                                        <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider mb-3">{currentName}</p>
-                                        <audio src={currentUrl} controls autoPlay className="w-full h-10 rounded-lg" />
-                                    </div>
-                                ) : isVideo(currentName) ? (
-                                    <RotatableVideoPlayer
-                                        key={currentUrl}
-                                        src={currentUrl}
-                                        rotation={rotation}
-                                        autoPlay
-                                        controls
-                                        className="w-full h-full max-h-full"
-                                    />
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center p-8 bg-surface-container rounded-lg border border-outline-variant max-w-md w-full text-center">
-                                        <FileText className="w-12 h-12 text-primary mb-3 animate-pulse" />
-                                        <p className="text-xs font-bold text-on-surface uppercase tracking-wider mb-1">{currentName}</p>
-                                        <p className="text-[11px] text-outline mb-4">Preview not supported for this file format.</p>
-                                        <a
-                                            href={currentUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded hover:bg-primary-hover active:scale-95 transition-all"
-                                        >
-                                            Open in New Tab
-                                        </a>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Caption/Filename */}
-                            <div className="absolute -bottom-10 inset-x-0 text-center text-xs font-medium text-white/80 select-none truncate px-4">
-                                {currentName}
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+            {previewIndex !== null && (
+                <MediaPreviewModal
+                    items={items}
+                    previewIndex={previewIndex}
+                    onClose={closePreview}
+                    token={token}
+                    onDelete={onDelete}
+                    onRefreshTicket={onRefreshTicket}
+                />
+            )}
         </>
     );
 };

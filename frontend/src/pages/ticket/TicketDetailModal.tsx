@@ -21,10 +21,11 @@ interface TicketDetailModalProps {
     selectedTicket: Ticket | null;
     token: string | null;
     user: any;
-    statuses: any[];
-    workers: any[];
-    subDepartments: any[];
-    expenseTypes: any[];
+    statuses?: any[];
+    workers?: any[];
+    subDepartments?: any[];
+    expenseTypes?: any[];
+    readOnly?: boolean;
     onClose: () => void;
     onRefreshList: () => void;
 }
@@ -33,10 +34,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     selectedTicket,
     token,
     user,
-    statuses,
-    workers,
-    subDepartments,
-    expenseTypes,
+    statuses: propStatuses = [],
+    workers: propWorkers = [],
+    subDepartments: propSubDepartments = [],
+    expenseTypes: propExpenseTypes = [],
+    readOnly = false,
     onClose,
     onRefreshList,
 }) => {
@@ -51,18 +53,67 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [mediaCategories, setMediaCategories] = useState<MediaCategory[]>([]);
     const [natureWorkers, setNatureWorkers] = useState<any[]>([]);
     const [priorities, setPriorities] = useState<any[]>([]);
+    const [fetchedStatuses, setFetchedStatuses] = useState<any[]>([]);
+    const [fetchedWorkers, setFetchedWorkers] = useState<any[]>([]);
+    const [fetchedSubDepartments, setFetchedSubDepartments] = useState<any[]>([]);
+    const [fetchedExpenseTypes, setFetchedExpenseTypes] = useState<any[]>([]);
+
+    const safeList = (data: any) => Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+
+    const safeExpenses = useMemo(() => safeList(expenses), [expenses]);
+    const safeWorkLogs = useMemo(() => safeList(workLogs), [workLogs]);
+    const safeAllocations = useMemo(() => safeList(allocations), [allocations]);
+
+    const statuses = useMemo(() => (propStatuses && propStatuses.length > 0 ? propStatuses : fetchedStatuses), [propStatuses, fetchedStatuses]);
+    const workers = useMemo(() => (propWorkers && propWorkers.length > 0 ? propWorkers : fetchedWorkers), [propWorkers, fetchedWorkers]);
+    const subDepartments = useMemo(() => (propSubDepartments && propSubDepartments.length > 0 ? propSubDepartments : fetchedSubDepartments), [propSubDepartments, fetchedSubDepartments]);
+    const expenseTypes = useMemo(() => (propExpenseTypes && propExpenseTypes.length > 0 ? propExpenseTypes : fetchedExpenseTypes), [propExpenseTypes, fetchedExpenseTypes]);
 
     useEffect(() => {
         if (!token) return;
-        fetch(`${API_URL}/maintenance/priority/`, {
-            headers: { 'Authorization': `Token ${token}` }
-        })
+        const headers = { 'Authorization': `Token ${token}` };
+        fetch(`${API_URL}/maintenance/priority/`, { headers })
             .then(r => r.ok ? r.json() : [])
-            .then(data => {
-                if (Array.isArray(data)) setPriorities(data);
-            })
+            .then(data => { if (Array.isArray(data)) setPriorities(data); })
             .catch(() => { });
-    }, [token]);
+
+        if (!propStatuses || propStatuses.length === 0) {
+            fetch(`${API_URL}/maintenance/status/`, { headers })
+                .then(r => r.ok ? r.json() : [])
+                .then(data => {
+                    const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+                    setFetchedStatuses(list);
+                })
+                .catch(() => { });
+        }
+        if (!propWorkers || propWorkers.length === 0) {
+            fetch(`${API_URL}/accounts/user/`, { headers })
+                .then(r => r.ok ? r.json() : [])
+                .then(data => {
+                    const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+                    setFetchedWorkers(list);
+                })
+                .catch(() => { });
+        }
+        if (!propSubDepartments || propSubDepartments.length === 0) {
+            fetch(`${API_URL}/stores/subdepartment/`, { headers })
+                .then(r => r.ok ? r.json() : [])
+                .then(data => {
+                    const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+                    setFetchedSubDepartments(list);
+                })
+                .catch(() => { });
+        }
+        if (!propExpenseTypes || propExpenseTypes.length === 0) {
+            fetch(`${API_URL}/finance/expensetype/`, { headers })
+                .then(r => r.ok ? r.json() : [])
+                .then(data => {
+                    const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+                    setFetchedExpenseTypes(list);
+                })
+                .catch(() => { });
+        }
+    }, [token, propStatuses, propWorkers, propSubDepartments, propExpenseTypes]);
 
     const departmentPriorities = useMemo(() => {
         if (priorities && priorities.length > 0) {
@@ -349,6 +400,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const { hasPermission } = usePermission();
     const canChangePriority = useMemo(() => {
+        if (readOnly) return false;
         if (user?.is_superuser) return true;
         return (
             hasPermission('maintenance.change_priority') ||
@@ -356,7 +408,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             hasPermission('maintenance.can_update_ticket') ||
             hasPermission('maintenance.change_ticket')
         );
-    }, [user, hasPermission]);
+    }, [user, hasPermission, readOnly]);
     const navigate = useNavigate();
     const uploadAbortRef = useRef<AbortController | null>(null);
 
@@ -522,22 +574,30 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         setModalLoading(true);
         try {
             const headers = { Authorization: `Token ${token}` };
-            const [resAlloc, resLog, resExp, resMed, resMediaCat, resNatureWorker] = await Promise.all([
+            const natureId = typeof t.nature === 'object' ? t.nature?.nature_id : t.nature;
+            const [resTicket, resAlloc, resLog, resExp, resMed, resMediaCat, resNatureWorker] = await Promise.all([
+                fetch(`${API_URL}/maintenance/ticket/${t.ticket_id}/`, { headers }),
                 fetch(`${API_URL}/maintenance/allocation/?ticket=${t.ticket_id}`, { headers }),
                 fetch(`${API_URL}/maintenance/worklog/?ticket=${t.ticket_id}`, { headers }),
                 fetch(`${API_URL}/finance/expense/?ticket=${t.ticket_id}`, { headers }),
                 fetch(`${API_URL}/common/media/?ticket=${t.ticket_id}`, { headers }),
                 fetch(`${API_URL}/common/mediacategory/`, { headers }),
-                fetch(`${API_URL}/maintenance/natureworker/?nature=${t.nature.nature_id}`, { headers }),
+                natureId ? fetch(`${API_URL}/maintenance/natureworker/?nature=${natureId}`, { headers }) : Promise.resolve(null),
             ]);
 
-            if (resAlloc.ok) setAllocations(await resAlloc.json());
-            if (resLog.ok) setWorkLogs(await resLog.json());
-            if (resExp.ok) setExpenses(await resExp.json());
-            if (resMed.ok) setMediaList(await resMed.json());
-            if (resMediaCat.ok) setMediaCategories(await resMediaCat.json());
-            if (resNatureWorker.ok) {
-                const rawNW = await resNatureWorker.json();
+            if (resTicket.ok) {
+                const fresh = await resTicket.json();
+                setTicketDetails(fresh);
+                setEditedTitle(fresh.title);
+                setEditedDescription(fresh.description);
+            }
+            if (resAlloc.ok) setAllocations(safeList(await resAlloc.json()));
+            if (resLog.ok) setWorkLogs(safeList(await resLog.json()));
+            if (resExp.ok) setExpenses(safeList(await resExp.json()));
+            if (resMed.ok) setMediaList(safeList(await resMed.json()));
+            if (resMediaCat.ok) setMediaCategories(safeList(await resMediaCat.json()));
+            if (resNatureWorker && resNatureWorker.ok) {
+                const rawNW = safeList(await resNatureWorker.json());
                 setNatureWorkers(rawNW.filter((nw: any) => nw.worker));
             }
         } catch (err) {
@@ -573,13 +633,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 setEditedTitle(fresh.title);
                 setEditedDescription(fresh.description);
             }
-            if (resAlloc.ok) { freshAllocations = await resAlloc.json(); setAllocations(freshAllocations); }
-            if (resLog.ok) { freshWorkLogs = await resLog.json(); setWorkLogs(freshWorkLogs); }
-            if (resExp.ok) { freshExpenses = await resExp.json(); setExpenses(freshExpenses); }
-            if (resMed.ok) setMediaList(await resMed.json());
-            if (resMediaCat.ok) setMediaCategories(await resMediaCat.json());
+            if (resAlloc.ok) { freshAllocations = safeList(await resAlloc.json()); setAllocations(freshAllocations); }
+            if (resLog.ok) { freshWorkLogs = safeList(await resLog.json()); setWorkLogs(freshWorkLogs); }
+            if (resExp.ok) { freshExpenses = safeList(await resExp.json()); setExpenses(freshExpenses); }
+            if (resMed.ok) setMediaList(safeList(await resMed.json()));
+            if (resMediaCat.ok) setMediaCategories(safeList(await resMediaCat.json()));
             if (resNatureWorker.ok) {
-                const rawNW = await resNatureWorker.json();
+                const rawNW = safeList(await resNatureWorker.json());
                 setNatureWorkers(rawNW.filter((nw: any) => nw.worker));
             }
 
@@ -664,8 +724,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleUpdateExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingExpense) return;
-        if (editingExpense.is_claimed) {
-            alert('This expense has been claimed and cannot be modified.');
+        const claimStatus = (typeof editingExpense.claim === 'object' && editingExpense.claim) ? (editingExpense.claim as any).status : null;
+        const isExpApproved = editingExpense.approved || (editingExpense.expense_type && (editingExpense.expense_type as any).approve_required === false) || claimStatus === 'Approved';
+        if (isExpApproved) {
+            alert('Approved expenses cannot be modified.');
+            setEditingExpense(null);
+            return;
+        }
+        const canEditClaimedExpense = editingExpense.is_claimed && (claimStatus === 'Rejected' || claimStatus === 'Rework');
+        if (editingExpense.is_claimed && !canEditClaimedExpense) {
+            alert('This expense is part of an active claim bundle and cannot be modified.');
             setEditingExpense(null);
             return;
         }
@@ -700,6 +768,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             if (response.ok) {
                 setEditingExpense(null);
                 await refreshTicketData();
+            } else {
+                const errData = await response.json().catch(() => ({}));
+                alert(Object.values(errData).flat().join(', ') || 'Failed to update expense.');
             }
         } catch (err) {
             console.error(err);
@@ -710,8 +781,14 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const handleDeleteExpense = async (expenseId: number) => {
+        const claimStatus = (typeof editingExpense?.claim === 'object' && editingExpense?.claim) ? (editingExpense.claim as any).status : null;
+        if (editingExpense?.approved || claimStatus === 'Approved') {
+            alert('Approved expenses cannot be deleted.');
+            setEditingExpense(null);
+            return;
+        }
         if (editingExpense?.is_claimed) {
-            alert('This expense has been claimed and cannot be deleted.');
+            alert('Claimed expenses cannot be deleted from here. Delete or edit the bundle in Finance to release this expense.');
             setEditingExpense(null);
             return;
         }
@@ -1254,15 +1331,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const allowedDropdownStatuses = useMemo(() => {
+        if (readOnly) return [];
         const ticketDeptId = Number(ticketDetails.department?.department_id ?? ticketDetails.department);
         return statuses.filter(s => {
+            if (!s) return false;
             const sDeptId = Number(s.department?.department_id ?? s.department);
             if (sDeptId && sDeptId !== ticketDeptId) return false;
 
-            if (s.status_id === ticketDetails.status.status_id) return true;
-            return canViewStatus(s.status_name) && canMoveStatus(ticketDetails.status.status_name, s.status_name);
+            if (ticketDetails.status?.status_id && s.status_id === ticketDetails.status.status_id) return true;
+            return canViewStatus(s.status_name) && canMoveStatus(ticketDetails.status?.status_name, s.status_name);
         });
-    }, [statuses, ticketDetails.status, ticketDetails.department]);
+    }, [statuses, ticketDetails.status, ticketDetails.department, readOnly]);
 
     const handleStatusSelect = async (targetStatusId: number) => {
         const target = statuses.find(s => s.status_id === targetStatusId);
@@ -1475,8 +1554,14 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     <div className="flex items-center gap-3 min-w-0">
                                         <AvatarCircle user={ticketDetails.created_by} size="md" />
                                         <div className="min-w-0">
-                                            <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">{ticketDetails.created_by.full_name}</p>
-                                            {ticketDetails.created_by.role && <p className="text-xs text-primary font-semibold mt-0.5">{ticketDetails.created_by.role.role_name}</p>}
+                                            <p className="font-bold text-sm text-on-surface dark:text-dark-on-surface truncate">
+                                                {ticketDetails.created_by?.full_name || (ticketDetails.created_by as any)?.username || (typeof ticketDetails.created_by === 'string' ? ticketDetails.created_by : 'Unknown User')}
+                                            </p>
+                                            {ticketDetails.created_by?.role && (
+                                                <p className="text-xs text-primary font-semibold mt-0.5">
+                                                    {typeof ticketDetails.created_by.role === 'object' ? ticketDetails.created_by.role.role_name : String(ticketDetails.created_by.role)}
+                                                </p>
+                                            )}
 
                                         </div>
                                     </div>
@@ -1484,9 +1569,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <div className="flex flex-wrap items-center gap-2">
                                             <div className="flex items-center gap-1.5 text-xs text-outline">
                                                 <Building2 className="w-4 h-4 shrink-0 text-outline" />
-                                                <span className="font-bold text-on-surface dark:text-dark-on-surface">{ticketDetails.store.store_name}</span>
+                                                <span className="font-bold text-on-surface dark:text-dark-on-surface">
+                                                    {ticketDetails.store?.store_name || (typeof ticketDetails.store === 'string' ? ticketDetails.store : 'N/A')}
+                                                </span>
                                             </div>
-                                            <div className="flex items-center gap-2 text-xs text-outline"><AlertCircle className="w-4 h-4 shrink-0 text-outline" /><span>{ticketDetails.nature.nature_name}</span></div>
+                                            <div className="flex items-center gap-2 text-xs text-outline">
+                                                <AlertCircle className="w-4 h-4 shrink-0 text-outline" />
+                                                <span>
+                                                    {ticketDetails.nature?.nature_name || (typeof ticketDetails.nature === 'string' ? ticketDetails.nature : 'N/A')}
+                                                </span>
+                                            </div>
 
                                             {(() => {
                                                 const lvl = ticketDetails.priority?.level ?? 1;
@@ -1498,33 +1590,26 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                                 return (
                                                     <>
-                                                        <Can permission={['maintenance.change_priority', 'maintenance.change_priority_name']}>
-                                                            {departmentPriorities.length > 0 ? (
-                                                                <div className="relative inline-flex items-center">
-                                                                    <select
-                                                                        value={ticketDetails.priority?.priority_id}
-                                                                        disabled={actionLoading}
-                                                                        onChange={e => handlePrioritySelect(Number(e.target.value))}
-                                                                        className={`appearance-none font-bold text-[11px] pl-2.5 pr-6 py-0.5 rounded border shadow-2xs outline-none cursor-pointer transition-colors ${badgeColorClass}`}
-                                                                        title="Click to change ticket priority"
-                                                                    >
-                                                                        {departmentPriorities.map((p, idx) => (
-                                                                            <option key={`priority-opt-${p.priority_id || idx}-${p.priority_name}`} value={p.priority_id} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-sans text-xs font-semibold py-1">
-                                                                                {p.priority_name} Priority
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-                                                                    <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none opacity-75 shrink-0" />
-                                                                </div>
-                                                            ) : (
-                                                                <span className={`inline-flex items-center font-bold text-[11px] px-2.5 py-0.5 rounded border shadow-2xs ${badgeColorClass}`}>
-                                                                    {ticketDetails.priority?.priority_name} Priority
-                                                                </span>
-                                                            )}
-                                                        </Can>
-                                                        {!canChangePriority && (
+                                                        {canChangePriority && departmentPriorities.length > 0 ? (
+                                                            <div className="relative inline-flex items-center">
+                                                                <select
+                                                                    value={ticketDetails.priority?.priority_id}
+                                                                    disabled={actionLoading}
+                                                                    onChange={e => handlePrioritySelect(Number(e.target.value))}
+                                                                    className={`appearance-none font-bold text-[11px] pl-2.5 pr-6 py-0.5 rounded border shadow-2xs outline-none cursor-pointer transition-colors ${badgeColorClass}`}
+                                                                    title="Click to change ticket priority"
+                                                                >
+                                                                    {departmentPriorities.map((p, idx) => (
+                                                                        <option key={`priority-opt-${p.priority_id || idx}-${p.priority_name}`} value={p.priority_id} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-sans text-xs font-semibold py-1">
+                                                                            {p.priority_name} Priority
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                                <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none opacity-75 shrink-0" />
+                                                            </div>
+                                                        ) : (
                                                             <span className={`inline-flex items-center font-bold text-[11px] px-2.5 py-0.5 rounded border shadow-2xs ${badgeColorClass}`}>
-                                                                {ticketDetails.priority?.priority_name} Priority
+                                                                {ticketDetails.priority?.priority_name || 'Priority'} Priority
                                                             </span>
                                                         )}
                                                     </>
@@ -1535,10 +1620,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 {/* <span className="font-semibold text-xs text-outline dark:text-dark-outline">Status:</span> */}
                                                 {allowedDropdownStatuses.length > 1 ? (
                                                     <select
-                                                        value={ticketDetails.status.status_id}
+                                                        value={ticketDetails.status?.status_id}
                                                         disabled={actionLoading}
                                                         onChange={e => handleStatusSelect(Number(e.target.value))}
-                                                        className={`text-[10px] font-bold p-1 rounded shrink-0 border border-outline-variant dark:border-dark-outline-variant outline-none cursor-pointer focus:ring-1 focus:ring-primary/20 ${statusColor(ticketDetails.status.status_name)}`}
+                                                        className={`text-[10px] font-bold p-1 rounded shrink-0 border border-outline-variant dark:border-dark-outline-variant outline-none cursor-pointer focus:ring-1 focus:ring-primary/20 ${statusColor(ticketDetails.status?.status_name || '')}`}
                                                     >
                                                         {allowedDropdownStatuses.map(st => (
                                                             <option key={st.status_id} value={st.status_id} className="text-xs bg-surface text-on-surface">
@@ -1547,8 +1632,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         ))}
                                                     </select>
                                                 ) : (
-                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(ticketDetails.status.status_name)}`}>
-                                                        {ticketDetails.status.status_name}
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(ticketDetails.status?.status_name || '')}`}>
+                                                        {ticketDetails.status?.status_name || 'Pending'}
                                                     </span>
                                                 )}
                                             </div>
@@ -1613,7 +1698,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
                                         <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Issue Description</h4>
-                                        {ticketDetails.status.status_name?.toLowerCase() === 'rejected' &&
+                                        {!readOnly && ticketDetails.status?.status_name?.toLowerCase() === 'rejected' &&
                                             <Can permission={user?.user_id === ticketDetails.created_by?.user_id ? true : hasPermission('can_update_ticket')} >
 
 
@@ -1673,8 +1758,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <div>
                                             <div className="flex items-center justify-between mb-3">
                                                 <SectionTitle icon={<Camera className="w-[18px] h-[18px]" />} label="Before Repair" />
-                                                {(ticketDetails.status.status_name !== 'Rejected' || user?.user_id === ticketDetails.created_by?.user_id) && (
-                                                    (ticketDetails.status.status_name === 'Rejected' || hasPermission('maintenance.update_before_repair')) ? (
+                                                {!readOnly && (ticketDetails.status?.status_name !== 'Rejected' || user?.user_id === ticketDetails.created_by?.user_id) && (
+                                                    (ticketDetails.status?.status_name === 'Rejected' || hasPermission('maintenance.update_before_repair')) ? (
                                                         <button
                                                             onClick={() => setIsManageIssueMediaOpen(true)}
                                                             className="min-h-[15px] px-3 py-2 hidden sm:flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
@@ -1687,7 +1772,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             <MediaGrid
                                                 items={issueMedia}
                                                 emptyLabel="No Before Repair media uploaded yet"
-                                                onDelete={(ticketDetails.status.status_name === 'Rejected' || user?.user_id === ticketDetails.created_by?.user_id || hasPermission('maintenance.update_before_repair')) ? handleDeleteMedia : undefined}
+                                                onDelete={(!readOnly && (ticketDetails.status?.status_name === 'Rejected' || user?.user_id === ticketDetails.created_by?.user_id || hasPermission('maintenance.update_before_repair'))) ? handleDeleteMedia : undefined}
                                                 token={token}
                                                 onRefreshTicket={refreshTicketData}
                                             />
@@ -1770,7 +1855,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 )}
 
                                 {/* Allocated Personnel Section */}
-                                {ticketDetails.status.status_name.toLowerCase() !== 'rejected' && (
+                                {(ticketDetails.status?.status_name || '').toLowerCase() !== 'rejected' && (
                                     <div>
                                         <SectionTitle icon={<User className="w-[18px] h-[18px]" />} label="Allocated" />
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between  border-outline-variant dark:border-dark-outline-variant  gap-2.5">
@@ -1806,6 +1891,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             )}
 
                                             {(() => {
+                                                if (readOnly) return null;
                                                 const statusName = (ticketDetails.status?.status_name || '').toLowerCase();
                                                 const isAssignableStatus = ['open', 'approved', 'in progress'].includes(statusName);
                                                 if (!isAssignableStatus) return null;
@@ -1829,8 +1915,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             const a = allocations.find(alloc => alloc.worker.user_id === activeWorkerId);
                                             if (!a) return null;
 
-                                            const workerLogs = workLogs.filter(wl => wl.worker?.user_id === a.worker.user_id);
-                                            const workerExpenses = expenses.filter(exp => exp.worker?.user_id === a.worker.user_id);
+                                            const workerLogs = safeWorkLogs.filter((wl: any) => wl.worker?.user_id === a.worker.user_id);
+                                            const workerExpenses = safeExpenses.filter((exp: any) => exp.worker?.user_id === a.worker.user_id);
+                                            const workerExpensesTotal = workerExpenses.reduce((sum: number, exp: any) => sum + (parseFloat(exp.amount) || 0), 0);
                                             const isMyWorker = (user as any)?.user_id === a.worker.user_id;
 
                                             const rawWorkerPhone = a.worker.phone || a.worker.whatsapp_number;
@@ -1865,20 +1952,22 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             <span className="inline-flex items-center justify-center h-7 px-2.5 text-xs bg-primary/10 text-primary font-bold border border-primary/20 rounded shrink-0 whitespace-nowrap">
                                                                 {a.planned_hours}h
                                                             </span>
-                                                            <Can permission="maintenance.change_allocation">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setEditingAllocation(a);
-                                                                        setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' });
-                                                                        setEditAllocationVoiceFile(null);
-                                                                        setDeleteExistingVoiceNote(false);
-                                                                    }}
-                                                                    className="inline-flex items-center justify-center h-7 px-2.5 text-xs font-semibold rounded border border-outline-variant dark:border-dark-outline-variant hover:border-primary/50 hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface active:scale-95 transition-all shrink-0"
-                                                                    aria-label="Edit Allocation"
-                                                                >
-                                                                    Edit
-                                                                </button>
-                                                            </Can>
+                                                            {!readOnly && (
+                                                                <Can permission="maintenance.change_allocation">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setEditingAllocation(a);
+                                                                            setEditAllocationForm({ planned_hours: a.planned_hours, remarks: a.remarks || '' });
+                                                                            setEditAllocationVoiceFile(null);
+                                                                            setDeleteExistingVoiceNote(false);
+                                                                        }}
+                                                                        className="inline-flex items-center justify-center h-7 px-2.5 text-xs font-semibold rounded border border-outline-variant dark:border-dark-outline-variant hover:border-primary/50 hover:text-primary cursor-pointer text-on-surface dark:text-dark-on-surface active:scale-95 transition-all shrink-0"
+                                                                        aria-label="Edit Allocation"
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                </Can>
+                                                            )}
                                                         </div>
                                                     </div>
 
@@ -1939,14 +2028,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         <div className="p-2 space-y-2 bg-surface-container dark:bg-dark-surface-container">
                                                             <div className="flex items-center justify-between">
                                                                 <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-2"><Clock className="w-4 h-4" /> Work Logs</p>
-                                                                <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
-                                                                    <button
-                                                                        onClick={() => setIsLogHoursModalOpen(true)}
-                                                                        className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
-                                                                    >
-                                                                        <Plus className="w-4 h-4" /> Log Hours
-                                                                    </button>
-                                                                </Can>
+                                                                {!readOnly && (
+                                                                    <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
+                                                                        <button
+                                                                            onClick={() => setIsLogHoursModalOpen(true)}
+                                                                            className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                        >
+                                                                            <Plus className="w-4 h-4" /> Log Hours
+                                                                        </button>
+                                                                    </Can>
+                                                                )}
                                                             </div>
                                                             {workerLogs.length === 0 ? (
                                                                 <div className="p-4 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded">
@@ -1955,7 +2046,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                 </div>
                                                             ) : (
                                                                 <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin">
-                                                                    {workerLogs.map(wl => (
+                                                                    {workerLogs.map((wl: any) => (
                                                                         <div key={wl.worklog_id} className="flex items-start justify-between text-xs p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
                                                                             <div>
                                                                                 <p className="font-medium text-on-surface dark:text-dark-on-surface">{wl.work_done}</p>
@@ -1964,15 +2055,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                             <div className="text-right flex flex-col items-end gap-1">
                                                                                 <div className="flex items-center gap-2">
                                                                                     <span className="font-bold text-primary">{wl.hours}h</span>
-                                                                                    <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
-                                                                                        <button
-                                                                                            onClick={() => { setEditingWorkLog(wl); setEditWorkLogForm({ hours: wl.hours, work_done: wl.work_done }); }}
-                                                                                            className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
-                                                                                            aria-label="Edit Work Log"
-                                                                                        >
-                                                                                            <Edit2 className="w-4 h-4" />
-                                                                                        </button>
-                                                                                    </Can>
+                                                                                    {!readOnly && (
+                                                                                        <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
+                                                                                            <button
+                                                                                                onClick={() => { setEditingWorkLog(wl); setEditWorkLogForm({ hours: wl.hours, work_done: wl.work_done }); }}
+                                                                                                className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
+                                                                                                aria-label="Edit Work Log"
+                                                                                            >
+                                                                                                <Edit2 className="w-4 h-4" />
+                                                                                            </button>
+                                                                                        </Can>
+                                                                                    )}
                                                                                 </div>
                                                                                 <div className="flex items-center gap-1.5">
                                                                                     <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">{wl.labour_amount} KWD</span>
@@ -1990,36 +2083,49 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         {/* Expenses Sub-Panel */}
                                                         <div className="p-2 space-y-2 bg-surface-container-low dark:bg-dark-surface-container-low">
                                                             <div className="flex items-center justify-between">
-                                                                <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-2"> Logged Expenses</p>
-                                                                <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
-                                                                    <button
-                                                                        onClick={() => setIsAddExpenseModalOpen(true)}
-                                                                        className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
-                                                                    >
-                                                                        <Plus className="w-4 h-4" /> Add Expense
-                                                                    </button>
-                                                                </Can>
+                                                                <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-1.5">
+                                                                    <span>Logged Expenses ({workerExpenses.length})</span>
+                                                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold normal-case tracking-normal">
+                                                                        • {workerExpensesTotal.toFixed(2)} KWD
+                                                                    </span>
+                                                                </p>
+                                                                {!readOnly && (
+                                                                    <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
+                                                                        <button
+                                                                            onClick={() => setIsAddExpenseModalOpen(true)}
+                                                                            className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                        >
+                                                                            <Plus className="w-4 h-4" /> Add Expense
+                                                                        </button>
+                                                                    </Can>
+                                                                )}
                                                             </div>
                                                             {workerExpenses.length === 0 ? (
                                                                 <div className="p-4 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded">
-                                                                    <DollarSign className="w-6 h-6 mx-auto text-outline mb-1" />
+                                                                    {/* <DollarSign className="w-6 h-6 mx-auto text-outline mb-1" /> */}
                                                                     <p className="text-xs text-outline italic">No expenses logged yet.</p>
                                                                 </div>
                                                             ) : (
                                                                 <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                                                                    {workerExpenses.map(exp => {
+                                                                    {workerExpenses.map((exp: any) => {
                                                                         const receiptsList: Media[] = [];
                                                                         if (exp.receipt) receiptsList.push(exp.receipt);
                                                                         if (exp.receipts) {
-                                                                            exp.receipts.forEach(r => {
+                                                                            exp.receipts.forEach((r: any) => {
                                                                                 if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
                                                                                     receiptsList.push(r);
                                                                                 }
                                                                             });
                                                                         }
 
+                                                                        const statusText = (exp.expense_type && exp.expense_type.approve_required === false) ? 'Approved' : (exp.status_display || (exp.approved ? 'Approved' : ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval')));
+                                                                        const isRejected = statusText === 'Rejected';
+                                                                        const isRework = statusText === 'Rework';
+                                                                        const isApproved = statusText === 'Approved';
+                                                                        const rejectReasonText = exp.reject_reason || (exp.claim && (exp.claim.status === 'Rejected' || exp.claim.status === 'Rework') ? exp.claim.reject_reason : null);
+
                                                                         return (
-                                                                            <div key={exp.expense_id} className="text-xs p-2 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
+                                                                            <div key={exp.expense_id} className={`text-xs p-2 bg-surface dark:bg-dark-surface rounded border ${isRejected ? 'border-rose-300 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/10' : isRework ? 'border-amber-300 dark:border-amber-900/50 bg-amber-50/20 dark:bg-amber-950/10' : 'border-outline-variant/50'}`}>
                                                                                 <div className="flex items-start justify-between gap-2">
                                                                                     <div className="min-w-0 flex-1">
                                                                                         <p className="font-semibold text-on-surface dark:text-dark-on-surface">{exp.expense_type.expense_name}</p>
@@ -2057,24 +2163,42 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                     <div className="flex flex-col items-end gap-1 shrink-0">
                                                                                         <span className="font-bold text-emerald-600 dark:text-emerald-400">{exp.amount} KWD</span>
                                                                                         <div className="flex flex-wrap items-center justify-end gap-1">
-                                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${exp.approved ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
-                                                                                                {exp.approved ? 'Approved' : 'Pending Approval'}
+                                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isApproved
+                                                                                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                                                                                : isRejected
+                                                                                                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                                                                                    : isRework
+                                                                                                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                                                                                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                                                                                }`}>
+                                                                                                {statusText}
                                                                                             </span>
                                                                                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${exp.is_claimed ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20' : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'}`}>
                                                                                                 {exp.is_claimed ? 'Claimed' : 'Unclaimed'}
                                                                                             </span>
                                                                                         </div>
-                                                                                        <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
-                                                                                            <button
-                                                                                                onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }}
-                                                                                                className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
-                                                                                                aria-label="Edit Expense"
-                                                                                            >
-                                                                                                <Edit2 className="w-4 h-4" />
-                                                                                            </button>
-                                                                                        </Can>
+                                                                                        {!readOnly && !isApproved && (
+                                                                                            <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
+                                                                                                <button
+                                                                                                    onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }}
+                                                                                                    className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
+                                                                                                    aria-label="Edit Expense"
+                                                                                                >
+                                                                                                    <Edit2 className="w-4 h-4" />
+                                                                                                </button>
+                                                                                            </Can>
+                                                                                        )}
                                                                                     </div>
                                                                                 </div>
+                                                                                {(isRejected || isRework) && rejectReasonText && (
+                                                                                    <div className={`mt-2 p-1.5 rounded text-[11px] font-medium flex items-start gap-1.5 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50'}`}>
+                                                                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                                                                        <div>
+                                                                                            <span className="font-bold">{isRejected ? 'Rejected:' : 'Rework:'}</span>{' '}
+                                                                                            <span>{rejectReasonText}</span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
                                                                         );
                                                                     })}
@@ -2093,23 +2217,25 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
 
                                 {/* After Repair Media Section */}
-                                {Boolean(ticketDetails.approved_by || (ticketDetails.status.status_name.toLowerCase() !== 'open' && ticketDetails.status.status_name.toLowerCase() !== 'rejected')) && (completedMedia.length > 0 || hasCompletedCategoryForDept) && (
+                                {Boolean(ticketDetails.approved_by || ((ticketDetails.status?.status_name || '').toLowerCase() !== 'open' && (ticketDetails.status?.status_name || '').toLowerCase() !== 'rejected')) && (completedMedia.length > 0 || hasCompletedCategoryForDept) && (
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
                                             <SectionTitle icon={<CheckCircle2 className="w-[18px] h-[18px]" />} label="After Repair" />
-                                            <Can permission="maintenance.update_after_repair">
-                                                <button
-                                                    onClick={() => setIsManageCompletedMediaOpen(true)}
-                                                    className="min-h-[15px] px-3 py-2 hidden sm:flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
-                                                >
-                                                    <Settings className="w-4 h-4" /> Manage Media
-                                                </button>
-                                            </Can>
+                                            {!readOnly && (
+                                                <Can permission="maintenance.update_after_repair">
+                                                    <button
+                                                        onClick={() => setIsManageCompletedMediaOpen(true)}
+                                                        className="min-h-[15px] px-3 py-2 hidden sm:flex items-center justify-center gap-2 text-xs font-bold text-primary bg-primary/10 rounded cursor-pointer hover:bg-primary/20 active:scale-95 transition-all"
+                                                    >
+                                                        <Settings className="w-4 h-4" /> Manage Media
+                                                    </button>
+                                                </Can>
+                                            )}
                                         </div>
                                         <MediaGrid
                                             items={completedMedia}
                                             emptyLabel="No completion media uploaded yet"
-                                            onDelete={(hasPermission('maintenance.update_after_repair') || user?.is_superuser) ? handleDeleteMedia : undefined}
+                                            onDelete={(!readOnly && (hasPermission('maintenance.update_after_repair') || user?.is_superuser)) ? handleDeleteMedia : undefined}
                                             token={token}
                                             onRefreshTicket={refreshTicketData}
                                         />
@@ -2121,7 +2247,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         )}
 
                         {/* Desktop Action Buttons — hidden on mobile (FAB handles those) */}
-                        {!showRejectForm && !showLocationRejectForm && <>  {!modalLoading && ticketDetails.status.status_name === 'Open' && (
+                        {!readOnly && !showRejectForm && !showLocationRejectForm && <>  {!modalLoading && ticketDetails.status?.status_name === 'Open' && (
                             <div className="hidden sm:flex items-center gap-2 shrink-0 ml-3 justify-end">
                                 <Can permission="maintenance.can_move_open_to_in_progress">
                                     <button
@@ -2151,7 +2277,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             </div>
                         )}
 
-                            {!modalLoading && ticketDetails.status.status_name === 'Location Approval' && (
+                            {!modalLoading && ticketDetails.status?.status_name === 'Location Approval' && (
                                 <div className="hidden sm:flex items-center gap-2 shrink-0 ml-3 justify-end">
                                     <Can permission={'maintenance.can_move_location_approval_to_in_progress'} >   {/* reject */}
                                         {/* also need the  maintenance.can_move_location_approval_to_complteted - approve  */}
@@ -2198,7 +2324,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
 
 
-                            {ticketDetails.status.status_name === 'In Progress' && (
+                            {ticketDetails.status?.status_name === 'In Progress' && (
                                 <div className="hidden sm:flex items-center gap-2 shrink-0 ml-3 justify-end">
                                     <Can permission='maintenance.can_move_in_progress_to_location_approval'>
                                         <button onClick={() => triggerApproveWithExpensesCheck(handleMoveToNextStatus)}
@@ -2304,8 +2430,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 {/* Floating Action Button Speed-Dial — mobile only */}
                 {
-                    !modalLoading && (() => {
-                        const statusName = ticketDetails.status.status_name;
+                    !readOnly && !modalLoading && (() => {
+                        const statusName = ticketDetails.status?.status_name;
                         const isOpen = statusName === 'Open';
                         const isApproved = statusName === 'Approved';
                         const isInProgress = statusName === 'In Progress';
@@ -3356,131 +3482,143 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingExpense(null)} className="absolute inset-0 bg-black touch-manipulation" />
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">{editingExpense.is_claimed ? 'Expense Details' : 'Edit Expense'}</h3>
-                                    <button onClick={() => setEditingExpense(null)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
-                                </div>
-                                {editingExpense.is_claimed ? (
-                                    <div className="space-y-4">
-                                        <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded text-purple-600 dark:text-purple-400 text-xs font-semibold flex items-center gap-2">
-                                            <span>Expense claimed and cannot be edited or deleted.</span>
-                                        </div>
-                                        <div className="text-xs space-y-2 text-on-surface dark:text-dark-on-surface p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
-                                            <p><strong>Category:</strong> {editingExpense.expense_type.expense_name}</p>
-                                            <p><strong>Amount:</strong> {editingExpense.amount} KWD</p>
-                                            {editingExpense.remarks && <p><strong>Remarks:</strong> {editingExpense.remarks}</p>}
-                                            <p><strong>Date:</strong> {editingExpense.expense_date}</p>
-                                        </div>
-                                        {(() => {
-                                            const receiptsList: Media[] = [];
-                                            if (editingExpense.receipt) receiptsList.push(editingExpense.receipt);
-                                            if (editingExpense.receipts) {
-                                                editingExpense.receipts.forEach(r => {
-                                                    if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
-                                                        receiptsList.push(r);
-                                                    }
-                                                });
-                                            }
-                                            if (receiptsList.length === 0) return null;
-                                            return (
-                                                <div className="space-y-2">
-                                                    <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Receipt Attachments</h4>
-                                                    <MediaGrid
-                                                        items={receiptsList}
-                                                        emptyLabel="No receipts attached"
-                                                    />
-                                                </div>
-                                            );
-                                        })()}
-                                        <div className="flex justify-end pt-2">
-                                            <button type="button" onClick={() => setEditingExpense(null)} className="min-h-[15px] px-4 py-2 bg-surface-container-high border border-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-highest">Close</button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <form onSubmit={handleUpdateExpense} className="space-y-4">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                            <select required value={editExpenseForm.expense_type_id} onChange={e => setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
-                                                <option value="">Expense Type</option>
-                                                {expenseTypes
-                                                    .filter(et => (et.department?.department_id ?? et.department) === ticketDetails.department.department_id)
-                                                    .map(et => (
-                                                        <option key={et.expense_type_id} value={et.expense_type_id}>
-                                                            {et.expense_name}
-                                                        </option>
-                                                    ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                            <input type="number" step="0.01" min="0" inputMode="decimal" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
-                                            <input type="text" value={editExpenseForm.remarks} onChange={e => setEditExpenseForm({ ...editExpenseForm, remarks: e.target.value })} placeholder="Remarks (optional)" className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
-                                        </div>
-                                        <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
-                                            <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Manage Receipt Attachments</h4>
-                                            {(() => {
-                                                const receiptsList: Media[] = [];
-                                                if (editingExpense.receipt) receiptsList.push(editingExpense.receipt);
-                                                if (editingExpense.receipts) {
-                                                    editingExpense.receipts.forEach(r => {
-                                                        if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
-                                                            receiptsList.push(r);
-                                                        }
-                                                    });
-                                                }
-                                                return (
-                                                    <MediaGrid
-                                                        items={receiptsList}
-                                                        emptyLabel="No receipts attached to this expense"
-                                                        onEdit={triggerReplaceMedia}
-                                                        onDelete={handleDeleteMedia}
-                                                    />
-                                                );
-                                            })()}
-                                            {(() => {
-                                                const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
-                                                const isReceiptRequiredInEdit = currentEditExpTypeObj ? (currentEditExpTypeObj as any).required !== false : true;
-                                                const showReceiptUploadInEdit = hasBillsCategoryForDept && isReceiptRequiredInEdit;
-                                                if (!showReceiptUploadInEdit) return null;
+                                {(() => {
+                                    const claimStatus = (typeof editingExpense.claim === 'object' && editingExpense.claim) ? (editingExpense.claim as any).status : null;
+                                    const canEditClaimedExpense = editingExpense.is_claimed && (claimStatus === 'Rejected' || claimStatus === 'Rework');
+                                    const isEditingLocked = editingExpense.is_claimed && !canEditClaimedExpense;
 
-                                                return (
-                                                    <div
-                                                        className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded p-3 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
-                                                        onClick={() => !actionLoading && document.getElementById(`receipt-edit-upload-${editingExpense.expense_id}`)?.click()}
-                                                    >
-                                                        <input
-                                                            id={`receipt-edit-upload-${editingExpense.expense_id}`}
-                                                            type="file"
-                                                            accept="image/*,application/pdf"
-                                                            multiple
-                                                            disabled={actionLoading}
-                                                            className="sr-only"
-                                                            onChange={e => {
-                                                                const files = Array.from(e.target.files || []);
-                                                                if (files.length > 0) handleAddExpenseReceiptInEdit(files);
-                                                                e.target.value = '';
-                                                            }}
-                                                        />
-                                                        <p className="text-xs text-outline">📎 Tap to upload and attach a new receipt</p>
+                                    return (
+                                        <>
+                                            <div className="flex items-center justify-between mb-4">
+                                                <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">{isEditingLocked ? 'Expense Details' : 'Edit Expense'}</h3>
+                                                <button onClick={() => setEditingExpense(null)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                            </div>
+                                            {isEditingLocked ? (
+                                                <div className="space-y-4">
+                                                    <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded text-purple-600 dark:text-purple-400 text-xs font-semibold flex items-center gap-2">
+                                                        <span>🔒 Expense is tied to a claim bundle ({claimStatus || 'Claimed'}) and cannot be edited or deleted here.</span>
                                                     </div>
-                                                );
-                                            })()}
-                                        </div>
-                                        <div className="flex justify-end gap-2 pt-4 border-t border-outline-variant dark:border-dark-outline-variant">
+                                                    <div className="text-xs space-y-2 text-on-surface dark:text-dark-on-surface p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
+                                                        <p><strong>Category:</strong> {editingExpense.expense_type.expense_name}</p>
+                                                        <p><strong>Amount:</strong> {editingExpense.amount} KWD</p>
+                                                        {editingExpense.remarks && <p><strong>Remarks:</strong> {editingExpense.remarks}</p>}
+                                                        <p><strong>Date:</strong> {editingExpense.expense_date}</p>
+                                                    </div>
+                                                    {(() => {
+                                                        const receiptsList: Media[] = [];
+                                                        if (editingExpense.receipt) receiptsList.push(editingExpense.receipt);
+                                                        if (editingExpense.receipts) {
+                                                            editingExpense.receipts.forEach(r => {
+                                                                if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
+                                                                    receiptsList.push(r);
+                                                                }
+                                                            });
+                                                        }
+                                                        if (receiptsList.length === 0) return null;
+                                                        return (
+                                                            <div className="space-y-2">
+                                                                <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Receipt Attachments</h4>
+                                                                <MediaGrid
+                                                                    items={receiptsList}
+                                                                    emptyLabel="No receipts attached"
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    <div className="flex justify-end pt-2">
+                                                        <button type="button" onClick={() => setEditingExpense(null)} className="min-h-[15px] px-4 py-2 bg-surface-container-high border border-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-highest">Close</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <form onSubmit={handleUpdateExpense} className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
+                                                        <select required value={editExpenseForm.expense_type_id} onChange={e => setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
+                                                            <option value="">Expense Type</option>
+                                                            {expenseTypes
+                                                                .filter(et => (et.department?.department_id ?? et.department) === ticketDetails.department.department_id)
+                                                                .map(et => (
+                                                                    <option key={et.expense_type_id} value={et.expense_type_id}>
+                                                                        {et.expense_name}
+                                                                    </option>
+                                                                ))}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
+                                                        <input type="number" step="0.01" min="0" inputMode="decimal" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
+                                                        <input type="text" value={editExpenseForm.remarks} onChange={e => setEditExpenseForm({ ...editExpenseForm, remarks: e.target.value })} placeholder="Remarks (optional)" className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
+                                                    </div>
+                                                    <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
+                                                        <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Manage Receipt Attachments</h4>
+                                                        {(() => {
+                                                            const receiptsList: Media[] = [];
+                                                            if (editingExpense.receipt) receiptsList.push(editingExpense.receipt);
+                                                            if (editingExpense.receipts) {
+                                                                editingExpense.receipts.forEach(r => {
+                                                                    if (!receiptsList.some(existing => existing.media_id === r.media_id)) {
+                                                                        receiptsList.push(r);
+                                                                    }
+                                                                });
+                                                            }
+                                                            return (
+                                                                <MediaGrid
+                                                                    items={receiptsList}
+                                                                    emptyLabel="No receipts attached to this expense"
+                                                                    onEdit={triggerReplaceMedia}
+                                                                    onDelete={handleDeleteMedia}
+                                                                />
+                                                            );
+                                                        })()}
+                                                        {(() => {
+                                                            const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
+                                                            const isReceiptRequiredInEdit = currentEditExpTypeObj ? (currentEditExpTypeObj as any).required !== false : true;
+                                                            const showReceiptUploadInEdit = hasBillsCategoryForDept && isReceiptRequiredInEdit;
+                                                            if (!showReceiptUploadInEdit) return null;
 
-                                            <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this expense?')) handleDeleteExpense(editingExpense.expense_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded mr-auto flex items-center gap-2">
-                                                <Trash2 className="w-4 h-4" /> Delete Expense
-                                            </button>
-                                            <button type="button" onClick={() => setEditingExpense(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
-                                            <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-                                                {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
-                                            </button>
-                                        </div>
-                                    </form>
-                                )}
+                                                            return (
+                                                                <div
+                                                                    className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded p-3 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
+                                                                    onClick={() => !actionLoading && document.getElementById(`receipt-edit-upload-${editingExpense.expense_id}`)?.click()}
+                                                                >
+                                                                    <input
+                                                                        id={`receipt-edit-upload-${editingExpense.expense_id}`}
+                                                                        type="file"
+                                                                        accept="image/*,application/pdf"
+                                                                        multiple
+                                                                        disabled={actionLoading}
+                                                                        className="sr-only"
+                                                                        onChange={e => {
+                                                                            const files = Array.from(e.target.files || []);
+                                                                            if (files.length > 0) handleAddExpenseReceiptInEdit(files);
+                                                                            e.target.value = '';
+                                                                        }}
+                                                                    />
+                                                                    <p className="text-xs text-outline">📎 Tap to upload and attach a new receipt</p>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    <div className="flex justify-end gap-2 pt-4 border-t border-outline-variant dark:border-dark-outline-variant">
+
+                                                        {!editingExpense.is_claimed && (
+                                                            <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this expense?')) handleDeleteExpense(editingExpense.expense_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded mr-auto flex items-center gap-2">
+                                                                <Trash2 className="w-4 h-4" /> Delete Expense
+                                                            </button>
+                                                        )}
+                                                        <button type="button" onClick={() => setEditingExpense(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                                        <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                                                            {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </motion.div>
                         </div>
                     )
@@ -4262,7 +4400,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         });
 
                                         let totalExpensesCost = 0;
-                                        expenses.forEach(exp => {
+                                        safeExpenses.forEach(exp => {
                                             totalExpensesCost += parseFloat(exp.amount) || 0;
                                         });
 
@@ -4313,17 +4451,43 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         <span className="flex items-center gap-1.5"><DollarSign className="w-4 h-4 text-teal-600" /> Logged Expenses</span>
                                                         <span className=" text-teal-600 dark:text-teal-400 font-bold">{totalExpensesCost.toFixed(3)} KWD</span>
                                                     </div>
-                                                    {expenses.length > 0 ? (
+                                                    {safeExpenses.length > 0 ? (
                                                         <div className="divide-y divide-outline-variant/40 dark:divide-dark-outline-variant/40 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant dark:border-dark-outline-variant max-h-40 overflow-y-auto scrollbar-thin">
-                                                            {expenses.map((exp, idx) => {
+                                                            {safeExpenses.map((exp, idx) => {
                                                                 const expAmt = parseFloat(exp.amount) || 0;
+                                                                const statusText = (exp.expense_type && exp.expense_type.approve_required === false) ? 'Approved' : (exp.status_display || (exp.approved ? 'Approved' : ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval')));
+                                                                const isRejected = statusText === 'Rejected';
+                                                                const isRework = statusText === 'Rework';
+                                                                const isApproved = statusText === 'Approved';
+                                                                const rejectReasonText = exp.reject_reason || (exp.claim && (exp.claim.status === 'Rejected' || exp.claim.status === 'Rework') ? exp.claim.reject_reason : null);
+
                                                                 return (
-                                                                    <div key={exp.expense_id || idx} className="p-2.5 flex items-center justify-between text-xs">
-                                                                        <div className="min-w-0 flex-1 pr-2">
-                                                                            <span className="font-semibold text-on-surface dark:text-dark-on-surface truncate block">{exp.expense_type?.expense_name || 'Expense'}</span>
-                                                                            {exp.remarks && <span className="text-[10px] text-outline italic block">{exp.remarks}</span>}
+                                                                    <div key={exp.expense_id || idx} className="p-2.5 text-xs">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <div className="min-w-0 flex-1 pr-2">
+                                                                                <span className="font-semibold text-on-surface dark:text-dark-on-surface truncate block">{exp.expense_type?.expense_name || 'Expense'}</span>
+                                                                                {exp.remarks && <span className="text-[10px] text-outline italic block">{exp.remarks}</span>}
+                                                                            </div>
+                                                                            <div className="flex flex-col items-end gap-0.5">
+                                                                                <span className="font-bold text-on-surface dark:text-dark-on-surface">{expAmt.toFixed(3)} KWD</span>
+                                                                                <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full ${isApproved
+                                                                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                                                                    : isRejected
+                                                                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                                                                        : isRework
+                                                                                            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                                                                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                                                                    }`}>
+                                                                                    {statusText}
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
-                                                                        <span className=" font-bold text-on-surface dark:text-dark-on-surface">{expAmt.toFixed(3)} KWD</span>
+                                                                        {(isRejected || isRework) && rejectReasonText && (
+                                                                            <div className={`mt-1 p-1 rounded text-[10px] font-medium flex items-start gap-1 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
+                                                                                <span className="font-bold">{isRejected ? 'Rejected:' : 'Rework:'}</span>
+                                                                                <span>{rejectReasonText}</span>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })}

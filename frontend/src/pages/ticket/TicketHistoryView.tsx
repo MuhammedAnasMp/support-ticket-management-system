@@ -145,7 +145,7 @@ export const TicketHistoryView: React.FC = () => {
                 <div className="p-4 bg-surface dark:bg-dark-surface rounded-xl border border-outline-variant dark:border-dark-outline-variant shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1.5 min-w-0">
                         <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-primary">{ticket.work_order_no}</span>
+                            <span className=" text-xs font-bold text-primary">{ticket.work_order_no}</span>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColor(ticket.status?.status_name)}`}>
                                 {ticket.status?.status_name}
                             </span>

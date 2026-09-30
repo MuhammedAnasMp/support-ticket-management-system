@@ -252,7 +252,7 @@ export const MaintenanceView: React.FC = () => {
 
     if (subpage === 'natures') {
       const cols: ColDef[] = [
-        { headerName: 'Nature ID', field: 'nature_id', width: 110, cellClass: 'font-mono text-xs' },
+        { headerName: 'Nature ID', field: 'nature_id', width: 110, cellClass: ' text-xs' },
         { headerName: 'Sub Department', field: 'sub_department.sub_department_name', flex: 1, minWidth: 150, valueGetter: p => p.data?.sub_department?.sub_department_name || 'N/A' },
         { headerName: 'Nature Name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface', field: 'nature_name' },
         {
@@ -292,7 +292,7 @@ export const MaintenanceView: React.FC = () => {
       return cols;
     } else if (subpage === 'worker-assignments') {
       const cols: ColDef[] = [
-        { headerName: 'ID', field: 'nature_worker_id', width: 90, cellClass: 'font-mono text-xs' },
+        { headerName: 'ID', field: 'nature_worker_id', width: 90, cellClass: ' text-xs' },
         { headerName: 'Nature of Work', field: 'nature.nature_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface', valueGetter: p => p.data?.nature?.nature_name || 'N/A' },
         { headerName: 'Assigned Technician', field: 'worker.full_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.worker?.full_name || 'N/A' }
       ];
@@ -302,7 +302,7 @@ export const MaintenanceView: React.FC = () => {
       return cols;
     } else if (subpage === 'sub-departments') {
       const cols: ColDef[] = [
-        { headerName: 'ID', field: 'sub_department_id', width: 90, cellClass: 'font-mono text-xs' },
+        { headerName: 'ID', field: 'sub_department_id', width: 90, cellClass: ' text-xs' },
         { headerName: 'Parent Department', field: 'department.department_name', flex: 1.5, minWidth: 180, valueGetter: p => p.data?.department?.department_name || 'N/A' },
         { headerName: 'Sub Department Name', field: 'sub_department_name', flex: 2, minWidth: 200, cellClass: 'font-medium text-on-surface' }
       ];
@@ -854,7 +854,7 @@ export const MaintenanceView: React.FC = () => {
               >
                 <ZoomOut className="w-3.5 h-3.5" />
               </button>
-              <span className="text-xs font-mono px-1.5 text-on-surface font-medium">
+              <span className="text-xs  px-1.5 text-on-surface font-medium">
                 {Math.round(flowZoom * 100)}%
               </span>
               <button
@@ -945,7 +945,7 @@ export const MaintenanceView: React.FC = () => {
                         <Building2 className="w-4 h-4 shrink-0" />
                         <span className="font-bold">{dept.department_name}</span>
                       </div>
-                      <span className="font-mono text-[10px] text-on-surface-variant">
+                      <span className=" text-[10px] text-on-surface-variant">
                         Dept ID #{dept.department_id}
                       </span>
                       <div className="mt-2">
@@ -996,7 +996,7 @@ export const MaintenanceView: React.FC = () => {
                               </div>
 
                               <div className="w-full flex items-center justify-between pt-1.5 text-[10px]">
-                                <span className="font-mono text-on-surface-variant">ID #{sub.sub_department_id}</span>
+                                <span className=" text-on-surface-variant">ID #{sub.sub_department_id}</span>
                                 <span className="font-medium px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container">
                                   {sub.natures.length} Natures
                                 </span>
@@ -1050,14 +1050,14 @@ export const MaintenanceView: React.FC = () => {
                                             {nat.default_priority?.priority_name || 'No Priority'}
                                           </span>
                                           {nat.default_priority?.level && (
-                                            <span className="font-mono bg-surface-container-low px-1 rounded text-on-surface-variant">
+                                            <span className=" bg-surface-container-low px-1 rounded text-on-surface-variant">
                                               L{nat.default_priority.level}
                                             </span>
                                           )}
                                         </div>
 
                                         <div className="flex items-center justify-between text-[10px]">
-                                          <span className="font-mono text-on-surface-variant">#{nat.nature_id}</span>
+                                          <span className=" text-on-surface-variant">#{nat.nature_id}</span>
                                           <span className={`px-1.5 py-0.2 rounded text-[9px] font-medium ${nat.active ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-error-container text-on-error-container'
                                             }`}>
                                             {nat.active ? 'Active' : 'Inactive'}
@@ -1084,7 +1084,7 @@ export const MaintenanceView: React.FC = () => {
                                               className="text-[10px] font-medium bg-surface text-on-surface px-1.5 py-0.5 rounded border border-outline-variant truncate"
                                             >
                                               {w.worker?.full_name || 'Worker'}
-                                              <span className="opacity-60 ml-1 font-mono text-[9px]">
+                                              <span className="opacity-60 ml-1  text-[9px]">
                                                 ({w.worker?.employee_no || w.worker?.user_id})
                                               </span>
                                             </div>
@@ -1484,9 +1484,9 @@ export const MaintenanceView: React.FC = () => {
                     {allowedPriorities.map(p => (
                       <div key={p.priority_id} className="p-2.5 flex items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2">
-                          <span className="text-on-surface-variant font-mono">[{p.department_detail?.department_name || 'Dept'}]</span>
+                          <span className="text-on-surface-variant ">[{p.department_detail?.department_name || 'Dept'}]</span>
                           <span className="font-medium text-on-surface">{p.priority_name}</span>
-                          <span className="font-mono text-[10px] px-1.5 py-0.2 bg-surface-container border border-outline-variant rounded text-on-surface-variant">
+                          <span className=" text-[10px] px-1.5 py-0.2 bg-surface-container border border-outline-variant rounded text-on-surface-variant">
                             Level {p.level}
                           </span>
                         </div>
