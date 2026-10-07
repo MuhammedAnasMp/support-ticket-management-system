@@ -19,6 +19,7 @@ interface SearchableSelectProps {
   name?: string;
   onSearchChange?: (term: string) => void;
   loading?: boolean;
+  disableLocalFilter?: boolean;
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -32,7 +33,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   id,
   name,
   onSearchChange,
-  loading = false
+  loading = false,
+  disableLocalFilter = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,13 +46,13 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, [options, value]);
 
   const filteredOptions = useMemo(() => {
-    if (!searchTerm.trim()) return options;
+    if (disableLocalFilter || !searchTerm.trim()) return options;
     const term = searchTerm.toLowerCase().trim();
     return options.filter(opt =>
       opt.label.toLowerCase().includes(term) ||
       String(opt.value).toLowerCase().includes(term)
     );
-  }, [options, searchTerm]);
+  }, [options, searchTerm, disableLocalFilter]);
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -86,7 +88,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const baseInputCls = className || "w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all placeholder:text-on-surface-variant/60 shadow-2xs";
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-50' : ''}`}>
       {/* Hidden native input for HTML form validation */}
       {required && (
         <input
@@ -116,7 +118,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md">
+        <div className="absolute left-0 right-0 top-full mt-1.5 z-[100] bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md">
           {/* Search Box */}
           <div className="p-2 border-b border-outline-variant/60 bg-surface-container-low flex items-center gap-2">
             {loading ? (

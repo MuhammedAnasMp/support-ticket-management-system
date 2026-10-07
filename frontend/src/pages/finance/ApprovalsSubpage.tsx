@@ -2,13 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShieldCheck, Clock, CheckCircle2, User, Filter, Layers, Receipt, Building2,
   DollarSign, Loader2, ChevronDown, ChevronRight, Ticket, ExternalLink,
-  Check, X, RotateCcw, MessageSquare, Paperclip, FileText, File, Headphones, Video, Image as ImageIcon, Eye
+  Check, X, RotateCcw, MessageSquare, Paperclip, FileText, File, Headphones, Video, Image as ImageIcon, Eye,
+  FolderKanban
 } from 'lucide-react';
-import type { ApprovalInstanceItem, ApprovalStepInfo } from './types';
+import type { ApprovalInstanceItem, ApprovalStepInfo, LedgerGroupItem } from './types';
 import { Pagination } from './Pagination';
+import { SearchableSelect, type SelectOption } from '../../components/SearchableSelect';
 import { MediaPreviewModal, getMediaUrl, isImage, isAudio, isVideo, type Media } from '../ticket/TicketsTypesAndComponents';
+import Can from '../../hooks/Can';
 
 export interface ApprovalsSubpageProps {
+  approvals?: ApprovalInstanceItem[];
   roleFilteredApprovals: ApprovalInstanceItem[];
   displayedApprovals: ApprovalInstanceItem[];
   loading: boolean;
@@ -22,7 +26,7 @@ export interface ApprovalsSubpageProps {
   setApprovalStatusTab: (st: string) => void;
   expandedApprovalIds: Record<number, boolean>;
   toggleExpandApproval: (id: number) => void;
-  renderStatusBadge: (status: string) => React.ReactNode;
+  renderStatusBadge: (status: string, isActionableForMe?: boolean, stepName?: string, hasCurrentUserApproved?: boolean) => React.ReactNode;
   setSelectedTicketForModal: (ticket: any) => void;
   setShowApprovalModal: (app: ApprovalInstanceItem | null) => void;
   setApprovalAction: (action: 'APPROVED' | 'REJECTED' | 'REWORK') => void;
@@ -31,8 +35,17 @@ export interface ApprovalsSubpageProps {
   showApprovalModal: ApprovalInstanceItem | null;
   approvalAction: 'APPROVED' | 'REJECTED' | 'REWORK';
   approvalComments: string;
-  handleActionApproval: () => void;
+  handleActionApproval: (
+    customAction?: 'APPROVED' | 'REJECTED' | 'REWORK',
+    customComments?: string,
+    customApp?: ApprovalInstanceItem,
+    customLedgerGroupId?: number | string | null,
+    customNewGroupName?: string
+  ) => Promise<void> | void;
   fixedEntityType?: 'Bundle' | 'Ledger' | 'Expense';
+  ledgerGroups?: LedgerGroupItem[];
+  token?: string | null;
+  API_URL?: string;
 }
 
 export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
@@ -59,11 +72,84 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
   approvalAction,
   approvalComments,
   handleActionApproval,
-  fixedEntityType
+  fixedEntityType,
+  ledgerGroups = [],
+  token,
+  API_URL
 }) => {
+  const getCleanRemarks = (raw?: string) => {
+    if (!raw) return '';
+    const lines = raw.split('\n');
+    const cleanLines = lines.filter(line => !line.trim().match(/^\[.+?\]:/));
+    return cleanLines.join('\n').trim();
+  };
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // Group reassignment state when Reworking a Ledger
+  const [reworkGroupMode, setReworkGroupMode] = useState<'keep' | 'existing' | 'new'>('keep');
+  const [reworkTargetGroupId, setReworkTargetGroupId] = useState<string>('');
+  const [reworkNewGroupName, setReworkNewGroupName] = useState<string>('');
+  const [reworkDynamicGroups, setReworkDynamicGroups] = useState<LedgerGroupItem[]>(ledgerGroups || []);
+  const [loadingReworkGroups, setLoadingReworkGroups] = useState<boolean>(false);
+  const reworkSearchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (ledgerGroups && ledgerGroups.length > 0) {
+      setReworkDynamicGroups(ledgerGroups);
+    }
+  }, [ledgerGroups]);
+
+  const handleSearchReworkGroups = async (searchTerm: string) => {
+    if (!API_URL) return;
+    if (reworkSearchTimeoutRef.current) {
+      clearTimeout(reworkSearchTimeoutRef.current);
+    }
+
+    setLoadingReworkGroups(true);
+    reworkSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const queryParam = searchTerm.trim() ? `&search=${encodeURIComponent(searchTerm.trim())}` : '';
+        const res = await fetch(`${API_URL}/finance/ledger-groups/?page_size=10${queryParam}`, {
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const results: LedgerGroupItem[] = Array.isArray(data)
+            ? data
+            : (Array.isArray(data.results) ? data.results : []);
+          setReworkDynamicGroups(results);
+        }
+      } catch (err) {
+        console.error('Failed to search ledger groups for rework:', err);
+      } finally {
+        setLoadingReworkGroups(false);
+      }
+    }, 250);
+  };
+
+  useEffect(() => {
+    if (showApprovalModal) {
+      setReworkGroupMode('keep');
+      setReworkTargetGroupId('');
+      setReworkNewGroupName('');
+      if (API_URL) {
+        handleSearchReworkGroups('');
+      }
+    }
+  }, [showApprovalModal]);
+
+  const reworkGroupOptions: SelectOption[] = useMemo(() => {
+    return reworkDynamicGroups.map((g) => ({
+      value: String(g.ledger_group_id),
+      label: g.group_name,
+      sublabel: `Total: ${parseFloat(String(g.total_amount || 0)).toFixed(2)} KD`
+    }));
+  }, [reworkDynamicGroups]);
 
   // Lightbox Media Preview State
   const [mediaPreviewState, setMediaPreviewState] = useState<{ items: any[]; index: number } | null>(null);
@@ -76,6 +162,20 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
       [id]: !prev[id],
     }));
   };
+
+  // Check administrator privileges (Only Administrator role or Django superuser is the main admin; all others are role-based)
+  const isAdmin = useMemo(() => {
+    if (!currentUser) return false;
+    const roleName = (
+      (currentUser?.role as any)?.role_name ||
+      (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+      currentUser?.role_name ||
+      ''
+    ).toLowerCase().trim();
+    const isSuper = !!currentUser?.is_superuser;
+    const isAdmRole = roleName === 'administrator';
+    return isSuper || isAdmRole;
+  }, [currentUser]);
 
   // Effective approvals filtering when embedded in entity subpage (Expenses, Bundles, Ledgers)
   const effectiveDisplayedApprovals = useMemo(() => {
@@ -96,12 +196,22 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
   }, [effectiveDisplayedApprovals, currentPage, itemsPerPage]);
 
   // Render Visual Stepper Pipeline UI
-  const renderApprovalStepper = (group: { label: string; type: 'Bundle' | 'Ledger' | 'Expense'; id: number; items: ApprovalInstanceItem[] }) => {
+  const renderApprovalStepper = (group: { label: string; type: 'Bundle' | 'Ledger' | 'Expense'; id: number; items: ApprovalInstanceItem[]; isApproved?: boolean }) => {
     let steps: ApprovalStepInfo[] = [];
     for (const item of group.items) {
       if (item.workflow_steps && item.workflow_steps.length > 0) {
         steps = item.workflow_steps;
         break;
+      }
+    }
+
+    if (steps.length === 0 && roleFilteredApprovals) {
+      const matchInAll = roleFilteredApprovals.find(a =>
+        (a.workflow_steps && a.workflow_steps.length > 0) &&
+        (a.target_summary?.type === group.type || (group.type === 'Expense' && (a.expense || a.expense_id)))
+      );
+      if (matchInAll?.workflow_steps) {
+        steps = matchInAll.workflow_steps;
       }
     }
 
@@ -120,90 +230,152 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
       });
     }
 
-    const isFinished = group.items.length > 0 && group.items.every(i => i.status === 'Approved');
+    // Is the overall pipeline completely finished/approved?
+    const isFinished = group.isApproved || (steps.length > 0 && group.items.some(i => i.status === 'Approved' && ((i as any).is_final_step || i.step_order === steps.length))) || (group.items.length > 0 && group.items.every(i => i.status === 'Approved'));
+
+    // Find the current active step index if pending
+    const activePendingItem = group.items.find(i => i.status === 'Pending');
+    const activePendingOrder: number = (activePendingItem && typeof activePendingItem.step_order === 'number') ? activePendingItem.step_order : (isFinished ? steps.length + 1 : 1);
 
     return (
       <div className="p-4 bg-surface-container-low border-b border-outline-variant/60 overflow-x-auto">
-        <div className="flex items-center justify-between min-w-[550px] px-4 py-2">
+        <div className="flex items-start justify-between min-w-[650px] px-2 py-2">
           {/* START NODE */}
-          <div className="flex flex-col items-center shrink-0">
-            <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-bold border border-emerald-500/40">
+          <div className="flex flex-col items-center shrink-0 w-16">
+            <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-bold border border-emerald-500/40 shrink-0">
               Start
             </div>
-            <span className="text-[10px] text-on-surface-variant mt-1 ">Submitted</span>
+            <span className="text-[10px] text-on-surface-variant mt-1 font-medium">Submitted</span>
           </div>
 
           {/* STEP NODES & CONNECTORS */}
           {steps.map((step, idx) => {
+            const stepOrderNum = typeof step.step_order === 'number' ? step.step_order : (idx + 1);
             const stepInst = group.items.find(i => i.step_name === step.step_name || i.step_order === step.step_order);
-            const isApproved = stepInst && stepInst.status === 'Approved';
-            const isPending = stepInst && stepInst.status === 'Pending';
+            const isApproved = isFinished || (stepInst && stepInst.status === 'Approved') || (stepOrderNum < activePendingOrder && !stepInst);
+            const isPending = !isFinished && ((stepInst && stepInst.status === 'Pending') || (!stepInst && stepOrderNum === activePendingOrder));
             const isRejected = stepInst && stepInst.status === 'Rejected';
             const isRework = stepInst && stepInst.status === 'Rework';
+            const isUpcoming = !isApproved && !isPending && !isRejected && !isRework;
 
             let circleClass = "bg-surface-container-high text-on-surface-variant border-outline";
             let labelBadge = step.assigned_role_name;
+            if (step.assigned_users_names && step.assigned_users_names.length > 0) {
+              labelBadge = `${step.assigned_role_name ? step.assigned_role_name + ': ' : ''}${step.assigned_users_names.join(', ')}`;
+            }
             let iconNode: React.ReactNode = step.step_order;
+
+            const actionUserDisplay = stepInst?.action_by_full_name || stepInst?.action_by_username || (typeof (stepInst as any)?.action_by === 'object' ? ((stepInst as any).action_by?.full_name || (stepInst as any).action_by?.username) : '') || '';
 
             if (isApproved) {
               circleClass = "bg-emerald-500 text-white border-emerald-600 font-bold shadow-sm";
               iconNode = <Check className="w-3.5 h-3.5" />;
-              labelBadge = `Approved by ${stepInst.action_by_username || 'User'}`;
+              labelBadge = actionUserDisplay ? `Approved by ${actionUserDisplay}` : `Approved (${labelBadge || 'Level ' + stepOrderNum})`;
             } else if (isPending) {
               circleClass = "bg-amber-500 text-white border-amber-600 font-bold animate-pulse shadow-md ring-2 ring-amber-500/30";
               iconNode = step.step_order;
-              labelBadge = `Pending (${step.assigned_role_name || 'Assigned Role'})`;
+              labelBadge = `Pending (${labelBadge || 'Level ' + stepOrderNum})`;
             } else if (isRejected) {
               circleClass = "bg-error text-on-error border-error font-bold shadow-sm";
               iconNode = <X className="w-3.5 h-3.5" />;
-              labelBadge = `Rejected by ${stepInst.action_by_username || 'User'}`;
+              labelBadge = `Rejected by ${actionUserDisplay || 'User'}`;
             } else if (isRework) {
               circleClass = "bg-purple-600 text-white border-purple-700 font-bold shadow-sm";
               iconNode = <RotateCcw className="w-3.5 h-3.5" />;
-              labelBadge = `Rework requested by ${stepInst.action_by_username || 'User'}`;
+              labelBadge = `Rework requested by ${actionUserDisplay || 'User'}`;
+            } else if (isUpcoming) {
+              circleClass = "bg-surface-container text-on-surface-variant/70 border-outline-variant/60";
+              iconNode = step.step_order;
+              labelBadge = `Upcoming (${labelBadge || 'Level ' + stepOrderNum})`;
             }
+
+            // Connector line before this step (from previous node)
+            const isPrevCompleted = idx === 0 ? true : (isFinished || (stepOrderNum <= activePendingOrder));
 
             return (
               <React.Fragment key={step.step_id || idx}>
                 {/* CONNECTOR LINE */}
-                <div className={`flex-1 h-0.5 mx-2 transition-colors ${isApproved ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
+                <div className={`flex-1 h-0.5 mx-1 mt-3.5 transition-colors ${isPrevCompleted && (isApproved || isPending) ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
 
                 {/* STEP NODE */}
-                <div className="flex flex-col items-center text-center shrink-0 max-w-[170px]">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all border ${circleClass}`}>
+                <div className="flex flex-col items-center text-center shrink-0 w-[170px]">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all border shrink-0 ${circleClass}`}>
                     {iconNode}
                   </div>
-                  <span className="text-[11px] font-semibold text-on-surface mt-1 line-clamp-1">{step.step_name}</span>
-                  <span className="text-[9px] text-on-surface-variant line-clamp-1 ">{labelBadge}</span>
+                  <span className="text-[11px] font-semibold text-on-surface mt-1 line-clamp-1 w-full">{step.step_name}</span>
+                  <span className="text-[9px] text-on-surface-variant line-clamp-1 w-full">{labelBadge}</span>
 
                   {stepInst && stepInst.actioned_at && (
-                    <span className="text-[9px]  text-on-surface-variant mt-0.5">
+                    <span className="text-[9px] text-on-surface-variant mt-0.5">
                       {new Date(stepInst.actioned_at).toLocaleDateString()}
                     </span>
                   )}
 
-                  {stepInst && stepInst.comments ? (
-                    <div className="mt-2 p-2 rounded-lg bg-surface-container border border-outline-variant text-[11px] text-on-surface italic max-w-[160px] shadow-sm text-left font-sans">
-                      <div className="flex items-center gap-1 font-semibold text-[9px] text-primary not-italic uppercase tracking-wider mb-0.5">
-                        <MessageSquare className="w-2.5 h-2.5 shrink-0" /> Comment:
+                  {(() => {
+                    const stepNameNormalized = (step.step_name || '').toLowerCase().trim();
+                    const collectedComments: Array<{
+                      comment: string;
+                      author?: string;
+                      status?: string;
+                      date?: string;
+                    }> = [];
+
+                    const seenComments = new Set<string>();
+
+                    group.items.forEach(i => {
+                      const itemStepName = (i.step_name || '').toLowerCase().trim();
+                      if (itemStepName === stepNameNormalized || i.step_order === step.step_order) {
+                        if (i.comments && String(i.comments).trim()) {
+                          const cleanComment = String(i.comments).trim();
+                          const authorName = i.action_by_full_name || i.action_by_username || (typeof (i as any).action_by === 'object' ? ((i as any).action_by?.full_name || (i as any).action_by?.username) : (i as any).action_by) || '';
+                          const key = `${cleanComment}_${authorName}`;
+                          if (!seenComments.has(key)) {
+                            seenComments.add(key);
+                            collectedComments.push({
+                              comment: cleanComment,
+                              author: authorName,
+                              status: i.status,
+                              date: i.actioned_at ? new Date(i.actioned_at).toLocaleDateString() : undefined
+                            });
+                          }
+                        }
+                      }
+                    });
+
+                    if (collectedComments.length === 0) return null;
+
+                    return (
+                      <div className="mt-2 p-2 rounded-lg bg-surface-container border border-outline-variant text-[11px] text-on-surface w-full shadow-sm text-left font-sans space-y-1.5">
+                        <div className="flex items-center gap-1 font-semibold text-[9px] text-primary not-italic uppercase tracking-wider">
+                          <MessageSquare className="w-2.5 h-2.5 shrink-0" /> Comment{collectedComments.length > 1 ? `s (${collectedComments.length})` : ''}:
+                        </div>
+                        {collectedComments.map((c, cIdx) => (
+                          <div key={cIdx} className={`text-[10px] ${cIdx > 0 ? 'pt-1.5 border-t border-outline-variant/60' : ''}`}>
+                            <p className="italic text-on-surface font-normal">"{c.comment}"</p>
+                            {(c.author || c.date) && (
+                              <span className="text-[8px] text-on-surface-variant/80 block mt-0.5 font-medium">
+                                - {c.author} {c.date ? `(${c.date})` : ''}
+                              </span>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      "{stepInst.comments}"
-                    </div>
-                  ) : null}
+                    );
+                  })()}
                 </div>
               </React.Fragment>
             );
           })}
 
           {/* CONNECTOR LINE TO END */}
-          <div className={`flex-1 h-0.5 mx-2 transition-colors ${isFinished ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
+          <div className={`flex-1 h-0.5 mx-1 mt-3.5 transition-colors ${isFinished ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
 
           {/* END NODE */}
-          <div className="flex flex-col items-center shrink-0">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
+          <div className="flex flex-col items-center shrink-0 w-16">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
               End
             </div>
-            <span className="text-[10px] text-on-surface-variant mt-1 ">Disbursement</span>
+            <span className="text-[10px] text-on-surface-variant mt-1 font-medium">Disbursement</span>
           </div>
         </div>
       </div>
@@ -375,7 +547,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                           <td className="px-4 py-3 font-semibold text-on-surface">{app.step_name}</td>
                           <td className="px-4 py-3 text-on-surface-variant font-medium">{app.assigned_role_name}</td>
                           <td className="px-4 py-3 text-on-surface-variant">
-                            {target?.worker || app.action_by_username || 'N/A'}
+                            {target?.worker || app.action_by_full_name || app.action_by_username || 'N/A'}
                           </td>
                           <td className="px-4 py-3">
                             {rowMedia.length === 0 ? (
@@ -436,9 +608,9 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                           <td className="px-4 py-3 text-right font-semibold">
                             {target?.amount ? `${parseFloat(target.amount).toFixed(2)}` : '-'}
                           </td>
-                          <td className="px-4 py-3">{renderStatusBadge(app.status)}</td>
+                          <td className="px-4 py-3">{renderStatusBadge(app.status, app.status === 'Pending' && (isAdmin || app.can_action === true), app.step_name)}</td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            {app.status === 'Pending' ? (
+                            {app.status === 'Pending' && (app.can_action || isAdmin) ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -447,13 +619,12 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                   setApprovalAction('APPROVED');
                                   setApprovalComments('');
                                 }}
-                                className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer shadow-xs inline-flex items-center gap-1"
                               >
-                                Review & Action
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                <span>Review / Action</span>
                               </button>
-                            ) : (
-                              <span className="text-[11px] text-on-surface-variant italic">Processed</span>
-                            )}
+                            ) : null}
                           </td>
                         </tr>
 
@@ -519,10 +690,10 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                     )}
                                   </div>
 
-                                  {target?.remarks && (
+                                  {getCleanRemarks(target?.remarks) && (
                                     <div className="text-xs bg-surface-container-low p-2 rounded border border-outline-variant">
-                                      <span className="text-[10px] font-medium text-on-surface-variant block mb-0.5">Remarks</span>
-                                      <p className="text-on-surface">{target.remarks}</p>
+                                      <span className="text-[10px] font-medium text-on-surface-variant block mb-0.5">Remarks / Description:</span>
+                                      <p className="text-on-surface">{getCleanRemarks(target.remarks)}</p>
                                     </div>
                                   )}
                                 </div>
@@ -565,10 +736,10 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                     )}
                                   </div>
 
-                                  {target?.remarks && (
+                                  {getCleanRemarks(target?.remarks) && (
                                     <div className="text-xs bg-surface-container-low p-2 rounded border border-outline-variant">
-                                      <span className="text-[10px] font-medium text-on-surface-variant block mb-0.5">Bundle Remarks</span>
-                                      <p className="text-on-surface">{target.remarks}</p>
+                                      <span className="text-[10px] font-medium text-on-surface-variant block mb-0.5">Bundle Remarks / Description:</span>
+                                      <p className="text-on-surface">{getCleanRemarks(target.remarks)}</p>
                                     </div>
                                   )}
                                 </div>
@@ -653,8 +824,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                             <th className="w-6 px-2 py-2"></th>
                                             <th className="px-3 py-2">Claim ID</th>
                                             <th className="px-3 py-2">Technician / Worker</th>
-                                            <th className="px-3 py-2">Period</th>
-                                            <th className="px-3 py-2 text-right">Amount ($)</th>
+                                                                                        <th className="px-3 py-2 text-right">Amount ($)</th>
                                             <th className="px-3 py-2">Status</th>
                                             <th className="px-3 py-2">Expense Bill</th>
                                           </tr>
@@ -697,9 +867,6 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                   </td>
                                                   <td className="px-3 py-2 font-medium">
                                                     {b.worker_detail?.full_name || b.worker_detail?.username || (typeof b.worker === 'object' ? (b.worker?.full_name || b.worker?.username) : b.worker) || 'N/A'}
-                                                  </td>
-                                                  <td className="px-3 py-2 text-on-surface-variant">
-                                                    {b.period_from && b.period_to ? `${b.period_from} → ${b.period_to}` : 'All Expenses'}
                                                   </td>
                                                   <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
                                                     {parseFloat(b.total_claimed_amount).toFixed(2)}
@@ -765,7 +932,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                 {/* Level 3: Expenses inside Bundle */}
                                                 {isBundleExpanded && (
                                                   <tr className="bg-primary/5 dark:bg-primary/10">
-                                                    <td colSpan={7} className="px-4 py-3 border-b border-outline-variant">
+                                                    <td colSpan={6} className="px-4 py-3 border-b border-outline-variant">
                                                       <div className="ml-2 sm:ml-4 space-y-1.5">
                                                         <div className="flex items-center justify-between mb-1.5">
                                                           <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
@@ -1055,7 +1222,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-primary">{target.label || `${target.type} ${target.id}`}</span>
                       <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                        ${target.amount ? parseFloat(target.amount).toFixed(2) : '0.00'}
+                        {target.amount ? parseFloat(target.amount).toFixed(2) : '0.00'} KD
                       </span>
                     </div>
 
@@ -1095,10 +1262,10 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                       </div>
                     )}
 
-                    {target.remarks && (
+                    {getCleanRemarks(target.remarks) && (
                       <div className="pt-1 border-t border-outline-variant/40">
-                        <span className="text-on-surface-variant text-[10px] block">Remarks:</span>
-                        <p className="text-on-surface text-[11px] italic mt-0.5">{target.remarks}</p>
+                        <span className="text-on-surface-variant text-[10px] block">Remarks / Description:</span>
+                        <p className="text-on-surface text-[11px] italic mt-0.5">{getCleanRemarks(target.remarks)}</p>
                       </div>
                     )}
                   </div>
@@ -1164,25 +1331,125 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                 </div>
               </div>
 
+              {/* Ledger Group Reassignment Option for Ledger Rework */}
+              {(() => {
+                const isTargetLedger = showApprovalModal?.target_summary?.type === 'Ledger' ||
+                  !!showApprovalModal?.ledger ||
+                  (showApprovalModal as any)?.workflow_entity_type?.toUpperCase() === 'LEDGER';
+
+                if (approvalAction !== 'REWORK' || !isTargetLedger) return null;
+
+                return (
+                  <div className="p-3 rounded-lg bg-surface-container-low border border-purple-500/40 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+                        <FolderKanban className="w-3.5 h-3.5" />
+                        Ledger Group Assignment (Rework)
+                      </span>
+                      <span className="text-[10px] text-on-surface-variant font-medium">Optional</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setReworkGroupMode('keep')}
+                        className={`py-1 px-1.5 rounded border text-center font-medium cursor-pointer transition-colors ${reworkGroupMode === 'keep'
+                          ? 'bg-purple-600 text-white border-purple-600 font-bold'
+                          : 'border-outline text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                      >
+                        Keep Current
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReworkGroupMode('existing')}
+                        className={`py-1 px-1.5 rounded border text-center font-medium cursor-pointer transition-colors ${reworkGroupMode === 'existing'
+                          ? 'bg-purple-600 text-white border-purple-600 font-bold'
+                          : 'border-outline text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                      >
+                        Select Another
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReworkGroupMode('new')}
+                        className={`py-1 px-1.5 rounded border text-center font-medium cursor-pointer transition-colors ${reworkGroupMode === 'new'
+                          ? 'bg-purple-600 text-white border-purple-600 font-bold'
+                          : 'border-outline text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                      >
+                        Create New
+                      </button>
+                    </div>
+
+                    {reworkGroupMode === 'existing' && (
+                      <div className="space-y-1 pt-1">
+                        <label className="text-[11px] font-medium text-on-surface-variant block">Select Existing Ledger Group</label>
+                        <SearchableSelect
+                          options={reworkGroupOptions}
+                          value={reworkTargetGroupId}
+                          onChange={(val) => setReworkTargetGroupId(val)}
+                          placeholder="Search latest 10 groups or type name..."
+                          onSearchChange={handleSearchReworkGroups}
+                          loading={loadingReworkGroups}
+                        />
+                      </div>
+                    )}
+
+                    {reworkGroupMode === 'new' && (
+                      <div className="space-y-1 pt-1">
+                        <label className="text-[11px] font-medium text-on-surface-variant block">New Ledger Group Name</label>
+                        <input
+                          type="text"
+                          value={reworkNewGroupName}
+                          onChange={(e) => setReworkNewGroupName(e.target.value)}
+                          placeholder="e.g. Q1 Maintenance Group..."
+                          className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded p-2 focus:border-primary focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1">Comments & Rationale</label>
                 <textarea
                   value={approvalComments}
                   onChange={(e) => setApprovalComments(e.target.value)}
-                  placeholder="Reason for approval/rework/rejection..."
+                  placeholder="Reason for approval or rework..."
                   className="w-full bg-surface-container border border-outline text-on-surface text-xs rounded p-2 h-20"
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant">
-              <button onClick={() => setShowApprovalModal(null)} className="px-3 py-1.5 rounded border border-outline text-xs text-on-surface cursor-pointer">Cancel</button>
               <button
-                onClick={handleActionApproval}
+                onClick={() => setShowApprovalModal(null)}
                 disabled={submitting}
-                className="px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary-container disabled:opacity-50 cursor-pointer"
+                className="px-3 py-1.5 rounded border border-outline text-xs text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50 cursor-pointer"
               >
-                {submitting ? 'Submitting...' : 'Submit Decision'}
+                Cancel
+              </button>
+              <button
+                onClick={() => handleActionApproval(
+                  approvalAction,
+                  approvalComments,
+                  showApprovalModal,
+                  reworkGroupMode === 'existing' ? reworkTargetGroupId : null,
+                  reworkGroupMode === 'new' ? reworkNewGroupName : undefined
+                )}
+                disabled={submitting}
+                className="px-4 py-1.5 rounded bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-on-primary" />
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <span>Submit Decision</span>
+                )}
               </button>
             </div>
           </div>

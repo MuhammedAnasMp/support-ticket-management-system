@@ -12,7 +12,7 @@ export const usePermission = () => {
 
     if (!perm) return true;
     const roleName = (user?.role as any)?.role_name?.toLowerCase() || (user?.role as string)?.toLowerCase();
-    if (roleName === 'admin' || roleName === 'administrator') return true;
+    if (user?.is_superuser || roleName === 'administrator') return true;
     const normalized = perm.toLowerCase();
     return permissions.some(
       (p) => p.toLowerCase() === normalized || p.toLowerCase().endsWith('.' + normalized)

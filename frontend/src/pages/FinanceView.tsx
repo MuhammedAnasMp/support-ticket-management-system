@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -27,6 +27,27 @@ import { ApprovalsSubpage } from './finance/ApprovalsSubpage';
 import { PaymentsSubpage } from './finance/PaymentsSubpage';
 import { EditBundleModal } from './finance/EditBundleModal';
 import { ExpensesSubpage } from './finance/ExpensesSubpage';
+import Can from '../hooks/Can';
+
+const getCurrentMonthRange = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 0);
+
+  const format = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  return {
+    from: format(start),
+    to: format(end)
+  };
+};
 
 export const FinanceView: React.FC = () => {
   const { subpage = 'bundles' } = useParams<{ subpage: string }>();
@@ -49,12 +70,37 @@ export const FinanceView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Global Filter States
+  // Global Filter States (Default: Current Month or from localStorage)
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
+    const stored = localStorage.getItem('finance_filter_date_from');
+    if (stored !== null && stored !== undefined) return stored;
+    return getCurrentMonthRange().from;
+  });
+  const [filterDateTo, setFilterDateTo] = useState<string>(() => {
+    const stored = localStorage.getItem('finance_filter_date_to');
+    if (stored !== null && stored !== undefined) return stored;
+    return getCurrentMonthRange().to;
+  });
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'IN_LEDGER' | 'NOT_IN_LEDGER'>('ALL');
+
+  // Sync date filter changes with localStorage
+  useEffect(() => {
+    if (filterDateFrom) {
+      localStorage.setItem('finance_filter_date_from', filterDateFrom);
+    } else {
+      localStorage.removeItem('finance_filter_date_from');
+    }
+  }, [filterDateFrom]);
+
+  useEffect(() => {
+    if (filterDateTo) {
+      localStorage.setItem('finance_filter_date_to', filterDateTo);
+    } else {
+      localStorage.removeItem('finance_filter_date_to');
+    }
+  }, [filterDateTo]);
 
   // Modal States
   const [showCreateExpenseModal, setShowCreateExpenseModal] = useState(false);
@@ -193,6 +239,31 @@ export const FinanceView: React.FC = () => {
     }
   };
 
+  const handleRemoveExpenseFromBundle = async (bundleId: number, expenseId: number) => {
+    if (!window.confirm(`Are you sure you want to remove Expense #${expenseId} from Bundle #${bundleId}? The bundle status will reset to Draft.`)) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/finance/claim/${bundleId}/remove-expense/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ expense_id: expenseId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to remove expense from bundle');
+
+      setSuccessMessage(`Expense #${expenseId} removed from Bundle #${bundleId}. Bundle status reset to Draft.`);
+      fetchData(true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleDeleteBundle = async (claimId: number) => {
     if (!window.confirm(`Are you sure you want to delete Bundle ${claimId}? All tied expenses will be unlinked and returned to unclaimed status.`)) return;
 
@@ -306,6 +377,34 @@ export const FinanceView: React.FC = () => {
     }
   };
 
+  const handleAddBundleToGroup = async (groupId: number, bundleId: number | number[]) => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const bundleIds = Array.isArray(bundleId) ? bundleId : [bundleId];
+      if (bundleIds.length === 0) return;
+
+      for (const bId of bundleIds) {
+        const res = await fetch(`${API_URL}/finance/ledger-groups/${groupId}/add-bundle/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bundle_id: bId, bundle_ids: [bId] })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `Failed to add Bundle #${bId} to ledger group`);
+      }
+
+      const count = bundleIds.length;
+      setSuccessMessage(`${count} bundle${count > 1 ? 's' : ''} successfully added to Ledger Group #${groupId}.`);
+      await fetchData(true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+      throw err;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleRemoveBundleFromLedger = async (ledgerId: number, bundleId: number) => {
     if (!window.confirm(`Are you sure you want to detach Bundle #${bundleId} from Ledger #${ledgerId}?`)) return;
     setSubmitting(true);
@@ -327,15 +426,69 @@ export const FinanceView: React.FC = () => {
     }
   };
 
+  const handleRemoveBundleFromGroup = async (groupId: number, bundleId: number) => {
+    if (!window.confirm(`Are you sure you want to remove Bundle #${bundleId} from this Ledger Group?`)) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/finance/ledger-groups/${groupId}/remove-bundle/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bundle_id: bundleId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to remove bundle from group');
+      setSuccessMessage(`Bundle #${bundleId} removed from Ledger Group.`);
+      fetchData(true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteLedgerGroup = async (groupId: number) => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/finance/ledger-groups/${groupId}/`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || data.error || 'Failed to delete Ledger Group');
+      }
+      setSuccessMessage(`Ledger Group #${groupId} deleted successfully.`);
+      fetchData(true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+      throw err;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const parseList = (data: any) => {
     if (Array.isArray(data)) return data;
     if (data && Array.isArray(data.results)) return data.results;
     return [];
   };
 
-  // Fetch API data (with silent background mode)
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Fetch API data (with silent background mode and cancellation support)
   const fetchData = async (isSilent = false) => {
     if (!token) return;
+
+    // Cancel any previous in-flight fetch request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
     if (!isSilent) setLoading(true);
     setErrorMessage(null);
 
@@ -351,53 +504,69 @@ export const FinanceView: React.FC = () => {
     try {
       if (subpage === 'expenses') {
         const [resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/expense/?page_size=all`, { headers }),
-          fetch(approvalsUrl, { headers })
+          fetch(`${API_URL}/finance/expense/?page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/approvals/?page_size=all`, { headers, signal })
         ]);
+        if (signal.aborted) return;
         if (resExp.ok) setExpenses(parseList(await resExp.json()));
         if (resApp.ok) setApprovals(parseList(await resApp.json()));
       } else if (subpage === 'bundles') {
         const [resClaims, resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/claim/?page_size=all`, { headers }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers }),
-          fetch(approvalsUrl, { headers })
+          fetch(`${API_URL}/finance/claim/?page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/approvals/?page_size=all`, { headers, signal })
         ]);
+        if (signal.aborted) return;
         if (resClaims.ok) setBundles(parseList(await resClaims.json()));
         if (resExp.ok) setUnclaimedExpenses(parseList(await resExp.json()));
         if (resApp.ok) setApprovals(parseList(await resApp.json()));
       } else if (subpage === 'ledgers') {
         const [resL, resG, resApprovedBundles, resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/ledgers/?page_size=all`, { headers }),
-          fetch(`${API_URL}/finance/ledger-groups/?page_size=all`, { headers }),
-          fetch(`${API_URL}/finance/claim/?status=Approved&page_size=all`, { headers }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=all`, { headers }),
-          fetch(approvalsUrl, { headers })
+          fetch(`${API_URL}/finance/ledgers/?page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/ledger-groups/?page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/claim/?status=Approved&page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=all`, { headers, signal }),
+          fetch(approvalsUrl, { headers, signal })
         ]);
+        if (signal.aborted) return;
         if (resL.ok) setLedgers(parseList(await resL.json()));
         if (resG.ok) setLedgerGroups(parseList(await resG.json()));
         if (resApprovedBundles.ok) setBundles(parseList(await resApprovedBundles.json()));
         if (resExp.ok) setUnclaimedExpenses(parseList(await resExp.json()));
         if (resApp.ok) setApprovals(parseList(await resApp.json()));
       } else if (subpage === 'approvals') {
-        const res = await fetch(approvalsUrl, { headers });
+        const res = await fetch(approvalsUrl, { headers, signal });
+        if (signal.aborted) return;
         if (res.ok) setApprovals(parseList(await res.json()));
       } else if (subpage === 'payments') {
         const [resPay, resAudit] = await Promise.all([
-          fetch(`${API_URL}/finance/payments/?page_size=all`, { headers }),
-          fetch(`${API_URL}/finance/audit-events/?page_size=all`, { headers })
+          fetch(`${API_URL}/finance/payments/?page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/audit-events/?page_size=all`, { headers, signal })
         ]);
+        if (signal.aborted) return;
         if (resPay.ok) setPayments(parseList(await resPay.json()));
         if (resAudit.ok) setAuditEvents(parseList(await resAudit.json()));
       }
     } catch (err: any) {
+      if (err.name === 'AbortError' || signal.aborted) {
+        // Silently return on tab cancellation
+        return;
+      }
       setErrorMessage(err.message || 'Failed to connect to backend server.');
     } finally {
-      if (!isSilent) setLoading(false);
+      if (!signal.aborted) {
+        if (!isSilent) setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchData(false);
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [subpage, token, roleFilterOnly]);
 
   useEffect(() => {
@@ -408,14 +577,65 @@ export const FinanceView: React.FC = () => {
   }, [successMessage]);
 
   // Status Badge Renderer
-  const renderStatusBadge = (status: string) => {
+  const renderStatusBadge = (
+    status: string,
+    isActionableForMe?: boolean,
+    stepName?: string,
+    hasCurrentUserApproved?: boolean
+  ) => {
     switch (status) {
       case 'Draft':
         return <span className="px-2 py-0.5 rounded text-xs font-medium bg-surface-container-high text-on-surface-variant border border-outline-variant">Draft</span>;
       case 'Submitted':
-        return <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">Submitted</span>;
       case 'In Review':
-        return <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">In Review</span>;
+        if (hasCurrentUserApproved) {
+          return (
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              In Review
+            </span>
+          );
+        }
+        return (
+          <div className="inline-flex flex-col items-start gap-0.5">
+            <span className={`px-2 py-0.5 rounded text-xs font-medium border transition-all ${isActionableForMe
+              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/50 animate-pulse font-bold ring-2 ring-amber-400/60 shadow-xs'
+              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+              }`}>
+              In Review
+            </span>
+            {stepName && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 leading-tight">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                {stepName}
+              </span>
+            )}
+          </div>
+        );
+      case 'Pending Approval':
+      case 'Pending':
+        if (hasCurrentUserApproved) {
+          return (
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              In Review
+            </span>
+          );
+        }
+        return (
+          <div className="inline-flex flex-col items-start gap-0.5">
+            <span className={`px-2 py-0.5 rounded text-xs font-medium border transition-all ${isActionableForMe
+              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/50 animate-pulse font-bold ring-2 ring-amber-400/60 shadow-xs'
+              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+              }`}>
+              Pending Approval
+            </span>
+            {stepName && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 leading-tight">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                {stepName}
+              </span>
+            )}
+          </div>
+        );
       case 'Approved':
         return <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Approved</span>;
       case 'Rejected':
@@ -425,6 +645,31 @@ export const FinanceView: React.FC = () => {
       case 'Paid':
         return <span className="px-2 py-0.5 rounded text-xs font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">Paid & Settled</span>;
       default:
+        if (status?.toLowerCase().includes('pending')) {
+          if (hasCurrentUserApproved) {
+            return (
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                In Review
+              </span>
+            );
+          }
+          return (
+            <div className="inline-flex flex-col items-start gap-0.5">
+              <span className={`px-2 py-0.5 rounded text-xs font-medium border transition-all ${isActionableForMe
+                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/50 animate-pulse font-bold ring-2 ring-amber-400/60 shadow-xs'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                }`}>
+                {status}
+              </span>
+              {stepName && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 leading-tight">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                  {stepName}
+                </span>
+              )}
+            </div>
+          );
+        }
         return <span className="px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-on-surface">{status}</span>;
     }
   };
@@ -476,6 +721,26 @@ export const FinanceView: React.FC = () => {
   const roleFilteredApprovals = useMemo(() => {
     return approvals.filter((a) => {
       if (roleFilterOnly && currentUser) {
+        const userRoleName = (
+          (currentUser?.role as any)?.role_name ||
+          (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+          ''
+        ).toLowerCase().trim();
+
+        const isAdmin = !!(
+          currentUser?.is_superuser ||
+          (currentUser as any)?.is_staff ||
+          userRoleName === 'administrator' ||
+          userRoleName === 'admin'
+        );
+        if (isAdmin) return true;
+
+        if (a.can_action) return true;
+
+        const currentUsername = currentUser.username;
+        const assignedUsers = a.workflow_steps?.flatMap(s => s.assigned_users_names || []) || [];
+        if (currentUsername && assignedUsers.includes(currentUsername)) return true;
+
         const userRoleStr = (
           (currentUser?.role as any)?.role_name ||
           (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
@@ -483,9 +748,10 @@ export const FinanceView: React.FC = () => {
         ).toLowerCase().trim();
 
         const stepRoleStr = (a.assigned_role_name || '').toLowerCase().trim();
-        if (!userRoleStr || stepRoleStr !== userRoleStr) {
-          return false;
+        if (userRoleStr && stepRoleStr && stepRoleStr === userRoleStr) {
+          return true;
         }
+        return false;
       }
       return true;
     });
@@ -504,8 +770,8 @@ export const FinanceView: React.FC = () => {
       if (!isWithinDateRange(a.created_at, filterDateFrom, filterDateTo)) return false;
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const step = a.step_name.toLowerCase();
-        const role = a.assigned_role_name.toLowerCase();
+        const step = (a.step_name || '').toLowerCase();
+        const role = (a.assigned_role_name || '').toLowerCase();
         const targetLabel = a.target_summary?.label?.toLowerCase() || '';
         const storeName = a.target_summary?.store_name?.toLowerCase() || '';
         const workerName = a.target_summary?.worker?.toLowerCase() || '';
@@ -520,7 +786,7 @@ export const FinanceView: React.FC = () => {
       if (!isWithinDateRange(p.paid_at, filterDateFrom, filterDateTo)) return false;
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const method = p.payment_method.toLowerCase();
+        const method = (p.payment_method || '').toLowerCase();
         const ref = (p.transaction_reference || '').toLowerCase();
         const idStr = p.payment_id.toString();
         return method.includes(query) || ref.includes(query) || idStr.includes(query);
@@ -656,8 +922,11 @@ export const FinanceView: React.FC = () => {
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-      setSuccessMessage(`Bundle ${data.claim_id} created successfully.`);
+      if (!res.ok) {
+        const errorMsg = data.detail || (typeof data === 'object' ? Object.values(data).flat().join(' ') : 'Failed to create claim bundle');
+        throw new Error(errorMsg);
+      }
+      setSuccessMessage(`Bundle #${data.claim_id} created successfully.`);
       setShowCreateBundleModal(false);
       setSelectedExpenseIds([]);
       setBundleRemarks('');
@@ -670,6 +939,11 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleSubmitBundle = async (claimId: number) => {
+    const bundleToSubmit = (bundles || []).find(c => c.claim_id === claimId);
+    if (bundleToSubmit && (!bundleToSubmit.expenses || bundleToSubmit.expenses.length === 0)) {
+      setErrorMessage(`Cannot submit Bundle #${claimId}: No expenses attached to this bundle.`);
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -731,6 +1005,12 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleSubmitLedger = async (ledgerId: number) => {
+    const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
+    const bundleCount = (targetLedger?.bundles?.length || 0) + (targetLedger?.expenses?.length || 0);
+    if (targetLedger && bundleCount === 0) {
+      setErrorMessage(`Cannot submit Ledger Batch #${ledgerId}: Must have at least one claim bundle attached.`);
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -749,21 +1029,130 @@ export const FinanceView: React.FC = () => {
     }
   };
 
-  const handleActionApproval = async () => {
-    if (!showApprovalModal) return;
+  const handleActionApproval = async (
+    customAction?: 'APPROVED' | 'REJECTED' | 'REWORK',
+    customComments?: string,
+    customApp?: ApprovalInstanceItem,
+    customLedgerGroupId?: number | string | null,
+    customNewGroupName?: string
+  ) => {
+    const targetApp = customApp || showApprovalModal;
+    if (!targetApp) return;
+    const actionToPerform = customAction || approvalAction;
+    const commentsToSend = customComments !== undefined ? customComments : approvalComments;
+
+    if (actionToPerform === 'REWORK' && !commentsToSend?.trim()) {
+      setErrorMessage('A reason or comment is required when requesting rework.');
+      return;
+    }
+
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`${API_URL}/finance/approvals/${showApprovalModal.instance_id}/action/`, {
-        method: 'POST',
-        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: approvalAction, comments: approvalComments })
-      });
+      const isDirectExp = (targetApp as any).is_direct_expense;
+      const expId = targetApp.expense || targetApp.expense_id || targetApp.instance_id;
+      let res: Response;
+
+      const bodyPayload: any = { action: actionToPerform, comments: commentsToSend };
+      if (customLedgerGroupId) {
+        bodyPayload.ledger_group_id = Number(customLedgerGroupId);
+      }
+      if (customNewGroupName && customNewGroupName.trim()) {
+        bodyPayload.new_group_name = customNewGroupName.trim();
+      }
+
+      if (isDirectExp && expId) {
+        res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+      } else {
+        res = await fetch(`${API_URL}/finance/approvals/${targetApp.instance_id}/action/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+
+        if (!res.ok && expId) {
+          res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
+            method: 'POST',
+            headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyPayload)
+          });
+        }
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Approval action failed');
-      setSuccessMessage(`Approval step actioned: ${approvalAction}`);
+      setSuccessMessage(`Approval step actioned: ${actionToPerform}`);
       setShowApprovalModal(null);
       setApprovalComments('');
+
+      // In-Memory Optimistic Frontend Update (No full table loading spinner)
+      const updatedInstance = data.instance || (typeof data === 'object' && data.instance_id ? data : null);
+      const updatedLedgerObj = data.ledger || (updatedInstance && updatedInstance.ledger_details) || null;
+
+      // 1. Update Approvals state
+      setApprovals(prev => prev.map(a => {
+        if (a.instance_id === targetApp.instance_id) {
+          if (updatedInstance && typeof updatedInstance === 'object') {
+            return { ...a, ...updatedInstance };
+          }
+          return {
+            ...a,
+            status: actionToPerform === 'APPROVED' ? (data.all_completed ? 'Approved' : a.status) : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected'
+          };
+        }
+        return a;
+      }));
+
+      // 2. Update Ledgers state directly in memory
+      const targetLedgerId = targetApp.ledger || targetApp.ledger_id || (targetApp.target_summary?.type === 'Ledger' ? targetApp.target_summary?.id : undefined) || (updatedLedgerObj && updatedLedgerObj.ledger_id);
+      if (targetLedgerId) {
+        setLedgers(prev => prev.map(l => {
+          if (l.ledger_id === targetLedgerId) {
+            if (updatedLedgerObj && typeof updatedLedgerObj === 'object') {
+              return { ...l, ...updatedLedgerObj };
+            }
+            const nextStatus = actionToPerform === 'REWORK'
+              ? 'Rework'
+              : actionToPerform === 'REJECTED'
+                ? 'Rejected'
+                : data.all_completed || data.status === 'Approved'
+                  ? 'Approved'
+                  : l.status;
+            return {
+              ...l,
+              status: nextStatus
+            };
+          }
+          return l;
+        }));
+      }
+
+      // 3. Update Expenses state directly if applicable
+      if (expId) {
+        setExpenses(prev => prev.map(e => {
+          if (e.expense_id === expId) {
+            if (data.expense && typeof data.expense === 'object') {
+              return { ...e, ...data.expense };
+            }
+            const nextApproved = actionToPerform === 'APPROVED' && data.all_completed;
+            const nextStatus = actionToPerform === 'REWORK'
+              ? 'Rework'
+              : actionToPerform === 'REJECTED'
+                ? 'Rejected'
+                : data.all_completed
+                  ? 'Approved'
+                  : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
+            return { ...e, approved: !!nextApproved, status_display: nextStatus };
+          }
+          return e;
+        }));
+      }
+
+      // 4. Silent background sync without table spinner
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -932,6 +1321,7 @@ export const FinanceView: React.FC = () => {
   ];
 
   const approvalsProps = {
+    approvals,
     roleFilteredApprovals,
     displayedApprovals,
     loading,
@@ -958,17 +1348,13 @@ export const FinanceView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 min-h-screen flex flex-col gap-6 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
+    <div className=" min-h-screen flex flex-col gap-2 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
       {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-outline-variant pb-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-on-surface dark:text-dark-on-surface flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-primary" />
-            Financial Management & Workflow System
+            Financial Management & Workflow
           </h1>
-          <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant mt-0.5">
-            Expense bundling, multi-step approval workflows, ledger grouping, payments, and immutable audit logs.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -992,13 +1378,15 @@ export const FinanceView: React.FC = () => {
           )}
 
           {subpage === 'bundles' && (
-            <button
-              onClick={() => setShowCreateBundleModal(true)}
-              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Bundle</span>
-            </button>
+            <Can permission={["finance.create_bundle", "finance.create_workerclaim", "finance.add_workerclaim"] as any}>
+              <button
+                onClick={() => setShowCreateBundleModal(true)}
+                className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Bundle</span>
+              </button>
+            </Can>
           )}
 
           {subpage === 'ledgers' && (
@@ -1013,7 +1401,50 @@ export const FinanceView: React.FC = () => {
         </div>
       </div>
 
-      {/* Notifications */}
+      {/* Global Floating Popup Toast (visible above all modals & full viewport) */}
+      {(errorMessage || successMessage) && (
+        <div className="fixed top-5 right-5 z-[9999] max-w-md w-full animate-in slide-in-from-top-3 fade-in duration-200 pointer-events-auto">
+          {errorMessage && (
+            <div className="p-3.5 rounded-xl bg-red-600 text-white text-xs flex items-start justify-between shadow-2xl border border-red-700 gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-white" />
+                <div className="min-w-0">
+                  <strong className="block font-bold text-white mb-0.5">Error</strong>
+                  <span className="text-white/95 break-words leading-relaxed">{errorMessage}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setErrorMessage(null)}
+                className="p-1 hover:bg-white/20 rounded-lg transition-colors text-white shrink-0 cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="p-3.5 rounded-xl bg-emerald-600 text-white text-xs flex items-start justify-between shadow-2xl border border-emerald-700 gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-white" />
+                <div className="min-w-0">
+                  <strong className="block font-bold text-white mb-0.5">Success</strong>
+                  <span className="text-white/95 break-words leading-relaxed">{successMessage}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSuccessMessage(null)}
+                className="p-1 hover:bg-white/20 rounded-lg transition-colors text-white shrink-0 cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline Notifications */}
       {errorMessage && (
         <div className="p-3.5 rounded bg-error-container text-on-error-container text-xs flex items-center justify-between border border-error/20">
           <div className="flex items-center gap-2">
@@ -1035,7 +1466,7 @@ export const FinanceView: React.FC = () => {
       )}
 
       {/* Navigation Subpage Tabs */}
-      <div className="flex items-center gap-1 border-b border-outline-variant overflow-x-auto pb-0.5">
+      <div className="flex items-center gap-1  border-outline-variant overflow-x-auto pb-0.5">
         {navTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = subpage === tab.key;
@@ -1079,8 +1510,9 @@ export const FinanceView: React.FC = () => {
               setFilterDateTo(to);
             }}
             onReset={() => {
-              setFilterDateFrom('');
-              setFilterDateTo('');
+              const currentMonth = getCurrentMonthRange();
+              setFilterDateFrom(currentMonth.from);
+              setFilterDateTo(currentMonth.to);
             }}
           />
 
@@ -1093,7 +1525,6 @@ export const FinanceView: React.FC = () => {
                 options={[
                   { value: 'ALL', label: 'All Statuses' },
                   { value: 'Draft', label: 'Draft' },
-                  { value: 'Submitted', label: 'Submitted' },
                   { value: 'In Review', label: 'In Review' },
                   { value: 'Approved', label: 'Approved' },
                   { value: 'Rejected', label: 'Rejected' },
@@ -1101,7 +1532,7 @@ export const FinanceView: React.FC = () => {
                   { value: 'Paid', label: 'Paid' },
                 ]}
                 placeholder="All Statuses"
-              />
+                />
             </div>
           )}
 
@@ -1123,12 +1554,13 @@ export const FinanceView: React.FC = () => {
         </div>
 
         {/* Clear Filters Button */}
-        {(searchQuery || filterDateFrom || filterDateTo || statusFilter !== 'ALL' || ledgerFilter !== 'ALL') && (
+        {(searchQuery || statusFilter !== 'ALL' || ledgerFilter !== 'ALL' || filterDateFrom !== getCurrentMonthRange().from || filterDateTo !== getCurrentMonthRange().to) && (
           <button
             onClick={() => {
+              const currentMonth = getCurrentMonthRange();
               setSearchQuery('');
-              setFilterDateFrom('');
-              setFilterDateTo('');
+              setFilterDateFrom(currentMonth.from);
+              setFilterDateTo(currentMonth.to);
               setStatusFilter('ALL');
               setLedgerFilter('ALL');
             }}
@@ -1157,6 +1589,7 @@ export const FinanceView: React.FC = () => {
           currentUser={currentUser}
           API_URL={API_URL}
           approvalsProps={approvalsProps}
+          onRefresh={() => fetchData(true)}
         />
       )}
 
@@ -1199,11 +1632,19 @@ export const FinanceView: React.FC = () => {
           setEditBundleForm={setEditBundleForm}
           openEditBundleModal={openEditBundleModal}
           handleSaveUpdateBundle={handleSaveUpdateBundle}
+          handleRemoveExpenseFromBundle={handleRemoveExpenseFromBundle}
           handleDeleteBundle={handleDeleteBundle}
           previewMediaUrl={previewMediaUrl}
           setPreviewMediaUrl={setPreviewMediaUrl}
           setShowPaymentModal={setShowPaymentModal}
           approvalsProps={approvalsProps}
+          token={token || ''}
+          currentUser={currentUser}
+          API_URL={API_URL}
+          errorMessage={errorMessage}
+          setErrorMessage={setErrorMessage}
+          setSelectedTicketForModal={setSelectedTicketForModal}
+          onRefresh={() => fetchData(true)}
         />
       )}
 
@@ -1240,11 +1681,48 @@ export const FinanceView: React.FC = () => {
           handleAddExpenseToLedger={handleAddExpenseToLedger}
           handleRemoveExpenseFromLedger={handleRemoveExpenseFromLedger}
           handleAddBundleToLedger={handleAddBundleToLedger}
+          handleAddBundleToGroup={handleAddBundleToGroup}
           handleRemoveBundleFromLedger={handleRemoveBundleFromLedger}
+          handleRemoveBundleFromGroup={handleRemoveBundleFromGroup}
+          handleDeleteLedgerGroup={handleDeleteLedgerGroup}
           token={token || ''}
           API_URL={API_URL}
           setShowPaymentModal={setShowPaymentModal}
           approvalsProps={approvalsProps}
+          setSelectedTicketForModal={setSelectedTicketForModal}
+          onRefresh={() => fetchData(true)}
+          onLedgerUpdated={(updatedLedger) => {
+            setLedgers(prev => prev.map(l => l.ledger_id === updatedLedger.ledger_id ? updatedLedger : l));
+            if (updatedLedger.ledger_group_detail) {
+              setLedgerGroups(prev => prev.map(g => g.ledger_group_id === updatedLedger.ledger_group_detail?.ledger_group_id ? { ...g, ...updatedLedger.ledger_group_detail } : g));
+            }
+          }}
+          onLedgersUpdated={(updatedList) => {
+            const updateMap = new Map(updatedList.map(l => [l.ledger_id, l]));
+            setLedgers(prev => prev.map(l => updateMap.get(l.ledger_id) || l));
+            updatedList.forEach(l => {
+              if (l.ledger_group_detail) {
+                setLedgerGroups(prev => prev.map(g => g.ledger_group_id === l.ledger_group_detail?.ledger_group_id ? { ...g, ...l.ledger_group_detail } : g));
+              }
+            });
+            // Instantly sync Approvals state in memory so status badges update with zero delay
+            setApprovals(prev => prev.map(a => {
+              const matchedLedger = updatedList.find(l => {
+                const aLedgerId = a.ledger ?? a.ledger_id ?? (a.target_summary?.type === 'Ledger' ? a.target_summary?.id : undefined);
+                return aLedgerId === l.ledger_id;
+              });
+              if (matchedLedger) {
+                if (matchedLedger.status === 'Approved' || matchedLedger.status === 'Paid') {
+                  return { ...a, status: 'Approved' };
+                } else if (matchedLedger.status === 'Rework') {
+                  return { ...a, status: 'Rework' };
+                } else if (matchedLedger.status === 'Rejected') {
+                  return { ...a, status: 'Rejected' };
+                }
+              }
+              return a;
+            }));
+          }}
         />
       )}
 
@@ -1277,6 +1755,8 @@ export const FinanceView: React.FC = () => {
         unclaimedExpenses={unclaimedExpenses}
         submitting={submitting}
         handleSaveUpdateBundle={handleSaveUpdateBundle}
+        errorMessage={errorMessage}
+        setErrorMessage={setErrorMessage}
       />
 
       {/* POPUP MODAL: TICKET DETAIL MODAL */}

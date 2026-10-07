@@ -64,6 +64,16 @@ class CustomUserViewSet(viewsets.ModelViewSet):
             elif active_param.lower() in ('false', '0'):
                 qs = qs.filter(active=False)
 
+        search = self.request.query_params.get('search') or self.request.query_params.get('q')
+        if search:
+            search = search.strip()
+            qs = qs.filter(
+                Q(full_name__icontains=search) |
+                Q(username__icontains=search) |
+                Q(employee_no__icontains=search) |
+                Q(phone__icontains=search)
+            )
+
         return qs.distinct()
 
 

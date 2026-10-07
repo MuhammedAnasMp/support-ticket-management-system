@@ -866,6 +866,7 @@ export const statusColor = (s: string) => {
         case 'In Progress': return 'bg-primary/10 text-primary';
         case 'Completed': return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
         case 'Rejected': return 'bg-red-500/10 text-red-600 dark:text-red-400';
+        case 'Reconciled': return 'bg-rose-500/10 text-rose-950 dark:text-rose-950';
         default: return 'bg-outline/10 text-outline';
     }
 };

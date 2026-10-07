@@ -74,7 +74,7 @@ class EmployeeRate(models.Model):
 class WorkerClaim(models.Model):
     STATUS_CHOICES = [
         ('Draft', 'Draft'),
-        ('Submitted', 'Submitted'),
+        ('In Review', 'In Review'),
         ('Approved', 'Approved'),
         ('Rejected', 'Rejected'),
         ('Rework', 'Rework'),
@@ -103,7 +103,27 @@ class WorkerClaim(models.Model):
 
     class Meta:
         permissions = [
+            ('create_bundle', 'Can create claim bundle'),
+            ('edit_bundle', 'Can edit claim bundle'),
+            ('submit_bundle', 'Can submit claim bundle for approval'),
+            ('delete_bundle', 'Can delete claim bundle'),
+            ('create_workerclaim', 'Can create worker claim'),
+            ('edit_workerclaim', 'Can edit worker claim'),
+            ('submit_workerclaim', 'Can submit worker claim for approval'),
             ('approve_workerclaim', 'Can approve worker claim'),
+            ('reject_workerclaim', 'Can reject worker claim'),
+            ('view_worker', 'Can view worker'),
+            ('change_worker', 'Can change worker'),
+            ('view_total_claimed_amount', 'Can view total claimed amount'),
+            ('change_total_claimed_amount', 'Can change total claimed amount'),
+            ('view_status', 'Can view status'),
+            ('change_status', 'Can change status'),
+            ('view_period_from', 'Can view period from'),
+            ('change_period_from', 'Can change period from'),
+            ('view_period_to', 'Can view period to'),
+            ('change_period_to', 'Can change period to'),
+            ('view_remarks', 'Can view remarks'),
+            ('change_remarks', 'Can change remarks'),
         ]
 
     def __str__(self):
@@ -114,7 +134,7 @@ class WorkerClaim(models.Model):
 class Expense(models.Model):
     expense_id = models.AutoField(primary_key=True)
     ticket = models.ForeignKey(
-        'maintenance.Ticket', on_delete=models.CASCADE, related_name='expenses')
+        'maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='expenses')
     worker = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='expenses')
     added_by = models.ForeignKey(
@@ -137,6 +157,8 @@ class Expense(models.Model):
 
     class Meta:
         permissions = [
+            ('approve_expense', 'Can approve expense'),
+            ('reject_expense', 'Can reject expense'),
             ('view_ticket', 'Can view ticket'),
             ('change_ticket', 'Can change ticket'),
             ('view_worker', 'Can view worker'),
@@ -212,6 +234,28 @@ class Reconciliation(models.Model):
         return f"Reconciliation {self.reconciliation_id} - Ticket {self.ticket.work_order_no}"
 
 
+class LedgerBatch(models.Model):
+    batch_id = models.AutoField(primary_key=True)
+    batch_name = models.CharField(max_length=255, unique=True)
+    sub_departments = models.ManyToManyField(
+        'stores.SubDepartment',
+        related_name='ledger_batches',
+        blank=True
+    )
+    description = models.TextField(blank=True, null=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Ledger Batch'
+        verbose_name_plural = 'Ledger Batches'
+        ordering = ['batch_name']
+
+    def __str__(self):
+        return self.batch_name
+
+
 class LedgerGroup(models.Model):
     ledger_group_id = models.AutoField(primary_key=True)
     group_name = models.CharField(max_length=150)
@@ -221,6 +265,10 @@ class LedgerGroup(models.Model):
     total_amount = models.DecimalField(
         decimal_places=2, max_digits=14, default=0)
     remarks = models.TextField(blank=True, null=True)
+    is_completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='completed_ledger_groups')
 
     def __str__(self):
         return f"Ledger Group #{self.ledger_group_id} - {self.group_name}"
@@ -229,7 +277,6 @@ class LedgerGroup(models.Model):
 class Ledger(models.Model):
     STATUS_CHOICES = [
         ('Draft', 'Draft'),
-        ('Submitted', 'Submitted'),
         ('In Review', 'In Review'),
         ('Approved', 'Approved'),
         ('Rejected', 'Rejected'),
@@ -240,6 +287,8 @@ class Ledger(models.Model):
     ledger_id = models.AutoField(primary_key=True)
     ledger_group = models.ForeignKey(
         LedgerGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='ledgers')
+    ledger_batch = models.ForeignKey(
+        LedgerBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='ledgers')
     store = models.ForeignKey(
         'stores.Store', on_delete=models.SET_NULL, null=True, blank=True, related_name='ledgers')
     created_by = models.ForeignKey(
@@ -254,6 +303,12 @@ class Ledger(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='Draft')
     remarks = models.TextField(blank=True, null=True)
+
+    class Meta:
+        permissions = [
+            ('approve_ledger', 'Can approve ledger'),
+            ('reject_ledger', 'Can reject ledger'),
+        ]
 
     def __str__(self):
         return f"Ledger #{self.ledger_id} - Total: {self.total_amount} ({self.status})"
@@ -292,7 +347,9 @@ class ApprovalStep(models.Model):
     step_order = models.PositiveIntegerField()
     step_name = models.CharField(max_length=100)
     assigned_role = models.ForeignKey(
-        'accounts.Role', on_delete=models.PROTECT, related_name='approval_steps')
+        'accounts.Role', on_delete=models.SET_NULL, null=True, blank=True, related_name='approval_steps')
+    assigned_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name='approval_steps')
     is_final_step = models.BooleanField(default=False)
 
     class Meta:
@@ -305,7 +362,8 @@ class ApprovalStep(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.workflow.name} - Step {self.step_order}: {self.step_name} ({self.assigned_role.role_name})"
+        role_label = self.assigned_role.role_name if self.assigned_role else "User Assigned"
+        return f"{self.workflow.name} - Step {self.step_order}: {self.step_name} ({role_label})"
 
 
 class ApprovalInstance(models.Model):
@@ -396,3 +454,23 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment #{self.payment_id} - Amount: {self.amount_paid} ({self.payment_method})"
+
+
+from django.db.models.signals import m2m_changed
+from django.dispatch import receiver
+from django.core.exceptions import ValidationError
+
+
+@receiver(m2m_changed, sender=LedgerBatch.sub_departments.through)
+def prevent_duplicate_subdepartments_across_batches(sender, instance, action, pk_set, **kwargs):
+    if action == 'pre_add' and pk_set:
+        from apps.stores.models import SubDepartment
+        for subdept_id in pk_set:
+            existing_batch = LedgerBatch.objects.exclude(pk=instance.pk).filter(sub_departments__pk=subdept_id).first()
+            if existing_batch:
+                subdept = SubDepartment.objects.filter(pk=subdept_id).first()
+                subdept_name = subdept.sub_department_name if subdept else f"ID #{subdept_id}"
+                raise ValidationError(
+                    f"Sub-department '{subdept_name}' is already assigned to Ledger Batch '{existing_batch.batch_name}'. A sub-department cannot belong to multiple Ledger Batches."
+                )
+

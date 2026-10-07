@@ -86,7 +86,7 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
                     <th className="px-4 py-3">Method</th>
                     <th className="px-4 py-3">Reference</th>
                     <th className="px-4 py-3">Target</th>
-                    <th className="px-4 py-3 text-right">Amount ($)</th>
+                    <th className="px-4 py-3 text-right">Amount (KD)</th>
                     <th className="px-4 py-3">Disbursed By</th>
                     <th className="px-4 py-3">Date</th>
                   </tr>
@@ -208,7 +208,7 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
               </div>
 
               <div>
-                <label className="block font-medium text-on-surface-variant mb-1">Amount Paid ($)</label>
+                <label className="block font-medium text-on-surface-variant mb-1">Amount Paid (KD)</label>
                 <input
                   type="number"
                   step="0.01"

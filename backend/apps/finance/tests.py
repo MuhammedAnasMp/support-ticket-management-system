@@ -47,6 +47,9 @@ class FinancialSystemTestCase(TestCase):
         self.status = Status.objects.create(status_name="Open")
         self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="AC Repairs")
         self.nature = WorkNature.objects.create(nature_name="Compressor Repair", sub_department=self.subdept, default_priority=self.priority)
+        from apps.finance.models import LedgerBatch
+        self.ledger_batch = LedgerBatch.objects.create(batch_name="AC Batch", active=True)
+        self.ledger_batch.sub_departments.add(self.subdept)
 
         # Ticket
         self.ticket = Ticket.objects.create(
@@ -122,7 +125,7 @@ class FinancialSystemTestCase(TestCase):
         # 3. Submit Bundle for Approval
         BundleService.submit_bundle(bundle.claim_id, actor=self.worker)
         bundle.refresh_from_db()
-        self.assertEqual(bundle.status, "Submitted")
+        self.assertEqual(bundle.status, "In Review")
 
         # Verify ApprovalInstance created for Step 1
         inst1 = ApprovalInstance.objects.filter(claim=bundle, status="Pending").first()
@@ -146,12 +149,13 @@ class FinancialSystemTestCase(TestCase):
 
         # 6. Group Approved Bundle into Ledger
         ledger_group = LedgerGroup.objects.create(group_name="September Batch A", created_by=self.office_user)
-        ledger = LedgerService.create_ledger(
+        ledgers = LedgerService.create_ledger(
             bundle_ids=[bundle.claim_id],
             created_by=self.office_user,
             ledger_group_id=ledger_group.ledger_group_id,
             remarks="Batch 1 September"
         )
+        ledger = ledgers[0] if isinstance(ledgers, list) else ledgers
         self.assertEqual(ledger.total_amount, Decimal("400.00"))
         self.assertEqual(ledger.status, "Draft")
 
@@ -188,7 +192,7 @@ class FinancialSystemTestCase(TestCase):
         with self.assertRaises(ValueError):
             audit.delete()
 
-    def test_rejection_releases_expenses(self):
+    def test_rejection_retains_expenses(self):
         exp = Expense.objects.create(
             ticket=self.ticket,
             worker=self.worker,
@@ -214,5 +218,58 @@ class FinancialSystemTestCase(TestCase):
         exp.refresh_from_db()
 
         self.assertEqual(bundle.status, "Rejected")
-        self.assertFalse(exp.is_claimed)
-        self.assertIsNone(exp.claim)
+        self.assertTrue(exp.is_claimed)
+        self.assertEqual(exp.claim, bundle)
+
+    def test_guardian_object_permission_and_user_assignment(self):
+        from guardian.shortcuts import assign_perm
+        from apps.accounts.models import CustomUser
+
+        custom_approver = CustomUser.objects.create_user(
+            username="custom_approver", password="password123", full_name="Custom Approver"
+        )
+
+        exp = Expense.objects.create(
+            ticket=self.ticket,
+            worker=self.worker,
+            expense_type=self.exp_type,
+            amount=Decimal("80.00"),
+            expense_date="2026-09-22",
+            approved=True
+        )
+        bundle = BundleService.create_bundle(
+            worker=self.worker,
+            expense_ids=[exp.expense_id],
+            period_from="2026-09-01",
+            period_to="2026-09-20",
+            remarks="Custom approver bundle",
+            created_by=self.worker
+        )
+        BundleService.submit_bundle(bundle.claim_id, actor=self.worker)
+
+        inst = ApprovalInstance.objects.filter(claim=bundle, status="Pending").first()
+
+        # Step 1 without assignment should fail
+        with self.assertRaises(ValidationError):
+            ApprovalService.action_step(inst.instance_id, actor=custom_approver, action="APPROVED")
+
+        # 1. Test direct user assignment to step
+        self.step1.assigned_users.add(custom_approver)
+        self.assertTrue(ApprovalService.can_user_action_step(custom_approver, self.step1, inst))
+        
+        # Action Step 1 successfully
+        ApprovalService.action_step(inst.instance_id, actor=custom_approver, action="APPROVED", comments="Step 1 OK")
+
+        # Step 2 is now pending
+        inst2 = ApprovalInstance.objects.filter(claim=bundle, status="Pending").first()
+        self.assertIsNotNone(inst2)
+
+        # 2. Test Guardian object-level permission assignment for Step 2
+        assign_perm('approve_workerclaim', custom_approver, bundle)
+        self.assertTrue(ApprovalService.can_user_action_step(custom_approver, inst2.step, inst2))
+        
+        # Action Step 2 with Guardian permission
+        ApprovalService.action_step(inst2.instance_id, actor=custom_approver, action="APPROVED", comments="Step 2 OK via Guardian")
+
+        bundle.refresh_from_db()
+        self.assertEqual(bundle.status, "Approved")

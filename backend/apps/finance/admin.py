@@ -1,7 +1,8 @@
 from django.contrib import admin
+from guardian.admin import GuardedModelAdmin
 from .models import (
     ExpenseType, EmployeeRate, Expense, Reconciliation, WorkerClaim,
-    LedgerGroup, Ledger, ApprovalWorkflow, ApprovalStep,
+    LedgerBatch, LedgerGroup, Ledger, ApprovalWorkflow, ApprovalStep,
     ApprovalInstance, AuditEvent, Payment
 )
 
@@ -21,7 +22,7 @@ class EmployeeRateAdmin(admin.ModelAdmin):
 
 
 @admin.register(WorkerClaim)
-class WorkerClaimAdmin(admin.ModelAdmin):
+class WorkerClaimAdmin(GuardedModelAdmin):
     list_display = ('claim_id', 'worker', 'ticket', 'total_claimed_amount', 'status', 'claim_date', 'submitted_at', 'approved_by')
     list_filter = ('status', 'claim_date', 'period_from', 'period_to')
     search_fields = ('ticket__work_order_no', 'worker__username', 'claim_id')
@@ -29,7 +30,7 @@ class WorkerClaimAdmin(admin.ModelAdmin):
 
 
 @admin.register(Expense)
-class ExpenseAdmin(admin.ModelAdmin):
+class ExpenseAdmin(GuardedModelAdmin):
     list_display = ('expense_id', 'ticket', 'worker', 'added_by', 'expense_type', 'amount',
                     'responsible_store', 'expense_date', 'approved', 'is_claimed', 'claim')
     list_filter = ('approved', 'is_claimed', 'expense_date', 'expense_type', 'responsible_store')
@@ -46,6 +47,38 @@ class ReconciliationAdmin(admin.ModelAdmin):
     search_fields = ('ticket__work_order_no', 'verified_by__username')
 
 
+from django import forms
+
+
+class LedgerBatchAdminForm(forms.ModelForm):
+    class Meta:
+        model = LedgerBatch
+        fields = '__all__'
+
+    def clean_sub_departments(self):
+        sub_departments = self.cleaned_data.get('sub_departments')
+        instance = self.instance
+        instance_pk = instance.pk if instance else None
+
+        if sub_departments:
+            for subdept in sub_departments:
+                existing_batch = LedgerBatch.objects.exclude(pk=instance_pk).filter(sub_departments=subdept).first()
+                if existing_batch:
+                    raise forms.ValidationError(
+                        f"Sub-department '{subdept.sub_department_name}' is already assigned to Ledger Batch '{existing_batch.batch_name}'. A sub-department cannot belong to multiple Ledger Batches."
+                    )
+        return sub_departments
+
+
+@admin.register(LedgerBatch)
+class LedgerBatchAdmin(admin.ModelAdmin):
+    form = LedgerBatchAdminForm
+    list_display = ('batch_id', 'batch_name', 'active', 'created_at')
+    list_filter = ('active', 'created_at')
+    search_fields = ('batch_name', 'description')
+    filter_horizontal = ('sub_departments',)
+
+
 @admin.register(LedgerGroup)
 class LedgerGroupAdmin(admin.ModelAdmin):
     list_display = ('ledger_group_id', 'group_name', 'total_amount', 'created_by', 'created_at')
@@ -53,17 +86,47 @@ class LedgerGroupAdmin(admin.ModelAdmin):
 
 
 @admin.register(Ledger)
-class LedgerAdmin(admin.ModelAdmin):
+class LedgerAdmin(GuardedModelAdmin):
     list_display = ('ledger_id', 'ledger_group', 'total_amount', 'status', 'created_by', 'created_at')
     list_filter = ('status', 'created_at')
     search_fields = ('ledger_id', 'ledger_group__group_name', 'created_by__username')
-    filter_horizontal = ('bundles',)
+    filter_horizontal = ('bundles', 'expenses')
+
+
+from django import forms
+from django.core.exceptions import ValidationError
+
+
+class ApprovalStepForm(forms.ModelForm):
+    class Meta:
+        model = ApprovalStep
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        assigned_role = cleaned_data.get('assigned_role')
+        assigned_users = cleaned_data.get('assigned_users')
+
+        has_role = bool(assigned_role)
+        has_users = bool(assigned_users and (assigned_users.exists() if hasattr(assigned_users, 'exists') else len(assigned_users) > 0))
+
+        if has_role and has_users:
+            raise ValidationError(
+                "Please configure EITHER an Assigned Role (Role-wise) OR Assigned Users (User-wise), but not both to avoid ambiguity."
+            )
+        if not has_role and not has_users:
+            raise ValidationError(
+                "Please specify an Assigned Role OR select at least one Assigned User for this approval step."
+            )
+        return cleaned_data
 
 
 class ApprovalStepInline(admin.TabularInline):
     model = ApprovalStep
+    form = ApprovalStepForm
     extra = 1
     ordering = ('step_order',)
+    filter_horizontal = ('assigned_users',)
 
 
 @admin.register(ApprovalWorkflow)
@@ -75,9 +138,24 @@ class ApprovalWorkflowAdmin(admin.ModelAdmin):
 
 @admin.register(ApprovalStep)
 class ApprovalStepAdmin(admin.ModelAdmin):
-    list_display = ('step_id', 'workflow', 'step_order', 'step_name', 'assigned_role', 'is_final_step')
+    form = ApprovalStepForm
+    list_display = ('step_id', 'workflow', 'step_order', 'step_name', 'get_assignment_type', 'get_assigned_users', 'assigned_role', 'is_final_step')
     list_filter = ('workflow', 'assigned_role')
+    filter_horizontal = ('assigned_users',)
     ordering = ('workflow', 'step_order')
+
+    def get_assignment_type(self, obj):
+        if obj.assigned_users.exists():
+            return "User-Wise"
+        elif obj.assigned_role:
+            return "Role-Wise"
+        return "Unassigned"
+    get_assignment_type.short_description = "Assignment Mode"
+
+    def get_assigned_users(self, obj):
+        users = obj.assigned_users.all()
+        return ", ".join([u.username for u in users]) if users.exists() else "None (Role-based)"
+    get_assigned_users.short_description = "Assigned Users (User-Wise)"
 
 
 @admin.register(ApprovalInstance)

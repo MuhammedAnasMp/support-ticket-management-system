@@ -1,6 +1,9 @@
 from rest_framework import viewsets, exceptions
 from .models import Store, Department, SubDepartment, Area
-from .serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer, SubDepartmentWriteSerializer
+from .serializers import (
+    StoreSerializer, DepartmentSerializer, SubDepartmentSerializer, AreaSerializer,
+    SubDepartmentWriteSerializer
+)
 
 from django.db.models import Count
 
@@ -86,3 +89,5 @@ class ManagerViewSet(viewsets.ModelViewSet):
         return CustomUser.objects.filter(
             role__role_name__icontains='Store Manager'
         ).select_related('role', 'managed_store').order_by('full_name')
+
+

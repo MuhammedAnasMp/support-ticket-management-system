@@ -1,11 +1,12 @@
 from rest_framework import serializers
 from .models import (
     ExpenseType, EmployeeRate, Expense, Reconciliation, WorkerClaim,
-    LedgerGroup, Ledger, ApprovalWorkflow, ApprovalStep,
+    LedgerBatch, LedgerGroup, Ledger, ApprovalWorkflow, ApprovalStep,
     ApprovalInstance, AuditEvent, Payment
 )
 from apps.common.serializers import MediaSerializer
 from apps.accounts.models import CustomUser
+from apps.stores.serializers import SubDepartmentSerializer
 
 
 class ExpenseTypeSerializer(serializers.ModelSerializer):
@@ -100,11 +101,25 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def get_ticket_details(self, obj):
         if obj.ticket:
+            sub_id = None
+            sub_name = None
+            dept_name = None
+            if obj.ticket.nature and obj.ticket.nature.sub_department:
+                sub_id = obj.ticket.nature.sub_department.sub_department_id
+                sub_name = obj.ticket.nature.sub_department.sub_department_name
+                if obj.ticket.nature.sub_department.department:
+                    dept_name = obj.ticket.nature.sub_department.department.department_name
+            elif obj.ticket.department:
+                dept_name = obj.ticket.department.department_name
+
             return {
                 'ticket_id': obj.ticket.ticket_id,
                 'work_order_no': obj.ticket.work_order_no,
                 'title': obj.ticket.title,
-                'store_name': obj.ticket.store.store_name if obj.ticket.store else None
+                'store_name': obj.ticket.store.store_name if obj.ticket.store else None,
+                'sub_department_id': sub_id,
+                'sub_department_name': sub_name,
+                'department_name': dept_name,
             }
         return None
 
@@ -132,9 +147,9 @@ class ExpenseWriteSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def validate(self, data):
-        ticket = data.get('ticket')
-        expense_type = data.get('expense_type')
-        if ticket and expense_type and expense_type.department != ticket.department:
+        ticket = data.get('ticket') or (getattr(self.instance, 'ticket', None) if self.instance else None)
+        expense_type = data.get('expense_type') or (getattr(self.instance, 'expense_type', None) if self.instance else None)
+        if ticket and expense_type and hasattr(ticket, 'department') and hasattr(expense_type, 'department') and ticket.department and expense_type.department and expense_type.department != ticket.department:
             raise serializers.ValidationError(
                 {"expense_type": f"Expense Type '{expense_type.expense_name}' does not belong to ticket department '{ticket.department.department_name}'."}
             )
@@ -220,10 +235,51 @@ class ReconciliationSerializer(serializers.ModelSerializer):
         depth = 1
 
 
+class LedgerBatchSerializer(serializers.ModelSerializer):
+    sub_departments_detail = SubDepartmentSerializer(source='sub_departments', many=True, read_only=True)
+
+    class Meta:
+        model = LedgerBatch
+        fields = '__all__'
+
+
+class LedgerBatchWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LedgerBatch
+        fields = '__all__'
+
+    def validate_sub_departments(self, sub_departments):
+        instance = self.instance
+        instance_pk = instance.pk if instance else None
+
+        for subdept in sub_departments:
+            existing_batch = LedgerBatch.objects.exclude(pk=instance_pk).filter(sub_departments=subdept).first()
+            if existing_batch:
+                raise serializers.ValidationError(
+                    f"Sub-department '{subdept.sub_department_name}' is already assigned to Ledger Batch '{existing_batch.batch_name}'. A sub-department cannot belong to multiple Ledger Batches."
+                )
+        return sub_departments
+
+
 class LedgerGroupSerializer(serializers.ModelSerializer):
+    created_by_detail = serializers.SerializerMethodField()
+    completed_by_detail = serializers.SerializerMethodField()
+
     class Meta:
         model = LedgerGroup
         fields = '__all__'
+
+    def get_created_by_detail(self, obj):
+        if obj.created_by:
+            from apps.accounts.serializers import CustomUserSerializer
+            return CustomUserSerializer(obj.created_by).data
+        return None
+
+    def get_completed_by_detail(self, obj):
+        if obj.completed_by:
+            from apps.accounts.serializers import CustomUserSerializer
+            return CustomUserSerializer(obj.completed_by).data
+        return None
 
 
 class LedgerSerializer(serializers.ModelSerializer):
@@ -232,7 +288,10 @@ class LedgerSerializer(serializers.ModelSerializer):
     created_by_detail = serializers.SerializerMethodField()
     ledger_group_detail = LedgerGroupSerializer(
         source='ledger_group', read_only=True)
+    ledger_batch_detail = LedgerBatchSerializer(
+        source='ledger_batch', read_only=True)
     store_detail = serializers.SerializerMethodField()
+    approval_history = serializers.SerializerMethodField()
 
     class Meta:
         model = Ledger
@@ -250,6 +309,9 @@ class LedgerSerializer(serializers.ModelSerializer):
             return StoreSerializer(obj.store).data
         return None
 
+    def get_approval_history(self, obj):
+        return ApprovalInstanceSerializer(obj.approval_instances.all(), many=True).data
+
 
 class LedgerWriteSerializer(serializers.ModelSerializer):
     bundle_ids = serializers.ListField(
@@ -263,10 +325,28 @@ class LedgerWriteSerializer(serializers.ModelSerializer):
 class ApprovalStepSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(
         source='assigned_role.role_name', read_only=True)
+    assigned_users_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalStep
         fields = '__all__'
+
+    def validate(self, attrs):
+        assigned_role = attrs.get('assigned_role')
+        assigned_users = attrs.get('assigned_users')
+        if assigned_role and assigned_users:
+            raise serializers.ValidationError("Please specify either Assigned Role (Role-wise) OR Assigned Users (User-wise), but not both.")
+        return attrs
+
+    def get_assigned_users_detail(self, obj):
+        return [
+            {
+                'user_id': u.pk,
+                'username': u.username,
+                'full_name': getattr(u, 'full_name', '') or u.username
+            }
+            for u in obj.assigned_users.all()
+        ]
 
 
 class ApprovalWorkflowSerializer(serializers.ModelSerializer):
@@ -285,15 +365,30 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
         source='step.assigned_role.role_name', read_only=True)
     action_by_username = serializers.CharField(
         source='action_by.username', read_only=True)
+    action_by_full_name = serializers.SerializerMethodField()
     target_summary = serializers.SerializerMethodField()
     workflow_steps = serializers.SerializerMethodField()
     approval_history = serializers.SerializerMethodField()
+    can_action = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalInstance
         fields = '__all__'
 
+    def get_action_by_full_name(self, obj):
+        if obj.action_by:
+            return obj.action_by.full_name or obj.action_by.username
+        return None
+
+    def get_can_action(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        from .services import ApprovalService
+        return ApprovalService.can_user_action_step(request.user, obj.step, obj)
+
     def get_approval_history(self, obj):
+        request = self.context.get('request')
         queryset = None
         if obj.claim:
             queryset = ApprovalInstance.objects.filter(claim=obj.claim)
@@ -303,7 +398,8 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
             queryset = ApprovalInstance.objects.filter(expense=obj.expense)
 
         if queryset:
-            instances = queryset.select_related(
+            from .services import ApprovalService
+            instances = queryset.prefetch_related('step__assigned_users').select_related(
                 'step', 'step__assigned_role', 'action_by').order_by('step__step_order', 'created_at')
             return [
                 {
@@ -312,8 +408,11 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'step_order': inst.step.step_order if inst.step else 0,
                     'step_name': inst.step.step_name if inst.step else 'Step',
                     'assigned_role_name': inst.step.assigned_role.role_name if (inst.step and inst.step.assigned_role) else '',
+                    'assigned_users_names': [u.full_name or u.username for u in inst.step.assigned_users.all()] if inst.step else [],
+                    'assigned_users_ids': [u.pk for u in inst.step.assigned_users.all()] if inst.step else [],
+                    'can_action': ApprovalService.can_user_action_step(request.user, inst.step, inst) if (request and request.user and request.user.is_authenticated and inst.status == 'Pending') else False,
                     'action_by_username': inst.action_by.username if inst.action_by else None,
-                    'action_by_full_name': inst.action_by.full_name if inst.action_by else None,
+                    'action_by_full_name': (inst.action_by.full_name or inst.action_by.username) if inst.action_by else None,
                     'status': inst.status,
                     'comments': inst.comments or '',
                     'actioned_at': inst.actioned_at.isoformat() if inst.actioned_at else None,
@@ -325,13 +424,15 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
     def get_workflow_steps(self, obj):
         if obj.step and obj.step.workflow:
-            steps = obj.step.workflow.steps.all().order_by('step_order')
+            steps = obj.step.workflow.steps.prefetch_related('assigned_users').select_related('assigned_role').order_by('step_order')
             return [
                 {
                     'step_id': s.step_id,
                     'step_order': s.step_order,
                     'step_name': s.step_name,
                     'assigned_role_name': s.assigned_role.role_name if s.assigned_role else '',
+                    'assigned_users_ids': [u.pk for u in s.assigned_users.all()],
+                    'assigned_users_names': [u.full_name or u.username for u in s.assigned_users.all()],
                     'is_final_step': s.is_final_step
                 }
                 for s in steps

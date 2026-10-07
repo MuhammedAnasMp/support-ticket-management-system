@@ -58,7 +58,7 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'accessible_stores', 'sub_departments', 'profile_updated_at', 'active')
         }),
     )
-    filter_horizontal = ('accessible_stores', 'sub_departments')
+    filter_horizontal = ('groups', 'user_permissions', 'accessible_stores', 'sub_departments')
 
 
 @admin.register(PasswordResetOTP)

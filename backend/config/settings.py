@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'apps.maintenance',
     'apps.finance',
     'apps.reports',
+    'guardian',
 ]
 
 MIDDLEWARE = [
@@ -244,6 +245,13 @@ else:
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
+
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'guardian.backends.ObjectPermissionBackend',
+)
+
+ANONYMOUS_USER_NAME = None
 
 # Max Upload Request Body Size Limits (100MB)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600

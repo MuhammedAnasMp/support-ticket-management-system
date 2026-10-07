@@ -11,7 +11,7 @@ from apps.maintenance.models import (
     Ticket, Priority, Status, WorkNature, Allocation, WorkLog, TicketHistory, TicketChatMessage
 )
 from apps.finance.models import (
-    Expense, ExpenseType, WorkerClaim, Ledger, ApprovalInstance, Payment, AuditEvent,
+    Expense, ExpenseType, WorkerClaim, Ledger, LedgerBatch, ApprovalInstance, Payment, AuditEvent,
     ApprovalWorkflow, ApprovalStep
 )
 from apps.finance.services import ApprovalService
@@ -34,6 +34,7 @@ class Command(BaseCommand):
             Payment.objects.all().delete()
             ApprovalInstance.objects.all().delete()
             Ledger.objects.all().delete()
+            LedgerBatch.objects.all().delete()
             WorkerClaim.objects.all().delete()
             Expense.objects.all().delete()
             WorkLog.objects.all().delete()
@@ -101,16 +102,106 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(
                 "  - Configured 1-Level Approval Workflows for Bundle, Ledger, and Expense."))
 
-            # 3. Ensure Maintenance Department & SubDepartment
+            # 3. Ensure Maintenance Department & SubDepartments
             dept, _ = Department.objects.get_or_create(
                 department_name="Maintenance",
                 defaults={"short_code": "MAINT"}
             )
 
-            sub_dept, _ = SubDepartment.objects.get_or_create(
-                department=dept,
-                sub_department_name="Maintenance"
-            )
+            # Sub-departments definition under Maintenance
+            subdept_defs = [
+                ("AC Maintenance", ["AC Servicing", "Compressor Replacement", "Filter Cleaning"]),
+                ("Chiller", ["Chiller Maintenance", "Cooling Tower Repair"]),
+                ("AMC", ["Annual Maintenance Service", "AMC Periodic Check"]),
+                ("Plumbing + Elecrical", ["Wiring Fix", "Short Circuit Repair", "Pipe Leakage Fix", "Tap & Sanitary Repair"]),
+                ("Drainage Work", ["Drain Unblocking", "Sewer Line Maintenance"]),
+                ("Fire Issuesa", ["Fire Extinguisher Inspection", "Smoke Detector Check"]),
+                ("Civil Work", ["Tile Repair", "Masonry Work", "Flooring"]),
+                ("Carpentory", ["Door & Lock Fix", "Shelving & Woodwork"]),
+                ("Painting", ["Wall Painting", "Touch-up & Coating"]),
+                ("General Maintenance", ["General Facility Repair", "Fixtures Maintenance"]),
+                ("In Store", ["In-Store Fixture Setup", "Display Maintenance"]),
+                ("Office", ["Office Furniture Setup", "Lighting Maintenance"]),
+                ("Maintenance", ["Routine Inspection", "Emergency Breakdown"])
+            ]
+
+            created_subdepts = {}
+            all_natures = []
+
+            for s_name, nature_list in subdept_defs:
+                sd, _ = SubDepartment.objects.get_or_create(
+                    department=dept,
+                    sub_department_name=s_name
+                )
+                created_subdepts[s_name] = sd
+
+                for n_name in nature_list:
+                    wn, _ = WorkNature.objects.get_or_create(
+                        nature_name=n_name,
+                        sub_department=sd,
+                        defaults={"media_required": True, "active": True}
+                    )
+                    all_natures.append(wn)
+
+            # 4. Create Ledger Batches under Maintenance department
+            batch_configs = [
+                {
+                    "name": "HVAC & Cooling Systems",
+                    "description": "Air conditioning, chillers, and annual cooling maintenance",
+                    "subdepts": ["AC Maintenance", "Chiller", "AMC"]
+                },
+                {
+                    "name": "Electrical & Plumbing Services",
+                    "description": "Electrical wiring, plumbing lines, drainage and fire systems",
+                    "subdepts": ["Plumbing + Elecrical", "Drainage Work", "Fire Issuesa"]
+                },
+                {
+                    "name": "Civil, Carpentry & Painting",
+                    "description": "Building civil works, woodwork, and painting tasks",
+                    "subdepts": ["Civil Work", "Carpentory", "Painting"]
+                },
+                {
+                    "name": "General & Facility Maintenance",
+                    "description": "Routine, office, in-store, and general facility maintenance",
+                    "subdepts": ["General Maintenance", "In Store", "Office", "Maintenance"]
+                }
+            ]
+
+            created_batches = []
+            assigned_subdept_ids = set()
+
+            for b_cfg in batch_configs:
+                batch, _ = LedgerBatch.objects.get_or_create(
+                    batch_name=b_cfg["name"],
+                    defaults={
+                        "description": b_cfg["description"],
+                        "active": True
+                    }
+                )
+                b_sds = []
+                for sd_name in b_cfg["subdepts"]:
+                    if sd_name in created_subdepts:
+                        sd_obj = created_subdepts[sd_name]
+                        if sd_obj.sub_department_id not in assigned_subdept_ids:
+                            b_sds.append(sd_obj)
+                            assigned_subdept_ids.add(sd_obj.sub_department_id)
+
+                batch.sub_departments.set(b_sds)
+                created_batches.append(batch)
+
+            # Ensure any other existing subdepartments in Maintenance are covered in General batch
+            unassigned_maintenance_sds = SubDepartment.objects.filter(
+                department=dept
+            ).exclude(sub_department_id__in=assigned_subdept_ids)
+
+            if unassigned_maintenance_sds.exists() and created_batches:
+                general_batch = created_batches[-1]
+                for u_sd in unassigned_maintenance_sds:
+                    general_batch.sub_departments.add(u_sd)
+                    assigned_subdept_ids.add(u_sd.sub_department_id)
+
+            self.stdout.write(self.style.SUCCESS(
+                f"  - Configured {len(created_batches)} Ledger Batches under Maintenance department."))
 
             # Expense Types with Parent hierarchy
             expense_hierarchy = {
@@ -162,7 +253,7 @@ class Command(BaseCommand):
             cat_receipt, _ = MediaCategory.objects.get_or_create(
                 department=dept, category_name="Expense Receipt")
 
-            # 4. Ensure 7 Stores
+            # 5. Ensure 7 Stores
             store_data = [
                 ("STR-101", "HM Store City", "HM"),
                 ("STR-102", "Main Street Outlet", "SM"),
@@ -183,7 +274,7 @@ class Command(BaseCommand):
                 )
                 stores.append(st)
 
-            # 5. Targeted Workers Selection (usernames: 123, 11111, 10857, 103, 102, 101)
+            # 6. Targeted Workers Selection (usernames: 123, 11111, 10857, 103, 102, 101)
             target_usernames = ["123", "11111", "10857", "103", "102", "101"]
             worker_role = roles["Maintenance Worker"]
             workers = []
@@ -209,7 +300,7 @@ class Command(BaseCommand):
             admin_user = User.objects.filter(
                 is_superuser=True).first() or workers[0]
 
-            # 6. Ensure Priorities, WorkNatures, and Statuses
+            # 7. Ensure Priorities and Statuses
             priority_names = ["Low", "Medium", "High", "Critical"]
             priorities = []
             for idx, p_name in enumerate(priority_names, 1):
@@ -230,16 +321,12 @@ class Command(BaseCommand):
                 )
                 statuses.append(st)
 
-            nature_names = ["General Repair", "Electrical Maintenance",
-                            "HVAC Repair", "Plumbing & Piping", "Locksmith Work"]
-            natures = []
-            for n_name in nature_names:
-                n, _ = WorkNature.objects.get_or_create(
-                    nature_name=n_name,
-                    defaults={"sub_department": sub_dept,
-                              "media_required": True, "active": True}
-                )
-                natures.append(n)
+            natures = all_natures if all_natures else [
+                WorkNature.objects.get_or_create(
+                    nature_name="General Repair",
+                    defaults={"sub_department": created_subdepts.get("General Maintenance"), "media_required": True, "active": True}
+                )[0]
+            ]
 
             # 7. Seed 20 New Tickets across 7 stores in random status
             today = date.today()

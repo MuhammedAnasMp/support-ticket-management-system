@@ -16,7 +16,15 @@ export interface ExpenseItem {
   worker: any;
   worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string };
   ticket?: number;
-  ticket_details?: { ticket_id: number; work_order_no: string; title: string };
+  ticket_details?: {
+    ticket_id: number;
+    work_order_no: string;
+    title: string;
+    sub_department_id?: number;
+    sub_department_name?: string;
+  };
+  sub_department_id?: number;
+  sub_department_name?: string;
   expense_type?: { expense_id: number; expense_name: string; approve_required?: boolean };
   expense_type_detail?: { expense_name: string; approve_required?: boolean };
   receipts?: MediaFileItem[];
@@ -32,6 +40,7 @@ export interface ApprovalStepInfo {
   step_order: number;
   step_name: string;
   assigned_role_name: string;
+  assigned_users_names?: string[];
   is_final_step?: boolean;
 }
 
@@ -102,20 +111,50 @@ export interface ApprovalInstanceItem {
   ledger?: number;
   expense?: number;
   action_by_username?: string;
+  action_by_full_name?: string;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Rework';
   comments?: string;
   created_at: string;
   actioned_at?: string;
+  can_action?: boolean;
+  claim_id?: number;
+  ledger_id?: number;
+  expense_id?: number;
+  workflow_entity_type?: string;
   workflow_steps?: ApprovalStepInfo[];
   approval_history?: ApprovalHistoryItem[];
   target_summary?: TargetSummaryItem;
 }
 
+export interface SubDepartmentDetailItem {
+  sub_department_id: number;
+  sub_department_name: string;
+  department?: number;
+  department_name?: string;
+}
+
+export interface LedgerBatchItem {
+  ledger_batch_id: number;
+  batch_name: string;
+  description?: string;
+  sub_departments?: number[];
+  sub_departments_detail?: SubDepartmentDetailItem[];
+  active?: boolean;
+  created_at?: string;
+}
+
 export interface WorkerClaimItem {
   claim_id: number;
+  ledger_id?: number;
   worker?: number;
   worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string };
-  ticket_details?: { ticket_id: number; work_order_no: string; title: string };
+  ticket_details?: {
+    ticket_id: number;
+    work_order_no: string;
+    title: string;
+    sub_department_id?: number;
+    sub_department_name?: string;
+  };
   total_claimed_amount: string;
   status: 'Draft' | 'Submitted' | 'In Review' | 'Approved' | 'Rejected' | 'Rework' | 'Paid';
   claim_date: string;
@@ -138,6 +177,10 @@ export interface LedgerGroupItem {
   group_name: string;
   total_amount: string;
   created_at: string;
+  is_completed?: boolean;
+  completed_at?: string;
+  completed_by?: number;
+  completed_by_detail?: { id: number; username: string; full_name?: string };
 }
 
 export interface StoreDetailItem {
@@ -151,7 +194,10 @@ export interface StoreDetailItem {
 
 export interface LedgerItem {
   ledger_id: number;
+  ledger_group?: number;
   ledger_group_detail?: LedgerGroupItem;
+  ledger_batch?: number;
+  ledger_batch_detail?: LedgerBatchItem;
   store_detail?: StoreDetailItem;
   created_by_detail?: { username: string; full_name?: string };
   total_amount: string;
