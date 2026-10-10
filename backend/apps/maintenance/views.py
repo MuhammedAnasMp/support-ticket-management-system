@@ -236,7 +236,12 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         store = params.get('store')
         if store:
-            queryset = queryset.filter(store_id=store)
+            store_str = store.strip()
+            queryset = queryset.filter(
+                Q(store__store_id__iexact=store_str) |
+                Q(store__store_name__iexact=store_str) |
+                Q(store__short_code__iexact=store_str)
+            )
 
         department = params.get('department')
         if department:
@@ -248,10 +253,15 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         status = params.get('status')
         if status:
-            if status.isdigit():
-                queryset = queryset.filter(status_id=status)
+            clean_status = status.strip()
+            if clean_status.isdigit():
+                queryset = queryset.filter(status_id=clean_status)
             else:
-                queryset = queryset.filter(status__status_name__iexact=status)
+                clean_status_normalized = clean_status.replace('_', ' ')
+                queryset = queryset.filter(
+                    Q(status__status_name__iexact=clean_status) |
+                    Q(status__status_name__iexact=clean_status_normalized)
+                )
 
         priority = params.get('priority')
         if priority:
@@ -394,8 +404,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                     queryset = queryset.filter(created_date__gte=from_date)
                 elif to_date_val:
                     queryset = queryset.filter(created_date__lte=to_date_val)
-        elif date_type and date_type != 'created':
-            # When from_date and to_date are not specified, filter by date_type stage/status
+        elif not status and date_type and date_type != 'created':
+            # When from_date and to_date are not specified and status is not explicitly passed, filter by date_type stage/status
             if date_type in ('open', 'approved'):
                 queryset = queryset.filter(
                     Q(approved_date__isnull=False) | Q(status__status_name__iexact='Open')

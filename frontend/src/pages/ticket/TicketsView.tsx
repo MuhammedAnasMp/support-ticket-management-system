@@ -118,23 +118,59 @@ export const TicketsView: React.FC = () => {
     };
 
     // Filters & pagination
-    const [search, setSearch] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
-    const [filterStore, setFilterStore] = useState('');
-    const [filterDept, setFilterDept] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
-    const [filterPriority, setFilterPriority] = useState('');
-    const [filterWorker, setFilterWorker] = useState('');
-    const [filterSubDept, setFilterSubDept] = useState('');
+    const [search, setSearch] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('search');
+        return p || '';
+    });
+    const [debouncedSearch, setDebouncedSearch] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('search');
+        return p || '';
+    });
+    const [filterStore, setFilterStore] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('store');
+        return p || '';
+    });
+    const [filterDept, setFilterDept] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('department') || new URLSearchParams(window.location.search).get('dept');
+        return p || '';
+    });
+    const [filterStatus, setFilterStatus] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('status');
+        return p ? p.replace(/_/g, ' ') : '';
+    });
+    const [filterPriority, setFilterPriority] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('priority');
+        return p || '';
+    });
+    const [filterWorker, setFilterWorker] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('worker');
+        return p || '';
+    });
+    const [filterSubDept, setFilterSubDept] = useState(() => {
+        const p = new URLSearchParams(window.location.search).get('sub_department') || new URLSearchParams(window.location.search).get('sub_dept');
+        return p || '';
+    });
     const [fromDate, setFromDate] = useState<string>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlFrom = urlParams.get('from_date') || urlParams.get('fromDate');
+        if (urlFrom !== null) return urlFrom;
+        if (urlParams.get('store') || urlParams.get('status') || urlParams.get('search')) return '';
         const savedFrom = localStorage.getItem('ticket-filter-from-date');
         return savedFrom || '';
     });
     const [toDate, setToDate] = useState<string>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlTo = urlParams.get('to_date') || urlParams.get('toDate');
+        if (urlTo !== null) return urlTo;
+        if (urlParams.get('store') || urlParams.get('status') || urlParams.get('search')) return '';
         const savedTo = localStorage.getItem('ticket-filter-to-date');
         return savedTo || '';
     });
     const [dateType, setDateType] = useState<string>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlType = urlParams.get('date_type') || urlParams.get('dateType');
+        if (urlType !== null) return urlType;
+        if (urlParams.get('store') || urlParams.get('status') || urlParams.get('search')) return 'created';
         const savedType = localStorage.getItem('ticket-filter-date-type');
         return savedType || 'created';
     });
@@ -621,11 +657,13 @@ export const TicketsView: React.FC = () => {
         }
 
         if (statusParam !== null) {
+            const normalizedParam = statusParam.replace(/_/g, ' ').trim().toLowerCase();
             const matchedStatus = statuses.find(
                 s => String(s.status_id) === statusParam || 
-                     s.status_name?.toLowerCase() === statusParam.toLowerCase()
+                     s.status_name?.toLowerCase() === statusParam.toLowerCase() ||
+                     s.status_name?.toLowerCase() === normalizedParam
             );
-            setFilterStatus(matchedStatus ? matchedStatus.status_name : statusParam);
+            setFilterStatus(matchedStatus ? matchedStatus.status_name : statusParam.replace(/_/g, ' '));
             hasFilterParam = true;
         }
 
@@ -670,6 +708,8 @@ export const TicketsView: React.FC = () => {
 
         if (dateTypeParam !== null) {
             setDateType(dateTypeParam);
+        } else if (hasFilterParam && (storeParam !== null || statusParam !== null)) {
+            setDateType('created');
         }
 
         if (hasFilterParam) {

@@ -441,9 +441,9 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
         ledger_filter = self.request.query_params.get("ledger_filter")
         if ledger_filter:
             if ledger_filter.upper() == 'IN_LEDGER':
-                queryset = queryset.filter(ledger__isnull=False)
+                queryset = queryset.filter(ledgers__isnull=False).distinct()
             elif ledger_filter.upper() == 'NOT_IN_LEDGER':
-                queryset = queryset.filter(ledger__isnull=True)
+                queryset = queryset.filter(ledgers__isnull=True).distinct()
 
         from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
         if from_date:
@@ -462,11 +462,11 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                 Q(worker__username__icontains=search) |
                 Q(ticket__work_order_no__icontains=search) |
                 Q(remarks__icontains=search) |
-                Q(ledger__ledger_group__group_name__icontains=search)
+                Q(ledgers__ledger_group__group_name__icontains=search)
             )
             if search.isdigit():
                 q_search |= Q(claim_id=int(search))
-            queryset = queryset.filter(q_search)
+            queryset = queryset.filter(q_search).distinct()
 
         worker_param = self.request.query_params.get("worker")
         if worker_param:
@@ -630,6 +630,15 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(Q(group_name__icontains=search) | Q(ledger_group_id=int(search)))
             else:
                 queryset = queryset.filter(group_name__icontains=search)
+
+        from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
+        if from_date:
+            queryset = queryset.filter(Q(created_at__date__gte=from_date) | Q(ledgers__created_at__date__gte=from_date)).distinct()
+
+        to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to")
+        if to_date:
+            queryset = queryset.filter(Q(created_at__date__lte=to_date) | Q(ledgers__created_at__date__lte=to_date)).distinct()
+
         return queryset.annotate(
             annotated_ledgers_count=Count('ledgers', distinct=True)
         ).select_related(
@@ -1091,6 +1100,14 @@ class ApprovalInstanceViewSet(viewsets.ReadOnlyModelViewSet):
 
             queryset = queryset.filter(q_filter).distinct()
 
+        from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
+        if from_date:
+            queryset = queryset.filter(created_at__date__gte=from_date)
+
+        to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to")
+        if to_date:
+            queryset = queryset.filter(created_at__date__lte=to_date)
+
         return queryset.select_related(
             'step', 'step__workflow', 'step__assigned_role', 'action_by', 'action_by__role',
             'claim', 'claim__worker', 'claim__ticket', 'claim__ticket__store',
@@ -1147,11 +1164,33 @@ class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditEventSerializer
     pagination_class = FinancePagination
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
+        if from_date:
+            queryset = queryset.filter(timestamp__date__gte=from_date)
+
+        to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to")
+        if to_date:
+            queryset = queryset.filter(timestamp__date__lte=to_date)
+        return queryset
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all().select_related('paid_by', 'paid_by__role', 'claim', 'ledger', 'expense').order_by('-paid_at', '-payment_id')
     serializer_class = PaymentSerializer
     pagination_class = FinancePagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
+        if from_date:
+            queryset = queryset.filter(paid_at__date__gte=from_date)
+
+        to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to")
+        if to_date:
+            queryset = queryset.filter(paid_at__date__lte=to_date)
+        return queryset
 
     @action(detail=False, methods=['post'], url_path='process-payment')
     def process_payment(self, request):

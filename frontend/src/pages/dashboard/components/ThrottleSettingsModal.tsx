@@ -343,14 +343,9 @@ export const ThrottleSettingsModal: React.FC<ThrottleSettingsModalProps> = ({
 
                                     {/* 2. Custom Store Throttle Overrides */}
                                     <div className="space-y-4 pt-4 border-t border-outline-variant">
-                                        <div className="flex items-center gap-2">
-                                            <Store className="w-4 h-4 text-primary" />
-                                            <h4 className="text-xs font-bold text-on-surface uppercase tracking-wider">
-                                                Custom Store / Location Overrides
-                                            </h4>
-                                        </div>
+
                                         <p className="text-xs text-on-surface-variant">
-                                            Allow specific custom throttle limits.
+                                            OR allow specific custom throttle limits.
                                         </p>
 
                                         {/* Add Custom Override Form */}

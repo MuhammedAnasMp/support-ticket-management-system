@@ -227,7 +227,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             setPreviewRotation(newRot);
             await refreshTicketData();
         } catch (err: any) {
-            alert(err.message || 'Error saving media rotation.');
+            showError(err.message || 'Error saving media rotation.');
         } finally {
             setTimeout(() => {
                 setIsSavingPreviewRotation(false);
@@ -303,6 +303,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [statusError, setStatusError] = useState<string | null>(null);
     const statusErrorRef = useRef<HTMLDivElement | null>(null);
 
+    const showError = (msg: string | null) => {
+        setStatusError(msg);
+        if (msg) {
+            setTimeout(() => {
+                if (statusErrorRef.current) {
+                    statusErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }, 50);
+        }
+    };
+
     useEffect(() => {
         if (statusError && statusErrorRef.current) {
             statusErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -367,6 +378,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const openLogHoursModal = () => {
+        setStatusError(null);
         setLogWorkHoursForm({
             work_date: new Date().toISOString().split('T')[0],
             from_time: '',
@@ -719,19 +731,19 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         e.preventDefault();
         if (!editingWorkLog) return;
         if (editingWorkLog.is_claimed) {
-            alert('This work log has been claimed and cannot be modified.');
+            showError('This work log has been claimed and cannot be modified.');
             setEditingWorkLog(null);
             return;
         }
         const rawHours = parseFloat(editWorkLogForm.hours);
         if (isNaN(rawHours) || rawHours < 0) {
-            alert('Logged work hours cannot be negative.');
+            showError('Logged work hours cannot be negative.');
             return;
         }
         if (editWorkLogForm.from_time && editWorkLogForm.to_time) {
             const timeCheck = computeHoursFromTimes(editWorkLogForm.from_time, editWorkLogForm.to_time);
             if (timeCheck.error) {
-                alert(timeCheck.error);
+                showError(timeCheck.error);
                 return;
             }
         }
@@ -750,6 +762,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 })
             });
             if (response.ok) {
+                setStatusError(null);
                 setEditingWorkLog(null);
                 await refreshTicketData();
             } else {
@@ -763,7 +776,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         if (vals.length > 0) errText = vals.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
                     }
                 }
-                alert(`Error: ${errText}`);
+                showError(`Error: ${errText}`);
             }
         } catch (err) {
             console.error(err);
@@ -775,7 +788,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const handleDeleteWorkLog = async (worklogId: number) => {
         if (editingWorkLog?.is_claimed) {
-            alert('This work log has been claimed and cannot be deleted.');
+            showError('This work log has been claimed and cannot be deleted.');
             setEditingWorkLog(null);
             return;
         }
@@ -802,13 +815,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         const claimStatus = (typeof editingExpense.claim === 'object' && editingExpense.claim) ? (editingExpense.claim as any).status : null;
         const isExpApproved = editingExpense.approved || (editingExpense.expense_type && (editingExpense.expense_type as any).approve_required === false) || claimStatus === 'Approved';
         if (isExpApproved) {
-            alert('Approved expenses cannot be modified.');
+            showError('Approved expenses cannot be modified.');
             setEditingExpense(null);
             return;
         }
         const canEditClaimedExpense = editingExpense.is_claimed && (claimStatus === 'Rejected' || claimStatus === 'Rework');
         if (editingExpense.is_claimed && !canEditClaimedExpense) {
-            alert('This expense is part of an active claim bundle and cannot be modified.');
+            showError('This expense is part of an active claim bundle and cannot be modified.');
             setEditingExpense(null);
             return;
         }
@@ -827,7 +840,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         }
 
         if (isReceiptRequiredInEdit && receiptsList.length === 0) {
-            alert("Receipt attachment is required for this expense category.");
+            showError("Receipt attachment is required for this expense category.");
             return;
         }
 
@@ -845,7 +858,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 await refreshTicketData();
             } else {
                 const errData = await response.json().catch(() => ({}));
-                alert(Object.values(errData).flat().join(', ') || 'Failed to update expense.');
+                showError(Object.values(errData).flat().join(', ') || 'Failed to update expense.');
             }
         } catch (err) {
             console.error(err);
@@ -858,12 +871,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleDeleteExpense = async (expenseId: number) => {
         const claimStatus = (typeof editingExpense?.claim === 'object' && editingExpense?.claim) ? (editingExpense.claim as any).status : null;
         if (editingExpense?.approved || claimStatus === 'Approved') {
-            alert('Approved expenses cannot be deleted.');
+            showError('Approved expenses cannot be deleted.');
             setEditingExpense(null);
             return;
         }
         if (editingExpense?.is_claimed) {
-            alert('Claimed expenses cannot be deleted from here. Delete or edit the bundle in Finance to release this expense.');
+            showError('Claimed expenses cannot be deleted from here. Delete or edit the bundle in Finance to release this expense.');
             setEditingExpense(null);
             return;
         }
@@ -912,7 +925,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 await refreshTicketData();
             } else {
                 const errData = await response.json().catch(() => ({}));
-                alert(Object.values(errData).flat().join(', ') || 'Failed to update allocation.');
+                showError(Object.values(errData).flat().join(', ') || 'Failed to update allocation.');
                 setEditingAllocation(null);
                 setEditAllocationVoiceFile(null);
                 setDeleteExistingVoiceNote(false);
@@ -971,7 +984,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 await refreshTicketData();
             } else {
                 const err = await response.json();
-                alert('Failed to replace media: ' + JSON.stringify(err));
+                showError('Failed to replace media: ' + (err?.detail || JSON.stringify(err)));
             }
         } catch (err) {
             console.error(err);
@@ -1007,7 +1020,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             : (newAllocation.worker_id ? [newAllocation.worker_id] : []);
 
         if (targetWorkerIds.length === 0) {
-            alert("Please select at least one worker to assign.");
+            showError("Please select at least one worker to assign.");
             return;
         }
 
@@ -1024,7 +1037,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                 if (!hasRate && !hasOfficeSubDept) {
                     if (!hourlyRateToCreate) {
-                        alert(`Please specify the hourly rate for ${selectedWorkerObj?.full_name || 'selected worker'}.`);
+                        showError(`Please specify the hourly rate for ${selectedWorkerObj?.full_name || 'selected worker'}.`);
                         setActionLoading(false);
                         return;
                     }
@@ -1039,7 +1052,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     });
                     if (!rateResponse.ok) {
                         const errData = await rateResponse.json();
-                        alert(Object.values(errData).flat().join(', ') || 'Failed to save employee rate.');
+                        showError(Object.values(errData).flat().join(', ') || 'Failed to save employee rate.');
                         setActionLoading(false);
                         return;
                     }
@@ -1123,13 +1136,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         e.preventDefault();
         const rawHoursVal = parseFloat(logWorkHoursForm.hours);
         if (isNaN(rawHoursVal) || rawHoursVal < 0) {
-            alert('Logged work hours cannot be negative.');
+            showError('Logged work hours cannot be negative.');
             return;
         }
         if (logWorkHoursForm.from_time && logWorkHoursForm.to_time) {
             const timeCheck = computeHoursFromTimes(logWorkHoursForm.from_time, logWorkHoursForm.to_time);
             if (timeCheck.error) {
-                alert(timeCheck.error);
+                showError(timeCheck.error);
                 return;
             }
         }
@@ -1150,6 +1163,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 })
             });
             if (response.ok) {
+                setStatusError(null);
                 setLogWorkHoursForm({
                     work_date: new Date().toISOString().split('T')[0],
                     from_time: '',
@@ -1170,7 +1184,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         if (vals.length > 0) errText = vals.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
                     }
                 }
-                alert(`Error: ${errText}`);
+                showError(`Error: ${errText}`);
             }
         } catch (err) {
             console.error(err);
@@ -1222,7 +1236,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     else if (Object.keys(errData).length > 0) errText += `: ${JSON.stringify(errData)}`;
                 }
                 console.error("Upload Media failed:", response.status, errText);
-                alert(errText);
+                showError(errText);
             }
         } catch (err: any) {
             if (err?.name !== 'AbortError') console.error(err);
@@ -1261,7 +1275,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         const validFiles = (expenseFiles[workerId] || []).filter(f => f.size > 0);
 
         if (isReceiptRequiredForType && validFiles.length === 0) {
-            alert("Receipt attachment is required for this expense category.");
+            showError("Receipt attachment is required for this expense category.");
             return;
         }
 
@@ -1322,20 +1336,20 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         }
 
         if (!targetStatusId) {
-            alert(`Error: Status '${targetStatus}' is not configured in the database.`);
+            showError(`Error: Status '${targetStatus}' is not configured in the database.`);
             return;
         }
 
         // Guard: Require at least one allocated worker before moving to 'In Progress'
         if (targetStatusName?.toLowerCase() === 'in progress' && allocations.length === 0) {
-            alert('Cannot start progress: At least one worker must be allocated to this ticket before it can be moved to In Progress.');
+            showError('Cannot start progress: At least one worker must be allocated to this ticket before it can be moved to In Progress.');
             return;
         }
 
         // Guard: Strictly prohibit moving to 'Location Approval' if any allocated worker does not have logged work hours
         if (targetStatusName?.toLowerCase() === 'location approval') {
             if (safeAllocations.length === 0) {
-                alert('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
+                showError('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
                 return;
             }
             const missingWorkers: string[] = [];
@@ -1346,7 +1360,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 }
             });
             if (missingWorkers.length > 0) {
-                alert(`Cannot request Location Approval:\nThe following allocated worker(s) have not logged their work hours:\n• ${missingWorkers.join('\n• ')}\n\nAll allocated workers must log their work hours before applying for location approval.`);
+                showError(`Cannot request Location Approval:\nThe following allocated worker(s) have not logged their work hours:\n• ${missingWorkers.join('\n• ')}\n\nAll allocated workers must log their work hours before applying for location approval.`);
                 return;
             }
         }
@@ -1384,14 +1398,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         }
                     }
                 }
-                setStatusError(errText);
-                alert(`Error updating ticket status:\n${errText}`);
+                showError(errText);
             }
         } catch (err: any) {
             console.error(err);
             const errMsg = err?.message || 'Network error occurred while updating ticket status.';
-            setStatusError(errMsg);
-            alert(`Error: ${errMsg}`);
+            showError(errMsg);
         } finally {
             setActionLoading(false);
         }
@@ -1419,13 +1431,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         }
 
         if (!nextStatusObj) {
-            alert('This ticket is already at the final status stage.');
+            showError('This ticket is already at the final status stage.');
             return;
         }
 
         if (nextStatusObj.status_name?.toLowerCase() === 'location approval') {
             if (safeAllocations.length === 0) {
-                alert('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
+                showError('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
                 return;
             }
             const missingWorkers: string[] = [];
@@ -1436,7 +1448,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 }
             });
             if (missingWorkers.length > 0) {
-                alert(`Cannot request Location Approval:\nThe following allocated worker(s) have not logged their work hours:\n• ${missingWorkers.join('\n• ')}\n\nAll allocated workers must log their work hours before applying for location approval.`);
+                showError(`Cannot request Location Approval:\nThe following allocated worker(s) have not logged their work hours:\n• ${missingWorkers.join('\n• ')}\n\nAll allocated workers must log their work hours before applying for location approval.`);
                 return;
             }
 
@@ -1523,11 +1535,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 await refreshTicketData();
             } else {
                 const err = await response.json();
-                alert(`Failed to save changes: ${JSON.stringify(err)}`);
+                showError(`Failed to save changes: ${JSON.stringify(err)}`);
             }
         } catch (err) {
             console.error(err);
-            alert('Network error saving changes');
+            showError('Network error saving changes');
         } finally {
             setActionLoading(false);
         }
@@ -1978,14 +1990,14 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 )}
 
                                 {statusError && (
-                                    <div ref={statusErrorRef} className="p-3 animate-pulse bg-red-800 border border-red-500/30   rounded text-white dark:text-white text-xs font-medium flex items-center justify-between gap-2 animate-fadeIn">
-                                        <div className="flex items-center gap-2">
-                                            <AlertCircle className="w-4 h-4 shrink-0 text-white" />
-                                            <span>{statusError}</span>
+                                    <div ref={statusErrorRef} className="p-3 bg-red-800 border border-red-500/40 rounded text-white text-xs font-medium flex items-start justify-between gap-2 animate-fadeIn shadow-md">
+                                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                                            <AlertCircle className="w-4 h-4 shrink-0 text-white mt-0.5" />
+                                            <span className="whitespace-pre-line leading-relaxed break-words">{statusError}</span>
                                         </div>
                                         <button
                                             onClick={() => setStatusError(null)}
-                                            className="text-red-500 hover:text-red-700 dark:hover:text-red-300 font-bold text-sm px-1 cursor-pointer"
+                                            className="text-red-300 hover:text-white font-bold text-sm px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
                                             aria-label="Dismiss status error"
                                         >
                                             ✕
@@ -2569,7 +2581,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 location_reject_reason: locationRejectReason
                                             });
                                         } else {
-                                            alert("In Progress status not configured.");
+                                            showError("In Progress status not configured.");
                                         }
                                         setShowLocationRejectForm(false);
                                     }}
@@ -3458,7 +3470,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 min="0"
                                                 inputMode="decimal"
                                                 placeholder="e.g. 4.00 or 0.00"
-                                                disabled={actionLoading}
+                                                // disabled={actionLoading}
+                                                disabled={true}
                                                 value={logWorkHoursForm.hours}
                                                 onChange={e => setLogWorkHoursForm({ ...logWorkHoursForm, hours: e.target.value })}
                                                 className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30 font-semibold"

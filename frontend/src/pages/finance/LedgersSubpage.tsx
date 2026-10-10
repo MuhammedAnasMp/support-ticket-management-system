@@ -235,10 +235,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     if (!cluster || !cluster.groupId || !API_URL) return;
     const totalBundlesInGroup = (cluster.ledgers || []).reduce((sum, l) => sum + (l.bundles?.length || 0) + (l.expenses?.length || 0), 0);
     if (totalBundlesInGroup === 0) {
-      alert(`Cannot submit Ledger Group '${cluster.groupName}': Must have at least one claim bundle attached.`);
+      setBulkActionMsg({
+        type: 'error',
+        text: `Cannot submit Ledger Group '${cluster.groupName}': Must have at least one claim bundle attached.`
+      });
       return;
     }
     setSubmittingGroupId(cluster.groupId);
+    setBulkActionMsg(null);
     try {
       const res = await fetch(`${API_URL}/finance/ledger-groups/${cluster.groupId}/submit/`, {
         method: 'POST',
@@ -264,7 +268,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         await onRefresh();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to submit ledger group');
+      setBulkActionMsg({
+        type: 'error',
+        text: err.message || 'Failed to submit ledger group'
+      });
     } finally {
       setSubmittingGroupId(null);
     }
@@ -280,6 +287,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
     setActioningGroupId(cluster.groupId);
     setActioningGroupAction(action);
+    setBulkActionMsg(null);
     try {
       const res = await fetch(`${API_URL}/finance/ledger-groups/${cluster.groupId}/action/`, {
         method: 'POST',
@@ -312,7 +320,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         return next;
       });
     } catch (err: any) {
-      alert(err.message || 'Failed to action ledger group');
+      setBulkActionMsg({
+        type: 'error',
+        text: err.message || 'Failed to action ledger group'
+      });
     } finally {
       setActioningGroupId(null);
       setActioningGroupAction(null);
@@ -329,6 +340,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       return;
     }
     setDeletingGroupId(cluster.groupId);
+    setBulkActionMsg(null);
     try {
       if (handleDeleteLedgerGroup) {
         await handleDeleteLedgerGroup(Number(cluster.groupId));
@@ -350,7 +362,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       }
       setDynamicGroups(prev => prev.filter(g => String(g.ledger_group_id) !== String(cluster.groupId)));
     } catch (err: any) {
-      alert(err.message || 'Failed to delete Ledger Group');
+      setBulkActionMsg({
+        type: 'error',
+        text: err.message || 'Failed to delete Ledger Group'
+      });
     } finally {
       setDeletingGroupId(null);
     }
@@ -375,7 +390,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     if (!API_URL || batchesFetchedRef.current) return;
     batchesFetchedRef.current = true;
     try {
-      const res = await fetch(`${API_URL}/finance/ledger-batches/?page_size=all`, {
+      const res = await fetch(`${API_URL}/finance/ledger-batches/?page_size=100`, {
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json'
@@ -492,7 +507,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         setSelectedGroupId('');
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to delete Ledger Group');
+      setBulkActionMsg({
+        type: 'error',
+        text: err.message || 'Failed to delete Ledger Group'
+      });
     }
   };
 
@@ -1445,7 +1463,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     setLoadingAvailableBundles(true);
     setFetchedApprovedBundles(null);
     try {
-      const res = await fetch(`${API_URL}/finance/claim/?status=Approved&page_size=all`, {
+      const res = await fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=100`, {
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json'

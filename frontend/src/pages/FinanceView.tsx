@@ -498,24 +498,32 @@ export const FinanceView: React.FC = () => {
       'Content-Type': 'application/json'
     };
 
+    const dateParams = (filterDateFrom && filterDateTo)
+      ? `&from_date=${filterDateFrom}&to_date=${filterDateTo}`
+      : filterDateFrom
+      ? `&from_date=${filterDateFrom}`
+      : filterDateTo
+      ? `&to_date=${filterDateTo}`
+      : '';
+
     const approvalsUrl = roleFilterOnly
-      ? `${API_URL}/finance/approvals/?assigned_to_me=true&page_size=all`
-      : `${API_URL}/finance/approvals/?page_size=all`;
+      ? `${API_URL}/finance/approvals/?assigned_to_me=true&page_size=all${dateParams}`
+      : `${API_URL}/finance/approvals/?page_size=all${dateParams}`;
 
     try {
       if (subpage === 'expenses') {
         const [resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/expense/?page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/approvals/?page_size=all`, { headers, signal })
+          fetch(`${API_URL}/finance/expense/?page_size=all${dateParams}`, { headers, signal }),
+          fetch(`${API_URL}/finance/approvals/?page_size=all${dateParams}`, { headers, signal })
         ]);
         if (signal.aborted) return;
         if (resExp.ok) setExpenses(parseList(await resExp.json()));
         if (resApp.ok) setApprovals(parseList(await resApp.json()));
       } else if (subpage === 'bundles') {
         const [resClaims, resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/claim/?page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/approvals/?page_size=all`, { headers, signal })
+          fetch(`${API_URL}/finance/claim/?page_size=all${dateParams}`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=200`, { headers, signal }),
+          fetch(`${API_URL}/finance/approvals/?page_size=all${dateParams}`, { headers, signal })
         ]);
         if (signal.aborted) return;
         if (resClaims.ok) setBundles(parseList(await resClaims.json()));
@@ -523,10 +531,10 @@ export const FinanceView: React.FC = () => {
         if (resApp.ok) setApprovals(parseList(await resApp.json()));
       } else if (subpage === 'ledgers') {
         const [resL, resG, resApprovedBundles, resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/ledgers/?page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/ledger-groups/?page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/claim/?status=Approved&page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/ledgers/?page_size=all${dateParams}`, { headers, signal }),
+          fetch(`${API_URL}/finance/ledger-groups/?page_size=all${dateParams}`, { headers, signal }),
+          fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=200`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=200`, { headers, signal }),
           fetch(approvalsUrl, { headers, signal })
         ]);
         if (signal.aborted) return;
@@ -541,8 +549,8 @@ export const FinanceView: React.FC = () => {
         if (res.ok) setApprovals(parseList(await res.json()));
       } else if (subpage === 'payments') {
         const [resPay, resAudit] = await Promise.all([
-          fetch(`${API_URL}/finance/payments/?page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/audit-events/?page_size=all`, { headers, signal })
+          fetch(`${API_URL}/finance/payments/?page_size=all${dateParams}`, { headers, signal }),
+          fetch(`${API_URL}/finance/audit-events/?page_size=all${dateParams}`, { headers, signal })
         ]);
         if (signal.aborted) return;
         if (resPay.ok) setPayments(parseList(await resPay.json()));
@@ -568,7 +576,7 @@ export const FinanceView: React.FC = () => {
         abortControllerRef.current.abort();
       }
     };
-  }, [subpage, token, roleFilterOnly]);
+  }, [subpage, token, roleFilterOnly, filterDateFrom, filterDateTo]);
 
   useEffect(() => {
     if (successMessage) {
