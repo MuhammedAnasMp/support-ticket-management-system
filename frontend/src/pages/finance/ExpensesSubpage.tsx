@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp
+  Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus
 } from 'lucide-react';
 import type { ExpenseItem, ApprovalInstanceItem, ApprovalStepInfo } from './types';
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
-import { MediaPreviewModal, MediaGrid, getMediaUrl, isImage, isAudio, isVideo, type Media } from '../ticket/TicketsTypesAndComponents';
+import { MediaPreviewModal, MediaGrid, getMediaUrl, AvatarCircle, isImage, isAudio, isVideo, type Media } from '../ticket/TicketsTypesAndComponents';
 
 interface PendingMediaItem {
   id: string;
@@ -65,6 +65,19 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   const [expandedExpenseIds, setExpandedExpenseIds] = useState<Record<number, boolean>>({});
   const toggleExpandExpense = (id: number) => {
     setExpandedExpenseIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Refreshing State
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  const handleRefreshClick = async () => {
+    if (isRefreshing || loading || !onRefresh) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Check administrator privileges (Only Administrator role or Django superuser is the main admin; all others are role-based)
@@ -369,6 +382,24 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     return null;
   }, [selectedTicketId, ticketsList]);
 
+  // 4. Derived ticket creation date (formatted as YYYY-MM-DD for min date attribute)
+  const ticketCreatedDateFormatted = useMemo(() => {
+    if (!selectedTicketId || !ticketsList.length) return null;
+    const ticket = ticketsList.find(t => String(t.ticket_id || t.id) === String(selectedTicketId));
+    if (!ticket) return null;
+    const rawDate = ticket.created_date || (ticket as any).created_at;
+    if (!rawDate) return null;
+    try {
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split('T')[0];
+      }
+      return String(rawDate).split('T')[0];
+    } catch {
+      return null;
+    }
+  }, [selectedTicketId, ticketsList]);
+
   const filteredExpenseTypes = useMemo(() => {
     if (!selectedTicketId) return [];
     if (!selectedTicketDepartment?.departmentId) return expenseTypesList;
@@ -431,6 +462,20 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         preselectedId = currentId;
       } else if (workerIds.length === 1 && workerIds[0]) {
         preselectedId = workerIds[0];
+      }
+
+      // Ensure expenseDate is not prior to the ticket created date
+      const rawDate = ticket.created_date || (ticket as any).created_at;
+      if (rawDate) {
+        try {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            const ticketDateStr = d.toISOString().split('T')[0];
+            if (expenseDate && expenseDate < ticketDateStr) {
+              setExpenseDate(ticketDateStr);
+            }
+          }
+        } catch { }
       }
     }
     setSelectedWorkerId(preselectedId);
@@ -503,6 +548,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     }
     if (!expenseDate) {
       missingFields.push('Expense Date (Please select date)');
+    } else if (ticketCreatedDateFormatted && expenseDate < ticketCreatedDateFormatted) {
+      missingFields.push(`Expense Date (${expenseDate}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
     }
     if (isReceiptRequired && attachedMediaList.length === 0) {
       missingFields.push(`Expense Bill / Receipt (Attachment is mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
@@ -597,10 +644,21 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     if (!selectedTicketId) missingFields.push('Ticket (Please select a maintenance ticket)');
     if (!selectedExpenseTypeId) missingFields.push('Expense Category (Please select category)');
     if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) missingFields.push('Amount (Must be a valid positive number)');
-    if (!expenseDate) missingFields.push('Expense Date (Please select date)');
+    if (!expenseDate) {
+      missingFields.push('Expense Date (Please select date)');
+    } else if (ticketCreatedDateFormatted && expenseDate < ticketCreatedDateFormatted) {
+      missingFields.push(`Expense Date (${expenseDate}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
+    }
+    if (isReceiptRequired && existingReceipts.length === 0 && attachedMediaList.length === 0) {
+      missingFields.push(`Expense Bill / Receipt (Attachment is mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
+    }
 
     if (missingFields.length > 0) {
-      setFormError(`Please fill in all required fields:\n• ${missingFields.join('\n• ')}`);
+      if (missingFields.length === 1) {
+        setFormError(missingFields[0]);
+      } else {
+        setFormError(`Please fill in all required fields:\n• ${missingFields.join('\n• ')}`);
+      }
       return;
     }
 
@@ -1197,7 +1255,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
             <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded flex items-center justify-center font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
               End
             </div>
-            <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Disbursement</span>
+            <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Approved</span>
           </div>
         </div>
       </div>
@@ -1237,7 +1295,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       <div className="border border-outline-variant rounded overflow-hidden bg-surface-container flex flex-col">
         <div className="p-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold text-on-surface">Expense Line Items</span>
+            {/* <span className="text-xs font-semibold text-on-surface">Expense Line Items</span> */}
             <span className="text-xs text-on-surface-variant font-medium">
               Showing {filteredExpenses.length} of {expenses.length}
             </span>
@@ -1255,7 +1313,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               title="Toggle multi-line view: shows approval steps & quick approve/rework buttons on every row"
             >
               <Rows3 className="w-3.5 h-3.5" />
-              <span>{isMultiLineView ? 'Multi-line: ON' : 'Multi-line: OFF'}</span>
+              <span>{isMultiLineView ? 'Multi-line' : 'Multi-line'}</span>
             </button>
 
             {/* Close All Button */}
@@ -1301,6 +1359,28 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                 </button>
               </>
             )}
+
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={handleRefreshClick}
+                disabled={isRefreshing || loading}
+                className="px-2.5 py-1.5 rounded border border-outline-variant text-[11px] font-medium text-on-surface hover:bg-surface-container flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isRefreshing ? "Refreshing Expenses..." : "Refresh Expenses"}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing || loading ? 'animate-spin text-primary' : ''}`} />
+                <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowCreateExpenseModal(true)}
+              className="bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Expense</span>
+            </button>
           </div>
         </div>
 
@@ -1345,13 +1425,13 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <th className="w-8 px-2 py-3"></th>
                     <th className="px-4 py-3">Exp</th>
                     <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Worker / Technician</th>
+                    <th className="px-4 py-3">Worker</th>
                     <th className="px-4 py-3">Linked Ticket</th>
                     <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Responsible Store</th>
+                    <th className="px-4 py-3">Responsible</th>
                     <th className="px-4 py-3">Expense Bill</th>
                     <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3">Approval Status & Assignee</th>
+                    <th className="px-4 py-3">Approval & Assignee</th>
                     <th className="px-4 py-3">Claim Status</th>
                     <th className="px-4 py-3 text-right">Action</th>
                     <th className="w-10 px-2 py-3 text-center" title="Select All Pending Expenses">
@@ -1370,7 +1450,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   {paginatedExpenses.map((exp: any, expIdx: number) => {
                     const isOdd = expIdx % 2 === 1;
                     const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' ? exp.expense_type?.expense_name : 'General');
-                    const workerName = exp.worker_detail?.full_name || exp.worker_detail?.username || `Worker ${exp.worker}`;
+                    const workerObj = exp.worker_detail || (typeof exp.worker === 'object' ? exp.worker : null);
+                    const workerName = workerObj?.full_name || workerObj?.username || (exp.worker ? `Worker ${exp.worker}` : 'N/A');
                     const rawTicket = exp.ticket_details || exp.ticket;
                     const ticketNo = typeof rawTicket === 'object' && rawTicket ? (rawTicket.work_order_no || `${rawTicket.ticket_id || rawTicket.id}`) : (rawTicket ? `${rawTicket}` : 'N/A');
                     const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'General');
@@ -1522,7 +1603,12 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             </div>
                           </td>
                           <td className="px-4 py-3 font-medium text-on-surface">{catName}</td>
-                          <td className="px-4 py-3 text-on-surface-variant">{workerName}</td>
+                          <td className="px-4 py-3 text-on-surface-variant">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <AvatarCircle user={workerObj} name={workerName} size="xs" />
+                              <span className="truncate">{workerName}</span>
+                            </div>
+                          </td>
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             {rawTicket ? (
                               <button
@@ -1619,11 +1705,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                       )
                                     )
                                   )}
-                                  {isExpensePending && !isRejectedOrRework && approverDetailText && (
+                                  {/* {isExpensePending && !isRejectedOrRework && approverDetailText && (
                                     <div className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate max-w-[190px]" title={approverDetailText}>
                                       {approverDetailText}
                                     </div>
-                                  )}
+                                  )} */}
                                 </div>
                               )}
                             </div>
@@ -1647,8 +1733,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                     type="button"
                                     disabled={updatingExpenseId === exp.expense_id}
                                     onClick={() => openEditExpenseModal(exp)}
-                                    className="px-2.5 py-1 rounded border border-outline hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
-                                    title={isExpenseApproved ? "Edit approved expense (Will move back to Approval)" : "Edit & Resubmit"}
+                                    className="px-2.5 py-1 rounded border border-gray-500/20  hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
+                                    title={isExpenseApproved ? "Edit (Will move back to Approval)" : "Edit & Resubmit"}
                                   >
                                     <Pencil className="w-3 h-3 text-primary" />
                                     <span>Edit</span>
@@ -1803,7 +1889,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                       <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                                         <CheckCircle2 className="w-3.5 h-3.5" /> Approved
                                       </span>
-                                      {!exp.claim && (
+                                      {/* {!exp.claim && (
                                         <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
                                           <button
                                             type="button"
@@ -1816,7 +1902,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                             <span>Edit</span>
                                           </button>
                                         </Can>
-                                      )}
+                                      )} */}
                                     </div>
                                   ) : null}
                                 </div>
@@ -1834,7 +1920,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                 <div>
                                   <div className="flex items-center justify-between mb-2">
                                     <span className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
-                                      <ShieldCheck className="w-4 h-4 text-primary" /> Approval Progress Pipeline
+                                      Approval Progress Steps
                                     </span>
                                     {approvalData.app && (
                                       <span className="text-[11px] text-on-surface-variant font-medium">
@@ -1908,13 +1994,13 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                         {activeApp.step_name || 'Expense Approval'} ({activeApp.assigned_role_name || 'Administrator'})
                                       </span>
                                     </div>
-                                    <p className="text-[11px] text-on-surface-variant">
+                                    {/* <p className="text-[11px] text-on-surface-variant">
                                       {isAdmin
                                         ? 'Administrator permission: You can review and action this approval step directly.'
                                         : (activeApp.can_action
                                           ? 'You are assigned as an authorized approver for this step.'
                                           : `Assigned to ${activeApp.assigned_role_name || 'Administrator'}`)}
-                                    </p>
+                                    </p> */}
                                   </div>
 
                                   <div className="flex flex-col items-end gap-1.5 w-full md:w-auto">
@@ -1990,8 +2076,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               {/* Expense Context Details Card */}
                               <div className="p-3.5 rounded border border-outline-variant bg-surface-container space-y-3">
                                 <div className="flex items-center justify-between pb-1 border-b border-outline-variant/60">
-                                  <span className="text-xs font-bold uppercase tracking-wider text-on-surface">Expense Information</span>
-                                  {!exp.claim && (isRejectedOrRework || isExpenseApproved) && (
+                                  <span className="text-xs font-bold tracking-wider text-on-surface">Expense Information</span>
+                                  {/* {!exp.claim && (isRejectedOrRework || isExpenseApproved) && (
                                     <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
                                       <button
                                         type="button"
@@ -2004,7 +2090,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                         <span>{isExpenseApproved ? 'Edit (Moves to Approval)' : 'Edit Expense'}</span>
                                       </button>
                                     </Can>
-                                  )}
+                                  )} */}
                                 </div>
 
 
@@ -2015,7 +2101,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                   </div>
                                   <div>
                                     <span className="text-[10px] text-on-surface-variant font-medium block">Technician / Worker</span>
-                                    <span className="text-on-surface font-medium">{workerName}</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <AvatarCircle user={workerObj} name={workerName} size="xs" />
+                                      <span className="text-on-surface font-medium truncate">{workerName}</span>
+                                    </div>
                                   </div>
                                   <div>
                                     <span className="text-[10px] text-on-surface-variant font-medium block">Responsible Store</span>
@@ -2061,7 +2150,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       {/* MODAL: CREATE NEW EXPENSE */}
       {showCreateExpenseModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-surface-container rounded border border-outline-variant/80 max-w-xl w-full p-6 sm:p-7 shadow-2xl text-on-surface relative overflow-hidden transition-all h-[85vh] max-h-[720px] min-h-[560px] flex flex-col">
+          <div className="bg-surface-container rounded border border-outline-variant/80 max-w-xl w-full p-4 sm:p-4 shadow-2xl text-on-surface relative overflow-hidden transition-all h-[85vh] max-h-[720px] min-h-[560px] flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/80 pb-3.5 shrink-0">
               <div className="flex items-center gap-3">
@@ -2115,7 +2204,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                       </span>
                       {ticketSearching && (
                         <span className="text-[10px] text-primary font-normal flex items-center gap-1">
-                          <Loader2 className="w-3 h-3 animate-spin" /> Searching API...
+                          <Loader2 className="w-3 h-3 animate-spin" />
                         </span>
                       )}
                     </label>
@@ -2144,12 +2233,12 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <>
                       {/* STEP 2: WORKER, STORE & CATEGORY (Shown after ticket is selected) */}
                       <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                        {/* WORKER / TECHNICIAN */}
+                        {/* WORKER  */}
                         <div>
                           <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center justify-between">
                             <span className="flex items-center gap-1.5">
                               <User className="w-3.5 h-3.5 text-primary" />
-                              <span>Allocated Worker / Technician</span>
+                              <span>Allocated Worker</span>
                             </span>
                             {/* {ticketWorkers.length > 0 && (
                               <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20">
@@ -2172,13 +2261,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               <Building2 className="w-3.5 h-3.5 text-primary" />
                               <span>Responsible Store</span>
                             </span>
-                            {selectedTicketStore && (
-                              <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20">
-                                Restricted to Ticket's Store
-                              </span>
-                            )}
+
                           </label>
                           <SearchableSelect
+                            disabled
                             value={selectedStoreId}
                             onChange={(val) => setSelectedStoreId(val)}
                             options={storeDropdownOptions}
@@ -2193,11 +2279,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               <Receipt className="w-3.5 h-3.5 text-primary" />
                               <span>Expense Category *</span>
                             </span>
-                            {selectedTicketDepartment && (
-                              <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20">
-                                Restricted to {selectedTicketDepartment.departmentName}
-                              </span>
-                            )}
+
                           </label>
                           <SearchableSelect
                             value={selectedExpenseTypeId}
@@ -2219,7 +2301,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             <div>
                               <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center gap-1.5">
                                 <DollarSign className="w-3.5 h-3.5 text-primary" />
-                                <span>Amount ($) *</span>
+                                <span>Amount *</span>
                               </label>
                               <input
                                 type="number"
@@ -2234,17 +2316,34 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             </div>
 
                             <div>
-                              <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-primary" />
-                                <span>Expense Date *</span>
+                              <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  <Calendar className="w-3.5 h-3.5 text-primary" />
+                                  <span>Expense Date *</span>
+                                </span>
+                                {ticketCreatedDateFormatted && (
+                                  <span className="text-[10px] text-on-surface-variant font-normal">
+                                    Min: {ticketCreatedDateFormatted}
+                                  </span>
+                                )}
                               </label>
                               <input
                                 type="date"
+                                min={ticketCreatedDateFormatted || undefined}
                                 value={expenseDate}
                                 onChange={(e) => setExpenseDate(e.target.value)}
-                                className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline cursor-pointer"
+                                className={`w-full bg-surface-container-low border text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:ring-2 transition-all shadow-2xs cursor-pointer ${ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted
+                                  ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20'
+                                  : 'border-outline-variant focus:border-primary focus:ring-primary/20 hover:border-outline'
+                                  }`}
                                 required
                               />
+                              {ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted && (
+                                <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
+                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Must be on or after ticket created date ({ticketCreatedDateFormatted}).</span>
+                                </p>
+                              )}
                             </div>
                           </div>
 
@@ -2691,8 +2790,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   <Pencil className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-on-surface tracking-tight">Edit & Resubmit Expense #{editingExpense.expense_id}</h3>
-                  <p className="text-xs text-on-surface-variant font-normal mt-0.5">Saving updates will reset approval to the initial step (Step 1)</p>
+                  <h3 className="text-base font-bold text-on-surface tracking-tight">Edit & Resubmit Expense {editingExpense.expense_id}</h3>
+                  <p className="text-xs text-on-surface-variant font-normal mt-0.5">Saving updates will reset approval to the initial step 1</p>
                 </div>
               </div>
               <button
@@ -2732,7 +2831,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     </span>
                     {ticketSearching && (
                       <span className="text-[10px] text-primary font-normal flex items-center gap-1">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Searching...
+                        <Loader2 className="w-3 h-3 animate-spin" />
                       </span>
                     )}
                   </label>
@@ -2745,7 +2844,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                       { value: '', label: 'Select Linked Maintenance Ticket' },
                       ...ticketsList.map(t => ({
                         value: String(t.ticket_id || t.id),
-                        label: `Ticket #${t.ticket_id || t.id} ${t.work_order_no ? `(WO: ${t.work_order_no})` : ''} - ${t.title || 'Support Ticket'}`
+                        label: `${t.work_order_no ? `${t.work_order_no}` : ''} - ${t.title || 'Support Ticket'}`
                       }))
                     ]}
                     placeholder="-- Select Linked Maintenance Ticket"
@@ -2757,7 +2856,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <User className="w-3.5 h-3.5 text-primary" />
-                      <span>Worker / Technician</span>
+                      <span>Worker</span>
                     </span>
                     {/* {ticketWorkers.length > 0 && (
                       <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-medium border border-primary/20">
@@ -2833,17 +2932,34 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
                 {/* Expense Date */}
                 <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-primary" />
-                    <span>Expense Date *</span>
+                  <label className="block text-xs font-semibold text-on-surface mb-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-primary" />
+                      <span>Expense Date *</span>
+                    </span>
+                    {ticketCreatedDateFormatted && (
+                      <span className="text-[10px] text-on-surface-variant font-normal">
+                        Min: {ticketCreatedDateFormatted}
+                      </span>
+                    )}
                   </label>
                   <input
                     type="date"
+                    min={ticketCreatedDateFormatted || undefined}
                     value={expenseDate}
                     onChange={(e) => setExpenseDate(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded border border-outline bg-surface-container-low text-xs text-on-surface focus:outline-none focus:border-primary cursor-pointer shadow-2xs"
+                    className={`w-full px-3.5 py-2.5 rounded border text-xs text-on-surface focus:outline-none focus:ring-2 cursor-pointer shadow-2xs ${ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted
+                      ? 'bg-surface-container-low border-rose-500 focus:border-rose-500 focus:ring-rose-500/20'
+                      : 'bg-surface-container-low border-outline focus:border-primary focus:ring-primary/20'
+                      }`}
                     required
                   />
+                  {ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted && (
+                    <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Must be on or after ticket created date ({ticketCreatedDateFormatted}).</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -2892,6 +3008,15 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   <span className="flex items-center gap-1.5">
                     <Upload className="w-3.5 h-3.5 text-primary" />
                     <span>Attach New / Additional Receipts</span>
+                    {isReceiptRequired ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold border border-amber-500/20 ml-1">
+                        * Required
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-500/20 ml-1">
+                        Optional
+                      </span>
+                    )}
                   </span>
                   {attachedMediaList.length > 0 && (
                     <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-semibold border border-primary/20">
@@ -2899,9 +3024,20 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     </span>
                   )}
                 </label>
+
+                {isReceiptRequired && existingReceipts.length === 0 && attachedMediaList.length === 0 && (
+                  <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>Receipt attachment is mandatory for category <strong>&quot;{selectedExpenseTypeObj?.expense_name || 'selected category'}&quot;</strong>. Please attach at least one receipt file below.</span>
+                  </div>
+                )}
+
                 <div
                   onClick={() => document.getElementById('edit-expense-receipt-input')?.click()}
-                  className="border-2 border-dashed border-outline-variant hover:border-primary hover:bg-primary/5 rounded p-4 text-center cursor-pointer bg-surface-container-low/70 transition-all group"
+                  className={`border-2 border-dashed rounded p-4 text-center cursor-pointer transition-all group ${isReceiptRequired && existingReceipts.length === 0 && attachedMediaList.length === 0
+                    ? 'border-amber-500/50 bg-amber-500/5 hover:border-primary hover:bg-primary/5'
+                    : 'border-outline-variant hover:border-primary hover:bg-primary/5 bg-surface-container-low/70'
+                    }`}
                 >
                   <input
                     id="edit-expense-receipt-input"
@@ -2914,7 +3050,13 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   <div className="flex flex-col items-center gap-1 text-on-surface-variant">
                     <Upload className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
                     <p className="text-xs font-medium text-on-surface">Click to add receipts (Images, PDFs, Videos)</p>
-                    <p className="text-[10px] text-on-surface-variant">Files will be attached when you resubmit</p>
+                    <p className="text-[10px] text-on-surface-variant">
+                      {isReceiptRequired
+                        ? (existingReceipts.length > 0
+                          ? `Receipt is mandatory for this category (Currently attached: ${existingReceipts.length})`
+                          : 'Receipt files are mandatory for this category')
+                        : 'Receipt files are optional for this category'}
+                    </p>
                   </div>
                 </div>
 
@@ -2981,7 +3123,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                 <button
                   type="submit"
                   disabled={Boolean(updatingExpenseId) || submitting}
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {Boolean(updatingExpenseId) || submitting ? (
                     <>
@@ -2991,7 +3133,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   ) : (
                     <>
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Save & Resubmit to Step 1</span>
+                      <span>Save & Resubmit</span>
                     </>
                   )}
                 </button>

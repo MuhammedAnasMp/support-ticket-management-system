@@ -153,6 +153,21 @@ class ExpenseWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"expense_type": f"Expense Type '{expense_type.expense_name}' does not belong to ticket department '{ticket.department.department_name}'."}
             )
+
+        expense_date = data.get('expense_date') or (getattr(self.instance, 'expense_date', None) if self.instance else None)
+        if ticket and expense_date and hasattr(ticket, 'created_date') and ticket.created_date:
+            ticket_date = ticket.created_date.date() if hasattr(ticket.created_date, 'date') else ticket.created_date
+            if expense_date < ticket_date:
+                raise serializers.ValidationError(
+                    {"expense_date": f"Expense date ({expense_date}) cannot be before the ticket creation date ({ticket_date})."}
+                )
+
+        remarks = data.get('remarks') or (getattr(self.instance, 'remarks', None) if self.instance else None)
+        if expense_type and getattr(expense_type, 'required', False):
+            if not remarks or not str(remarks).strip():
+                raise serializers.ValidationError(
+                    {"remarks": f"Remarks / Description is required for expense category '{expense_type.expense_name}'."}
+                )
         return data
 
 
@@ -264,10 +279,27 @@ class LedgerBatchWriteSerializer(serializers.ModelSerializer):
 class LedgerGroupSerializer(serializers.ModelSerializer):
     created_by_detail = serializers.SerializerMethodField()
     completed_by_detail = serializers.SerializerMethodField()
+    ledgers_count = serializers.SerializerMethodField()
 
     class Meta:
         model = LedgerGroup
         fields = '__all__'
+
+    def validate_group_name(self, value):
+        clean_name = value.strip() if value else ''
+        if not clean_name:
+            raise serializers.ValidationError("Group name is required.")
+        qs = LedgerGroup.objects.filter(group_name__iexact=clean_name)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(f"A Ledger Group named '{clean_name}' already exists. Group names must be unique.")
+        return clean_name
+
+    def get_ledgers_count(self, obj):
+        if hasattr(obj, 'ledgers'):
+            return obj.ledgers.count()
+        return 0
 
     def get_created_by_detail(self, obj):
         if obj.created_by:

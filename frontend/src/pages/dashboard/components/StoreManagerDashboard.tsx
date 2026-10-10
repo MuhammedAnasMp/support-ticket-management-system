@@ -15,25 +15,40 @@ export const StoreManagerDashboard: React.FC<StoreManagerDashboardProps> = ({ da
 
     return (
         <div className="space-y-6">
-            {/* Header / Banner for Store Managers */}
-            <div className="p-4 rounded-lg bg-surface-container border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                        <Store className="w-5 h-5" />
+
+            {data?.throttle_alerts
+                ?.filter((a: any) => a.is_throttled)
+                .map((alert: any) => (
+                    <div
+                        key={`${alert.store_id}-${alert.department_id}`}
+                        className="red-glow p-2 rounded border border-red-500/40 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between shadow-xl"
+                    >
+                        <div className="flex items-start gap-3 relative z-10 anima">
+                            <div className="p-2 rounded bg-red-600 text-white shrink-0">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+
+                            <div className="space-y-1">
+                                <h3 className="text-sm font-bold text-white">
+                                    Ticket Creation Blocked in {alert.store_name} ({alert.department_name})
+                                </h3>
+
+                                <p className="text-xs text-white/90">
+                                    {alert.count} tickets are pending location approval.
+                                    Clear the pending tickets to create new tickets.
+                                </p>
+                            </div>
+                        </div>
+
+                        <a
+                            href={`/tickets/all?store=${alert.store_id}&status=Location%20Approval`}
+                            className="relative z-10 px-3 py-2 rounded bg-red-700 hover:bg-red-800 text-white text-xs font-bold shrink-0 transition-colors shadow-sm flex items-center gap-1.5"
+                        >
+                            <CheckCircle className="w-4 h-4" />
+                            Review ({alert.count})
+                        </a>
                     </div>
-                    <div>
-                        <h2 className="text-sm font-bold text-on-surface">Store Manager Dashboard</h2>
-                        <p className="text-xs text-on-surface-variant">Store Operations & Maintenance Requests Overview</p>
-                    </div>
-                </div>
-                <a
-                    href="/tickets/all?action=new"
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-primary hover:bg-primary-hover text-white text-xs font-semibold shadow-xs transition-colors shrink-0"
-                >
-                    <Plus className="w-4 h-4" />
-                    Raise New Ticket
-                </a>
-            </div>
+                ))}
 
             {/* Core Store Metrics */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

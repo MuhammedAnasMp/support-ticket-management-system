@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Layers, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import type { WorkerClaimItem, ExpenseItem } from './types';
 import { getUserId } from './types';
+import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 
 interface EditBundleModalProps {
   selectedBundleForEdit: WorkerClaimItem | null;
@@ -60,9 +61,15 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
               <h3 className="text-base font-bold text-on-surface tracking-tight">
                 Edit Claim Bundle #{selectedBundleForEdit.claim_id}
               </h3>
-              <p className="text-xs text-on-surface-variant font-normal mt-0.5">
-                Adjust billing period, remarks, or tied expense line items
-              </p>
+              <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-normal mt-0.5">
+                <span>Worker:</span>
+                <AvatarCircle
+                  user={selectedBundleForEdit.worker_detail}
+                  name={selectedBundleForEdit.worker_detail?.full_name || selectedBundleForEdit.worker_detail?.username || 'Technician'}
+                  size="xs"
+                />
+                <span className="font-semibold text-on-surface">{selectedBundleForEdit.worker_detail?.full_name || selectedBundleForEdit.worker_detail?.username || 'Technician'}</span>
+              </div>
             </div>
           </div>
           <button

@@ -84,6 +84,7 @@ export const FinanceView: React.FC = () => {
   });
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'IN_LEDGER' | 'NOT_IN_LEDGER'>('ALL');
+  const [bundleFilter, setBundleFilter] = useState<'ALL' | 'IN_BUNDLE' | 'NOT_IN_BUNDLE'>('ALL');
 
   // Sync date filter changes with localStorage
   useEffect(() => {
@@ -704,19 +705,100 @@ export const FinanceView: React.FC = () => {
   }, [bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
 
   const filteredLedgers = useMemo(() => {
-    return ledgers.filter((l) => {
-      if (statusFilter !== 'ALL' && l.status !== statusFilter) return false;
-      if (!isWithinDateRange(l.created_at, filterDateFrom, filterDateTo)) return false;
+    // Group ledgers by group ID to determine each Ledger Group's unified status
+    const groupBatchesMap = new Map<string | number, LedgerItem[]>();
+    for (const l of ledgers) {
+      const gId = l.ledger_group_detail?.ledger_group_id || l.ledger_group || `ungrouped_${l.ledger_id}`;
+      if (!groupBatchesMap.has(gId)) {
+        groupBatchesMap.set(gId, []);
+      }
+      groupBatchesMap.get(gId)!.push(l);
+    }
+
+    const matchingGroupIds = new Set<string | number>();
+
+    for (const [gId, groupBatches] of groupBatchesMap.entries()) {
+      const matchedDynGroup = ledgerGroups?.find(g => String(g.ledger_group_id) === String(gId));
+      const isCompleted = Boolean(
+        matchedDynGroup?.is_completed ||
+        groupBatches.some(b => b.ledger_group_detail?.is_completed)
+      );
+
+      // Determine unified Ledger Group status
+      let groupStatus = 'Draft';
+      if (isCompleted) {
+        groupStatus = 'Completed';
+      } else if (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Paid')) {
+        groupStatus = 'Paid';
+      } else if (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid')) {
+        groupStatus = 'Approved';
+      } else if (groupBatches.some(b => b.status === 'Rework')) {
+        groupStatus = 'Rework';
+      } else if (groupBatches.some(b => b.status === 'In Review' || b.status === 'Submitted')) {
+        groupStatus = 'In Review';
+      } else if (groupBatches.some(b => b.status === 'Rejected')) {
+        groupStatus = 'Rejected';
+      } else {
+        groupStatus = 'Draft';
+      }
+
+      // Check Status Filter against Ledger Group Status
+      if (statusFilter !== 'ALL') {
+        const filterLower = statusFilter.toLowerCase();
+        const statusLower = groupStatus.toLowerCase();
+        const matchesStatus = filterLower === 'in review'
+          ? (statusLower === 'in review' || statusLower === 'submitted')
+          : statusLower === filterLower;
+
+        if (!matchesStatus) {
+          continue;
+        }
+      }
+
+      // Check Date Range Filter
+      const groupCreatedAt = matchedDynGroup?.created_at || groupBatches[0]?.created_at;
+      const isGroupDateInRange = groupBatches.some(b => isWithinDateRange(b.created_at, filterDateFrom, filterDateTo)) ||
+        (groupCreatedAt && isWithinDateRange(groupCreatedAt, filterDateFrom, filterDateTo));
+
+      if (!isGroupDateInRange) {
+        continue;
+      }
+
+      // Check Search Query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const groupName = (l.ledger_group_detail?.group_name || '').toLowerCase();
-        const idStr = l.ledger_id.toString();
-        const userStr = (l.created_by_detail?.full_name || l.created_by_detail?.username || '').toLowerCase();
-        return groupName.includes(query) || idStr.includes(query) || userStr.includes(query);
+        const gName = (matchedDynGroup?.group_name || groupBatches[0]?.ledger_group_detail?.group_name || '').toLowerCase();
+        const gIdStr = String(gId).toLowerCase();
+        const creatorName = (groupBatches[0]?.created_by_detail?.full_name || groupBatches[0]?.created_by_detail?.username || '').toLowerCase();
+
+        const matchesQuery = gName.includes(query) ||
+          gIdStr.includes(query) ||
+          creatorName.includes(query) ||
+          groupBatches.some(b => {
+            const bIdStr = String(b.ledger_id);
+            const bName = (b.ledger_batch_detail?.batch_name || '').toLowerCase();
+            const bRemarks = (b.remarks || '').toLowerCase();
+            const bundlesMatch = (b.bundles || []).some((bundle: any) => {
+              const bundleId = String(bundle.claim_id || bundle.id || '');
+              const worker = (bundle.worker_detail?.full_name || bundle.worker_detail?.username || '').toLowerCase();
+              return bundleId.includes(query) || worker.includes(query);
+            });
+            return bIdStr.includes(query) || bName.includes(query) || bRemarks.includes(query) || bundlesMatch;
+          });
+
+        if (!matchesQuery) {
+          continue;
+        }
       }
-      return true;
+
+      matchingGroupIds.add(gId);
+    }
+
+    return ledgers.filter(l => {
+      const gId = l.ledger_group_detail?.ledger_group_id || l.ledger_group || `ungrouped_${l.ledger_id}`;
+      return matchingGroupIds.has(gId);
     });
-  }, [ledgers, statusFilter, filterDateFrom, filterDateTo, searchQuery]);
+  }, [ledgers, ledgerGroups, statusFilter, filterDateFrom, filterDateTo, searchQuery]);
 
   const roleFilteredApprovals = useMemo(() => {
     return approvals.filter((a) => {
@@ -856,7 +938,7 @@ export const FinanceView: React.FC = () => {
   }, [unclaimedExpenses, selectedExpenseIds]);
 
   const uniqueExpenseWorkers = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; username: string; employee_no?: string; department_name?: string; unclaimed_count: number; unclaimed_total: number }>();
+    const map = new Map<number, { id: number; name: string; username: string; employee_no?: string; profile_image?: string | null; department_name?: string; unclaimed_count: number; unclaimed_total: number }>();
     unclaimedExpenses.forEach((exp) => {
       if (exp.is_claimed || exp.claim) return;
       if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return;
@@ -866,6 +948,7 @@ export const FinanceView: React.FC = () => {
         const displayName = workerObj?.full_name || workerObj?.username || `Worker ${workerId}`;
         const deptName = (exp.ticket_details as any)?.department_name || (exp.expense_type_detail as any)?.department_name || (exp.expense_type as any)?.department?.department_name || 'General Maintenance';
         const amt = parseFloat(exp.amount || '0');
+        const profImg = workerObj?.profile_image || (typeof exp.worker === 'object' ? exp.worker?.profile_image : null) || exp.worker_detail?.profile_image || null;
         const existing = map.get(workerId);
         if (existing) {
           existing.unclaimed_count += 1;
@@ -873,12 +956,16 @@ export const FinanceView: React.FC = () => {
           if (!existing.department_name && deptName) {
             existing.department_name = deptName;
           }
+          if (!existing.profile_image && profImg) {
+            existing.profile_image = profImg;
+          }
         } else {
           map.set(workerId, {
             id: workerId,
             name: displayName,
             username: workerObj?.username || '',
             employee_no: workerObj?.employee_no || '',
+            profile_image: profImg,
             department_name: deptName,
             unclaimed_count: 1,
             unclaimed_total: amt
@@ -963,7 +1050,14 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleCreateLedger = async () => {
-    if (selectedBundleIds.length === 0) {
+    const validUnassignedIds = new Set(
+      bundles
+        .filter(b => b.status === 'Approved' && !b.ledger_id && (!b.ledger_details || b.ledger_details.status === 'Rejected') && (!Array.isArray((b as any).ledgers) || (b as any).ledgers.length === 0))
+        .map(b => b.claim_id)
+    );
+    const targetBundleIds = selectedBundleIds.filter(id => validUnassignedIds.has(id));
+
+    if (targetBundleIds.length === 0) {
       setErrorMessage('Select at least one approved bundle.');
       return;
     }
@@ -978,6 +1072,12 @@ export const FinanceView: React.FC = () => {
           body: JSON.stringify({ group_name: newGroupName.trim() })
         });
         const groupData = await resG.json();
+        if (!resG.ok) {
+          const errMsg = groupData.group_name
+            ? (Array.isArray(groupData.group_name) ? groupData.group_name[0] : groupData.group_name)
+            : (groupData.detail || groupData.error || 'Failed to create Ledger Group');
+          throw new Error(errMsg);
+        }
         gId = groupData.ledger_group_id;
       }
 
@@ -985,7 +1085,7 @@ export const FinanceView: React.FC = () => {
         method: 'POST',
         headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bundle_ids: selectedBundleIds,
+          bundle_ids: targetBundleIds,
           ledger_group: gId,
           remarks: ledgerRemarks || undefined
         })
@@ -1282,6 +1382,9 @@ export const FinanceView: React.FC = () => {
         if (st.toLowerCase() !== statusFilter.toLowerCase()) return false;
       }
 
+      if (bundleFilter === 'IN_BUNDLE' && !e.is_claimed && !e.claim) return false;
+      if (bundleFilter === 'NOT_IN_BUNDLE' && (e.is_claimed || e.claim)) return false;
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const catName = (e.expense_type_detail?.expense_name || (e.expense_type as any)?.expense_name || '').toLowerCase();
@@ -1310,7 +1413,7 @@ export const FinanceView: React.FC = () => {
 
       return true;
     });
-  }, [expenses, filterDateFrom, filterDateTo, statusFilter, searchQuery]);
+  }, [expenses, filterDateFrom, filterDateTo, statusFilter, bundleFilter, searchQuery]);
 
   // Subpage Navigation Tabs
   const navTabs = [
@@ -1349,57 +1452,6 @@ export const FinanceView: React.FC = () => {
 
   return (
     <div className=" min-h-screen flex flex-col gap-2 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
-      {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-outline-variant pb-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-on-surface dark:text-dark-on-surface flex items-center gap-2">
-            Financial Management & Workflow
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => fetchData(false)}
-            disabled={loading}
-            className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-
-          {subpage === 'expenses' && (
-            <button
-              onClick={() => setShowCreateExpenseModal(true)}
-              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Expense</span>
-            </button>
-          )}
-
-          {subpage === 'bundles' && (
-            <Can permission={["finance.create_bundle", "finance.create_workerclaim", "finance.add_workerclaim"] as any}>
-              <button
-                onClick={() => setShowCreateBundleModal(true)}
-                className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create Bundle</span>
-              </button>
-            </Can>
-          )}
-
-          {subpage === 'ledgers' && (
-            <button
-              onClick={() => setShowCreateLedgerModal(true)}
-              className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Assemble Ledger</span>
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Global Floating Popup Toast (visible above all modals & full viewport) */}
       {(errorMessage || successMessage) && (
@@ -1487,20 +1539,20 @@ export const FinanceView: React.FC = () => {
       </div>
 
       {/* SEARCH AND DATEWISE FILTER TOOLBAR */}
-      <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
-        <div className="flex flex-1 flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-on-surface-variant" />
-            <input
-              type="text"
-              placeholder="Search by worker name, ID, ticket , amount..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-surface-container-low border border-outline text-on-surface text-xs rounded pl-8 pr-3 py-1.5 focus:outline-none focus:border-primary"
-            />
-          </div>
+      <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">        {/* Left Side: Search Input */}
+        <div className="relative w-full sm:w-72 md:w-80 shrink-0">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+          <input
+            type="text"
+            placeholder="Search by worker name, ID, ticket, amount..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded pl-9 pr-3 focus:outline-none focus:border-primary transition-colors shadow-2xs placeholder:text-on-surface-variant/60"
+          />
+        </div>
 
+        {/* Right Side: Filters (Date Range, Status, Bundle/Ledger Filter) */}
+        <div className="flex items-center gap-2.5 flex-wrap justify-start md:justify-end">
           {/* Popover Date Range Picker */}
           <DateRangePickerCard
             fromDate={filterDateFrom}
@@ -1522,30 +1574,50 @@ export const FinanceView: React.FC = () => {
               <SearchableSelect
                 value={statusFilter}
                 onChange={(val) => setStatusFilter(val)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
                 options={[
                   { value: 'ALL', label: 'All Statuses' },
                   { value: 'Draft', label: 'Draft' },
                   { value: 'In Review', label: 'In Review' },
                   { value: 'Approved', label: 'Approved' },
-                  { value: 'Rejected', label: 'Rejected' },
+                  { value: 'Completed', label: 'Completed' },
                   { value: 'Rework', label: 'Rework' },
+                  { value: 'Rejected', label: 'Rejected' },
                   { value: 'Paid', label: 'Paid' },
                 ]}
                 placeholder="All Statuses"
-                />
+              />
+            </div>
+          )}
+
+          {/* Bundle Attachment Filter (Applicable for Expenses subpage) */}
+          {subpage === 'expenses' && (
+            <div className="w-60 shrink-0">
+              <SearchableSelect
+                value={bundleFilter}
+                onChange={(val) => setBundleFilter(val as any)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={[
+                  { value: 'ALL', label: 'All Expenses' },
+                  { value: 'IN_BUNDLE', label: 'Attached to Bundle' },
+                  { value: 'NOT_IN_BUNDLE', label: 'Not in Bundle (Unclaimed)' },
+                ]}
+                placeholder="Bundle Filter"
+              />
             </div>
           )}
 
           {/* Ledger Attachment Filter (Applicable for Bundles subpage) */}
           {subpage === 'bundles' && (
-            <div className="w-60 shrink-0">
+            <div className="w-40 shrink-0">
               <SearchableSelect
                 value={ledgerFilter}
                 onChange={(val) => setLedgerFilter(val as any)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
                 options={[
-                  { value: 'ALL', label: 'All Bundles (With & Without Ledger)' },
-                  { value: 'IN_LEDGER', label: 'Attached to Ledger Batch' },
-                  { value: 'NOT_IN_LEDGER', label: 'Not in Ledger Batch' },
+                  { value: 'ALL', label: 'All Bundles' },
+                  { value: 'IN_LEDGER', label: 'Attached to Ledger' },
+                  { value: 'NOT_IN_LEDGER', label: 'Not in Ledger' },
                 ]}
                 placeholder="Ledger Filter"
               />
@@ -1554,7 +1626,7 @@ export const FinanceView: React.FC = () => {
         </div>
 
         {/* Clear Filters Button */}
-        {(searchQuery || statusFilter !== 'ALL' || ledgerFilter !== 'ALL' || filterDateFrom !== getCurrentMonthRange().from || filterDateTo !== getCurrentMonthRange().to) && (
+        {/* {(searchQuery || statusFilter !== 'ALL' || ledgerFilter !== 'ALL' || bundleFilter !== 'ALL' || filterDateFrom !== getCurrentMonthRange().from || filterDateTo !== getCurrentMonthRange().to) && (
           <button
             onClick={() => {
               const currentMonth = getCurrentMonthRange();
@@ -1563,13 +1635,14 @@ export const FinanceView: React.FC = () => {
               setFilterDateTo(currentMonth.to);
               setStatusFilter('ALL');
               setLedgerFilter('ALL');
+              setBundleFilter('ALL');
             }}
             className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded border border-outline text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0 cursor-pointer"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Reset Filters</span>
           </button>
-        )}
+        )} */}
       </div>
 
       {/* SUBPAGES */}

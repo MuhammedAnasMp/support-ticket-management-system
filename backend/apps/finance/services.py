@@ -126,7 +126,8 @@ class ApprovalService:
         if actor.is_superuser:
             return True
 
-        actor_role_name = (actor.role.role_name.lower().strip() if hasattr(actor, 'role') and actor.role else '')
+        actor_role_name = (actor.role.role_name.lower().strip(
+        ) if hasattr(actor, 'role') and actor.role else '')
         if actor_role_name == 'administrator':
             return True
 
@@ -171,7 +172,8 @@ class ApprovalService:
                 f"Invalid action '{action}'. Must be one of {valid_actions}")
 
         if action == 'REWORK' and not (comments and str(comments).strip()):
-            raise ValidationError("A reason or comment is required when requesting rework.")
+            raise ValidationError(
+                "A reason or comment is required when requesting rework.")
 
         with transaction.atomic():
             instance = ApprovalInstance.objects.select_for_update().get(pk=instance_id)
@@ -284,7 +286,8 @@ class ApprovalService:
 
                 # Remove any other pending instances so the item is cleanly paused in Rework status
                 if hasattr(entity, 'approval_instances'):
-                    entity.approval_instances.filter(status='Pending').exclude(instance_id=instance.instance_id).delete()
+                    entity.approval_instances.filter(status='Pending').exclude(
+                        instance_id=instance.instance_id).delete()
 
                 if hasattr(entity, 'status'):
                     entity.status = 'Rework'
@@ -359,9 +362,12 @@ class BundleService:
 
             total_amount = sum(exp.amount for exp in expenses)
 
-            expense_dates = [exp.expense_date for exp in expenses if exp.expense_date]
-            derived_from = min(expense_dates) if expense_dates else timezone.now().date()
-            derived_to = max(expense_dates) if expense_dates else timezone.now().date()
+            expense_dates = [
+                exp.expense_date for exp in expenses if exp.expense_date]
+            derived_from = min(
+                expense_dates) if expense_dates else timezone.now().date()
+            derived_to = max(
+                expense_dates) if expense_dates else timezone.now().date()
 
             bundle = WorkerClaim.objects.create(
                 worker=worker,
@@ -449,16 +455,19 @@ class BundleService:
             bundle.total_claimed_amount = sum(
                 exp.amount for exp in Expense.objects.filter(claim=bundle))
             bundle.status = 'Draft'
-            bundle.approval_instances.filter(status='Approved').update(status='Pending')
+            bundle.approval_instances.filter(
+                status='Approved').update(status='Pending')
             bundle.save()
 
             # Resync any parent ledgers attached to this bundle
             for lg in bundle.ledgers.all():
-                bundle_expenses = Expense.objects.filter(claim__in=lg.bundles.all())
+                bundle_expenses = Expense.objects.filter(
+                    claim__in=lg.bundles.all())
                 lg.expenses.set(bundle_expenses)
                 if lg.status == 'Approved':
                     lg.status = 'Draft'
-                    lg.approval_instances.filter(status='Approved').update(status='Pending')
+                    lg.approval_instances.filter(
+                        status='Approved').update(status='Pending')
                     lg.save(update_fields=['status'])
                 LedgerService.recalculate_ledger_total(lg)
 
@@ -503,20 +512,24 @@ class BundleService:
                     lg.expenses.remove(expense)
                 if lg.status == 'Approved':
                     lg.status = 'Draft'
-                    lg.approval_instances.filter(status='Approved').update(status='Pending')
+                    lg.approval_instances.filter(
+                        status='Approved').update(status='Pending')
                     lg.save(update_fields=['status'])
                 LedgerService.recalculate_ledger_total(lg)
 
             # Recalculate bundle total claimed amount
             remaining_expenses = Expense.objects.filter(claim=bundle)
-            bundle.total_claimed_amount = sum(e.amount for e in remaining_expenses)
+            bundle.total_claimed_amount = sum(
+                e.amount for e in remaining_expenses)
             bundle.status = 'Draft'
-            bundle.approval_instances.filter(status='Approved').update(status='Pending')
+            bundle.approval_instances.filter(
+                status='Approved').update(status='Pending')
             bundle.save()
 
             create_audit_event(
                 'WorkerClaim', bundle.claim_id, 'EXPENSE_REMOVED_FROM_BUNDLE', actor=actor,
-                payload={'expense_id': expense_id, 'amount': str(expense.amount), 'new_bundle_status': 'Draft'},
+                payload={'expense_id': expense_id, 'amount': str(
+                    expense.amount), 'new_bundle_status': 'Draft'},
                 ip_address=ip_address
             )
 
@@ -610,7 +623,8 @@ class LedgerService:
             raise ValidationError("Cannot create a ledger without bundles.")
 
         with transaction.atomic():
-            bundles = list(WorkerClaim.objects.select_for_update().filter(claim_id__in=bundle_ids))
+            bundles = list(WorkerClaim.objects.select_for_update().filter(
+                claim_id__in=bundle_ids))
 
             if len(bundles) != len(bundle_ids):
                 raise ValidationError("One or more bundle IDs do not exist.")
@@ -636,9 +650,11 @@ class LedgerService:
                 raise ValidationError("Selected bundle(s) have no expenses.")
 
             # Fetch active LedgerBatches with their sub_departments
-            batches = list(LedgerBatch.objects.filter(active=True).prefetch_related('sub_departments'))
+            batches = list(LedgerBatch.objects.filter(
+                active=True).prefetch_related('sub_departments'))
             if not batches:
-                raise ValidationError("No active Ledger Batches found. Please configure Ledger Batches in Finance settings before assembling ledgers.")
+                raise ValidationError(
+                    "No active Ledger Batches found. Please configure Ledger Batches in Finance settings before assembling ledgers.")
 
             # Map sub_department_id -> LedgerBatch
             subdept_to_batch = {}
@@ -656,10 +672,12 @@ class LedgerService:
                     sub_dept = exp.ticket.nature.sub_department
 
                 if not sub_dept:
-                    unmapped_errors.append(f"Expense #{exp.expense_id} has no associated Sub-Department.")
+                    unmapped_errors.append(
+                        f"Expense #{exp.expense_id} has no associated Sub-Department.")
                     continue
 
-                matching_batch = subdept_to_batch.get(sub_dept.sub_department_id)
+                matching_batch = subdept_to_batch.get(
+                    sub_dept.sub_department_id)
                 if not matching_batch:
                     unmapped_errors.append(
                         f"Expense #{exp.expense_id} belongs to Sub-Department '{sub_dept.sub_department_name}' which is not assigned to any Ledger Batch."
@@ -673,12 +691,15 @@ class LedgerService:
                         'bundles': set()
                     }
 
-                batch_expenses_map[matching_batch.batch_id]['expenses'].append(exp)
+                batch_expenses_map[matching_batch.batch_id]['expenses'].append(
+                    exp)
                 if exp.claim:
-                    batch_expenses_map[matching_batch.batch_id]['bundles'].add(exp.claim)
+                    batch_expenses_map[matching_batch.batch_id]['bundles'].add(
+                        exp.claim)
 
             if unmapped_errors:
-                raise ValidationError("Cannot assemble ledger: " + " | ".join(unmapped_errors))
+                raise ValidationError(
+                    "Cannot assemble ledger: " + " | ".join(unmapped_errors))
 
             ledger_group = None
             if ledger_group_id:
@@ -717,7 +738,8 @@ class LedgerService:
                 created_ledgers.append(ledger)
 
             if ledger_group:
-                group_total = sum(l.total_amount for l in ledger_group.ledgers.all())
+                group_total = sum(
+                    l.total_amount for l in ledger_group.ledgers.all())
                 ledger_group.total_amount = group_total
                 ledger_group.save(update_fields=['total_amount'])
 
@@ -778,7 +800,8 @@ class LedgerService:
 
             if ledger.status == 'Approved':
                 ledger.status = 'Draft'
-                ledger.approval_instances.filter(status='Approved').update(status='Pending')
+                ledger.approval_instances.filter(
+                    status='Approved').update(status='Pending')
                 ledger.save(update_fields=['status'])
 
             cls.recalculate_ledger_total(ledger)
@@ -830,7 +853,8 @@ class LedgerService:
             # If ledger was approved, reset to Draft for re-approval
             if ledger.status == 'Approved':
                 ledger.status = 'Draft'
-                ledger.approval_instances.filter(status='Approved').update(status='Pending')
+                ledger.approval_instances.filter(
+                    status='Approved').update(status='Pending')
                 ledger.save(update_fields=['status'])
 
             cls.recalculate_ledger_total(ledger)
@@ -864,15 +888,18 @@ class LedgerService:
                     f"Bundle {bundle.claim_id} is in status '{bundle.status}'. Only Approved bundles can be added to a Ledger.")
 
             # If ledger has an assigned LedgerBatch, ALL bundle expenses must belong to its sub-departments
-            bundle_expenses = list(Expense.objects.filter(claim=bundle).select_related('ticket__nature__sub_department'))
+            bundle_expenses = list(Expense.objects.filter(
+                claim=bundle).select_related('ticket__nature__sub_department'))
             if not bundle_expenses:
-                raise ValidationError(f"Bundle #{bundle.claim_id} has no expenses.")
+                raise ValidationError(
+                    f"Bundle #{bundle.claim_id} has no expenses.")
 
             if ledger.ledger_batch:
                 allowed_sub_dept_ids = set(
-                    ledger.ledger_batch.sub_departments.values_list('sub_department_id', flat=True)
+                    ledger.ledger_batch.sub_departments.values_list(
+                        'sub_department_id', flat=True)
                 )
-                
+
                 mismatched = []
                 for exp in bundle_expenses:
                     sub_dept = None
@@ -880,9 +907,11 @@ class LedgerService:
                         sub_dept = exp.ticket.nature.sub_department
 
                     if not sub_dept:
-                        mismatched.append(f"Expense #{exp.expense_id} (No Sub-Department)")
+                        mismatched.append(
+                            f"Expense #{exp.expense_id} (No Sub-Department)")
                     elif sub_dept.sub_department_id not in allowed_sub_dept_ids:
-                        mismatched.append(f"Expense #{exp.expense_id} ({sub_dept.sub_department_name})")
+                        mismatched.append(
+                            f"Expense #{exp.expense_id} ({sub_dept.sub_department_name})")
 
                 if mismatched:
                     raise ValidationError(
@@ -891,7 +920,8 @@ class LedgerService:
                         f"Mismatched expenses: {', '.join(mismatched)}."
                     )
 
-                new_expenses = [e for e in bundle_expenses if not ledger.expenses.filter(pk=e.pk).exists()]
+                new_expenses = [
+                    e for e in bundle_expenses if not ledger.expenses.filter(pk=e.pk).exists()]
                 if not new_expenses:
                     raise ValidationError(
                         f"Bundle #{bundle.claim_id} is already attached to this Ledger."
@@ -903,7 +933,8 @@ class LedgerService:
                 added_amount = sum(e.amount for e in new_expenses)
             else:
                 # Fallback if ledger has no specific batch
-                new_expenses = [e for e in bundle_expenses if not ledger.expenses.filter(pk=e.pk).exists()]
+                new_expenses = [
+                    e for e in bundle_expenses if not ledger.expenses.filter(pk=e.pk).exists()]
                 ledger.bundles.add(bundle)
                 for exp in new_expenses:
                     ledger.expenses.add(exp)
@@ -938,11 +969,13 @@ class LedgerService:
         with transaction.atomic():
             group = LedgerGroup.objects.select_for_update().get(pk=ledger_group_id)
             if group.is_completed:
-                raise ValidationError(f"Ledger Group '{group.group_name}' is completed and locked. Bundles cannot be added.")
+                raise ValidationError(
+                    f"Ledger Group '{group.group_name}' is completed and locked. Bundles cannot be added.")
 
             bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
             if bundle.status != 'Approved':
-                raise ValidationError(f"Bundle #{bundle.claim_id} is in status '{bundle.status}'. Only 'Approved' bundles can be added.")
+                raise ValidationError(
+                    f"Bundle #{bundle.claim_id} is in status '{bundle.status}'. Only 'Approved' bundles can be added.")
 
             # Load bundle expenses
             bundle_expenses = list(Expense.objects.select_for_update().filter(claim=bundle).select_related(
@@ -951,12 +984,15 @@ class LedgerService:
                 'expense_type'
             ))
             if not bundle_expenses:
-                raise ValidationError(f"Bundle #{bundle.claim_id} has no expenses.")
+                raise ValidationError(
+                    f"Bundle #{bundle.claim_id} has no expenses.")
 
             # Fetch active LedgerBatches with their sub_departments
-            batches = list(LedgerBatch.objects.filter(active=True).prefetch_related('sub_departments'))
+            batches = list(LedgerBatch.objects.filter(
+                active=True).prefetch_related('sub_departments'))
             if not batches:
-                raise ValidationError("No active Ledger Batches found. Please configure Ledger Batches in Finance settings.")
+                raise ValidationError(
+                    "No active Ledger Batches found. Please configure Ledger Batches in Finance settings.")
 
             subdept_to_batch = {}
             for batch in batches:
@@ -973,10 +1009,12 @@ class LedgerService:
                     sub_dept = exp.ticket.nature.sub_department
 
                 if not sub_dept:
-                    unmapped_errors.append(f"Expense #{exp.expense_id} has no associated Sub-Department.")
+                    unmapped_errors.append(
+                        f"Expense #{exp.expense_id} has no associated Sub-Department.")
                     continue
 
-                matching_batch = subdept_to_batch.get(sub_dept.sub_department_id)
+                matching_batch = subdept_to_batch.get(
+                    sub_dept.sub_department_id)
                 if not matching_batch:
                     unmapped_errors.append(
                         f"Expense #{exp.expense_id} belongs to Sub-Department '{sub_dept.sub_department_name}' which is not assigned to any Ledger Batch."
@@ -988,14 +1026,17 @@ class LedgerService:
                         'batch': matching_batch,
                         'expenses': []
                     }
-                batch_expenses_map[matching_batch.batch_id]['expenses'].append(exp)
+                batch_expenses_map[matching_batch.batch_id]['expenses'].append(
+                    exp)
 
             if unmapped_errors:
-                raise ValidationError("Cannot attach bundle: " + " | ".join(unmapped_errors))
+                raise ValidationError(
+                    "Cannot attach bundle: " + " | ".join(unmapped_errors))
 
             # Existing ledgers in this group
             existing_ledgers = list(group.ledgers.select_for_update().all())
-            existing_batch_map = {l.ledger_batch_id: l for l in existing_ledgers if l.ledger_batch_id}
+            existing_batch_map = {
+                l.ledger_batch_id: l for l in existing_ledgers if l.ledger_batch_id}
 
             affected_ledgers = []
 
@@ -1042,7 +1083,8 @@ class LedgerService:
 
             create_audit_event(
                 'LedgerGroup', group.ledger_group_id, 'BUNDLE_ADDED_TO_GROUP', actor=actor,
-                payload={'bundle_id': bundle_id, 'affected_batches': len(affected_ledgers)},
+                payload={'bundle_id': bundle_id,
+                         'affected_batches': len(affected_ledgers)},
                 ip_address=ip_address
             )
 
@@ -1074,7 +1116,8 @@ class LedgerService:
             affected_count = 0
             for l in ledgers:
                 has_bundle = bundle in l.bundles.all()
-                matching_expenses = [e for e in l.expenses.all() if e.claim_id == bundle_id or e.claim == bundle]
+                matching_expenses = [e for e in l.expenses.all(
+                ) if e.claim_id == bundle_id or e.claim == bundle]
 
                 if has_bundle or matching_expenses:
                     if has_bundle:
@@ -1093,7 +1136,8 @@ class LedgerService:
 
             create_audit_event(
                 'LedgerGroup', group.ledger_group_id, 'BUNDLE_REMOVED_FROM_GROUP', actor=actor,
-                payload={'bundle_id': bundle_id, 'affected_batches': affected_count},
+                payload={'bundle_id': bundle_id,
+                         'affected_batches': affected_count},
                 ip_address=ip_address
             )
             return group
@@ -1141,7 +1185,7 @@ class LedgerService:
     def change_ledger_group(cls, ledger_id, ledger_group_id=None, new_group_name=None, actor=None, ip_address=None):
         """
         Changes the LedgerGroup of a Ledger. Allows choosing an existing group or creating a new one.
-        Updates total amounts for old and new ledger groups.
+        Updates total amounts for old and new ledger.
         """
         with transaction.atomic():
             ledger = Ledger.objects.select_for_update().get(pk=ledger_id)
@@ -1159,7 +1203,8 @@ class LedgerService:
 
             if new_group_name and str(new_group_name).strip():
                 clean_name = str(new_group_name).strip()
-                target_group = LedgerGroup.objects.filter(group_name__iexact=clean_name).first()
+                target_group = LedgerGroup.objects.filter(
+                    group_name__iexact=clean_name).first()
                 if not target_group:
                     target_group = LedgerGroup.objects.create(
                         group_name=clean_name,
@@ -1170,7 +1215,8 @@ class LedgerService:
                 try:
                     target_group = LedgerGroup.objects.get(pk=ledger_group_id)
                 except LedgerGroup.DoesNotExist:
-                    raise ValidationError(f"Ledger Group #{ledger_group_id} does not exist.")
+                    raise ValidationError(
+                        f"Ledger Group #{ledger_group_id} does not exist.")
 
             if target_group and getattr(target_group, 'is_completed', False):
                 raise ValidationError(
@@ -1184,11 +1230,13 @@ class LedgerService:
 
             # Recalculate totals for both groups
             if old_group:
-                old_group.total_amount = sum(l.total_amount for l in old_group.ledgers.all())
+                old_group.total_amount = sum(
+                    l.total_amount for l in old_group.ledgers.all())
                 old_group.save(update_fields=['total_amount'])
 
             if target_group:
-                target_group.total_amount = sum(l.total_amount for l in target_group.ledgers.all())
+                target_group.total_amount = sum(
+                    l.total_amount for l in target_group.ledgers.all())
                 target_group.save(update_fields=['total_amount'])
 
             create_audit_event(
@@ -1236,16 +1284,19 @@ class LedgerService:
             group = LedgerGroup.objects.select_for_update().get(pk=group_id)
 
             if getattr(group, 'is_completed', False):
-                raise ValidationError(f"Ledger Group '{group.group_name}' is completed and locked. It cannot be deleted.")
+                raise ValidationError(
+                    f"Ledger Group '{group.group_name}' is completed and locked. It cannot be deleted.")
 
             ledgers = list(group.ledgers.select_for_update().all())
 
             # Check if any child ledger is Paid or In Review
             for l in ledgers:
                 if l.status == 'Paid':
-                    raise ValidationError(f"Ledger Group '{group.group_name}' contains a 'Paid' batch (#{l.ledger_id}) and cannot be deleted.")
+                    raise ValidationError(
+                        f"Ledger Group '{group.group_name}' contains a 'Paid' batch (#{l.ledger_id}) and cannot be deleted.")
                 if l.status in ['In Review', 'Submitted']:
-                    raise ValidationError(f"Ledger Group '{group.group_name}' is currently in review. Action or request rework before deleting.")
+                    raise ValidationError(
+                        f"Ledger Group '{group.group_name}' is currently in review. Action or request rework before deleting.")
 
             # Detach all bundles and expenses from child ledgers, then delete child ledgers
             for l in ledgers:

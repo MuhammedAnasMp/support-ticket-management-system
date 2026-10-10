@@ -14,7 +14,7 @@ export interface ExpenseItem {
   remarks?: string;
   is_claimed: boolean;
   worker: any;
-  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string };
+  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string; profile_image?: string | null };
   ticket?: number;
   ticket_details?: {
     ticket_id: number;
@@ -147,7 +147,7 @@ export interface WorkerClaimItem {
   claim_id: number;
   ledger_id?: number;
   worker?: number;
-  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string };
+  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string; profile_image?: string | null };
   ticket_details?: {
     ticket_id: number;
     work_order_no: string;
@@ -181,6 +181,7 @@ export interface LedgerGroupItem {
   completed_at?: string;
   completed_by?: number;
   completed_by_detail?: { id: number; username: string; full_name?: string };
+  ledgers_count?: number;
 }
 
 export interface StoreDetailItem {

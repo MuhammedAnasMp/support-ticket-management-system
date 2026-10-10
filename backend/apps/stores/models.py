@@ -70,6 +70,11 @@ class Store(models.Model):
     )
     active = models.BooleanField(default=True)
     store_updated_at = models.DateTimeField(null=True, blank=True)
+    location_approval_throttle = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Custom Location Approval throttle limit for this store across departments (overrides department default if set)"
+    )
 
     def __str__(self):
         abbreviation_map = {
@@ -91,9 +96,112 @@ class Department(models.Model):
     department_id = models.AutoField(primary_key=True)
     department_name = models.CharField(max_length=255)
     short_code = models.CharField(max_length=50, null=True, blank=True)
+    location_approval_throttle = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=5,
+        help_text="Default Location Approval throttle limit for this department (default: 5). If 0 or null, throttling is disabled."
+    )
 
     def __str__(self):
         return self.department_name
+
+
+class StoreDepartmentThrottle(models.Model):
+    id = models.AutoField(primary_key=True)
+    store = models.ForeignKey(
+        Store, on_delete=models.CASCADE, related_name='department_throttles')
+    department = models.ForeignKey(
+        Department, on_delete=models.CASCADE, related_name='store_throttles')
+    throttle_limit = models.PositiveIntegerField(
+        help_text="Custom Location Approval throttle limit for this specific store and department"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('store', 'department')
+        verbose_name = "Store Department Throttle"
+        verbose_name_plural = "Store Department Throttles"
+
+    def __str__(self):
+        return f"{self.store.store_name} - {self.department.department_name}: {self.throttle_limit}"
+
+
+def get_effective_location_approval_throttle(store, department):
+    """
+    Returns the integer throttle limit for a store and department,
+    or None if throttling is not active.
+    Order of precedence:
+    1. StoreDepartmentThrottle for (store, department)
+    2. Store.location_approval_throttle (store-level custom override)
+    3. Department.location_approval_throttle (department-level default)
+    """
+    if not store or not department:
+        return None
+
+    # 1. Check specific StoreDepartmentThrottle
+    sdt = StoreDepartmentThrottle.objects.filter(store=store, department=department).first()
+    if sdt is not None:
+        return sdt.throttle_limit
+
+    # 2. Check store-level custom override
+    if getattr(store, 'location_approval_throttle', None) is not None:
+        return store.location_approval_throttle
+
+    # 3. Fallback to Department default
+    if getattr(department, 'location_approval_throttle', None) is not None:
+        return department.location_approval_throttle
+
+    return 5
+
+
+def check_location_approval_throttle(store, department):
+    """
+    Checks whether creating a new ticket for (store, department) is blocked
+    because the store has reached/exceeded the location approval throttle limit.
+    """
+    from apps.maintenance.models import Ticket
+    limit = get_effective_location_approval_throttle(store, department)
+    if limit is None or limit <= 0:
+        return {
+            'is_throttled': False,
+            'count': 0,
+            'limit': limit,
+            'store_name': store.store_name if store else '',
+            'department_name': department.department_name if department else '',
+            'pending_tickets': []
+        }
+
+    # Query tickets in 'Location Approval' status for this store & department
+    pending_qs = Ticket.objects.filter(
+        store=store,
+        department=department,
+        status__status_name__iexact='Location Approval'
+    ).select_related('nature', 'priority', 'status')
+
+    count = pending_qs.count()
+    is_throttled = (count >= limit)
+
+    pending_tickets = [
+        {
+            'ticket_id': t.ticket_id,
+            'work_order_no': t.work_order_no,
+            'title': t.title,
+            'status': t.status.status_name if t.status else 'Location Approval',
+            'created_date': t.created_date.isoformat() if t.created_date else None
+        }
+        for t in pending_qs
+    ]
+
+    return {
+        'is_throttled': is_throttled,
+        'count': count,
+        'limit': limit,
+        'store_name': store.store_name if store else '',
+        'department_name': department.department_name if department else '',
+        'pending_tickets': pending_tickets
+    }
 
 
 class SubDepartment(models.Model):

@@ -630,8 +630,20 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='submit')
     def submit_group(self, request, pk=None):
         group = self.get_object()
+
+        # Clean up any empty draft ledgers with 0 bundles and 0 expenses
+        empty_drafts = group.ledgers.filter(status='Draft', total_amount=0, bundles__isnull=True, expenses__isnull=True)
+        if empty_drafts.exists():
+            empty_drafts.delete()
+
         ledgers_to_submit = group.ledgers.filter(status__in=['Draft', 'Rework', 'Rejected'])
         if not ledgers_to_submit.exists():
+            all_approved = group.ledgers.filter(status__in=['Approved', 'Paid']).count() == group.ledgers.count() and group.ledgers.exists()
+            if all_approved:
+                return Response(
+                    {'detail': f"All batches in Ledger Group '{group.group_name}' are already Approved."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             return Response(
                 {'detail': 'No draft or rework batches found in this Ledger Group to submit.'},
                 status=status.HTTP_400_BAD_REQUEST

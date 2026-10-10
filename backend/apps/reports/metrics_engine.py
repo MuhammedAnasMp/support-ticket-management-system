@@ -407,6 +407,24 @@ def get_dashboard_metrics(user, from_date_str=None, to_date_str=None, date_type=
     stores_by_tickets = sorted(store_breakdown, key=lambda x: x['total_tickets'], reverse=True)
     most_ticket_raised_store = stores_by_tickets[0] if stores_by_tickets else None
 
+    # Location Approval Throttle Alerts (Stores with pending Location Approval tickets / reached limit)
+    throttle_alerts = []
+    from apps.stores.models import check_location_approval_throttle
+    for s in stores_list:
+        for d in depts_list:
+            t_res = check_location_approval_throttle(s, d)
+            if t_res.get('is_throttled') or t_res.get('count', 0) > 0:
+                throttle_alerts.append({
+                    'store_id': s.store_id,
+                    'store_name': s.store_name,
+                    'department_id': d.department_id,
+                    'department_name': d.department_name,
+                    'count': t_res.get('count', 0),
+                    'limit': t_res.get('limit', 0),
+                    'is_throttled': t_res.get('is_throttled', False),
+                    'pending_tickets': t_res.get('pending_tickets', [])
+                })
+
     # Assemble Final Dashboard Response Object
     return {
         'role': role_name or 'User',
@@ -447,5 +465,7 @@ def get_dashboard_metrics(user, from_date_str=None, to_date_str=None, date_type=
         'worker_performance': worker_performance_list,
         'store_breakdown': store_breakdown,
         'department_distribution': dept_distribution,
+        'throttle_alerts': throttle_alerts,
     }
+
 

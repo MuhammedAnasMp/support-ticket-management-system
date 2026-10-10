@@ -290,6 +290,20 @@ class Ticket(models.Model):
         if self.pk:
             old_instance = Ticket.objects.get(pk=self.pk)
             if old_instance.status != self.status:
+                # Validation: Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours
+                if self.status and self.status.status_name.strip().lower() == 'location approval':
+                    from django.core.exceptions import ValidationError
+                    allocations = self.allocations.all()
+                    if not allocations.exists():
+                        raise ValidationError("Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.")
+                    missing_workers = []
+                    for alloc in allocations:
+                        if not self.work_logs.filter(worker=alloc.worker).exists():
+                            name = alloc.worker.full_name or alloc.worker.username or f"Worker #{alloc.worker.pk}"
+                            missing_workers.append(name)
+                    if missing_workers:
+                        raise ValidationError(f"Cannot move ticket to Location Approval: The following allocated worker(s) have not logged their work hours: {', '.join(missing_workers)}. All allocated workers must log their work hours before applying for location approval.")
+
                 from .utils import get_value_from_path, compare_values, set_value_on_path
                 from .models import StatusChangeRule
 
@@ -404,6 +418,8 @@ class WorkLog(models.Model):
     allocation = models.ForeignKey(
         Allocation, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_logs')
     work_date = models.DateField()
+    from_time = models.TimeField(null=True, blank=True)
+    to_time = models.TimeField(null=True, blank=True)
     hours = models.DecimalField(max_digits=5, decimal_places=2)
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
     labour_amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -423,6 +439,10 @@ class WorkLog(models.Model):
             ("change_allocation", "Can change allocation"),
             ("view_work_date", "Can view work date"),
             ("change_work_date", "Can change work date"),
+            ("view_from_time", "Can view from time"),
+            ("change_from_time", "Can change from time"),
+            ("view_to_time", "Can view to time"),
+            ("change_to_time", "Can change to time"),
             ("view_hours", "Can view hours"),
             ("change_hours", "Can change hours"),
             ("view_hourly_rate", "Can view hourly rate"),
@@ -432,6 +452,15 @@ class WorkLog(models.Model):
             ("view_work_done", "Can view work done"),
             ("change_work_done", "Can change work done"),
         ]
+
+    def clean(self):
+        super().clean()
+        from decimal import Decimal
+        from django.core.exceptions import ValidationError
+        if self.hours is not None and Decimal(str(self.hours)) < 0:
+            raise ValidationError({'hours': 'Logged work hours cannot be negative.'})
+        if self.from_time and self.to_time and self.to_time < self.from_time:
+            raise ValidationError({'to_time': 'End time (To Time) cannot be earlier than start time (From Time).'})
 
     def __str__(self):
         return f"WorkLog {self.worklog_id} by {self.worker.username}"

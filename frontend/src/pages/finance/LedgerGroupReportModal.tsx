@@ -6,6 +6,7 @@ import {
   ShieldCheck, HelpCircle
 } from 'lucide-react';
 import type { LedgerItem, ExpenseItem } from './types';
+import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 
 export interface LedgerGroupCluster {
   groupId: number | string;
@@ -742,7 +743,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                               </span>
                             </td>
                             <td className="px-3 py-2.5 font-medium text-on-surface">
-                              {workerName}
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <AvatarCircle user={wObj} name={workerName} size="xs" />
+                                <span className="truncate">{workerName}</span>
+                              </div>
                             </td>
                             <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                               {exp.ticket_details || exp.ticket ? (

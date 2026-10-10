@@ -142,7 +142,8 @@ body {
 /* Mobile Typography Base Configuration */
 @media (max-width: 640px) {
   html {
-    font-size: 106.25%; /* Increases mobile typography scale (~17px base) */
+    font-size: 106.25%;
+    /* Increases mobile typography scale (~17px base) */
   }
 }
 
@@ -523,6 +524,85 @@ body {
   background-color: rgba(0, 91, 191, 0.08) !important;
   border-left: 4px solid var(--primary) !important;
 }
+
 .dark .ag-row.ag-row-last-opened {
   background-color: rgba(26, 115, 232, 0.15) !important;
+}
+
+
+
+
+
+
+
+
+
+/* Red Glow & Shimmer Effect */
+.red-glow {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%,
+      rgba(255, 150, 150, 0.95) 0%,
+      rgba(255, 50, 50, 0.75) 25%,
+      rgba(220, 20, 60, 0.3) 50%,
+      transparent 75%),
+    linear-gradient(45deg,
+      #8B0000 0%,
+      #B91C1C 20%,
+      #EF4444 40%,
+      #FF0000 60%,
+      #FF7F7F 80%,
+      #DC2626 100%);
+  background-size: 200% 200%, 300% 300%;
+  animation: redGlow 6s ease-in-out infinite;
+}
+
+.red-glow::after {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  z-index: 0;
+  background: linear-gradient(45deg,
+      transparent 35%,
+      rgba(255, 180, 180, 0.5) 48%,
+      rgba(255, 230, 230, 0.9) 50%,
+      rgba(255, 180, 180, 0.5) 52%,
+      transparent 65%);
+  animation: shimmer 10s linear infinite;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+@keyframes redGlow {
+  0% {
+    background-position: 30% 30%, 0% 50%;
+  }
+
+  50% {
+    background-position: 70% 70%, 100% 50%;
+  }
+
+  100% {
+    background-position: 30% 30%, 0% 50%;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-30%);
+  }
+
+  100% {
+    transform: translateX(30%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .red-glow,
+  .red-glow::after {
+    animation: none;
+  }
 }

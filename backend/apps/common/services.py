@@ -27,17 +27,15 @@ def _send_webpush_async(subscriptions, payload):
             )
 
         except WebPushException as error:
-            print("Web push failed:", error)
-            # Subscription is no longer valid
-            if (
-                error.response
-                and error.response.status_code in [404, 410]
-            ):
+            status_code = getattr(getattr(error, 'response', None), 'status_code', None)
+            # Subscription is no longer valid or unsubscribed (404 / 410)
+            if status_code in [404, 410] or "410 Gone" in str(error) or "404" in str(error):
                 try:
-                    subscription.is_active = False
-                    subscription.save(update_fields=["is_active"])
-                except Exception as db_err:
-                    print("Failed to deactivate subscription:", db_err)
+                    PushSubscription.objects.filter(pk=subscription.pk).delete()
+                except Exception:
+                    pass
+            else:
+                print("Web push notice:", error)
 
 
 def send_push_notification(notification: Notification):

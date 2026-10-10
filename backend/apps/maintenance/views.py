@@ -1,5 +1,7 @@
 from django.db.models import Q, Prefetch, F
 from rest_framework import viewsets, exceptions
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage
@@ -246,7 +248,10 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         status = params.get('status')
         if status:
-            queryset = queryset.filter(status__status_name=status)
+            if status.isdigit():
+                queryset = queryset.filter(status_id=status)
+            else:
+                queryset = queryset.filter(status__status_name__iexact=status)
 
         priority = params.get('priority')
         if priority:
@@ -433,6 +438,22 @@ class TicketViewSet(viewsets.ModelViewSet):
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
             raise exceptions.PermissionDenied({'detail': 'Management role is read-only and cannot edit tickets.'})
         serializer.save()
+
+    @action(detail=False, methods=['get'], url_path='check-throttle')
+    def check_throttle(self, request):
+        store_id = request.query_params.get('store_id')
+        dept_id = request.query_params.get('department_id')
+        if not store_id or not dept_id:
+            return Response({'error': 'store_id and department_id are required.'}, status=400)
+        from apps.stores.models import Store, Department, check_location_approval_throttle
+        try:
+            store = Store.objects.get(pk=store_id)
+            dept = Department.objects.get(pk=dept_id)
+        except (Store.DoesNotExist, Department.DoesNotExist):
+            return Response({'error': 'Invalid store or department ID.'}, status=404)
+
+        result = check_location_approval_throttle(store, dept)
+        return Response(result)
 
     def destroy(self, request, *args, **kwargs):
         raise exceptions.PermissionDenied({'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})

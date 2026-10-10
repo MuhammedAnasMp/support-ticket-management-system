@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Store, Department, SubDepartment, Area
+from .models import Store, Department, SubDepartment, Area, StoreDepartmentThrottle
 
 
 class AreaSerializer(serializers.ModelSerializer):
@@ -248,3 +248,14 @@ class SubDepartmentWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubDepartment
         fields = '__all__'
+
+
+class StoreDepartmentThrottleSerializer(serializers.ModelSerializer):
+    store_name = serializers.CharField(source='store.store_name', read_only=True)
+    department_name = serializers.CharField(source='department.department_name', read_only=True)
+
+    class Meta:
+        from .models import StoreDepartmentThrottle
+        model = StoreDepartmentThrottle
+        fields = '__all__'
+

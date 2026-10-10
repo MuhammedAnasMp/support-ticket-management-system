@@ -177,12 +177,15 @@ class DepartmentWiseValidationTestCase(TestCase):
 
     def test_expense_type_department_validation(self):
         # Test valid Expense
+        from django.utils import timezone
+        today_str = timezone.now().date().isoformat()
         expense_valid_data = {
             "ticket": self.ticket_it.ticket_id,
             "worker": self.worker.user_id,
             "expense_type": self.exp_type_it.expense_type_id,
             "amount": "120.00",
-            "expense_date": "2026-07-16"
+            "expense_date": today_str,
+            "remarks": "License renewal payment"
         }
         serializer = ExpenseWriteSerializer(data=expense_valid_data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
@@ -193,7 +196,7 @@ class DepartmentWiseValidationTestCase(TestCase):
             "worker": self.worker.user_id,
             "expense_type": self.exp_type_maint.expense_type_id,
             "amount": "120.00",
-            "expense_date": "2026-07-16"
+            "expense_date": today_str
         }
         serializer = ExpenseWriteSerializer(data=expense_invalid_data)
         self.assertFalse(serializer.is_valid())
@@ -532,6 +535,358 @@ class TicketChatMessageAPITests(APITestCase):
         results = response.data.get("results", response.data)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["message_text"], "Test message")
+
+
+class WorkLogAndTimeTrackingTestCase(TestCase):
+    def setUp(self):
+        self.role_admin = Role.objects.create(role_name="Administrator")
+        self.role_tech = Role.objects.create(role_name="Technician")
+
+        self.dept = Department.objects.create(department_name="Operations")
+        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="HVAC")
+        self.area = Area.objects.create(area_name="East Area")
+        self.store = Store.objects.create(store_id="S-100", store_name="Store-100", area=self.area)
+
+        self.admin = CustomUser.objects.create_user(
+            username="admin_user", email="adm@test.com", password="pwd",
+            full_name="Admin User", role=self.role_admin
+        )
+        self.worker1 = CustomUser.objects.create_user(
+            username="tech_worker_1", email="tw1@test.com", password="pwd",
+            full_name="Tech Worker 1", role=self.role_tech
+        )
+        self.worker2 = CustomUser.objects.create_user(
+            username="tech_worker_2", email="tw2@test.com", password="pwd",
+            full_name="Tech Worker 2", role=self.role_tech
+        )
+
+        self.priority = Priority.objects.create(department=self.dept, priority_name="High", level=1)
+        self.status_open = Status.objects.create(status_name="Open", order=1)
+        self.status_in_progress = Status.objects.create(status_name="In Progress", order=2)
+        self.status_loc_app = Status.objects.create(status_name="Location Approval", order=3)
+
+        self.nature = WorkNature.objects.create(
+            nature_name="AC Repair", sub_department=self.subdept,
+            default_priority=self.priority
+        )
+
+        self.ticket = Ticket.objects.create(
+            work_order_no="WO-HVAC-01", store=self.store, department=self.dept,
+            nature=self.nature, priority=self.priority, status=self.status_in_progress,
+            title="AC Leaking", description="Water dripping", created_by=self.admin
+        )
+
+        from apps.maintenance.models import Allocation
+        self.alloc1 = Allocation.objects.create(
+            ticket=self.ticket, worker=self.worker1, assigned_by=self.admin, planned_hours=4.0
+        )
+        self.alloc2 = Allocation.objects.create(
+            ticket=self.ticket, worker=self.worker2, assigned_by=self.admin, planned_hours=4.0
+        )
+
+    def test_worklog_same_time_zero_hours_allowed(self):
+        from apps.maintenance.serializers import WorkLogWriteSerializer
+        from django.utils import timezone
+        data = {
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "09:00:00",
+            "to_time": "09:00:00",
+            "work_done": "Did not work on site",
+            "work_date": timezone.now().date().isoformat()
+        }
+        serializer = WorkLogWriteSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(float(instance.hours), 0.0)
+
+    def test_worklog_negative_hours_or_invalid_time_rejected(self):
+        from apps.maintenance.serializers import WorkLogWriteSerializer
+        from django.utils import timezone
+        # Negative hours
+        data_neg = {
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "hours": "-1.00",
+            "work_done": "Invalid work",
+            "work_date": timezone.now().date().isoformat()
+        }
+        serializer_neg = WorkLogWriteSerializer(data=data_neg)
+        self.assertFalse(serializer_neg.is_valid())
+        self.assertIn("hours", serializer_neg.errors)
+
+        # To time earlier than from time
+        data_time_inv = {
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "14:00:00",
+            "to_time": "12:00:00",
+            "work_done": "Invalid time order",
+            "work_date": timezone.now().date().isoformat()
+        }
+        serializer_time = WorkLogWriteSerializer(data=data_time_inv)
+        self.assertFalse(serializer_time.is_valid())
+        self.assertIn("to_time", serializer_time.errors)
+
+    def test_worklog_from_and_to_time_calculation(self):
+        from apps.maintenance.serializers import WorkLogWriteSerializer
+        from django.utils import timezone
+        data = {
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "09:00:00",
+            "to_time": "12:30:00",
+            "work_done": "Repaired compressor",
+            "work_date": timezone.now().date().isoformat()
+        }
+        serializer = WorkLogWriteSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(float(instance.hours), 3.5)
+
+    def test_location_approval_rejected_if_workers_lack_worklogs(self):
+        from apps.maintenance.serializers import TicketWriteSerializer
+        # Only worker1 has logged hours, worker2 has none
+        from apps.maintenance.models import WorkLog
+        from django.utils import timezone
+        WorkLog.objects.create(
+            ticket=self.ticket, worker=self.worker1, allocation=self.alloc1,
+            work_date=timezone.now().date(), hours=3.5, hourly_rate=5.0,
+            labour_amount=17.5, work_done="Completed task 1"
+        )
+
+        serializer = TicketWriteSerializer(
+            instance=self.ticket,
+            data={"status": self.status_loc_app.status_id},
+            partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("status", serializer.errors)
+        self.assertIn("Tech Worker 2", str(serializer.errors["status"]))
+
+    def test_location_approval_allowed_when_all_workers_logged_hours_including_zero(self):
+        from apps.maintenance.serializers import TicketWriteSerializer
+        from apps.maintenance.models import WorkLog
+        from django.utils import timezone
+        WorkLog.objects.create(
+            ticket=self.ticket, worker=self.worker1, allocation=self.alloc1,
+            work_date=timezone.now().date(), hours=3.5, hourly_rate=5.0,
+            labour_amount=17.5, work_done="Completed task 1"
+        )
+        # Worker 2 has 0 hours (did not work)
+        WorkLog.objects.create(
+            ticket=self.ticket, worker=self.worker2, allocation=self.alloc2,
+            work_date=timezone.now().date(), hours=0.0, hourly_rate=5.0,
+            labour_amount=0.0, work_done="Did not work"
+        )
+
+        serializer = TicketWriteSerializer(
+            instance=self.ticket,
+            data={"status": self.status_loc_app.status_id},
+            partial=True
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+
+class LocationApprovalThrottleTestCase(TestCase):
+    def setUp(self):
+        self.role_mgr = Role.objects.create(role_name="Store Manager")
+        self.dept_it = Department.objects.create(department_name="IT Support", location_approval_throttle=2)
+        self.dept_maint = Department.objects.create(department_name="Facility Maintenance", location_approval_throttle=3)
+
+        self.subdept_it = SubDepartment.objects.create(department=self.dept_it, sub_department_name="Helpdesk")
+        self.subdept_maint = SubDepartment.objects.create(department=self.dept_maint, sub_department_name="Plumbing")
+
+        self.area = Area.objects.create(area_name="North Area")
+        self.store = Store.objects.create(store_id="S-THROTTLE-1", store_name="Throttle Store 1", area=self.area)
+
+        self.user = CustomUser.objects.create_user(
+            username="manager_throttle", email="m_thr@test.com", password="pwd",
+            full_name="Throttle Manager", role=self.role_mgr
+        )
+        self.user.accessible_stores.add(self.store)
+
+        self.priority = Priority.objects.create(department=self.dept_it, priority_name="Normal", level=1)
+        self.priority_m = Priority.objects.create(department=self.dept_maint, priority_name="Normal", level=1)
+
+        self.status_open = Status.objects.create(status_name="Open")
+        self.status_loc_app = Status.objects.create(status_name="Location Approval")
+        self.status_completed = Status.objects.create(status_name="Completed")
+
+        self.nature_it = WorkNature.objects.create(
+            nature_name="Network Down", sub_department=self.subdept_it, default_priority=self.priority
+        )
+        self.nature_m = WorkNature.objects.create(
+            nature_name="Pipe Leak", sub_department=self.subdept_maint, default_priority=self.priority_m
+        )
+
+    def test_ticket_creation_allowed_under_throttle_limit(self):
+        # Create 1 ticket in Location Approval status (department limit is 2)
+        Ticket.objects.create(
+            work_order_no="WO-IT-APP-1", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Old Pending Ticket 1", description="Pending approval", created_by=self.user
+        )
+
+        # Attempt to create a new ticket in IT department -> Should succeed because count (1) < limit (2)
+        data = {
+            "work_order_no": "WO-IT-APP-NEW",
+            "store": self.store.store_id,
+            "department": self.dept_it.department_id,
+            "nature": self.nature_it.nature_id,
+            "priority": self.priority.priority_id,
+            "status": self.status_open.status_id,
+            "title": "New IT Ticket",
+            "description": "New issue description",
+            "created_by": self.user.user_id
+        }
+        serializer = TicketWriteSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_ticket_creation_blocked_when_throttle_limit_reached(self):
+        # Create 2 tickets in Location Approval status for IT department
+        Ticket.objects.create(
+            work_order_no="WO-IT-APP-1", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 1", description="Pending approval", created_by=self.user
+        )
+        Ticket.objects.create(
+            work_order_no="WO-IT-APP-2", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 2", description="Pending approval", created_by=self.user
+        )
+
+        # Attempt to create 3rd ticket -> Should fail with throttle validation error
+        data = {
+            "work_order_no": "WO-IT-APP-BLOCKED",
+            "store": self.store.store_id,
+            "department": self.dept_it.department_id,
+            "nature": self.nature_it.nature_id,
+            "priority": self.priority.priority_id,
+            "status": self.status_open.status_id,
+            "title": "Blocked IT Ticket",
+            "description": "Should be blocked",
+            "created_by": self.user.user_id
+        }
+        serializer = TicketWriteSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertTrue('store' in serializer.errors or 'non_field_errors' in serializer.errors)
+        error_msg = str(serializer.errors)
+        self.assertIn("Location Approval", error_msg)
+        self.assertIn("Location Approval limit", error_msg)
+
+    def test_custom_store_override_allows_higher_limit(self):
+        # Department limit is 2, but store override is set to 5
+        self.store.location_approval_throttle = 5
+        self.store.save()
+
+        # Create 2 tickets in Location Approval status
+        Ticket.objects.create(
+            work_order_no="WO-IT-APP-1", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 1", description="Pending approval", created_by=self.user
+        )
+        Ticket.objects.create(
+            work_order_no="WO-IT-APP-2", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 2", description="Pending approval", created_by=self.user
+        )
+
+        # Creating 3rd ticket should now succeed because store override is 5
+        data = {
+            "work_order_no": "WO-IT-APP-ALLOWED",
+            "store": self.store.store_id,
+            "department": self.dept_it.department_id,
+            "nature": self.nature_it.nature_id,
+            "priority": self.priority.priority_id,
+            "status": self.status_open.status_id,
+            "title": "Allowed IT Ticket",
+            "description": "Allowed by store override",
+            "created_by": self.user.user_id
+        }
+        serializer = TicketWriteSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_store_department_throttle_override(self):
+        from apps.stores.models import StoreDepartmentThrottle
+        # Set custom StoreDepartmentThrottle for (store, dept_it) = 1
+        StoreDepartmentThrottle.objects.create(
+            store=self.store, department=self.dept_it, throttle_limit=1
+        )
+
+        # Create 1 ticket in Location Approval
+        Ticket.objects.create(
+            work_order_no="WO-IT-APP-1", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 1", description="Pending approval", created_by=self.user
+        )
+
+        # Attempt to create another ticket in IT -> Blocked because limit is 1
+        data_it = {
+            "work_order_no": "WO-IT-APP-2",
+            "store": self.store.store_id,
+            "department": self.dept_it.department_id,
+            "nature": self.nature_it.nature_id,
+            "priority": self.priority.priority_id,
+            "status": self.status_open.status_id,
+            "title": "Blocked IT Ticket",
+            "description": "Blocked",
+            "created_by": self.user.user_id
+        }
+        serializer_it = TicketWriteSerializer(data=data_it)
+        self.assertFalse(serializer_it.is_valid())
+
+        # But for Facility Maintenance department (limit 3, no tickets), creating a ticket succeeds
+        data_m = {
+            "work_order_no": "WO-M-APP-1",
+            "store": self.store.store_id,
+            "department": self.dept_maint.department_id,
+            "nature": self.nature_m.nature_id,
+            "priority": self.priority_m.priority_id,
+            "status": self.status_open.status_id,
+            "title": "Maintenance Ticket",
+            "description": "Allowed",
+            "created_by": self.user.user_id
+        }
+        serializer_m = TicketWriteSerializer(data=data_m)
+        self.assertTrue(serializer_m.is_valid(), serializer_m.errors)
+
+    def test_closing_or_approving_tickets_unblocks_creation(self):
+        # Create 2 tickets in Location Approval
+        t1 = Ticket.objects.create(
+            work_order_no="WO-IT-APP-1", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 1", description="Pending approval", created_by=self.user
+        )
+        t2 = Ticket.objects.create(
+            work_order_no="WO-IT-APP-2", store=self.store, department=self.dept_it,
+            nature=self.nature_it, priority=self.priority, status=self.status_loc_app,
+            title="Pending Ticket 2", description="Pending approval", created_by=self.user
+        )
+
+        data = {
+            "work_order_no": "WO-IT-APP-NEW",
+            "store": self.store.store_id,
+            "department": self.dept_it.department_id,
+            "nature": self.nature_it.nature_id,
+            "priority": self.priority.priority_id,
+            "status": self.status_open.status_id,
+            "title": "New IT Ticket",
+            "description": "Testing unblocking",
+            "created_by": self.user.user_id
+        }
+        serializer = TicketWriteSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+
+        # Now approve/complete t1
+        t1.status = self.status_completed
+        t1.save()
+
+        # Now serializer should pass because pending count is 1 (< limit of 2)
+        serializer2 = TicketWriteSerializer(data=data)
+        self.assertTrue(serializer2.is_valid(), serializer2.errors)
+
+
 
 
 

@@ -231,6 +231,19 @@ def change_status(obj, new_status, changed_by=None, remarks=None):
                 if not compare_values(val, rule.value):
                     raise ValidationError(rule.message)
                     
+        # Validation: Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours
+        if new_status.status_name.lower().strip() == 'location approval':
+            allocations = obj.allocations.all()
+            if not allocations.exists():
+                raise ValidationError("Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.")
+            missing_workers = []
+            for alloc in allocations:
+                if not obj.work_logs.filter(worker=alloc.worker).exists():
+                    name = alloc.worker.full_name or alloc.worker.username or f"Worker #{alloc.worker.pk}"
+                    missing_workers.append(name)
+            if missing_workers:
+                raise ValidationError(f"Cannot move ticket to Location Approval: The following allocated worker(s) have not logged their work hours: {', '.join(missing_workers)}. All allocated workers must log their work hours before applying for location approval.")
+
         # Update status and save
         obj._bypass_status_rule = True
         try:

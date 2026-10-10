@@ -133,7 +133,7 @@ export const DashboardView: React.FC = () => {
     // Select dashboard component based on role
     const renderRoleDashboard = () => {
         if (roleLower.includes('office admin')) {
-            return <OfficeAdminDashboard data={data} loading={loading} />;
+            return <OfficeAdminDashboard data={data} loading={loading} token={token} />;
         }
         if (roleLower.includes('store manager') || roleLower.includes('store_manager')) {
             return <StoreManagerDashboard data={data} loading={loading} />;
@@ -148,7 +148,7 @@ export const DashboardView: React.FC = () => {
             return <ManagementDashboard data={data} loading={loading} />;
         }
         // Admin / Superuser / Fallback
-        return <AdminDashboard data={data} loading={loading} />;
+        return <AdminDashboard data={data} loading={loading} token={token} />;
     };
 
     return (

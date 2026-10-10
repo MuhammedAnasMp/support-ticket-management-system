@@ -86,10 +86,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       title: 'Finance System',
       icon: <Receipt className="w-4 h-4" />,
       subItems: [
-        { title: 'Expenses', path: '/finance/expenses' },
-        { title: 'Worker Claims', path: '/finance/bundles' },
-        { title: 'Ledger Batches', path: '/finance/ledgers' },
-        { title: 'Disbursements & Audit', path: '/finance/payments' },
+        { title: 'Expenses', path: '/finance/expenses', permission: 'reports.can_generate_report' },
+        { title: 'Worker Claims', path: '/finance/bundles', permission: 'reports.can_generate_report' },
+        { title: 'Ledger Batches', path: '/finance/ledgers', permission: 'reports.can_generate_report' },
+        { title: 'Disbursements & Audit', path: '/finance/payments', permission: 'reports.can_generate_report' },
       ],
     },
     {

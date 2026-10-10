@@ -258,7 +258,7 @@ class LedgerBatch(models.Model):
 
 class LedgerGroup(models.Model):
     ledger_group_id = models.AutoField(primary_key=True)
-    group_name = models.CharField(max_length=150)
+    group_name = models.CharField(max_length=150, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_ledger_groups')

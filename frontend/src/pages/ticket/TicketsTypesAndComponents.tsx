@@ -70,6 +70,8 @@ export interface WorkLog {
     worklog_id: number;
     worker: UserStub;
     work_date: string;
+    from_time?: string | null;
+    to_time?: string | null;
     hours: string;
     hourly_rate: string;
     labour_amount: string;
@@ -129,17 +131,39 @@ export const isVideo = (name: string) => !isAudio(name) && /\.(mp4|mov|avi|mkv|w
 
 // ─── Reusable Components ──────────────────────────────────────────────────────
 
-export const AvatarCircle: React.FC<{ user?: UserStub | null; size?: 'sm' | 'md' | 'lg' }> = ({ user, size = 'md' }) => {
+export const AvatarCircle: React.FC<{
+    user?: any;
+    name?: string;
+    image?: string | null;
+    size?: 'xs' | 'sm' | 'md' | 'lg';
+    className?: string;
+}> = ({ user, name, image, size = 'md', className = '' }) => {
     const [imgError, setImgError] = useState(false);
-    const sizeClass = { sm: 'w-7 h-7 text-[10px]', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-lg' }[size];
-    const imgUrl = user?.profile_image && !imgError ? getMediaUrl(user.profile_image) : null;
-    const initials = user?.full_name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || (user as any)?.username?.[0]?.toUpperCase() || '?';
+    const sizeClass = {
+        xs: 'w-5 h-5 text-[9px]',
+        sm: 'w-7 h-7 text-[10px]',
+        md: 'w-9 h-9 text-xs',
+        lg: 'w-12 h-12 text-sm'
+    }[size];
+    const profileImg = image !== undefined ? image : (user?.profile_image || (typeof user === 'object' ? user?.profile_image : null));
+    const imgUrl = profileImg && !imgError ? getMediaUrl(profileImg) : null;
+    const displayName = name || user?.full_name || user?.name || user?.username || '';
+    const initials = displayName
+        ? displayName.split(' ').filter(Boolean).map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
+        : '?';
+
     return (
-        <div className={`${sizeClass} rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center font-bold bg-primary/20 text-primary border-2 border-primary/30`}>
-            {imgUrl
-                ? <img src={imgUrl} alt={user?.full_name || 'User'} className="w-full h-full object-cover" onError={() => setImgError(true)} />
-                : <span>{initials}</span>
-            }
+        <div className={`${sizeClass} rounded-full overflow-hidden shrink-0 flex items-center justify-center font-bold bg-primary/20 text-primary border border-primary/30 shadow-2xs ${className}`}>
+            {imgUrl ? (
+                <img
+                    src={imgUrl}
+                    alt={displayName || 'User'}
+                    className="w-full h-full object-cover"
+                    onError={() => setImgError(true)}
+                />
+            ) : (
+                <span>{initials}</span>
+            )}
         </div>
     );
 };

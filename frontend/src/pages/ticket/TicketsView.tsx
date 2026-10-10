@@ -153,6 +153,26 @@ export const TicketsView: React.FC = () => {
         localStorage.setItem('ticket-view-mode', mode);
     };
 
+    // Kanban collapsed columns with reliable localStorage persistence
+    const [collapsedColumns, setCollapsedColumns] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem('ticket-kanban-collapsed-statuses');
+            if (saved) return JSON.parse(saved);
+        } catch {}
+        return [];
+    });
+
+    const toggleCollapseColumn = (statusName: string, statusId?: number) => {
+        const key = statusName || String(statusId);
+        setCollapsedColumns(prev => {
+            const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+            try {
+                localStorage.setItem('ticket-kanban-collapsed-statuses', JSON.stringify(next));
+            } catch {}
+            return next;
+        });
+    };
+
     // Drag and Drop state
     const [draggingTicketId, setDraggingTicketId] = useState<number | null>(null);
     const [dragOverStatusId, setDragOverStatusId] = useState<number | null>(null);
@@ -578,6 +598,85 @@ export const TicketsView: React.FC = () => {
         }
     }, [selectedTicket, isCreateModalOpen]);
 
+    // Synchronize filters from URL query parameters (e.g. ?store=803&status=Location%20Approval)
+    useEffect(() => {
+        const urlParams = new URLSearchParams(location.search);
+        
+        const storeParam = urlParams.get('store');
+        const statusParam = urlParams.get('status');
+        const deptParam = urlParams.get('department') || urlParams.get('dept');
+        const subDeptParam = urlParams.get('sub_department') || urlParams.get('sub_dept');
+        const priorityParam = urlParams.get('priority');
+        const workerParam = urlParams.get('worker');
+        const searchParam = urlParams.get('search');
+        const fromDateParam = urlParams.get('from_date') || urlParams.get('fromDate');
+        const toDateParam = urlParams.get('to_date') || urlParams.get('toDate');
+        const dateTypeParam = urlParams.get('date_type') || urlParams.get('dateType');
+
+        let hasFilterParam = false;
+
+        if (storeParam !== null) {
+            setFilterStore(storeParam);
+            hasFilterParam = true;
+        }
+
+        if (statusParam !== null) {
+            const matchedStatus = statuses.find(
+                s => String(s.status_id) === statusParam || 
+                     s.status_name?.toLowerCase() === statusParam.toLowerCase()
+            );
+            setFilterStatus(matchedStatus ? matchedStatus.status_name : statusParam);
+            hasFilterParam = true;
+        }
+
+        if (deptParam !== null) {
+            setFilterDept(deptParam);
+            hasFilterParam = true;
+        }
+
+        if (subDeptParam !== null) {
+            setFilterSubDept(subDeptParam);
+            hasFilterParam = true;
+        }
+
+        if (priorityParam !== null) {
+            setFilterPriority(priorityParam);
+            hasFilterParam = true;
+        }
+
+        if (workerParam !== null) {
+            setFilterWorker(workerParam);
+            hasFilterParam = true;
+        }
+
+        if (searchParam !== null) {
+            setSearch(searchParam);
+            setDebouncedSearch(searchParam);
+            hasFilterParam = true;
+        }
+
+        if (fromDateParam !== null) {
+            setFromDate(fromDateParam);
+        } else if (hasFilterParam && (storeParam !== null || statusParam !== null)) {
+            // When navigated with specific store/status filters (e.g. throttle warnings), clear date restrictions if not explicitly passed
+            setFromDate('');
+        }
+
+        if (toDateParam !== null) {
+            setToDate(toDateParam);
+        } else if (hasFilterParam && (storeParam !== null || statusParam !== null)) {
+            setToDate('');
+        }
+
+        if (dateTypeParam !== null) {
+            setDateType(dateTypeParam);
+        }
+
+        if (hasFilterParam) {
+            setPage(1);
+        }
+    }, [location.search, statuses]);
+
     // Load ticket from URL query parameter on refresh/load
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -654,12 +753,17 @@ export const TicketsView: React.FC = () => {
 
     const clearFilters = () => {
         setSearch('');
+        setDebouncedSearch('');
         setFilterStore('');
         setFilterDept('');
         setFilterSubDept('');
         setFilterStatus('');
         setFilterPriority('');
+        setFilterWorker('');
         handleResetDates();
+        if (location.search) {
+            navigate(location.pathname, { replace: true });
+        }
     };
 
     // Returns true if user has the 'can_view_<status>_ticket' permission
@@ -1630,6 +1734,78 @@ export const TicketsView: React.FC = () => {
                                                     columnBorderBgClass = 'border-primary ring-2 ring-primary/20 bg-surface-container-high';
                                                 }
 
+                                                const isCollapsed = collapsedColumns.includes(status.status_name) || collapsedColumns.includes(String(status.status_id));
+
+                                                if (isCollapsed) {
+                                                    return (
+                                                        <div
+                                                            key={status.status_id}
+                                                            onDragOver={(e) => {
+                                                                e.preventDefault();
+                                                                if (draggingTicket && !isSameColumn && !isMoveAllowed) {
+                                                                    e.dataTransfer.dropEffect = 'none';
+                                                                } else {
+                                                                    e.dataTransfer.dropEffect = 'move';
+                                                                }
+                                                                if (dragOverStatusId !== status.status_id) {
+                                                                    setDragOverStatusId(status.status_id);
+                                                                }
+                                                            }}
+                                                            onDragLeave={(e) => {
+                                                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                                                    setDragOverStatusId(null);
+                                                                }
+                                                            }}
+                                                            onDrop={(e) => {
+                                                                e.preventDefault();
+                                                                setDragOverStatusId(null);
+                                                                setDraggingTicketId(null);
+                                                                const ticketIdStr = e.dataTransfer.getData('text/plain');
+                                                                if (ticketIdStr) {
+                                                                    handleDropTicket(Number(ticketIdStr), status);
+                                                                }
+                                                            }}
+                                                            onClick={() => toggleCollapseColumn(status.status_name, status.status_id)}
+                                                            className={`w-9 shrink-0 rounded-xl border flex flex-col items-center justify-between py-2.5 max-h-[70vh] min-h-[480px] shadow-xs transition-all cursor-pointer select-none hover:border-primary/60 hover:bg-surface-container-high/70 ${columnBorderBgClass}`}
+                                                            title={`Click to expand ${status.status_name} (${colTickets.length} tickets)`}
+                                                        >
+                                                            {/* Top: Expand button and count */}
+                                                            <div className="flex flex-col items-center gap-1.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        toggleCollapseColumn(status.status_name, status.status_id);
+                                                                    }}
+                                                                    className="p-1 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+                                                                    title="Expand column"
+                                                                >
+                                                                    <ChevronRight className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container px-1 py-0.2 rounded-full border border-outline-variant shadow-2xs">
+                                                                    {colTickets.length}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Middle: Vertical Status Name */}
+                                                            <div className="flex-1 flex items-center justify-center my-3 overflow-hidden">
+                                                                <span
+                                                                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap shadow-2xs ${statusColor(status.status_name)}`}
+                                                                    style={{
+                                                                        writingMode: 'vertical-rl',
+                                                                        transform: 'rotate(180deg)'
+                                                                    }}
+                                                                >
+                                                                    {status.status_name}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Bottom indicator */}
+                                                            <div className="w-1 h-3 rounded-full bg-outline-variant/60" />
+                                                        </div>
+                                                    );
+                                                }
+
                                                 return (
                                                     <div
                                                         key={status.status_id}
@@ -1685,6 +1861,15 @@ export const TicketsView: React.FC = () => {
                                                                         {colTickets.length}
                                                                     </span>
                                                                 )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleCollapseColumn(status.status_name, status.status_id)}
+                                                                    className="p-1 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                                                    title="Collapse column"
+                                                                    aria-label="Collapse column"
+                                                                >
+                                                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                                                </button>
                                                             </div>
                                                         </div>
 

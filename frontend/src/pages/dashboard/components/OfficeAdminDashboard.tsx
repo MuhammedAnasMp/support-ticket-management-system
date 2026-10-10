@@ -1,18 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StatCard } from './StatCard';
 import { WorkerPerformanceTable } from './WorkerPerformanceTable';
 import { TopInsightsRow } from './TopInsightsRow';
+import { ThrottleSettingsModal } from './ThrottleSettingsModal';
 import {
     UserPlus, Clock, AlertTriangle, Receipt,
-    CheckCircle2, Wrench, ShieldAlert, Layers
+    CheckCircle2, ShieldAlert, Layers, Sliders
 } from 'lucide-react';
 
 interface OfficeAdminDashboardProps {
     data: any;
     loading: boolean;
+    token?: string | null;
 }
 
-export const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ data, loading }) => {
+export const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ data, loading, token }) => {
+    const [isThrottleModalOpen, setIsThrottleModalOpen] = useState(false);
     const summary = data?.summary || {};
     const financials = data?.financials || {};
     const workerPerformance = data?.worker_performance || [];
@@ -21,6 +24,25 @@ export const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ data
 
     return (
         <div className="space-y-6">
+            {/* Header Action Toolbar */}
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+                <button
+                    type="button"
+                    onClick={() => setIsThrottleModalOpen(true)}
+                    className="px-3 py-1.5 rounded bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                    <Sliders className="w-3.5 h-3.5 text-primary" />
+                    Throttle Controls
+                </button>
+                <a
+                    href="/tickets/all"
+                    className="px-3 py-1.5 rounded bg-primary text-on-primary hover:bg-primary-hover text-xs font-medium flex items-center gap-1.5 transition-colors shadow-2xs"
+                >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    View tickets
+                </a>
+            </div>
+
             {/* Top Highlights: Top Performing Worker & Most Ticket Raised Store */}
             <TopInsightsRow
                 insights={insights}
@@ -65,28 +87,6 @@ export const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ data
                 />
             </div>
 
-            {/* Operational Dispatch & Audit Banner */}
-            <div className="bg-surface-container border border-outline-variant rounded p-4 flex flex-wrap items-center justify-between gap-4">
-                <div className="space-y-0.5">
-                    <h3 className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
-                        <Wrench className="w-4 h-4 text-primary" />
-                        Office Administration Dispatch Control
-                    </h3>
-                    <p className="text-[11px] text-on-surface-variant">
-                        Manage technician job allocations, verify logged work hours, and clear expense claims.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <a
-                        href="/tickets/all"
-                        className="px-3 py-1.5 rounded bg-primary text-on-primary hover:bg-primary-container text-xs font-medium flex items-center gap-1.5 transition-colors"
-                    >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        Dispatch Worker Queue
-                    </a>
-                </div>
-            </div>
-
             {/* Worker Performance & Completion Audit Matrix */}
             <WorkerPerformanceTable workers={workerPerformance} loading={loading} />
 
@@ -128,6 +128,13 @@ export const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ data
                     </p>
                 </div>
             </div>
+
+            <ThrottleSettingsModal
+                isOpen={isThrottleModalOpen}
+                onClose={() => setIsThrottleModalOpen(false)}
+                token={token ?? null}
+            />
         </div>
     );
 };
+

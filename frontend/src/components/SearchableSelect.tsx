@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, Check, X, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, Check, X, Loader2, Trash2 } from 'lucide-react';
 
 export interface SelectOption {
   value: string | number;
   label: string;
   disabled?: boolean;
+  canDelete?: boolean;
+  deleteTooltip?: string;
 }
 
 interface SearchableSelectProps {
@@ -20,6 +22,8 @@ interface SearchableSelectProps {
   onSearchChange?: (term: string) => void;
   loading?: boolean;
   disableLocalFilter?: boolean;
+  dropdownPosition?: 'auto' | 'top' | 'bottom';
+  onDeleteOption?: (value: string | number, e: React.MouseEvent) => void;
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -34,10 +38,13 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   name,
   onSearchChange,
   loading = false,
-  disableLocalFilter = false
+  disableLocalFilter = false,
+  dropdownPosition = 'auto',
+  onDeleteOption
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [placement, setPlacement] = useState<'top' | 'bottom'>('bottom');
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,16 +76,30 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     };
   }, [isOpen]);
 
-  // Focus search input when dropdown opens
+  // Determine placement (top vs bottom) and focus search input when dropdown opens
   useEffect(() => {
     if (isOpen) {
+      if (dropdownPosition === 'top') {
+        setPlacement('top');
+      } else if (dropdownPosition === 'bottom') {
+        setPlacement('bottom');
+      } else if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        if (spaceBelow < 260 && spaceAbove > 220) {
+          setPlacement('top');
+        } else {
+          setPlacement('bottom');
+        }
+      }
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
     } else {
       setSearchTerm('');
     }
-  }, [isOpen]);
+  }, [isOpen, dropdownPosition]);
 
   const handleSelect = (val: string | number) => {
     onChange(String(val));
@@ -118,7 +139,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-[100] bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md">
+        <div className={`absolute left-0 right-0 ${placement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-[100] bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md`}>
           {/* Search Box */}
           <div className="p-2 border-b border-outline-variant/60 bg-surface-container-low flex items-center gap-2">
             {loading ? (
@@ -165,15 +186,30 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   <div
                     key={opt.value}
                     onClick={() => !opt.disabled && handleSelect(opt.value)}
-                    className={`px-3 py-2 flex items-center justify-between cursor-pointer transition-colors ${opt.disabled
+                    className={`px-3 py-2 flex items-center justify-between group cursor-pointer transition-colors ${opt.disabled
                       ? 'opacity-40 cursor-not-allowed'
                       : isSelected
                         ? 'bg-primary/10 text-primary font-medium'
                         : 'hover:bg-surface-container-high text-on-surface'
                       }`}
                   >
-                    <span className="truncate">{opt.label}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0 ml-2" />}
+                    <span className="truncate flex-1 pr-2">{opt.label}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                      {opt.canDelete && onDeleteOption && (
+                        <button
+                          type="button"
+                          title={opt.deleteTooltip || "Delete unused option"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteOption(opt.value, e);
+                          }}
+                          className="p-1 text-on-surface-variant/50 hover:text-error hover:bg-error/10 rounded transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })

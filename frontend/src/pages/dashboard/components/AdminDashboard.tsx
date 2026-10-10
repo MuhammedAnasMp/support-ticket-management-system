@@ -1,19 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StatCard } from './StatCard';
 import { WorkerPerformanceTable } from './WorkerPerformanceTable';
 import { StoreBreakdownTable } from './StoreBreakdownTable';
 import { TopInsightsRow } from './TopInsightsRow';
+import { ThrottleSettingsModal } from './ThrottleSettingsModal';
 import {
     Ticket, CheckCircle2, Clock, AlertTriangle,
-    DollarSign, Store, Activity, Layers
+    DollarSign, Store, Activity, Layers, Sliders
 } from 'lucide-react';
 
 interface AdminDashboardProps {
     data: any;
     loading: boolean;
+    token?: string | null;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ data, loading }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ data, loading, token }) => {
+    const [isThrottleModalOpen, setIsThrottleModalOpen] = useState(false);
     const summary = data?.summary || {};
     const financials = data?.financials || {};
     const workerPerformance = data?.worker_performance || [];
@@ -23,6 +26,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ data, loading })
 
     return (
         <div className="space-y-6">
+            {/* Top Governance / Throttle Settings Bar */}
+            <div className="p-3.5 rounded-lg bg-surface-container border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded bg-primary/10 text-primary">
+                        <Sliders className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <h3 className="text-xs font-bold text-on-surface">Location Approval Throttle Control</h3>
+                        <p className="text-[11px] text-on-surface-variant">
+                            Configure Department defaults and custom Store-level pending Location Approval limits
+                        </p>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setIsThrottleModalOpen(true)}
+                    className="px-3.5 py-2 rounded bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs shrink-0 cursor-pointer"
+                >
+                    <Sliders className="w-3.5 h-3.5" />
+                    Configure Throttle Limits
+                </button>
+            </div>
+
             {/* Top Highlights: Top Performing Worker & Most Ticket Raised Store */}
             <TopInsightsRow
                 insights={insights}
@@ -131,6 +157,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ data, loading })
                     </div>
                 </div>
             </div>
+
+            <ThrottleSettingsModal
+                isOpen={isThrottleModalOpen}
+                onClose={() => setIsThrottleModalOpen(false)}
+                token={token ?? null}
+            />
         </div>
     );
 };

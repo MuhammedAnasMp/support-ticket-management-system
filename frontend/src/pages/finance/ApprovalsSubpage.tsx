@@ -502,8 +502,8 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                     const rowMedia: any[] = target?.type === 'Expense'
                       ? (target?.receipts || [])
                       : target?.type === 'Bundle'
-                      ? (target?.expenses || []).flatMap((e: any) => e.receipts || [])
-                      : [
+                        ? (target?.expenses || []).flatMap((e: any) => e.receipts || [])
+                        : [
                           ...(target?.bundles || []).flatMap((b: any) => (b.expenses || []).flatMap((e: any) => e.receipts || [])),
                           ...(target?.expenses || []).flatMap((e: any) => e.receipts || [])
                         ];
@@ -824,7 +824,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                             <th className="w-6 px-2 py-2"></th>
                                             <th className="px-3 py-2">Claim ID</th>
                                             <th className="px-3 py-2">Technician / Worker</th>
-                                                                                        <th className="px-3 py-2 text-right">Amount ($)</th>
+                                            <th className="px-3 py-2 text-right">Amount ($)</th>
                                             <th className="px-3 py-2">Status</th>
                                             <th className="px-3 py-2">Expense Bill</th>
                                           </tr>
@@ -915,8 +915,8 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                           <button
                                                             type="button"
                                                             onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setMediaPreviewState({ items: bundleMedia, index: 2 });
+                                                              e.stopPropagation();
+                                                              setMediaPreviewState({ items: bundleMedia, index: 2 });
                                                             }}
                                                             className="px-1 py-0.5 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
                                                             title={`+${bundleMedia.length - 2} more media files`}
@@ -948,7 +948,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                             <table className="w-full text-[11px] text-left text-on-surface">
                                                               <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant">
                                                                 <tr>
-                                                                  <th className="px-3 py-1.5">Exp #</th>
+                                                                  <th className="px-3 py-1.5">Exp</th>
                                                                   <th className="px-3 py-1.5">Category / Type</th>
                                                                   <th className="px-3 py-1.5">Worker</th>
                                                                   <th className="px-3 py-1.5">Ticket</th>
@@ -1043,7 +1043,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                                 ))}
                                                               </tbody>
                                                             </table>
-                                                         </div>
+                                                          </div>
                                                         )}
                                                       </div>
                                                     </td>

@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCircle, Headphones, Camera, Video, RotateCcw, RotateCw } from 'lucide-react';
+import { FileText, Plus, Loader2, X, Upload, Trash2, Image as ImageIcon, AlertCircle, Headphones, Camera, Video, RotateCcw, RotateCw, RefreshCw } from 'lucide-react';
 import { API_URL, RotatableVideoPlayer, rotateImageFile } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
@@ -86,11 +86,58 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             attachmentItems.forEach(i => { try { URL.revokeObjectURL(i.previewUrl); } catch (_) { } });
             setAttachmentItems([]);
             setErrorMessage(null);
+            setThrottleStatus(null);
         }
     }, [isOpen, stores, availableDepartments]);
 
     const [localNatures, setLocalNatures] = useState<any[]>([]);
     const [loadingNatures, setLoadingNatures] = useState(false);
+    const [throttleStatus, setThrottleStatus] = useState<{
+        is_throttled: boolean;
+        count: number;
+        limit: number | null;
+        store_name: string;
+        department_name: string;
+        pending_tickets: any[];
+    } | null>(null);
+    const [checkingThrottle, setCheckingThrottle] = useState(false);
+
+    // Dynamic throttle check when store or department changes, or manually on refresh
+    const fetchThrottleStatus = useCallback(async (storeId?: string, deptId?: string) => {
+        const targetStore = storeId !== undefined ? storeId : createForm.store_id;
+        const targetDept = deptId !== undefined ? deptId : createForm.department_id;
+
+        if (!targetStore || !targetDept) {
+            setThrottleStatus(null);
+            setCheckingThrottle(false);
+            return;
+        }
+
+        setCheckingThrottle(true);
+        try {
+            const res = await fetch(`${API_URL}/maintenance/ticket/check-throttle/?store_id=${targetStore}&department_id=${targetDept}`, {
+                headers: token ? { Authorization: `Token ${token}` } : {}
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data && typeof data.is_throttled === 'boolean') {
+                    setThrottleStatus(data);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to check throttle status:', err);
+        } finally {
+            setCheckingThrottle(false);
+        }
+    }, [createForm.store_id, createForm.department_id, token]);
+
+    React.useEffect(() => {
+        if (!createForm.store_id || !createForm.department_id) {
+            setThrottleStatus(null);
+            return;
+        }
+        fetchThrottleStatus(createForm.store_id, createForm.department_id);
+    }, [createForm.store_id, createForm.department_id, fetchThrottleStatus]);
 
     // Fetch natures dynamically from API when department changes
     React.useEffect(() => {
@@ -253,7 +300,19 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => null);
-                throw new Error(errData?.detail || errData?.message || 'Failed to create ticket.');
+                let errText = 'Failed to create ticket.';
+                if (errData) {
+                    if (typeof errData === 'string') errText = errData;
+                    else if (errData.detail) errText = errData.detail;
+                    else if (errData.message) errText = errData.message;
+                    else if (errData.store) errText = Array.isArray(errData.store) ? errData.store.join(', ') : String(errData.store);
+                    else if (errData.non_field_errors) errText = Array.isArray(errData.non_field_errors) ? errData.non_field_errors.join(', ') : String(errData.non_field_errors);
+                    else if (typeof errData === 'object') {
+                        const vals = Object.values(errData).flat();
+                        if (vals.length > 0) errText = vals.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
+                    }
+                }
+                throw new Error(errText);
             }
 
             const createdTicket = await response.json();
@@ -411,294 +470,370 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                     </div>
                                 </div>
 
-                                {/* Work Nature */}
-                                <div>
-                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                        Nature of Work <span className="text-error">*</span>
-                                    </label>
-                                    <SearchableSelect
-                                        required
-                                        disabled={!createForm.department_id || loadingNatures}
-                                        value={createForm.nature_id}
-                                        onChange={val => setCreateForm({ ...createForm, nature_id: val })}
-                                        placeholder={
-                                            loadingNatures
-                                                ? 'Loading Natures of Work...'
-                                                : createForm.department_id
-                                                    ? 'Select Nature of Work'
-                                                    : 'Select Department first'
-                                        }
-                                        options={filteredNatures.map(n => ({
-                                            value: n.nature_id,
-                                            label: n.nature_name
-                                        }))}
-                                    />
-                                </div>
-
-                                {/* Issue Title */}
-                                <div>
-                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                        Issue Title <span className="text-error">*</span>
-                                    </label>
-                                    <input
-                                        required
-                                        type="text"
-                                        placeholder="Briefly describe the issue..."
-                                        value={createForm.title}
-                                        onChange={e => setCreateForm({ ...createForm, title: e.target.value })}
-                                        className={inputCls}
-                                    />
-                                </div>
-
-                                {/* Description */}
-                                <div>
-                                    <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                        Description <span className="text-error">*</span>
-                                    </label>
-                                    <textarea
-                                        required
-                                        rows={3}
-                                        placeholder="Provide detailed description of the issue..."
-                                        value={createForm.description}
-                                        onChange={e => setCreateForm({ ...createForm, description: e.target.value })}
-                                        className={`${inputCls} resize-none`}
-                                    />
-                                </div>
-
-                                {/* Media Attachment Dropzone & Live Camera Capture */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <label className="block text-xs font-medium text-on-surface">
-                                            Attach Media <span className="text-error">* (At least 1 Photo or Video required)</span>
-                                        </label>
-                                        <span className="text-[11px] text-on-surface-variant">
-                                            {attachmentItems.length} file(s) attached
-                                        </span>
-                                    </div>
-
-                                    {/* Quick Live Capture Action Toolbar */}
-                                    <div className="grid grid-cols-3 gap-2 mb-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-                                                if (isMobile && cameraPhotoInputRef.current) {
-                                                    cameraPhotoInputRef.current.click();
-                                                } else {
-                                                    setCameraModalMode('photo');
-                                                    setIsCameraModalOpen(true);
-                                                }
-                                            }}
-                                            className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                                        >
-                                            <Camera className="w-4 h-4" />
-                                            <span>Photo</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-                                                if (isMobile && cameraVideoInputRef.current) {
-                                                    cameraVideoInputRef.current.click();
-                                                } else {
-                                                    setCameraModalMode('video');
-                                                    setIsCameraModalOpen(true);
-                                                }
-                                            }}
-                                            className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                                        >
-                                            <Video className="w-4 h-4" />
-                                            <span>Video</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => fileInputRef.current?.click()}
-                                            className="px-3 py-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                                        >
-                                            <Upload className="w-4 h-4 text-primary" />
-                                            <span>Browse</span>
-                                        </button>
-                                    </div>
-
-                                    {/* Hidden Inputs for Native Mobile Camera & Standard Upload */}
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        multiple
-                                        accept="image/*,video/*"
-                                        className="hidden"
-                                        onChange={e => {
-                                            if (e.target.files) handleFileSelect(e.target.files);
-                                            e.target.value = '';
-                                        }}
-                                    />
-                                    <input
-                                        ref={cameraPhotoInputRef}
-                                        type="file"
-                                        accept="image/*"
-                                        capture="environment"
-                                        className="hidden"
-                                        onChange={e => {
-                                            if (e.target.files) handleFileSelect(e.target.files);
-                                            e.target.value = '';
-                                        }}
-                                    />
-                                    <input
-                                        ref={cameraVideoInputRef}
-                                        type="file"
-                                        accept="video/*"
-                                        capture="environment"
-                                        className="hidden"
-                                        onChange={e => {
-                                            if (e.target.files) handleFileSelect(e.target.files);
-                                            e.target.value = '';
-                                        }}
-                                    />
-
-                                    {/* Drag & Dropzone */}
-                                    <div
-                                        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-                                        onDragLeave={() => setIsDragging(false)}
-                                        onDrop={e => {
-                                            e.preventDefault();
-                                            setIsDragging(false);
-                                            if (e.dataTransfer.files) handleFileSelect(e.dataTransfer.files);
-                                        }}
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className={`border border-dashed rounded p-3 text-center cursor-pointer transition-colors ${isDragging
-                                            ? 'border-primary bg-primary/5'
-                                            : 'border-outline-variant bg-surface-container-low hover:bg-surface-container-high'
-                                            }`}
-                                    >
-                                        <Upload className="w-4 h-4 mx-auto mb-1 text-on-surface-variant" />
-                                        <p className="text-xs text-on-surface font-medium">Click to browse or drag & drop</p>
-                                        <p className="text-[10px] text-on-surface-variant">Supports photos, video recordings & documents</p>
-                                    </div>
-
-                                    {/* Voice Note Recorder Option */}
-                                    <div className="mt-3">
-                                        <VoiceRecorder
-                                            onSave={(voiceFile) => {
-                                                handleFileSelect([voiceFile]);
-                                            }}
-                                            onRecordingStateChange={setIsRecordingPending}
-                                            placeholderText="Record a voice note explanation"
-                                        />
-                                    </div>
-
-                                    {/* Attached Files List with Rotation Review */}
-                                    {attachmentItems.length > 0 && (
-                                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            {attachmentItems.map((item, idx) => (
-                                                <div
-                                                    key={item.id}
-                                                    className="relative group border border-outline-variant rounded-lg p-2 bg-surface-container-low flex flex-col items-center justify-between text-center overflow-hidden min-h-[140px]"
-                                                >
-                                                    <div className="w-full h-28 bg-black/80 rounded flex items-center justify-center relative overflow-hidden p-1">
-                                                        {item.isImg ? (
-                                                            <img
-                                                                src={item.previewUrl}
-                                                                alt={item.file.name}
-                                                                style={{
-                                                                    transform: `rotate(${item.rotation}deg)`,
-                                                                    transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-                                                                }}
-                                                                className="max-w-full max-h-full object-contain"
-                                                            />
-                                                        ) : item.isVid ? (
-                                                            <RotatableVideoPlayer
-                                                                src={item.previewUrl}
-                                                                rotation={item.rotation}
-                                                                className="w-full h-full"
-                                                            />
-                                                        ) : item.isAudio ? (
-                                                            <div className="w-full h-full flex flex-col items-center justify-center p-2 text-primary">
-                                                                <Headphones className="w-5 h-5 animate-pulse mb-1" />
-                                                                <audio src={item.previewUrl} controls className="w-full h-8" />
-                                                            </div>
-                                                        ) : (
-                                                            <div className="text-white text-xs font-semibold px-2 truncate">{item.file.name}</div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="w-full flex items-center justify-between pt-1 text-[10px]">
-                                                        <span className="font-medium text-on-surface truncate max-w-[120px]" title={item.file.name}>
-                                                            {item.file.name}
-                                                        </span>
-
-                                                        {(item.isImg || item.isVid) && (
-                                                            <div className="flex items-center gap-1 bg-surface-container-high px-1.5 py-0.5 rounded border border-outline-variant/60">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setAttachmentItems(prev => prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation - 90 + 360) % 360 } : it));
-                                                                    }}
-                                                                    className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
-                                                                    title="Rotate 90° Left"
-                                                                >
-                                                                    <RotateCcw className="w-3 h-3" />
-                                                                </button>
-                                                                <span className=" font-bold text-primary px-0.5">{item.rotation}°</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setAttachmentItems(prev => prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation + 90) % 360 } : it));
-                                                                    }}
-                                                                    className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
-                                                                    title="Rotate 90° Right"
-                                                                >
-                                                                    <RotateCw className="w-3 h-3" />
-                                                                </button>
-                                                            </div>
-                                                        )}
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={e => { e.stopPropagation(); handleRemoveFile(idx); }}
-                                                            className="p-1 text-error hover:bg-error/10 rounded transition-colors"
-                                                            title="Remove file"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
+                                {/* Location Approval Throttle Warning Alert Banner */}
+                                {Boolean(createForm.store_id && createForm.department_id && throttleStatus?.is_throttled) && (
+                                    <div className="p-3.5 rounded bg-error-container text-on-error-container border border-error/30 space-y-3">
+                                        <div className="flex items-start justify-between gap-2.5">
+                                            <div className="flex items-start gap-2.5">
+                                                <AlertCircle className="w-5 h-5 shrink-0 text-error mt-0.5" />
+                                                <div className="space-y-1 text-xs">
+                                                    {/* <p className="font-bold text-error">
+                                                        Location Approval Limit Reached ({throttleStatus?.count} / {throttleStatus?.limit})
+                                                    </p>
+                                                    <p className="text-on-error-container leading-relaxed">
+                                                        Store <span className="font-semibold">{throttleStatus?.store_name}</span> currently has <span className="font-semibold">{throttleStatus?.count}</span> tickets awaiting Location Approval (Throttle Limit: <span className="font-semibold">{throttleStatus?.limit}</span>) for <span className="font-semibold">{throttleStatus?.department_name}</span>.
+                                                    </p> */}
+                                                    <p className="text-[11px] font-medium text-error">
+                                                        🚫 You cannot create new tickets until existing tickets in <span className="font-semibold">{throttleStatus?.department_name}</span> Location Approval status are approved or completed.
+                                                    </p>
                                                 </div>
-                                            ))}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => fetchThrottleStatus()}
+                                                disabled={checkingThrottle}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-error/15 hover:bg-error/25 text-error text-xs font-semibold transition-colors disabled:opacity-50 shrink-0 border border-error/20 cursor-pointer"
+                                                title="Refresh throttle status"
+                                            >
+                                                <RefreshCw className={`w-3.5 h-3.5 ${checkingThrottle ? 'animate-spin' : ''}`} />
+                                                <span>Refresh</span>
+                                            </button>
                                         </div>
-                                    )}
-                                </div>
+                                        {throttleStatus?.pending_tickets && throttleStatus.pending_tickets.length > 0 && (
+                                            <div className="pt-2 border-t border-error/20">
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <p className="text-[11px] font-bold text-on-error-container tracking-wider">
+                                                        Tickets Requiring Location Approval ({throttleStatus.pending_tickets.length}):
+                                                    </p>
 
-                                {/* Modal Footer Actions */}
-                                <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant bg-surface-container-low -mx-5 -mb-5 p-5">
-                                    <button
-                                        type="button"
-                                        onClick={handleClose}
-                                        className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-
-                                    <button
-                                        type="submit"
-                                        disabled={actionLoading || isRecordingPending}
-                                        className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                    >
-                                        {actionLoading ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                <span>Submitting...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Plus className="w-4 h-4" />
-                                                <span>Submit Ticket</span>
-                                            </>
+                                                </div>
+                                                <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                                                    {throttleStatus.pending_tickets.map((t: any) => (
+                                                        <div key={t.ticket_id} className="flex items-center justify-between p-2 rounded bg-surface text-on-surface border border-outline-variant text-xs shadow-2xs">
+                                                            <div className="truncate mr-2">
+                                                                <span className="font-bold text-primary mr-1.5">{t.work_order_no}</span>
+                                                                {t.title && <span className="text-on-surface-variant truncate">{t.title}</span>}
+                                                            </div>
+                                                            <a
+                                                                href={`/tickets/all?ticket_id=${t.ticket_id}`}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="px-2.5 animate-pulse py-1 rounded bg-primary text-white text-[11px] font-semibold hover:bg-primary-hover shrink-0 transition-colors shadow-2xs inline-flex items-center gap-1"
+                                                            >
+                                                                Set Location Approval
+                                                            </a>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         )}
-                                    </button>
-                                </div>
+                                    </div>
+                                )}
+
+                                {/* Bottom Section: Rendered only when not throttled */}
+                                {(!createForm.store_id || !createForm.department_id || !throttleStatus?.is_throttled) ? (
+                                    <>
+                                        {/* Work Nature */}
+                                        <div>
+                                            <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                                Nature of Work <span className="text-error">*</span>
+                                            </label>
+                                            <SearchableSelect
+                                                required
+                                                disabled={!createForm.department_id || loadingNatures}
+                                                value={createForm.nature_id}
+                                                onChange={val => setCreateForm({ ...createForm, nature_id: val })}
+                                                placeholder={
+                                                    loadingNatures
+                                                        ? 'Loading Natures of Work...'
+                                                        : createForm.department_id
+                                                            ? 'Select Nature of Work'
+                                                            : 'Select Department first'
+                                                }
+                                                options={filteredNatures.map(n => ({
+                                                    value: n.nature_id,
+                                                    label: n.nature_name
+                                                }))}
+                                            />
+                                        </div>
+
+                                        {/* Issue Title */}
+                                        <div>
+                                            <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                                Issue Title <span className="text-error">*</span>
+                                            </label>
+                                            <input
+                                                required
+                                                type="text"
+                                                placeholder="Briefly describe the issue..."
+                                                value={createForm.title}
+                                                onChange={e => setCreateForm({ ...createForm, title: e.target.value })}
+                                                className={inputCls}
+                                            />
+                                        </div>
+
+                                        {/* Description */}
+                                        <div>
+                                            <label className="block text-xs font-medium text-on-surface mb-1.5">
+                                                Description <span className="text-error">*</span>
+                                            </label>
+                                            <textarea
+                                                required
+                                                rows={3}
+                                                placeholder="Provide detailed description of the issue..."
+                                                value={createForm.description}
+                                                onChange={e => setCreateForm({ ...createForm, description: e.target.value })}
+                                                className={`${inputCls} resize-none`}
+                                            />
+                                        </div>
+
+                                        {/* Media Attachment Dropzone & Live Camera Capture */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="block text-xs font-medium text-on-surface">
+                                                    Attach Media <span className="text-error">* (At least 1 Photo or Video required)</span>
+                                                </label>
+                                                <span className="text-[11px] text-on-surface-variant">
+                                                    {attachmentItems.length} file(s) attached
+                                                </span>
+                                            </div>
+
+                                            {/* Quick Live Capture Action Toolbar */}
+                                            <div className="grid grid-cols-3 gap-2 mb-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                        if (isMobile && cameraPhotoInputRef.current) {
+                                                            cameraPhotoInputRef.current.click();
+                                                        } else {
+                                                            setCameraModalMode('photo');
+                                                            setIsCameraModalOpen(true);
+                                                        }
+                                                    }}
+                                                    className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                                >
+                                                    <Camera className="w-4 h-4" />
+                                                    <span>Photo</span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+                                                        if (isMobile && cameraVideoInputRef.current) {
+                                                            cameraVideoInputRef.current.click();
+                                                        } else {
+                                                            setCameraModalMode('video');
+                                                            setIsCameraModalOpen(true);
+                                                        }
+                                                    }}
+                                                    className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                                >
+                                                    <Video className="w-4 h-4" />
+                                                    <span>Video</span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    className="px-3 py-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                                >
+                                                    <Upload className="w-4 h-4 text-primary" />
+                                                    <span>Browse</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Hidden Inputs for Native Mobile Camera & Standard Upload */}
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                multiple
+                                                accept="image/*,video/*"
+                                                className="hidden"
+                                                onChange={e => {
+                                                    if (e.target.files) handleFileSelect(e.target.files);
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                            <input
+                                                ref={cameraPhotoInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                capture="environment"
+                                                className="hidden"
+                                                onChange={e => {
+                                                    if (e.target.files) handleFileSelect(e.target.files);
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                            <input
+                                                ref={cameraVideoInputRef}
+                                                type="file"
+                                                accept="video/*"
+                                                capture="environment"
+                                                className="hidden"
+                                                onChange={e => {
+                                                    if (e.target.files) handleFileSelect(e.target.files);
+                                                    e.target.value = '';
+                                                }}
+                                            />
+
+                                            {/* Drag & Dropzone */}
+                                            <div
+                                                onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                                                onDragLeave={() => setIsDragging(false)}
+                                                onDrop={e => {
+                                                    e.preventDefault();
+                                                    setIsDragging(false);
+                                                    if (e.dataTransfer.files) handleFileSelect(e.dataTransfer.files);
+                                                }}
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className={`border border-dashed rounded p-3 text-center cursor-pointer transition-colors ${isDragging
+                                                    ? 'border-primary bg-primary/5'
+                                                    : 'border-outline-variant bg-surface-container-low hover:bg-surface-container-high'
+                                                    }`}
+                                            >
+                                                <Upload className="w-4 h-4 mx-auto mb-1 text-on-surface-variant" />
+                                                <p className="text-xs text-on-surface font-medium">Click to browse or drag & drop</p>
+                                                <p className="text-[10px] text-on-surface-variant">Supports photos, video recordings & documents</p>
+                                            </div>
+
+                                            {/* Voice Note Recorder Option */}
+                                            <div className="mt-3">
+                                                <VoiceRecorder
+                                                    onSave={(voiceFile) => {
+                                                        handleFileSelect([voiceFile]);
+                                                    }}
+                                                    onRecordingStateChange={setIsRecordingPending}
+                                                    placeholderText="Record a voice note explanation"
+                                                />
+                                            </div>
+
+                                            {/* Attached Files List with Rotation Review */}
+                                            {attachmentItems.length > 0 && (
+                                                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    {attachmentItems.map((item, idx) => (
+                                                        <div
+                                                            key={item.id}
+                                                            className="relative group border border-outline-variant rounded-lg p-2 bg-surface-container-low flex flex-col items-center justify-between text-center overflow-hidden min-h-[140px]"
+                                                        >
+                                                            <div className="w-full h-28 bg-black/80 rounded flex items-center justify-center relative overflow-hidden p-1">
+                                                                {item.isImg ? (
+                                                                    <img
+                                                                        src={item.previewUrl}
+                                                                        alt={item.file.name}
+                                                                        style={{
+                                                                            transform: `rotate(${item.rotation}deg)`,
+                                                                            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                                        }}
+                                                                        className="max-w-full max-h-full object-contain"
+                                                                    />
+                                                                ) : item.isVid ? (
+                                                                    <RotatableVideoPlayer
+                                                                        src={item.previewUrl}
+                                                                        rotation={item.rotation}
+                                                                        className="w-full h-full"
+                                                                    />
+                                                                ) : item.isAudio ? (
+                                                                    <div className="w-full h-full flex flex-col items-center justify-center p-2 text-primary">
+                                                                        <Headphones className="w-5 h-5 animate-pulse mb-1" />
+                                                                        <audio src={item.previewUrl} controls className="w-full h-8" />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-white text-xs font-semibold px-2 truncate">{item.file.name}</div>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="w-full flex items-center justify-between pt-1 text-[10px]">
+                                                                <span className="font-medium text-on-surface truncate max-w-[120px]" title={item.file.name}>
+                                                                    {item.file.name}
+                                                                </span>
+
+                                                                {(item.isImg || item.isVid) && (
+                                                                    <div className="flex items-center gap-1 bg-surface-container-high px-1.5 py-0.5 rounded border border-outline-variant/60">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setAttachmentItems(prev => prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation - 90 + 360) % 360 } : it));
+                                                                            }}
+                                                                            className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                                            title="Rotate 90° Left"
+                                                                        >
+                                                                            <RotateCcw className="w-3 h-3" />
+                                                                        </button>
+                                                                        <span className=" font-bold text-primary px-0.5">{item.rotation}°</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setAttachmentItems(prev => prev.map((it, i) => i === idx ? { ...it, rotation: (it.rotation + 90) % 360 } : it));
+                                                                            }}
+                                                                            className="p-1 text-on-surface hover:text-primary rounded cursor-pointer"
+                                                                            title="Rotate 90° Right"
+                                                                        >
+                                                                            <RotateCw className="w-3 h-3" />
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={e => { e.stopPropagation(); handleRemoveFile(idx); }}
+                                                                    className="p-1 text-error hover:bg-error/10 rounded transition-colors"
+                                                                    title="Remove file"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Modal Footer Actions */}
+                                        <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant bg-surface-container-low -mx-5 -mb-5 p-5">
+                                            <button
+                                                type="button"
+                                                onClick={handleClose}
+                                                className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
+                                            >
+                                                Cancel
+                                            </button>
+
+                                            <button
+                                                type="submit"
+                                                disabled={actionLoading || isRecordingPending}
+                                                className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                                            >
+                                                {actionLoading ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                        <span>Submitting...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Plus className="w-4 h-4" />
+                                                        <span>Submit Ticket</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    /* Footer when throttled: only Close button */
+                                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant bg-surface-container-low -mx-5 -mb-5 p-5">
+                                        <button
+                                            type="button"
+                                            onClick={handleClose}
+                                            className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3.5 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                )}
                             </form>
                         </motion.div>
                     </div>
