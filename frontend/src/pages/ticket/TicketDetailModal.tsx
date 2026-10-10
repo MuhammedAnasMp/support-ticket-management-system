@@ -69,6 +69,28 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const subDepartments = useMemo(() => (propSubDepartments && propSubDepartments.length > 0 ? propSubDepartments : fetchedSubDepartments), [propSubDepartments, fetchedSubDepartments]);
     const expenseTypes = useMemo(() => (propExpenseTypes && propExpenseTypes.length > 0 ? propExpenseTypes : fetchedExpenseTypes), [propExpenseTypes, fetchedExpenseTypes]);
 
+    const userRoleName = useMemo(() => {
+        return (
+            (user?.role as any)?.role_name ||
+            (user?.role as any)?.name ||
+            (user?.role as string) ||
+            (user as any)?.role_name ||
+            (user as any)?.role_title ||
+            ''
+        ).toLowerCase().trim();
+    }, [user]);
+
+    const isAdminOrOfficeAdmin = useMemo(() => {
+        return Boolean(
+            (user as any)?.is_superuser ||
+            (user as any)?.is_staff ||
+            userRoleName.includes('admin') ||
+            userRoleName.includes('administrator') ||
+            userRoleName.includes('office admin') ||
+            userRoleName.includes('office administrator')
+        );
+    }, [user, userRoleName]);
+
     useEffect(() => {
         if (!token) return;
         const headers = { 'Authorization': `Token ${token}` };
@@ -363,14 +385,19 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         if (isNaN(fh) || isNaN(fm) || isNaN(th) || isNaN(tm)) return { hours: '', formattedDuration: '', error: '' };
         const startMins = fh * 60 + fm;
         const endMins = th * 60 + tm;
-        const diffMins = endMins - startMins;
+        let diffMins = endMins - startMins;
         if (diffMins < 0) {
-            return { hours: '', formattedDuration: '', error: 'To Time cannot be earlier than From Time' };
+            // Overspans overnight into next day (e.g. night shift 22:00 to 04:00)
+            diffMins += 24 * 60;
         }
         if (diffMins === 0) {
             return { hours: '0.00', formattedDuration: '0h (0.00 hrs)', error: '' };
         }
-        const decimalHours = (diffMins / 60).toFixed(2);
+        const decimalHoursNum = diffMins / 60;
+        if (decimalHoursNum > 20) {
+            return { hours: '', formattedDuration: '', error: 'Logged work hours cannot exceed 20 hours.' };
+        }
+        const decimalHours = decimalHoursNum.toFixed(2);
         const hrs = Math.floor(diffMins / 60);
         const mins = diffMins % 60;
         const formattedDuration = mins > 0 ? `${hrs}h ${mins}m (${decimalHours} hrs)` : `${hrs}h (${decimalHours} hrs)`;
@@ -591,9 +618,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const isWorkerInDepartment = (w: any, targetDeptId: number) => {
         if (!w) return false;
 
-        const roleName = ((user?.role as any)?.role_name || (user?.role as string) || '').toLowerCase();
-        const isAdminOrOfficeAdmin = (user as any)?.is_superuser || roleName.includes('admin') || roleName.includes('administrator');
-
         // Administrators and Office Administrators have full department visibility to assign workers
         if (isAdminOrOfficeAdmin) return true;
 
@@ -738,6 +762,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         const rawHours = parseFloat(editWorkLogForm.hours);
         if (isNaN(rawHours) || rawHours < 0) {
             showError('Logged work hours cannot be negative.');
+            return;
+        }
+        if (rawHours > 20) {
+            showError('Logged work hours cannot exceed 20 hours.');
             return;
         }
         if (editWorkLogForm.from_time && editWorkLogForm.to_time) {
@@ -1139,6 +1167,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             showError('Logged work hours cannot be negative.');
             return;
         }
+        if (rawHoursVal > 20) {
+            showError('Logged work hours cannot exceed 20 hours.');
+            return;
+        }
         if (logWorkHoursForm.from_time && logWorkHoursForm.to_time) {
             const timeCheck = computeHoursFromTimes(logWorkHoursForm.from_time, logWorkHoursForm.to_time);
             if (timeCheck.error) {
@@ -1346,8 +1378,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             return;
         }
 
-        // Guard: Strictly prohibit moving to 'Location Approval' if any allocated worker does not have logged work hours
-        if (targetStatusName?.toLowerCase() === 'location approval') {
+        // Guard: Strictly prohibit moving to 'Location Approval' if any allocated worker does not have logged work hours (exempt Office Admin & Administrator)
+        if (targetStatusName?.toLowerCase() === 'location approval' && !isAdminOrOfficeAdmin) {
             if (safeAllocations.length === 0) {
                 showError('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
                 return;
@@ -1436,20 +1468,22 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         }
 
         if (nextStatusObj.status_name?.toLowerCase() === 'location approval') {
-            if (safeAllocations.length === 0) {
-                showError('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
-                return;
-            }
-            const missingWorkers: string[] = [];
-            safeAllocations.forEach(alloc => {
-                const hasLoggedHours = safeWorkLogs.some(wl => Number(wl.worker?.user_id) === Number(alloc.worker?.user_id));
-                if (!hasLoggedHours) {
-                    missingWorkers.push(alloc.worker?.full_name || alloc.worker?.username || `Worker #${alloc.worker?.user_id}`);
+            if (!isAdminOrOfficeAdmin) {
+                if (safeAllocations.length === 0) {
+                    showError('Cannot request Location Approval:\nNo workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.');
+                    return;
                 }
-            });
-            if (missingWorkers.length > 0) {
-                showError(`Cannot request Location Approval:\nThe following allocated worker(s) have not logged their work hours:\n• ${missingWorkers.join('\n• ')}\n\nAll allocated workers must log their work hours before applying for location approval.`);
-                return;
+                const missingWorkers: string[] = [];
+                safeAllocations.forEach(alloc => {
+                    const hasLoggedHours = safeWorkLogs.some(wl => Number(wl.worker?.user_id) === Number(alloc.worker?.user_id));
+                    if (!hasLoggedHours) {
+                        missingWorkers.push(alloc.worker?.full_name || alloc.worker?.username || `Worker #${alloc.worker?.user_id}`);
+                    }
+                });
+                if (missingWorkers.length > 0) {
+                    showError(`Cannot request Location Approval:\nThe following allocated worker(s) have not logged their work hours:\n• ${missingWorkers.join('\n• ')}\n\nAll allocated workers must log their work hours before applying for location approval.`);
+                    return;
+                }
             }
 
             if (!window.confirm('Confirmation 1 of 2:\nAre you sure you want to request Location Approval for this ticket?')) return;
@@ -3367,7 +3401,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     isLogHoursModalOpen && activeWorkerId && (() => {
                         const targetWorkerAlloc = allocations.find(a => a.worker.user_id === activeWorkerId);
                         const timeCalc = computeHoursFromTimes(logWorkHoursForm.from_time, logWorkHoursForm.to_time);
-                        const isHoursValid = !isNaN(parseFloat(logWorkHoursForm.hours)) && parseFloat(logWorkHoursForm.hours) >= 0;
+                        const isHoursValid = !isNaN(parseFloat(logWorkHoursForm.hours)) && parseFloat(logWorkHoursForm.hours) >= 0 && parseFloat(logWorkHoursForm.hours) <= 20;
 
                         return (
                             <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -3711,7 +3745,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {
                     editingWorkLog && (() => {
                         const editTimeCalc = computeHoursFromTimes(editWorkLogForm.from_time, editWorkLogForm.to_time);
-                        const isEditHoursValid = !isNaN(parseFloat(editWorkLogForm.hours)) && parseFloat(editWorkLogForm.hours) >= 0;
+                        const isEditHoursValid = !isNaN(parseFloat(editWorkLogForm.hours)) && parseFloat(editWorkLogForm.hours) >= 0 && parseFloat(editWorkLogForm.hours) <= 20;
 
                         return (
                             <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">

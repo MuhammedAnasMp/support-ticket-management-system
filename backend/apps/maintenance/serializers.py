@@ -202,37 +202,45 @@ class TicketWriteSerializer(serializers.ModelSerializer):
                 {"nature": f"Work Nature '{nature.nature_name}' belongs to a different department than '{department.department_name}'."}
             )
 
-        # Prohibit creating new tickets if Store has reached the Location Approval throttle limit
+        # Prohibit creating new tickets if Store has reached the Location Approval throttle limit (exempt Office Admin & Administrator)
         if not self.instance and store and department:
-            from apps.stores.models import check_location_approval_throttle
-            throttle_info = check_location_approval_throttle(store, department)
-            if throttle_info.get('is_throttled'):
-                count = throttle_info.get('count', 0)
-                limit = throttle_info.get('limit', 0)
-                store_name = getattr(store, 'store_name', str(store))
-                dept_name = getattr(department, 'department_name', str(department))
-                raise serializers.ValidationError({
-                    "store": f"Cannot create new ticket: Store '{store_name}' has reached the pending Location Approval limit ({count}/{limit}) for department '{dept_name}'. You must review and approve existing pending tickets before creating new requests."
-                })
+            request = self.context.get('request')
+            user = request.user if request else getattr(self.instance, '_changed_by', None)
+            from .utils import is_admin_or_office_admin
+            if not is_admin_or_office_admin(user):
+                from apps.stores.models import check_location_approval_throttle
+                throttle_info = check_location_approval_throttle(store, department)
+                if throttle_info.get('is_throttled'):
+                    count = throttle_info.get('count', 0)
+                    limit = throttle_info.get('limit', 0)
+                    store_name = getattr(store, 'store_name', str(store))
+                    dept_name = getattr(department, 'department_name', str(department))
+                    raise serializers.ValidationError({
+                        "store": f"Cannot create new ticket: Store '{store_name}' has reached the pending Location Approval limit ({count}/{limit}) for department '{dept_name}'. You must review and approve existing pending tickets before creating new requests."
+                    })
 
 
-        # Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours
+        # Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours (exempt Office Admin & Administrator)
         if status and status.status_name.strip().lower() == 'location approval':
-            if self.instance:
-                allocations = self.instance.allocations.all()
-                if not allocations.exists():
-                    raise serializers.ValidationError({
-                        "status": "Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours."
-                    })
-                missing_workers = []
-                for alloc in allocations:
-                    if not self.instance.work_logs.filter(worker=alloc.worker).exists():
-                        name = alloc.worker.full_name or alloc.worker.username or f"Worker #{alloc.worker.pk}"
-                        missing_workers.append(name)
-                if missing_workers:
-                    raise serializers.ValidationError({
-                        "status": f"Cannot move ticket to Location Approval: The following allocated worker(s) have not logged their work hours: {', '.join(missing_workers)}. All allocated workers must log their work hours before applying for location approval."
-                    })
+            request = self.context.get('request')
+            user = request.user if request else getattr(self.instance, '_changed_by', None)
+            from .utils import is_admin_or_office_admin
+            if not is_admin_or_office_admin(user):
+                if self.instance:
+                    allocations = self.instance.allocations.all()
+                    if not allocations.exists():
+                        raise serializers.ValidationError({
+                            "status": "Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours."
+                        })
+                    missing_workers = []
+                    for alloc in allocations:
+                        if not self.instance.work_logs.filter(worker=alloc.worker).exists():
+                            name = alloc.worker.full_name or alloc.worker.username or f"Worker #{alloc.worker.pk}"
+                            missing_workers.append(name)
+                    if missing_workers:
+                        raise serializers.ValidationError({
+                            "status": f"Cannot move ticket to Location Approval: The following allocated worker(s) have not logged their work hours: {', '.join(missing_workers)}. All allocated workers must log their work hours before applying for location approval."
+                        })
 
         return data
 
@@ -319,12 +327,13 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
         hours = data.get('hours') if 'hours' in data else getattr(self.instance, 'hours', None)
 
         if from_time and to_time:
-            if to_time < from_time:
-                raise serializers.ValidationError({"to_time": "End time (To Time) cannot be earlier than start time (From Time)."})
-            from datetime import datetime, date
+            from datetime import datetime, date, timedelta
             dummy_date = date.today()
             dt_start = datetime.combine(dummy_date, from_time)
             dt_end = datetime.combine(dummy_date, to_time)
+            if dt_end < dt_start:
+                # Spans overnight into next morning
+                dt_end = datetime.combine(dummy_date + timedelta(days=1), to_time)
             diff_seconds = (dt_end - dt_start).total_seconds()
             calculated_hours = round(Decimal(str(diff_seconds / 3600.0)), 2)
             if 'hours' not in data or data.get('hours') is None or data.get('hours') == '':
@@ -335,6 +344,8 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
 
         if hours is None or Decimal(str(hours)) < 0:
             raise serializers.ValidationError({"hours": "Logged work hours cannot be negative."})
+        if Decimal(str(hours)) > 20:
+            raise serializers.ValidationError({"hours": "Logged work hours cannot exceed 20 hours."})
 
         worker = data.get('worker') or getattr(self.instance, 'worker', None)
         if worker and hours is not None:

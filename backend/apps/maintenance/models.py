@@ -290,8 +290,12 @@ class Ticket(models.Model):
         if self.pk:
             old_instance = Ticket.objects.get(pk=self.pk)
             if old_instance.status != self.status:
-                # Validation: Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours
-                if self.status and self.status.status_name.strip().lower() == 'location approval':
+                from .utils import is_admin_or_office_admin
+                user = getattr(self, '_changed_by', None)
+                is_exempt = is_admin_or_office_admin(user)
+
+                # Validation: Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours (exempt Office Admin & Administrator)
+                if self.status and self.status.status_name.strip().lower() == 'location approval' and not is_exempt:
                     from django.core.exceptions import ValidationError
                     allocations = self.allocations.all()
                     if not allocations.exists():
@@ -326,6 +330,10 @@ class Ticket(models.Model):
                 )
                 from django.core.exceptions import ValidationError
                 for rule in rules:
+                    # Office Admin & Administrator can bypass work_logs check rule when moving to Location Approval
+                    if is_exempt and rule.path == 'work_logs' and self.status and self.status.status_name.strip().lower() == 'location approval':
+                        continue
+
                     val = get_value_from_path(self, rule.path)
 
                     if rule.value is None or rule.value == "":
@@ -457,10 +465,11 @@ class WorkLog(models.Model):
         super().clean()
         from decimal import Decimal
         from django.core.exceptions import ValidationError
-        if self.hours is not None and Decimal(str(self.hours)) < 0:
-            raise ValidationError({'hours': 'Logged work hours cannot be negative.'})
-        if self.from_time and self.to_time and self.to_time < self.from_time:
-            raise ValidationError({'to_time': 'End time (To Time) cannot be earlier than start time (From Time).'})
+        if self.hours is not None:
+            if Decimal(str(self.hours)) < 0:
+                raise ValidationError({'hours': 'Logged work hours cannot be negative.'})
+            if Decimal(str(self.hours)) > 20:
+                raise ValidationError({'hours': 'Logged work hours cannot exceed 20 hours.'})
 
     def __str__(self):
         return f"WorkLog {self.worklog_id} by {self.worker.username}"

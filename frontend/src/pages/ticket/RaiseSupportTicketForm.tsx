@@ -42,6 +42,28 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     natures,
     canCreateAllDepts
 }) => {
+    const userRoleName = useMemo(() => {
+        return (
+            (user?.role as any)?.role_name ||
+            (user?.role as any)?.name ||
+            (user?.role as string) ||
+            (user as any)?.role_name ||
+            (user as any)?.role_title ||
+            ''
+        ).toLowerCase().trim();
+    }, [user]);
+
+    const isAdminOrOfficeAdmin = useMemo(() => {
+        return Boolean(
+            (user as any)?.is_superuser ||
+            (user as any)?.is_staff ||
+            userRoleName.includes('admin') ||
+            userRoleName.includes('administrator') ||
+            userRoleName.includes('office admin') ||
+            userRoleName.includes('office administrator')
+        );
+    }, [user, userRoleName]);
+
     const [createForm, setCreateForm] = useState({
         store_id: '',
         department_id: '',
@@ -472,66 +494,112 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
 
                                 {/* Location Approval Throttle Warning Alert Banner */}
                                 {Boolean(createForm.store_id && createForm.department_id && throttleStatus?.is_throttled) && (
-                                    <div className="p-3.5 rounded bg-error-container text-on-error-container border border-error/30 space-y-3">
-                                        <div className="flex items-start justify-between gap-2.5">
-                                            <div className="flex items-start gap-2.5">
-                                                <AlertCircle className="w-5 h-5 shrink-0 text-error mt-0.5" />
-                                                <div className="space-y-1 text-xs">
-                                                    {/* <p className="font-bold text-error">
-                                                        Location Approval Limit Reached ({throttleStatus?.count} / {throttleStatus?.limit})
-                                                    </p>
-                                                    <p className="text-on-error-container leading-relaxed">
-                                                        Store <span className="font-semibold">{throttleStatus?.store_name}</span> currently has <span className="font-semibold">{throttleStatus?.count}</span> tickets awaiting Location Approval (Throttle Limit: <span className="font-semibold">{throttleStatus?.limit}</span>) for <span className="font-semibold">{throttleStatus?.department_name}</span>.
-                                                    </p> */}
-                                                    <p className="text-[11px] font-medium text-error">
-                                                        🚫 You cannot create new tickets until existing tickets in <span className="font-semibold">{throttleStatus?.department_name}</span> Location Approval status are approved or completed.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => fetchThrottleStatus()}
-                                                disabled={checkingThrottle}
-                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-error/15 hover:bg-error/25 text-error text-xs font-semibold transition-colors disabled:opacity-50 shrink-0 border border-error/20 cursor-pointer"
-                                                title="Refresh throttle status"
-                                            >
-                                                <RefreshCw className={`w-3.5 h-3.5 ${checkingThrottle ? 'animate-spin' : ''}`} />
-                                                <span>Refresh</span>
-                                            </button>
-                                        </div>
-                                        {throttleStatus?.pending_tickets && throttleStatus.pending_tickets.length > 0 && (
-                                            <div className="pt-2 border-t border-error/20">
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <p className="text-[11px] font-bold text-on-error-container tracking-wider">
-                                                        Tickets Requiring Location Approval ({throttleStatus.pending_tickets.length}):
-                                                    </p>
+                                    isAdminOrOfficeAdmin ? (
+                                        <div className="p-3.5 rounded bg-amber-500/10 dark:bg-amber-500/15 text-amber-900 dark:text-amber-200 border border-amber-500/30 space-y-3">
+                                            <div className="flex items-start justify-between gap-2.5">
+                                                <div className="flex items-start gap-2.5">
+                                                    <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                                                    <div className="space-y-1 text-xs">
 
+                                                        <p className="text-[11px] text-amber-700 dark:text-amber-300/90 leading-relaxed">
+                                                            Store <span className="font-semibold">{throttleStatus?.store_name}</span> has reached the Location Approval limit for <span className="font-semibold">{throttleStatus?.department_name}</span>. As an Administrator / Office Administrator, you have permission to bypass this limit and create new tickets.
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                                                    {throttleStatus.pending_tickets.map((t: any) => (
-                                                        <div key={t.ticket_id} className="flex items-center justify-between p-2 rounded bg-surface text-on-surface border border-outline-variant text-xs shadow-2xs">
-                                                            <div className="truncate mr-2">
-                                                                <span className="font-bold text-primary mr-1.5">{t.work_order_no}</span>
-                                                                {t.title && <span className="text-on-surface-variant truncate">{t.title}</span>}
-                                                            </div>
-                                                            <a
-                                                                href={`/tickets/all?ticket_id=${t.ticket_id}`}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="px-2.5 animate-pulse py-1 rounded bg-primary text-white text-[11px] font-semibold hover:bg-primary-hover shrink-0 transition-colors shadow-2xs inline-flex items-center gap-1"
-                                                            >
-                                                                Set Location Approval
-                                                            </a>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => fetchThrottleStatus()}
+                                                    disabled={checkingThrottle}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-xs font-semibold transition-colors disabled:opacity-50 shrink-0 border border-amber-500/20 cursor-pointer"
+                                                    title="Refresh throttle status"
+                                                >
+                                                    <RefreshCw className={`w-3.5 h-3.5 ${checkingThrottle ? 'animate-spin' : ''}`} />
+                                                    <span>Refresh</span>
+                                                </button>
                                             </div>
-                                        )}
-                                    </div>
+                                            {throttleStatus?.pending_tickets && throttleStatus.pending_tickets.length > 0 && (
+                                                <div className="pt-2 border-t border-amber-500/20">
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <p className="text-[11px] font-bold text-amber-900 dark:text-amber-200 tracking-wider">
+                                                            Tickets Requiring Location Approval ({throttleStatus.pending_tickets.length}):
+                                                        </p>
+                                                    </div>
+                                                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                                                        {throttleStatus.pending_tickets.map((t: any) => (
+                                                            <div key={t.ticket_id} className="flex items-center justify-between p-2 rounded bg-surface text-on-surface border border-outline-variant text-xs shadow-2xs">
+                                                                <div className="truncate mr-2">
+                                                                    <span className="font-bold text-primary mr-1.5">{t.work_order_no}</span>
+                                                                    {t.title && <span className="text-on-surface-variant truncate">{t.title}</span>}
+                                                                </div>
+                                                                <a
+                                                                    href={`/tickets/all?ticket_id=${t.ticket_id}`}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="px-2.5 animate-pulse py-1 rounded bg-primary text-white text-[11px] font-semibold hover:bg-primary-hover shrink-0 transition-colors shadow-2xs inline-flex items-center gap-1"
+                                                                >
+                                                                    Set Location Approval
+                                                                </a>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="p-3.5 rounded bg-error-container text-on-error-container border border-error/30 space-y-3">
+                                            <div className="flex items-start justify-between gap-2.5">
+                                                <div className="flex items-start gap-2.5">
+                                                    <AlertCircle className="w-5 h-5 shrink-0 text-error mt-0.5" />
+                                                    <div className="space-y-1 text-xs">
+                                                        <p className="text-[11px] font-medium text-error">
+                                                            🚫 You cannot create new tickets until existing tickets in <span className="font-semibold">{throttleStatus?.department_name}</span> Location Approval status are approved or completed.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => fetchThrottleStatus()}
+                                                    disabled={checkingThrottle}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-error/15 hover:bg-error/25 text-error text-xs font-semibold transition-colors disabled:opacity-50 shrink-0 border border-error/20 cursor-pointer"
+                                                    title="Refresh throttle status"
+                                                >
+                                                    <RefreshCw className={`w-3.5 h-3.5 ${checkingThrottle ? 'animate-spin' : ''}`} />
+                                                    <span>Refresh</span>
+                                                </button>
+                                            </div>
+                                            {throttleStatus?.pending_tickets && throttleStatus.pending_tickets.length > 0 && (
+                                                <div className="pt-2 border-t border-error/20">
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <p className="text-[11px] font-bold text-on-error-container tracking-wider">
+                                                            Tickets Requiring Location Approval ({throttleStatus.pending_tickets.length}):
+                                                        </p>
+                                                    </div>
+                                                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                                                        {throttleStatus.pending_tickets.map((t: any) => (
+                                                            <div key={t.ticket_id} className="flex items-center justify-between p-2 rounded bg-surface text-on-surface border border-outline-variant text-xs shadow-2xs">
+                                                                <div className="truncate mr-2">
+                                                                    <span className="font-bold text-primary mr-1.5">{t.work_order_no}</span>
+                                                                    {t.title && <span className="text-on-surface-variant truncate">{t.title}</span>}
+                                                                </div>
+                                                                <a
+                                                                    href={`/tickets/all?ticket_id=${t.ticket_id}`}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="px-2.5 animate-pulse py-1 rounded bg-primary text-white text-[11px] font-semibold hover:bg-primary-hover shrink-0 transition-colors shadow-2xs inline-flex items-center gap-1"
+                                                                >
+                                                                    Set Location Approval
+                                                                </a>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
                                 )}
 
-                                {/* Bottom Section: Rendered only when not throttled */}
-                                {(!createForm.store_id || !createForm.department_id || !throttleStatus?.is_throttled) ? (
+                                {/* Bottom Section: Rendered when not throttled or when user is Admin/Office Admin */}
+                                {(!createForm.store_id || !createForm.department_id || !throttleStatus?.is_throttled || isAdminOrOfficeAdmin) ? (
                                     <>
                                         {/* Work Nature */}
                                         <div>

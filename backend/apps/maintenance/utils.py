@@ -1,6 +1,20 @@
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
+def is_admin_or_office_admin(user):
+    if not user or getattr(user, 'is_anonymous', True):
+        return False
+    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+        return True
+    role_name = (getattr(user.role, 'role_name', '') or '').lower().strip() if hasattr(user, 'role') and user.role else ''
+    if any(r in role_name for r in ('office administrator', 'office admin', 'administrator', 'admin', 'main_admin', 'main administrator')):
+        return True
+    if getattr(user, 'pk', None):
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        if any(any(r in g for r in ('office administrator', 'office admin', 'administrator', 'admin', 'main_admin', 'main administrator')) for g in user_groups_lower):
+            return True
+    return False
+
 def get_value_from_path(obj, path):
     """
     Recursively extracts the value from the object given a nested path.
@@ -207,8 +221,14 @@ def change_status(obj, new_status, changed_by=None, remarks=None):
                 deleted_warnings.append(rule.message)
 
         # 4. Run check rules
+        acting_user = changed_by or getattr(obj, '_changed_by', None)
+        is_exempt = is_admin_or_office_admin(acting_user)
 
         for rule in rules.filter(mode="check"):
+            # Office Admin & Administrator can bypass work_logs check rule when moving to Location Approval
+            if is_exempt and rule.path == 'work_logs' and new_status.status_name.lower().strip() == 'location approval':
+                continue
+
             val = get_value_from_path(obj, rule.path)
             
             # Check if rule.value is empty/null
@@ -231,8 +251,8 @@ def change_status(obj, new_status, changed_by=None, remarks=None):
                 if not compare_values(val, rule.value):
                     raise ValidationError(rule.message)
                     
-        # Validation: Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours
-        if new_status.status_name.lower().strip() == 'location approval':
+        # Validation: Strictly prohibit moving to Location Approval if any allocated worker has not logged work hours (exempt Office Admin & Administrator)
+        if new_status.status_name.lower().strip() == 'location approval' and not is_exempt:
             allocations = obj.allocations.all()
             if not allocations.exists():
                 raise ValidationError("Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.")
