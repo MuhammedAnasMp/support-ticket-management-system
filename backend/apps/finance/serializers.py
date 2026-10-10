@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     ExpenseType, EmployeeRate, Expense, Reconciliation, WorkerClaim,
@@ -7,6 +8,61 @@ from .models import (
 from apps.common.serializers import MediaSerializer
 from apps.accounts.models import CustomUser
 from apps.stores.serializers import SubDepartmentSerializer
+
+
+def serialize_user_summary(user):
+    if not user:
+        return None
+    profile_image_url = None
+    if getattr(user, 'profile_image', None):
+        try:
+            profile_image_url = user.profile_image.url
+        except Exception:
+            profile_image_url = None
+
+    role_name = None
+    if getattr(user, 'role', None):
+        role_name = getattr(user.role, 'role_name', None)
+
+    return {
+        'id': user.pk,
+        'user_id': user.pk,
+        'username': getattr(user, 'username', '') or '',
+        'first_name': getattr(user, 'first_name', '') or '',
+        'last_name': getattr(user, 'last_name', '') or '',
+        'full_name': getattr(user, 'full_name', '') or getattr(user, 'username', '') or '',
+        'employee_no': getattr(user, 'employee_no', '') or '',
+        'profile_image': profile_image_url,
+        'role': role_name,
+        'phone': getattr(user, 'phone', '') or '',
+        'email': getattr(user, 'email', '') or '',
+    }
+
+
+def serialize_approval_instance_summary(inst):
+    if not inst:
+        return None
+    action_by_full_name = None
+    if inst.action_by:
+        action_by_full_name = getattr(inst.action_by, 'full_name', '') or inst.action_by.username
+
+    return {
+        'instance_id': inst.instance_id,
+        'step_id': inst.step_id if inst.step else None,
+        'step_name': inst.step.step_name if inst.step else 'Step',
+        'step_order': inst.step.step_order if inst.step else 0,
+        'assigned_role_name': inst.step.assigned_role.role_name if (inst.step and inst.step.assigned_role) else '',
+        'action_by': inst.action_by_id,
+        'action_by_username': inst.action_by.username if inst.action_by else None,
+        'action_by_full_name': action_by_full_name,
+        'status': inst.status,
+        'comments': inst.comments or '',
+        'created_at': inst.created_at.isoformat() if inst.created_at else None,
+        'actioned_at': inst.actioned_at.isoformat() if inst.actioned_at else None,
+        'claim': inst.claim_id,
+        'ledger': inst.ledger_id,
+        'expense': inst.expense_id,
+    }
 
 
 class ExpenseTypeSerializer(serializers.ModelSerializer):
@@ -53,8 +109,7 @@ class EmployeeRateSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         if instance.worker:
-            from apps.accounts.serializers import CustomUserSerializer
-            rep['worker'] = CustomUserSerializer(instance.worker).data
+            rep['worker'] = serialize_user_summary(instance.worker)
         else:
             rep['worker'] = None
         return rep
@@ -74,12 +129,20 @@ class ExpenseSerializer(serializers.ModelSerializer):
         fields = '__all__'
         depth = 1
 
+    def _get_sorted_approval_instances(self, obj):
+        if hasattr(obj, '_cached_sorted_approval_instances'):
+            return obj._cached_sorted_approval_instances
+        insts = list(obj.approval_instances.all())
+        insts.sort(key=lambda x: x.created_at or timezone.now(), reverse=True)
+        obj._cached_sorted_approval_instances = insts
+        return insts
+
     def get_approval_instances(self, obj):
-        instances = obj.approval_instances.all().order_by('-created_at')
-        return ApprovalInstanceSerializer(instances, many=True).data
+        insts = self._get_sorted_approval_instances(obj)
+        return [serialize_approval_instance_summary(inst) for inst in insts]
 
     def get_status_display(self, obj):
-        insts = list(obj.approval_instances.all().order_by('-created_at'))
+        insts = self._get_sorted_approval_instances(obj)
         if insts:
             latest_inst = insts[0]
             if latest_inst.status in ['Rejected', 'Rework']:
@@ -91,7 +154,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return 'Pending Approval'
 
     def get_reject_reason(self, obj):
-        insts = list(obj.approval_instances.all().order_by('-created_at'))
+        insts = self._get_sorted_approval_instances(obj)
         for inst in insts:
             if inst.status in ['Rejected', 'Rework'] and inst.comments:
                 return inst.comments
@@ -104,19 +167,21 @@ class ExpenseSerializer(serializers.ModelSerializer):
             sub_id = None
             sub_name = None
             dept_name = None
-            if obj.ticket.nature and obj.ticket.nature.sub_department:
-                sub_id = obj.ticket.nature.sub_department.sub_department_id
-                sub_name = obj.ticket.nature.sub_department.sub_department_name
-                if obj.ticket.nature.sub_department.department:
-                    dept_name = obj.ticket.nature.sub_department.department.department_name
-            elif obj.ticket.department:
-                dept_name = obj.ticket.department.department_name
+            ticket = obj.ticket
+            if ticket.nature and ticket.nature.sub_department:
+                sub_dept = ticket.nature.sub_department
+                sub_id = sub_dept.sub_department_id
+                sub_name = sub_dept.sub_department_name
+                if sub_dept.department:
+                    dept_name = sub_dept.department.department_name
+            elif ticket.department:
+                dept_name = ticket.department.department_name
 
             return {
-                'ticket_id': obj.ticket.ticket_id,
-                'work_order_no': obj.ticket.work_order_no,
-                'title': obj.ticket.title,
-                'store_name': obj.ticket.store.store_name if obj.ticket.store else None,
+                'ticket_id': ticket.ticket_id,
+                'work_order_no': ticket.work_order_no,
+                'title': ticket.title,
+                'store_name': ticket.store.store_name if ticket.store else None,
                 'sub_department_id': sub_id,
                 'sub_department_name': sub_name,
                 'department_name': dept_name,
@@ -124,10 +189,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return None
 
     def get_worker_detail(self, obj):
-        if obj.worker:
-            from apps.accounts.serializers import CustomUserSerializer
-            return CustomUserSerializer(obj.worker).data
-        return None
+        return serialize_user_summary(obj.worker)
 
     def get_expense_type_detail(self, obj):
         if obj.expense_type:
@@ -184,16 +246,10 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_worker_detail(self, obj):
-        if obj.worker:
-            from apps.accounts.serializers import CustomUserSerializer
-            return CustomUserSerializer(obj.worker).data
-        return None
+        return serialize_user_summary(obj.worker)
 
     def get_approved_by_detail(self, obj):
-        if obj.approved_by:
-            from apps.accounts.serializers import CustomUserSerializer
-            return CustomUserSerializer(obj.approved_by).data
-        return None
+        return serialize_user_summary(obj.approved_by)
 
     def get_ticket_details(self, obj):
         if obj.ticket:
@@ -203,27 +259,29 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
                 'title': obj.ticket.title,
                 'status': obj.ticket.status.status_name if obj.ticket.status else None,
             }
-        # Fallback to first expense with a ticket in this bundle
-        first_exp = obj.expenses.filter(ticket__isnull=False).select_related(
-            'ticket', 'ticket__status').first()
-        if first_exp and first_exp.ticket:
-            return {
-                'ticket_id': first_exp.ticket.ticket_id,
-                'work_order_no': first_exp.ticket.work_order_no,
-                'title': first_exp.ticket.title,
-                'status': first_exp.ticket.status.status_name if first_exp.ticket.status else None,
-            }
+        # In-memory scan of prefetched expenses
+        for exp in obj.expenses.all():
+            if exp.ticket:
+                return {
+                    'ticket_id': exp.ticket.ticket_id,
+                    'work_order_no': exp.ticket.work_order_no,
+                    'title': exp.ticket.title,
+                    'status': exp.ticket.status.status_name if exp.ticket.status else None,
+                }
         return None
 
     def get_expenses(self, obj):
         return ExpenseSerializer(obj.expenses.all(), many=True).data
 
     def get_approval_history(self, obj):
-        return ApprovalInstanceSerializer(obj.approval_instances.all(), many=True).data
+        insts = list(obj.approval_instances.all())
+        insts.sort(key=lambda x: (x.step.step_order if x.step else 0, x.created_at or timezone.now()))
+        return [serialize_approval_instance_summary(inst) for inst in insts]
 
     def get_ledger_details(self, obj):
-        ledger = obj.ledgers.first()
-        if ledger:
+        ledgers = list(obj.ledgers.all())
+        if ledgers:
+            ledger = ledgers[0]
             group_name = ledger.ledger_group.group_name if ledger.ledger_group else f"Ledger Batch #{ledger.ledger_id}"
             return {
                 'ledger_id': ledger.ledger_id,
@@ -297,21 +355,17 @@ class LedgerGroupSerializer(serializers.ModelSerializer):
         return clean_name
 
     def get_ledgers_count(self, obj):
+        if hasattr(obj, 'annotated_ledgers_count'):
+            return obj.annotated_ledgers_count
         if hasattr(obj, 'ledgers'):
-            return obj.ledgers.count()
+            return len(obj.ledgers.all())
         return 0
 
     def get_created_by_detail(self, obj):
-        if obj.created_by:
-            from apps.accounts.serializers import CustomUserSerializer
-            return CustomUserSerializer(obj.created_by).data
-        return None
+        return serialize_user_summary(obj.created_by)
 
     def get_completed_by_detail(self, obj):
-        if obj.completed_by:
-            from apps.accounts.serializers import CustomUserSerializer
-            return CustomUserSerializer(obj.completed_by).data
-        return None
+        return serialize_user_summary(obj.completed_by)
 
 
 class LedgerSerializer(serializers.ModelSerializer):
@@ -330,10 +384,7 @@ class LedgerSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_created_by_detail(self, obj):
-        if obj.created_by:
-            from apps.accounts.serializers import CustomUserSerializer
-            return CustomUserSerializer(obj.created_by).data
-        return None
+        return serialize_user_summary(obj.created_by)
 
     def get_store_detail(self, obj):
         if obj.store:
@@ -342,7 +393,9 @@ class LedgerSerializer(serializers.ModelSerializer):
         return None
 
     def get_approval_history(self, obj):
-        return ApprovalInstanceSerializer(obj.approval_instances.all(), many=True).data
+        insts = list(obj.approval_instances.all())
+        insts.sort(key=lambda x: (x.step.step_order if x.step else 0, x.created_at or timezone.now()))
+        return [serialize_approval_instance_summary(inst) for inst in insts]
 
 
 class LedgerWriteSerializer(serializers.ModelSerializer):
@@ -536,7 +589,6 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
             }
         elif obj.ledger:
             from apps.common.serializers import MediaSerializer
-            from apps.accounts.serializers import CustomUserSerializer
 
             tickets_list = []
             seen_tids = set()
@@ -575,7 +627,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                         'expense_type_detail': {'expense_name': exp.expense_type.expense_name} if exp.expense_type else None,
                         'remarks': exp.remarks or '',
                         'worker': exp.worker.full_name or exp.worker.username if exp.worker else 'N/A',
-                        'worker_detail': CustomUserSerializer(exp.worker).data if exp.worker else None,
+                        'worker_detail': serialize_user_summary(exp.worker),
                         'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                         'ticket': t_info,
                         'ticket_details': t_info,
@@ -596,7 +648,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                 bundles_list.append({
                     'claim_id': bundle.claim_id,
                     'worker': bundle.worker.full_name or bundle.worker.username if bundle.worker else 'N/A',
-                    'worker_detail': CustomUserSerializer(bundle.worker).data if bundle.worker else None,
+                    'worker_detail': serialize_user_summary(bundle.worker),
                     'total_claimed_amount': str(bundle.total_claimed_amount),
                     'status': bundle.status,
                     'period_from': str(bundle.period_from) if bundle.period_from else None,
@@ -631,7 +683,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'expense_type_detail': {'expense_name': exp.expense_type.expense_name} if exp.expense_type else None,
                     'remarks': exp.remarks or '',
                     'worker': exp.worker.full_name or exp.worker.username if exp.worker else 'N/A',
-                    'worker_detail': CustomUserSerializer(exp.worker).data if exp.worker else None,
+                    'worker_detail': serialize_user_summary(exp.worker),
                     'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                     'ticket': t_info,
                     'ticket_details': t_info,

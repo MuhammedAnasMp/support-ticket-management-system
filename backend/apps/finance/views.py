@@ -1,4 +1,4 @@
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, Count
 from django.utils import timezone
 from rest_framework import viewsets, exceptions, status
 from rest_framework.decorators import action
@@ -39,7 +39,7 @@ class FinancePagination(PageNumberPagination):
 
 
 class ExpenseTypeViewSet(viewsets.ModelViewSet):
-    queryset = ExpenseType.objects.all()
+    queryset = ExpenseType.objects.all().select_related('parent', 'department')
     serializer_class = ExpenseTypeSerializer
 
     def get_serializer_class(self):
@@ -66,7 +66,7 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
 
 
 class EmployeeRateViewSet(viewsets.ModelViewSet):
-    queryset = EmployeeRate.objects.all()
+    queryset = EmployeeRate.objects.all().select_related('worker', 'worker__role')
     serializer_class = EmployeeRateSerializer
 
     def get_queryset(self):
@@ -177,10 +177,20 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(worker_id=worker)
 
         return queryset.select_related(
-            'worker', 'ticket', 'ticket__store', 'expense_type', 'responsible_store', 'added_by', 'claim'
+            'worker',
+            'worker__role',
+            'ticket',
+            'ticket__store',
+            'ticket__nature__sub_department__department',
+            'ticket__department',
+            'ticket__status',
+            'expense_type',
+            'expense_type__department',
+            'responsible_store',
+            'added_by',
+            'claim'
         ).prefetch_related(
             'receipts',
-            'approval_instances__step',
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by'
@@ -463,13 +473,40 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(worker_id=worker_param)
 
         return queryset.select_related(
-            'worker', 'submitted_by', 'approved_by', 'ticket', 'ticket__store'
+            'worker',
+            'worker__role',
+            'submitted_by',
+            'submitted_by__role',
+            'approved_by',
+            'approved_by__role',
+            'ticket',
+            'ticket__store',
+            'ticket__nature__sub_department__department',
+            'ticket__department',
+            'ticket__status'
         ).prefetch_related(
+            'ledgers__ledger_group',
             Prefetch(
                 'expenses',
                 queryset=Expense.objects.select_related(
-                    'worker', 'ticket', 'ticket__store', 'expense_type', 'responsible_store', 'added_by'
-                ).prefetch_related('receipts')
+                    'worker',
+                    'worker__role',
+                    'ticket',
+                    'ticket__store',
+                    'ticket__nature__sub_department__department',
+                    'ticket__department',
+                    'ticket__status',
+                    'expense_type',
+                    'expense_type__department',
+                    'responsible_store',
+                    'added_by',
+                    'claim'
+                ).prefetch_related(
+                    'receipts',
+                    'approval_instances__step__assigned_role',
+                    'approval_instances__step__assigned_users',
+                    'approval_instances__action_by'
+                )
             ),
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
@@ -593,7 +630,11 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(Q(group_name__icontains=search) | Q(ledger_group_id=int(search)))
             else:
                 queryset = queryset.filter(group_name__icontains=search)
-        return queryset
+        return queryset.annotate(
+            annotated_ledgers_count=Count('ledgers', distinct=True)
+        ).select_related(
+            'created_by', 'created_by__role', 'completed_by', 'completed_by__role'
+        ).prefetch_related('ledgers')
 
     def perform_destroy(self, instance):
         from django.core.exceptions import ValidationError as DjangoValidationError
@@ -794,32 +835,41 @@ class LedgerViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(q_search)
 
         return queryset.select_related(
-            'ledger_group', 'ledger_batch', 'created_by', 'store'
+            'ledger_group',
+            'ledger_group__created_by',
+            'ledger_group__completed_by',
+            'ledger_batch',
+            'created_by',
+            'created_by__role',
+            'store'
         ).prefetch_related(
             Prefetch(
                 'expenses',
                 queryset=Expense.objects.select_related(
-                    'worker', 'ticket', 'ticket__store', 'expense_type', 'responsible_store', 'added_by', 'claim'
+                    'worker', 'worker__role', 'ticket', 'ticket__store', 'ticket__nature__sub_department__department',
+                    'ticket__department', 'ticket__status', 'expense_type', 'expense_type__department', 'responsible_store', 'added_by', 'claim'
                 ).prefetch_related('receipts')
             ),
             Prefetch(
                 'bundles',
                 queryset=WorkerClaim.objects.select_related(
-                    'worker', 'submitted_by', 'approved_by', 'ticket'
+                    'worker', 'worker__role', 'submitted_by', 'approved_by', 'ticket', 'ticket__store', 'ticket__status'
                 ).prefetch_related(
                     Prefetch(
                         'expenses',
                         queryset=Expense.objects.select_related(
-                            'worker', 'ticket', 'ticket__store', 'expense_type', 'responsible_store', 'added_by'
+                            'worker', 'worker__role', 'ticket', 'ticket__store', 'ticket__nature__sub_department__department',
+                            'ticket__department', 'ticket__status', 'expense_type', 'expense_type__department', 'responsible_store', 'added_by'
                         ).prefetch_related('receipts')
-                    )
+                    ),
+                    'approval_instances__step__assigned_role',
+                    'approval_instances__action_by'
                 )
             ),
-            'approval_instances',
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by',
-            'ledger_batch__sub_departments'
+            'ledger_batch__sub_departments__department'
         ).order_by('-created_at', '-ledger_id')
 
     def create(self, request, *args, **kwargs):
@@ -1042,12 +1092,31 @@ class ApprovalInstanceViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(q_filter).distinct()
 
         return queryset.select_related(
-            'step', 'step__workflow', 'step__assigned_role', 'action_by', 'claim', 'ledger', 'expense'
+            'step', 'step__workflow', 'step__assigned_role', 'action_by', 'action_by__role',
+            'claim', 'claim__worker', 'claim__ticket', 'claim__ticket__store',
+            'ledger', 'ledger__ledger_group', 'ledger__store',
+            'expense', 'expense__worker', 'expense__ticket', 'expense__ticket__store', 'expense__expense_type', 'expense__responsible_store'
         ).prefetch_related(
             'step__assigned_users',
             'step__workflow__steps__assigned_role',
-            'step__workflow__steps__assigned_users'
-        )
+            'step__workflow__steps__assigned_users',
+            'claim__expenses__receipts',
+            'claim__expenses__expense_type',
+            'claim__expenses__ticket',
+            'claim__expenses__responsible_store',
+            'claim__expenses__worker',
+            'ledger__bundles__worker',
+            'ledger__bundles__ticket',
+            'ledger__bundles__expenses__receipts',
+            'ledger__bundles__expenses__expense_type',
+            'ledger__bundles__expenses__responsible_store',
+            'ledger__bundles__expenses__worker',
+            'ledger__expenses__receipts',
+            'ledger__expenses__expense_type',
+            'ledger__expenses__responsible_store',
+            'ledger__expenses__worker',
+            'expense__receipts'
+        ).order_by('-created_at', '-instance_id')
 
     @action(detail=True, methods=['post'], url_path='action')
     def action_step(self, request, pk=None):
@@ -1074,13 +1143,13 @@ class ApprovalInstanceViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = AuditEvent.objects.all()
+    queryset = AuditEvent.objects.all().select_related('actor', 'actor__role').order_by('-timestamp')
     serializer_class = AuditEventSerializer
     pagination_class = FinancePagination
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
-    queryset = Payment.objects.all()
+    queryset = Payment.objects.all().select_related('paid_by', 'paid_by__role', 'claim', 'ledger', 'expense').order_by('-paid_at', '-payment_id')
     serializer_class = PaymentSerializer
     pagination_class = FinancePagination
 
