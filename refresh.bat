@@ -88,10 +88,17 @@ REM Build frontend
 REM ==========================================
 echo.
 echo ==========================================
-echo Building frontend
+echo Installing frontend packages & building
 echo ==========================================
 
 cd /d C:\inetpub\wwwroot\support-ticket-management-system\frontend
+
+call npm install
+
+if errorlevel 1 (
+    echo ERROR: npm install failed.
+    exit /b 1
+)
 
 call npm run build
 
