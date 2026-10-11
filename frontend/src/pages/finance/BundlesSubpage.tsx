@@ -300,7 +300,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Token ${token}`;
         const baseApi = API_URL || '';
-        const res = await fetch(`${baseApi}/accounts/users/?page_size=200`, { headers });
+        const res = await fetch(`${baseApi}/accounts/customuser/?page_size=200`, { headers });
         if (res.ok) {
           const data = await res.json();
           const results = Array.isArray(data) ? data : (data.results || []);
@@ -345,7 +345,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Token ${token}`;
         const baseApi = API_URL || '';
-        const res = await fetch(`${baseApi}/accounts/users/?search=${encodeURIComponent(trimmed)}&page_size=10`, { headers });
+        const res = await fetch(`${baseApi}/accounts/customuser/?search=${encodeURIComponent(trimmed)}&page_size=10`, { headers });
         if (res.ok) {
           const data = await res.json();
           const results = Array.isArray(data) ? data : (data.results || []);

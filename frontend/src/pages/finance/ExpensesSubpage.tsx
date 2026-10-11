@@ -180,7 +180,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       Promise.all([
         fetch(`${API_URL}/maintenance/ticket/?page=1&page_size=100&search=`, { headers }).then(res => res.ok ? res.json() : []),
         fetch(`${API_URL}/finance/expensetype/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
-        fetch(`${API_URL}/accounts/users/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
+        fetch(`${API_URL}/accounts/customuser/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
         fetch(`${API_URL}/stores/store/?page_size=all`, { headers }).then(res => res.ok ? res.json() : [])
       ]).then(([ticketsRes, expTypesRes, usersRes, storesRes]) => {
         const rawTickets = Array.isArray(ticketsRes) ? ticketsRes : (ticketsRes?.results || []);

@@ -109,7 +109,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 .catch(() => { });
         }
         if (!propWorkers || propWorkers.length === 0) {
-            fetch(`${API_URL}/accounts/users/`, { headers })
+            fetch(`${API_URL}/accounts/customuser/`, { headers })
                 .then(r => r.ok ? r.json() : [])
                 .then(data => {
                     const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
