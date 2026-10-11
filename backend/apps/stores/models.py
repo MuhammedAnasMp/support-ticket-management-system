@@ -223,6 +223,8 @@ class SubDepartment(models.Model):
 
 @receiver(models.signals.post_save, sender=SubDepartment)
 def sync_subdepartment_to_worknature(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     from apps.maintenance.models import WorkNature, Priority
 
     priority_medium, _ = Priority.objects.get_or_create(
@@ -254,6 +256,8 @@ def sync_subdepartment_to_worknature(sender, instance, created, **kwargs):
 
 @receiver(models.signals.pre_save, sender=Store)
 def check_store_manager_contact_pre(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     # Check if store already exists to detect manager change/removal
     if instance.pk:
         try:
@@ -304,6 +308,8 @@ def check_store_manager_contact_pre(sender, instance, **kwargs):
 
 @receiver(models.signals.post_save, sender=Store)
 def handle_store_manager_accessible_stores(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     old_manager = getattr(instance, '_old_manager', None)
     new_manager = instance.manager
     prev_store = getattr(instance, '_manager_previous_store', None)
@@ -324,12 +330,16 @@ def handle_store_manager_accessible_stores(sender, instance, created, **kwargs):
 
 @receiver(models.signals.post_delete, sender=Store)
 def handle_store_delete_accessible_stores(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if instance.manager:
         instance.manager.accessible_stores.remove(instance)
 
 
 @receiver(models.signals.pre_save, sender=settings.AUTH_USER_MODEL)
 def store_old_manager_contact(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if instance.pk:
         try:
             old_user = sender.objects.get(pk=instance.pk)
@@ -341,6 +351,8 @@ def store_old_manager_contact(sender, instance, **kwargs):
 
 @receiver(models.signals.post_save, sender=settings.AUTH_USER_MODEL)
 def update_store_contact_from_manager(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if hasattr(instance, 'managed_store') and instance.managed_store:
         store = instance.managed_store
         if instance.is_active and getattr(instance, 'active', True):

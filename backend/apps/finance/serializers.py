@@ -24,6 +24,19 @@ def serialize_user_summary(user):
     if getattr(user, 'role', None):
         role_name = getattr(user.role, 'role_name', None)
 
+    sub_departments_data = []
+    if hasattr(user, 'sub_departments'):
+        try:
+            sub_departments_data = [
+                {
+                    'sub_department_id': sd.sub_department_id,
+                    'sub_department_name': sd.sub_department_name,
+                }
+                for sd in user.sub_departments.all()
+            ]
+        except Exception:
+            pass
+
     return {
         'id': user.pk,
         'user_id': user.pk,
@@ -34,6 +47,7 @@ def serialize_user_summary(user):
         'employee_no': getattr(user, 'employee_no', '') or '',
         'profile_image': profile_image_url,
         'role': role_name,
+        'sub_departments': sub_departments_data,
         'phone': getattr(user, 'phone', '') or '',
         'email': getattr(user, 'email', '') or '',
     }
@@ -193,10 +207,13 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def get_expense_type_detail(self, obj):
         if obj.expense_type:
+            parent = obj.expense_type.parent
             return {
                 'expense_type_id': obj.expense_type.expense_type_id,
                 'expense_id': obj.expense_type.expense_type_id,
                 'expense_name': obj.expense_type.expense_name,
+                'parent_id': parent.expense_type_id if parent else None,
+                'parent_name': parent.expense_name if parent else None,
                 'approve_required': obj.expense_type.approve_required,
                 'department_name': obj.expense_type.department.department_name if obj.expense_type.department else None
             }

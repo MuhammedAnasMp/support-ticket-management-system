@@ -180,6 +180,8 @@ class WhatsAppLog(models.Model):
 
 @receiver(m2m_changed, sender=CustomUser.sub_departments.through)
 def update_user_approval(sender, instance, action, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if action in ['post_add', 'post_remove', 'post_clear']:
         # Relocate the profile image to correct department/sub-department folder
         move_profile_image_to_correct_path(instance)
@@ -187,6 +189,8 @@ def update_user_approval(sender, instance, action, **kwargs):
 
 @receiver(models.signals.post_save, sender=CustomUser)
 def sync_user_role_to_group(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if instance.role:
         from django.contrib.auth.models import Group
         group, _ = Group.objects.get_or_create(name=instance.role.role_name)

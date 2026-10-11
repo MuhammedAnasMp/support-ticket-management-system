@@ -132,6 +132,8 @@ class PushSubscription(models.Model):
 
 @receiver(models.signals.post_save, sender=Notification)
 def send_push_on_notification_create(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if created:
         try:
             from apps.common.services import send_push_notification
@@ -163,6 +165,8 @@ def send_push_on_notification_create(sender, instance, created, **kwargs):
 
 @receiver(models.signals.post_save, sender=Media)
 def compress_media_on_create(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if created and instance.file_url:
         try:
             from apps.common.views import watermark_media_instance

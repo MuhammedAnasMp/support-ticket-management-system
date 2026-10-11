@@ -3434,6 +3434,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           group={selectedGroupForReport}
           onClose={() => setSelectedGroupForReport(null)}
           setSelectedTicketForModal={setSelectedTicketForModal}
+          token={token}
+          API_URL={API_URL}
         />
       )}
 

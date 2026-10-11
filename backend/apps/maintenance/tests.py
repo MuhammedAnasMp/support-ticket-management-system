@@ -615,18 +615,35 @@ class WorkLogAndTimeTrackingTestCase(TestCase):
         self.assertFalse(serializer_neg.is_valid())
         self.assertIn("hours", serializer_neg.errors)
 
-        # To time earlier than from time
+        # Time range exceeding 20 hours (e.g. 14:00 to 12:00 next day = 22 hours)
         data_time_inv = {
             "ticket": self.ticket.ticket_id,
             "worker": self.worker1.user_id,
             "from_time": "14:00:00",
             "to_time": "12:00:00",
-            "work_done": "Invalid time order",
+            "work_done": "Exceeds 20 hours",
             "work_date": timezone.now().date().isoformat()
         }
         serializer_time = WorkLogWriteSerializer(data=data_time_inv)
         self.assertFalse(serializer_time.is_valid())
-        self.assertIn("to_time", serializer_time.errors)
+        self.assertIn("hours", serializer_time.errors)
+
+    def test_worklog_overnight_night_to_morning_allowed(self):
+        from apps.maintenance.serializers import WorkLogWriteSerializer
+        from django.utils import timezone
+        # Night to morning (e.g. 22:00 to 06:00 = 8.00 hours)
+        data_overnight = {
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "22:00:00",
+            "to_time": "06:00:00",
+            "work_done": "Night shift maintenance",
+            "work_date": timezone.now().date().isoformat()
+        }
+        serializer = WorkLogWriteSerializer(data=data_overnight)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(float(instance.hours), 8.0)
 
     def test_worklog_from_and_to_time_calculation(self):
         from apps.maintenance.serializers import WorkLogWriteSerializer

@@ -4,7 +4,8 @@ from .views import RoleViewSet, CustomUserViewSet, SignupView, LoginView, Profil
 
 router = DefaultRouter()
 router.register(r'role', RoleViewSet)
-router.register(r'customuser', CustomUserViewSet)
+router.register(r'customuser', CustomUserViewSet, basename='customuser')
+router.register(r'users', CustomUserViewSet, basename='users')
 
 urlpatterns = [
     path('signup/', SignupView.as_view(), name='signup'),

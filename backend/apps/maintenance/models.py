@@ -299,14 +299,16 @@ class Ticket(models.Model):
                     from django.core.exceptions import ValidationError
                     allocations = self.allocations.all()
                     if not allocations.exists():
-                        raise ValidationError("Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.")
+                        raise ValidationError(
+                            "Cannot move ticket to Location Approval: No workers are allocated to this ticket. At least one worker must be assigned and have logged work hours.")
                     missing_workers = []
                     for alloc in allocations:
                         if not self.work_logs.filter(worker=alloc.worker).exists():
                             name = alloc.worker.full_name or alloc.worker.username or f"Worker #{alloc.worker.pk}"
                             missing_workers.append(name)
                     if missing_workers:
-                        raise ValidationError(f"Cannot move ticket to Location Approval: The following allocated worker(s) have not logged their work hours: {', '.join(missing_workers)}. All allocated workers must log their work hours before applying for location approval.")
+                        raise ValidationError(
+                            f"Cannot move ticket to Location Approval: The following allocated worker(s) have not logged their work hours: {', '.join(missing_workers)}. All allocated workers must log their work hours before applying for location approval.")
 
                 from .utils import get_value_from_path, compare_values, set_value_on_path
                 from .models import StatusChangeRule
@@ -413,6 +415,8 @@ class Allocation(models.Model):
 
 @receiver(models.signals.post_save, sender=Allocation)
 def add_store_to_worker_accessible_stores(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if instance.worker and instance.ticket and instance.ticket.store:
         instance.worker.accessible_stores.add(instance.ticket.store)
 
@@ -467,9 +471,11 @@ class WorkLog(models.Model):
         from django.core.exceptions import ValidationError
         if self.hours is not None:
             if Decimal(str(self.hours)) < 0:
-                raise ValidationError({'hours': 'Logged work hours cannot be negative.'})
+                raise ValidationError(
+                    {'hours': 'Logged work hours cannot be negative.'})
             if Decimal(str(self.hours)) > 20:
-                raise ValidationError({'hours': 'Logged work hours cannot exceed 20 hours.'})
+                raise ValidationError(
+                    {'hours': 'Logged work hours cannot exceed 20 hours.'})
 
     def __str__(self):
         return f"WorkLog {self.worklog_id} by {self.worker.username}"
@@ -539,6 +545,8 @@ class TicketHistory(models.Model):
 
 @receiver(models.signals.post_save, sender=Ticket)
 def create_ticket_history_on_save(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     from django.utils import timezone
 
     # 1. Try to find the last history record for this ticket
@@ -661,6 +669,8 @@ class TicketChatMessage(models.Model):
 
 @receiver(models.signals.pre_save, sender=Ticket)
 def store_old_status(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if instance.pk:
         try:
             old_inst = Ticket.objects.get(pk=instance.pk)
@@ -676,6 +686,8 @@ def store_old_status(sender, instance, **kwargs):
 
 @receiver(models.signals.post_save, sender=Ticket)
 def send_notification_on_ticket_save(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     from apps.common.models import Notification
     from apps.accounts.models import CustomUser
 
@@ -917,6 +929,8 @@ def send_notification_on_ticket_save(sender, instance, created, **kwargs):
 
 @receiver(models.signals.post_save, sender=Allocation)
 def send_notification_on_allocation_save(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if created:
         from apps.common.models import Notification
         if instance.worker and instance.ticket:
@@ -936,6 +950,9 @@ def send_notification_on_allocation_save(sender, instance, created, **kwargs):
 
 @receiver(models.signals.post_save, sender='common.Media')
 def send_notification_on_media_save(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
+
     if created and instance.ticket:
         from apps.common.models import Notification
         from apps.common.services import send_push_notification
@@ -977,6 +994,8 @@ def send_notification_on_media_save(sender, instance, created, **kwargs):
 
 @receiver(models.signals.post_save, sender=Ticket)
 def broadcast_ticket_update(sender, instance, **kwargs):
+    if kwargs.get('raw', False):
+        return
     try:
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
@@ -1010,6 +1029,8 @@ def broadcast_ticket_update(sender, instance, **kwargs):
 
 @receiver(models.signals.post_save, sender=TicketChatMessage)
 def broadcast_chat_message(sender, instance, created, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if created:
         try:
             from channels.layers import get_channel_layer

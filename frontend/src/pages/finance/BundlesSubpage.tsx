@@ -3,7 +3,7 @@ import {
   Receipt, PlusCircle, FileText, Trash2, Search, X, Check, Paperclip, ExternalLink, Loader2, Eye, Maximize2, ShieldCheck, Layers, AlertCircle,
   Clock, RotateCcw, MessageSquare, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Rows3, ChevronsUp, RefreshCw, Plus
 } from 'lucide-react';
-import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, ApprovalInstanceItem } from './types';
+import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, ApprovalInstanceItem, LedgerBatchItem } from './types';
 import { getUserId } from './types';
 import { Pagination } from './Pagination';
 import { DateRangePickerCard } from '../ticket/DateRangePickerCard';
@@ -35,7 +35,17 @@ interface BundlesSubpageProps {
   setExpenseFilterFrom: (v: string) => void;
   expenseFilterTo: string;
   setExpenseFilterTo: (v: string) => void;
-  uniqueExpenseWorkers: { id: number; name: string; username?: string; employee_no?: string; profile_image?: string | null; unclaimed_count?: number; unclaimed_total?: number }[];
+  uniqueExpenseWorkers: {
+    id: number;
+    name: string;
+    username?: string;
+    employee_no?: string;
+    profile_image?: string | null;
+    department_name?: string;
+    sub_departments?: { sub_department_id: number; sub_department_name: string }[];
+    unclaimed_count?: number;
+    unclaimed_total?: number;
+  }[];
   filteredUnclaimedExpenses: ExpenseItem[];
   selectedExpenseIds: number[];
   setSelectedExpenseIds: (ids: number[]) => void;
@@ -252,7 +262,67 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [isSearchingWorkers, setIsSearchingWorkers] = useState<boolean>(false);
   const [previewExpense, setPreviewExpense] = useState<ExpenseItem | null>(null);
   const [activeReceiptIndex, setActiveReceiptIndex] = useState<number>(0);
+  const [ledgerBatches, setLedgerBatches] = useState<LedgerBatchItem[]>([]);
+  const [selectedLedgerBatchId, setSelectedLedgerBatchId] = useState<string>('ALL');
+  const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
+  const [userSubDeptMap, setUserSubDeptMap] = useState<Record<number, number[]>>({});
   const employeeItemsPerPage = 10;
+
+  // Fetch Ledger Batches and User Sub-departments map when Create Bundle Modal opens
+  useEffect(() => {
+    if (!showCreateBundleModal) {
+      setSelectedLedgerBatchId('ALL');
+      return;
+    }
+
+    const fetchBatches = async () => {
+      if (ledgerBatches.length > 0) return;
+      setIsLoadingBatches(true);
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Token ${token}`;
+        const baseApi = API_URL || '';
+        const res = await fetch(`${baseApi}/finance/ledger-batches/?page_size=100`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const results = Array.isArray(data) ? data : (data.results || []);
+          setLedgerBatches(results);
+        }
+      } catch (err) {
+        console.error('Error fetching ledger batches:', err);
+      } finally {
+        setIsLoadingBatches(false);
+      }
+    };
+
+    const fetchUserSubDepts = async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Token ${token}`;
+        const baseApi = API_URL || '';
+        const res = await fetch(`${baseApi}/accounts/users/?page_size=200`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const results = Array.isArray(data) ? data : (data.results || []);
+          const map: Record<number, number[]> = {};
+          results.forEach((u: any) => {
+            const uid = u.user_id || u.id;
+            if (uid && Array.isArray(u.sub_departments)) {
+              map[uid] = u.sub_departments.map((sd: any) =>
+                typeof sd === 'object' ? (sd.sub_department_id || sd.id) : Number(sd)
+              );
+            }
+          });
+          setUserSubDeptMap(map);
+        }
+      } catch (err) {
+        console.error('Error fetching users for sub departments map:', err);
+      }
+    };
+
+    fetchBatches();
+    fetchUserSubDepts();
+  }, [showCreateBundleModal, token, API_URL]);
 
   // API Search for Workers / Technicians
   useEffect(() => {
@@ -305,6 +375,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
               employee_no: u.employee_no || '',
               profile_image: u.profile_image || null,
               department_name: u.sub_departments?.[0]?.sub_department_name || u.role?.role_name || '',
+              sub_departments: u.sub_departments || [],
               unclaimed_count: count,
               unclaimed_total: total
             };
@@ -323,20 +394,64 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   }, [employeeSearchQuery, showCreateBundleModal, token, API_URL, uniqueExpenseWorkers, unclaimedExpenses]);
 
   const filteredEmployees = useMemo(() => {
+    let list = uniqueExpenseWorkers;
     if (employeeSearchQuery.trim()) {
       if (apiSearchedWorkers.length > 0) {
-        return apiSearchedWorkers;
+        list = apiSearchedWorkers;
+      } else {
+        const q = employeeSearchQuery.toLowerCase();
+        list = uniqueExpenseWorkers.filter(w => {
+          const nameMatch = w.name.toLowerCase().includes(q);
+          const empNoMatch = (w.employee_no || '').toLowerCase().includes(q);
+          const userMatch = (w.username || '').toLowerCase().includes(q);
+          return nameMatch || empNoMatch || userMatch;
+        });
       }
-      const q = employeeSearchQuery.toLowerCase();
-      return uniqueExpenseWorkers.filter(w => {
-        const nameMatch = w.name.toLowerCase().includes(q);
-        const empNoMatch = (w.employee_no || '').toLowerCase().includes(q);
-        const userMatch = (w.username || '').toLowerCase().includes(q);
-        return nameMatch || empNoMatch || userMatch;
-      });
     }
-    return uniqueExpenseWorkers;
-  }, [uniqueExpenseWorkers, employeeSearchQuery, apiSearchedWorkers]);
+
+    if (selectedLedgerBatchId !== 'ALL') {
+      const selectedBatch = ledgerBatches.find(
+        b => String(b.batch_id ?? b.id ?? b.ledger_batch_id) === selectedLedgerBatchId
+      );
+      if (selectedBatch) {
+        const batchSubDeptIds = new Set<number>();
+        if (Array.isArray(selectedBatch.sub_departments)) {
+          selectedBatch.sub_departments.forEach((id: any) => {
+            const num = Number(typeof id === 'object' ? (id.sub_department_id || id.id) : id);
+            if (!isNaN(num)) batchSubDeptIds.add(num);
+          });
+        }
+        if (Array.isArray(selectedBatch.sub_departments_detail)) {
+          selectedBatch.sub_departments_detail.forEach((sd: any) => {
+            const num = Number(sd.sub_department_id || sd.id);
+            if (!isNaN(num)) batchSubDeptIds.add(num);
+          });
+        }
+
+        list = list.filter(w => {
+          // 1. Check worker's sub_departments array on object
+          const workerSubDepts = (w as any).sub_departments;
+          if (Array.isArray(workerSubDepts) && workerSubDepts.length > 0) {
+            const hasMatch = workerSubDepts.some((sd: any) => {
+              const sdId = Number(typeof sd === 'object' ? (sd.sub_department_id || sd.id) : sd);
+              return batchSubDeptIds.has(sdId);
+            });
+            if (hasMatch) return true;
+          }
+
+          // 2. Fallback to userSubDeptMap by worker id
+          const mappedSubDepts = userSubDeptMap[w.id];
+          if (Array.isArray(mappedSubDepts) && mappedSubDepts.length > 0) {
+            return mappedSubDepts.some(sdId => batchSubDeptIds.has(Number(sdId)));
+          }
+
+          return false;
+        });
+      }
+    }
+
+    return list;
+  }, [uniqueExpenseWorkers, employeeSearchQuery, apiSearchedWorkers, selectedLedgerBatchId, ledgerBatches, userSubDeptMap]);
 
   const paginatedEmployees = useMemo(() => {
     const start = (employeePage - 1) * employeeItemsPerPage;
@@ -347,7 +462,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
   useEffect(() => {
     setEmployeePage(1);
-  }, [filteredEmployees.length, employeeSearchQuery]);
+  }, [filteredEmployees.length, employeeSearchQuery, selectedLedgerBatchId]);
 
   // Reset page when filter length changes
   useEffect(() => {
@@ -1333,6 +1448,87 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       </div>
                     </div>
 
+                    {/* Ledger Batch Filtration Bar */}
+                    <div className="p-2.5 bg-surface-container rounded border border-outline-variant/60 shadow-2xs space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                          <Layers className="w-3.5 h-3.5 text-primary" />
+                          <span>Filter by Ledger Batch:</span>
+                        </div>
+                        {selectedLedgerBatchId !== 'ALL' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedLedgerBatchId('ALL');
+                              setEmployeePage(1);
+                            }}
+                            className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
+                          >
+                            Reset to All Batches
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLedgerBatchId('ALL');
+                            setEmployeePage(1);
+                          }}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
+                            selectedLedgerBatchId === 'ALL'
+                              ? 'bg-primary text-on-primary shadow-xs ring-1 ring-primary/30'
+                              : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant border border-outline-variant/70'
+                          }`}
+                        >
+                          All Batches
+                        </button>
+
+                        {isLoadingBatches && ledgerBatches.length === 0 ? (
+                          <div className="flex items-center gap-1.5 text-xs text-on-surface-variant py-1 px-2">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                            <span>Loading batches...</span>
+                          </div>
+                        ) : (
+                          ledgerBatches.map((b) => {
+                            const bId = String(b.batch_id ?? b.id ?? b.ledger_batch_id);
+                            const isSelected = selectedLedgerBatchId === bId;
+                            const subDeptCount = b.sub_departments?.length ?? b.sub_departments_detail?.length ?? 0;
+                            return (
+                              <button
+                                key={bId}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedLedgerBatchId(isSelected ? 'ALL' : bId);
+                                  setEmployeePage(1);
+                                }}
+                                title={b.description || b.batch_name}
+                                className={`px-2.5 py-1 rounded text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                                  isSelected
+                                    ? 'bg-primary text-on-primary font-bold shadow-xs ring-1 ring-primary/40'
+                                    : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/70 font-medium'
+                                }`}
+                              >
+                                <span className="truncate max-w-[220px]">{b.batch_name}</span>
+                                {subDeptCount > 0 && (
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                      isSelected
+                                        ? 'bg-on-primary/20 text-on-primary'
+                                        : 'bg-surface-container-highest text-on-surface-variant'
+                                    }`}
+                                  >
+                                    {subDeptCount}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
                     {/* Paginated Employee Cards Grid */}
                     {filteredEmployees.length === 0 ? (
                       <div className="p-4 text-center text-xs text-on-surface-variant italic border border-outline-variant/80 rounded bg-surface-container">
@@ -1367,10 +1563,24 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       <span>{emp.name}</span>
                                       {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                                     </h4>
-                                    {/* <p className="text-[10px] text-on-surface-variant truncate">
-                                      {(emp as any).department_name || 'General Maintenance'}
-                                      {emp.employee_no ? ` • EMP: ${emp.employee_no}` : ''}
-                                    </p> */}
+                                    <div className="flex flex-wrap gap-1 mt-0.5">
+                                      {emp.sub_departments && emp.sub_departments.length > 0 ? (
+                                        emp.sub_departments.map((sd: any) => (
+                                          <span
+                                            key={sd.sub_department_id || sd.id}
+                                            className="text-[9px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant/60 font-medium truncate max-w-[130px]"
+                                            title={sd.sub_department_name}
+                                          >
+                                            {sd.sub_department_name}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-[10px] text-on-surface-variant truncate">
+                                          {(emp as any).department_name || 'General Maintenance'}
+                                          {emp.employee_no ? ` • EMP: ${emp.employee_no}` : ''}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">

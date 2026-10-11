@@ -946,7 +946,17 @@ export const FinanceView: React.FC = () => {
   }, [unclaimedExpenses, selectedExpenseIds]);
 
   const uniqueExpenseWorkers = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; username: string; employee_no?: string; profile_image?: string | null; department_name?: string; unclaimed_count: number; unclaimed_total: number }>();
+    const map = new Map<number, {
+      id: number;
+      name: string;
+      username: string;
+      employee_no?: string;
+      profile_image?: string | null;
+      department_name?: string;
+      sub_departments?: { sub_department_id: number; sub_department_name: string }[];
+      unclaimed_count: number;
+      unclaimed_total: number;
+    }>();
     unclaimedExpenses.forEach((exp) => {
       if (exp.is_claimed || exp.claim) return;
       if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return;
@@ -957,6 +967,7 @@ export const FinanceView: React.FC = () => {
         const deptName = (exp.ticket_details as any)?.department_name || (exp.expense_type_detail as any)?.department_name || (exp.expense_type as any)?.department?.department_name || 'General Maintenance';
         const amt = parseFloat(exp.amount || '0');
         const profImg = workerObj?.profile_image || (typeof exp.worker === 'object' ? exp.worker?.profile_image : null) || exp.worker_detail?.profile_image || null;
+        const subDepts = (workerObj as any)?.sub_departments || (typeof exp.worker === 'object' ? (exp.worker as any)?.sub_departments : null) || (exp.worker_detail as any)?.sub_departments || [];
         const existing = map.get(workerId);
         if (existing) {
           existing.unclaimed_count += 1;
@@ -967,6 +978,9 @@ export const FinanceView: React.FC = () => {
           if (!existing.profile_image && profImg) {
             existing.profile_image = profImg;
           }
+          if ((!existing.sub_departments || existing.sub_departments.length === 0) && subDepts.length > 0) {
+            existing.sub_departments = subDepts;
+          }
         } else {
           map.set(workerId, {
             id: workerId,
@@ -975,6 +989,7 @@ export const FinanceView: React.FC = () => {
             employee_no: workerObj?.employee_no || '',
             profile_image: profImg,
             department_name: deptName,
+            sub_departments: subDepts,
             unclaimed_count: 1,
             unclaimed_total: amt
           });

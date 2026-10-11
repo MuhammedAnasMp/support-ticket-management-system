@@ -82,7 +82,7 @@ class EmployeeRateViewSet(viewsets.ModelViewSet):
 
 
 class ExpenseViewSet(viewsets.ModelViewSet):
-    queryset = Expense.objects.all().order_by('-expense_date', '-expense_id')
+    queryset = Expense.objects.all().order_by('-expense_date', '-expense_id').select_related('worker', 'worker__role').prefetch_related('worker__sub_departments')
     serializer_class = ExpenseSerializer
     pagination_class = FinancePagination
 

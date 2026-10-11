@@ -463,6 +463,8 @@ from django.core.exceptions import ValidationError
 
 @receiver(m2m_changed, sender=LedgerBatch.sub_departments.through)
 def prevent_duplicate_subdepartments_across_batches(sender, instance, action, pk_set, **kwargs):
+    if kwargs.get('raw', False):
+        return
     if action == 'pre_add' and pk_set:
         from apps.stores.models import SubDepartment
         for subdept_id in pk_set:

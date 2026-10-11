@@ -14,14 +14,16 @@ export interface ExpenseItem {
   remarks?: string;
   is_claimed: boolean;
   worker: any;
-  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string; profile_image?: string | null };
+  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string; profile_image?: string | null; sub_departments?: SubDepartmentDetailItem[] };
   ticket?: number;
   ticket_details?: {
     ticket_id: number;
     work_order_no: string;
     title: string;
+    store_name?: string;
     sub_department_id?: number;
     sub_department_name?: string;
+    department_name?: string;
   };
   sub_department_id?: number;
   sub_department_name?: string;
@@ -134,7 +136,9 @@ export interface SubDepartmentDetailItem {
 }
 
 export interface LedgerBatchItem {
-  ledger_batch_id: number;
+  batch_id?: number;
+  ledger_batch_id?: number;
+  id?: number;
   batch_name: string;
   description?: string;
   sub_departments?: number[];
@@ -147,13 +151,22 @@ export interface WorkerClaimItem {
   claim_id: number;
   ledger_id?: number;
   worker?: number;
-  worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string; profile_image?: string | null };
+  worker_detail?: {
+    id: number;
+    username: string;
+    full_name?: string;
+    employee_no?: string;
+    profile_image?: string | null;
+    sub_departments?: SubDepartmentDetailItem[];
+  };
   ticket_details?: {
     ticket_id: number;
     work_order_no: string;
     title: string;
+    store_name?: string;
     sub_department_id?: number;
     sub_department_name?: string;
+    department_name?: string;
   };
   total_claimed_amount: string;
   status: 'Draft' | 'Submitted' | 'In Review' | 'Approved' | 'Rejected' | 'Rework' | 'Paid';
