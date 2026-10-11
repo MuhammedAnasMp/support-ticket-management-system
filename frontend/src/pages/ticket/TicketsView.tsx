@@ -474,7 +474,10 @@ export const TicketsView: React.FC = () => {
                 setNatures(Array.isArray(nData) ? nData.filter((n: any) => n.active !== false) : nData);
             }
             if (resPrio.ok) setPriorities(await resPrio.json());
-            if (resExp.ok) setExpenseTypes(await resExp.json());
+            if (resExp.ok) {
+                const eData = await resExp.json();
+                setExpenseTypes(Array.isArray(eData) ? eData : (Array.isArray(eData?.results) ? eData.results : []));
+            }
         } catch (err) {
             console.error('Failed to load metadata', err);
         }

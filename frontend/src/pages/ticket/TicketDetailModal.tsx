@@ -67,7 +67,50 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const statuses = useMemo(() => (propStatuses && propStatuses.length > 0 ? propStatuses : fetchedStatuses), [propStatuses, fetchedStatuses]);
     const workers = useMemo(() => (propWorkers && propWorkers.length > 0 ? propWorkers : fetchedWorkers), [propWorkers, fetchedWorkers]);
     const subDepartments = useMemo(() => (propSubDepartments && propSubDepartments.length > 0 ? propSubDepartments : fetchedSubDepartments), [propSubDepartments, fetchedSubDepartments]);
-    const expenseTypes = useMemo(() => (propExpenseTypes && propExpenseTypes.length > 0 ? propExpenseTypes : fetchedExpenseTypes), [propExpenseTypes, fetchedExpenseTypes]);
+    const expenseTypes = useMemo(() => {
+        const raw = (propExpenseTypes && (Array.isArray(propExpenseTypes) ? propExpenseTypes.length > 0 : (propExpenseTypes as any)?.results?.length > 0))
+            ? propExpenseTypes
+            : fetchedExpenseTypes;
+        return Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.results) ? (raw as any).results : []);
+    }, [propExpenseTypes, fetchedExpenseTypes]);
+
+    const filteredExpenseTypes = useMemo(() => {
+        if (!expenseTypes || expenseTypes.length === 0) return [];
+
+        const tAny = ticketDetails as any;
+        const rawTicketDept =
+            ticketDetails?.department?.department_id ??
+            tAny?.department?.id ??
+            (typeof ticketDetails?.department === 'number' || typeof ticketDetails?.department === 'string'
+                ? ticketDetails.department
+                : null) ??
+            tAny?.department_id ??
+            tAny?.nature?.sub_department?.department?.department_id ??
+            tAny?.nature?.sub_department?.department?.id ??
+            tAny?.nature?.sub_department?.department;
+
+        const ticketDeptId = rawTicketDept != null && !isNaN(Number(rawTicketDept)) ? Number(rawTicketDept) : null;
+
+        if (!ticketDeptId) {
+            return expenseTypes;
+        }
+
+        const filtered = expenseTypes.filter(et => {
+            const rawEtDept =
+                et?.department?.department_id ??
+                et?.department?.id ??
+                (typeof et?.department === 'number' || typeof et?.department === 'string'
+                    ? et.department
+                    : null) ??
+                et?.department_id;
+
+            if (rawEtDept == null) return true;
+            const etDeptId = Number(rawEtDept);
+            return !isNaN(etDeptId) && etDeptId === ticketDeptId;
+        });
+
+        return filtered.length > 0 ? filtered : expenseTypes;
+    }, [expenseTypes, ticketDetails]);
 
     const userRoleName = useMemo(() => {
         return (
@@ -3569,13 +3612,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
                                         <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => setSelectedExpenseTypeId(e.target.value)} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                             <option value="">Select Expense Type</option>
-                                            {expenseTypes
-                                                .filter(et => (et.department?.department_id ?? et.department) === ticketDetails.department.department_id)
-                                                .map(et => (
-                                                    <option key={et.expense_type_id} value={et.expense_type_id}>
-                                                        {et.expense_name}
-                                                    </option>
-                                                ))}
+                                            {filteredExpenseTypes.map(et => (
+                                                <option key={et.expense_type_id} value={et.expense_type_id}>
+                                                    {et.expense_name}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                     <div>
@@ -3973,13 +4014,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
                                                         <select required value={editExpenseForm.expense_type_id} onChange={e => setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                                             <option value="">Expense Type</option>
-                                                            {expenseTypes
-                                                                .filter(et => (et.department?.department_id ?? et.department) === ticketDetails.department.department_id)
-                                                                .map(et => (
-                                                                    <option key={et.expense_type_id} value={et.expense_type_id}>
-                                                                        {et.expense_name}
-                                                                    </option>
-                                                                ))}
+                                                            {filteredExpenseTypes.map(et => (
+                                                                <option key={et.expense_type_id} value={et.expense_type_id}>
+                                                                    {et.expense_name}
+                                                                </option>
+                                                            ))}
                                                         </select>
                                                     </div>
                                                     <div>
