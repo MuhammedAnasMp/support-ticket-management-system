@@ -445,6 +445,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     return selectedExpenseTypeObj.required !== false;
   }, [selectedExpenseTypeObj]);
 
+  const isRemarksRequired = useMemo(() => {
+    if (!selectedExpenseTypeObj) return false;
+    return selectedExpenseTypeObj.required !== false;
+  }, [selectedExpenseTypeObj]);
+
   // Handler when ticket selection changes
   const handleTicketChange = (ticketId: string) => {
     setSelectedTicketId(ticketId);
@@ -551,6 +556,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     } else if (ticketCreatedDateFormatted && expenseDate < ticketCreatedDateFormatted) {
       missingFields.push(`Expense Date (${expenseDate}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
     }
+    if (isRemarksRequired && !remarks.trim()) {
+      missingFields.push(`Remarks / Description (Mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
+    }
     if (isReceiptRequired && attachedMediaList.length === 0) {
       missingFields.push(`Expense Bill / Receipt (Attachment is mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
     }
@@ -648,6 +656,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       missingFields.push('Expense Date (Please select date)');
     } else if (ticketCreatedDateFormatted && expenseDate < ticketCreatedDateFormatted) {
       missingFields.push(`Expense Date (${expenseDate}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
+    }
+    if (isRemarksRequired && !remarks.trim()) {
+      missingFields.push(`Remarks / Description (Mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
     }
     if (isReceiptRequired && existingReceipts.length === 0 && attachedMediaList.length === 0) {
       missingFields.push(`Expense Bill / Receipt (Attachment is mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
@@ -2355,14 +2366,38 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
                               {/* STEP 4: REMARKS / DESCRIPTION */}
                               <div>
-                                <label className="block text-xs font-semibold text-on-surface mb-1.5">Remarks / Description</label>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <label className="block text-xs font-semibold text-on-surface">
+                                    Remarks / Description
+                                    {isRemarksRequired ? (
+                                      <span className="text-red-500 font-bold ml-1">*</span>
+                                    ) : (
+                                      <span className="text-[10px] text-on-surface-variant font-normal ml-1.5">(optional)</span>
+                                    )}
+                                  </label>
+                                  {isRemarksRequired && (
+                                    <span className="text-[10px] font-semibold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                      Required
+                                    </span>
+                                  )}
+                                </div>
                                 <textarea
                                   rows={2}
-                                  placeholder="Optional notes or details about this expense..."
+                                  required={isRemarksRequired}
+                                  placeholder={isRemarksRequired ? "Remarks / Description (required for this category)..." : "Optional notes or details about this expense..."}
                                   value={remarks}
                                   onChange={(e) => setRemarks(e.target.value)}
-                                  className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline resize-none"
+                                  className={`w-full bg-surface-container-low border text-on-surface text-xs rounded p-3 focus:outline-none transition-all shadow-2xs resize-none ${
+                                    formError && isRemarksRequired && !remarks.trim()
+                                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                                      : 'border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline'
+                                  }`}
                                 />
+                                {formError && isRemarksRequired && !remarks.trim() && (
+                                  <p className="text-xs text-red-500 mt-1 font-medium flex items-center gap-1">
+                                    <span>⚠️</span> Remarks are required for this expense category.
+                                  </p>
+                                )}
                               </div>
 
                               {/* STEP 5: RECEIPT & MEDIA FILES SELECTION */}

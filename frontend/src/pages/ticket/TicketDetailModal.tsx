@@ -460,6 +460,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const [editExpenseForm, setEditExpenseForm] = useState({ amount: '', remarks: '', expense_type_id: '' });
+    const [addExpenseRemarks, setAddExpenseRemarks] = useState('');
+    const [addExpenseRemarksError, setAddExpenseRemarksError] = useState<string | null>(null);
+    const [editExpenseRemarksError, setEditExpenseRemarksError] = useState<string | null>(null);
     const [editAllocationForm, setEditAllocationForm] = useState({ planned_hours: '', remarks: '' });
     const [editAllocationVoiceFile, setEditAllocationVoiceFile] = useState<File | null>(null);
     const [deleteExistingVoiceNote, setDeleteExistingVoiceNote] = useState(false);
@@ -899,6 +902,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
         const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
         const isReceiptRequiredInEdit = currentEditExpTypeObj ? currentEditExpTypeObj.required !== false : true;
+        const isRemarksRequiredInEdit = currentEditExpTypeObj ? currentEditExpTypeObj.required !== false : false;
+        const editRemarksVal = (editExpenseForm.remarks || '').trim();
+
+        if (isRemarksRequiredInEdit && !editRemarksVal) {
+            const errorMsg = `Remarks / Description is required for expense category "${currentEditExpTypeObj?.expense_name || 'selected'}".`;
+            setEditExpenseRemarksError(errorMsg);
+            showError(errorMsg);
+            return;
+        }
 
         const receiptsList: any[] = [];
         if (editingExpense.receipt) receiptsList.push(editingExpense.receipt);
@@ -915,6 +927,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             return;
         }
 
+        setEditExpenseRemarksError(null);
         setActionLoading(true);
         try {
             const rawAmount = parseFloat(editExpenseForm.amount);
@@ -922,20 +935,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             const response = await fetch(`${API_URL}/finance/expense/${editingExpense.expense_id}/`, {
                 method: 'PATCH',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: formattedAmount, remarks: editExpenseForm.remarks, expense_type: editExpenseForm.expense_type_id })
+                body: JSON.stringify({ amount: formattedAmount, remarks: editRemarksVal, expense_type: editExpenseForm.expense_type_id })
             });
             if (response.ok) {
                 setEditingExpense(null);
+                setEditExpenseRemarksError(null);
                 await refreshTicketData();
             } else {
                 const errData = await response.json().catch(() => ({}));
-                showError(Object.values(errData).flat().join(', ') || 'Failed to update expense.');
+                const errRemarks = errData?.remarks ? (Array.isArray(errData.remarks) ? errData.remarks.join(' ') : String(errData.remarks)) : null;
+                if (errRemarks) {
+                    setEditExpenseRemarksError(errRemarks);
+                }
+                showError(errRemarks || Object.values(errData).flat().join(', ') || 'Failed to update expense.');
             }
         } catch (err) {
             console.error(err);
         } finally {
             setActionLoading(false);
-            setEditingExpense(null);
         }
     };
 
@@ -1345,15 +1362,26 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>, workerId: number) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
-        const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(formData.get('expense_type_id')));
+        const expTypeId = String(formData.get('expense_type_id') || selectedExpenseTypeId);
+        const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === expTypeId);
         const isReceiptRequiredForType = selectedExpTypeObj ? selectedExpTypeObj.required !== false : true;
+        const isRemarksRequiredForType = selectedExpTypeObj ? selectedExpTypeObj.required !== false : false;
+        const remarksVal = (formData.get('remarks') as string || addExpenseRemarks || '').trim();
         const validFiles = (expenseFiles[workerId] || []).filter(f => f.size > 0);
+
+        if (isRemarksRequiredForType && !remarksVal) {
+            const errorMsg = `Remarks / Description is required for expense category "${selectedExpTypeObj?.expense_name || 'selected'}".`;
+            setAddExpenseRemarksError(errorMsg);
+            showError(errorMsg);
+            return;
+        }
 
         if (isReceiptRequiredForType && validFiles.length === 0) {
             showError("Receipt attachment is required for this expense category.");
             return;
         }
 
+        setAddExpenseRemarksError(null);
         setActionLoading(true);
         try {
             const signal = uploadAbortRef.current?.signal;
@@ -1366,9 +1394,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 body: JSON.stringify({
                     ticket: ticketDetails.ticket_id,
                     worker: workerId,
-                    expense_type: formData.get('expense_type_id'),
+                    expense_type: expTypeId,
                     amount: amountToSend,
-                    remarks: formData.get('remarks'),
+                    remarks: remarksVal,
                     expense_date: new Date().toISOString().split('T')[0]
                 }),
                 signal
@@ -1382,6 +1410,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 setExpenseFiles(prev => { const next = { ...prev }; delete next[workerId]; return next; });
                 await refreshTicketData();
                 setIsAddExpenseModalOpen(false);
+                setSelectedExpenseTypeId('');
+                setAddExpenseRemarks('');
+                setAddExpenseRemarksError(null);
+            } else {
+                const errData = await response.json().catch(() => ({}));
+                const errRemarks = errData?.remarks ? (Array.isArray(errData.remarks) ? errData.remarks.join(' ') : String(errData.remarks)) : null;
+                if (errRemarks) {
+                    setAddExpenseRemarksError(errRemarks);
+                }
+                showError(errRemarks || Object.values(errData).flat().join(', ') || 'Failed to create expense.');
             }
         } catch (err: any) {
             if (err?.name !== 'AbortError') console.error(err);
@@ -2424,7 +2462,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                         {!readOnly && !isApproved && (
                                                                                             <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
                                                                                                 <button
-                                                                                                    onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); }}
+                                                                                                    onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); setEditExpenseRemarksError(null); }}
                                                                                                     className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
                                                                                                     aria-label="Edit Expense"
                                                                                                 >
@@ -3595,11 +3633,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {
                     isAddExpenseModalOpen && activeWorkerId && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsAddExpenseModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="absolute inset-0 bg-black touch-manipulation" />
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md sm:max-w-lg lg:max-w-xl max-h-[92vh] sm:max-h-[88vh] p-4 sm:p-6 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto scrollbar-thin">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Add Expense</h3>
-                                    <button onClick={() => setIsAddExpenseModalOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <p className="text-xs text-outline mb-4">
                                     Adding expense for:{' '}
@@ -3610,7 +3648,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 <form onSubmit={e => handleAddExpense(e, activeWorkerId)} className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                        <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => setSelectedExpenseTypeId(e.target.value)} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
+                                        <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => { setSelectedExpenseTypeId(e.target.value); setAddExpenseRemarksError(null); }} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                             <option value="">Select Expense Type</option>
                                             {filteredExpenseTypes.map(et => (
                                                 <option key={et.expense_type_id} value={et.expense_type_id}>
@@ -3667,12 +3705,54 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             </div>
                                         );
                                     })()}
-                                    <div>
-                                        <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
-                                        <input name="remarks" type="text" placeholder="Remarks (optional)" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
-                                    </div>
+                                    {(() => {
+                                        const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(selectedExpenseTypeId));
+                                        const isRemarksRequiredForType = selectedExpTypeObj ? selectedExpTypeObj.required !== false : false;
+
+                                        return (
+                                            <div>
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <label className="block text-xs font-semibold text-outline">
+                                                        Remarks
+                                                        {isRemarksRequiredForType ? (
+                                                            <span className="text-red-500 font-bold ml-1">*</span>
+                                                        ) : (
+                                                            <span className="text-[10px] text-outline font-normal ml-1.5">(optional)</span>
+                                                        )}
+                                                    </label>
+                                                    {isRemarksRequiredForType && (
+                                                        <span className="text-[10px] font-semibold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                                            Required
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <input
+                                                    name="remarks"
+                                                    type="text"
+                                                    required={isRemarksRequiredForType}
+                                                    value={addExpenseRemarks}
+                                                    onChange={e => {
+                                                        setAddExpenseRemarks(e.target.value);
+                                                        if (addExpenseRemarksError) setAddExpenseRemarksError(null);
+                                                    }}
+                                                    placeholder={isRemarksRequiredForType ? "Remarks / Description (required)" : "Remarks (optional)"}
+                                                    disabled={actionLoading}
+                                                    className={`w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface transition-colors ${
+                                                        addExpenseRemarksError
+                                                            ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
+                                                            : 'border-outline-variant dark:border-dark-outline-variant focus:ring-2 focus:ring-primary/30'
+                                                    }`}
+                                                />
+                                                {addExpenseRemarksError && (
+                                                    <p className="text-xs text-red-500 mt-1 font-medium flex items-center gap-1">
+                                                        <span>⚠️</span> {addExpenseRemarksError}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                     <div className="flex justify-end gap-2 pt-2">
-                                        <button type="button" onClick={() => setIsAddExpenseModalOpen(false)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                        <button type="button" onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
                                         <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
                                             {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Add Expense
                                         </button>
@@ -3970,7 +4050,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <>
                                             <div className="flex items-center justify-between mb-4">
                                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">{isEditingLocked ? 'Expense Details' : 'Edit Expense'}</h3>
-                                                <button onClick={() => setEditingExpense(null)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                                <button onClick={() => { setEditingExpense(null); setEditExpenseRemarksError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                             </div>
                                             {isEditingLocked ? (
                                                 <div className="space-y-4">
@@ -4012,7 +4092,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <form onSubmit={handleUpdateExpense} className="space-y-4">
                                                     <div>
                                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                                        <select required value={editExpenseForm.expense_type_id} onChange={e => setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
+                                                        <select required value={editExpenseForm.expense_type_id} onChange={e => { setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value }); if (editExpenseRemarksError) setEditExpenseRemarksError(null); }} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                                             <option value="">Expense Type</option>
                                                             {filteredExpenseTypes.map(et => (
                                                                 <option key={et.expense_type_id} value={et.expense_type_id}>
@@ -4025,10 +4105,50 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
                                                         <input type="number" step="0.01" min="0" inputMode="decimal" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-xs font-semibold text-outline mb-1.5">Remarks</label>
-                                                        <input type="text" value={editExpenseForm.remarks} onChange={e => setEditExpenseForm({ ...editExpenseForm, remarks: e.target.value })} placeholder="Remarks (optional)" className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
-                                                    </div>
+                                                    {(() => {
+                                                        const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
+                                                        const isRemarksRequiredInEdit = currentEditExpTypeObj ? currentEditExpTypeObj.required !== false : false;
+
+                                                        return (
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-1.5">
+                                                                    <label className="block text-xs font-semibold text-outline">
+                                                                        Remarks
+                                                                        {isRemarksRequiredInEdit ? (
+                                                                            <span className="text-red-500 font-bold ml-1">*</span>
+                                                                        ) : (
+                                                                            <span className="text-[10px] text-outline font-normal ml-1.5">(optional)</span>
+                                                                        )}
+                                                                    </label>
+                                                                    {isRemarksRequiredInEdit && (
+                                                                        <span className="text-[10px] font-semibold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                                                            Required
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <input
+                                                                    type="text"
+                                                                    required={isRemarksRequiredInEdit}
+                                                                    value={editExpenseForm.remarks}
+                                                                    onChange={e => {
+                                                                        setEditExpenseForm({ ...editExpenseForm, remarks: e.target.value });
+                                                                        if (editExpenseRemarksError) setEditExpenseRemarksError(null);
+                                                                    }}
+                                                                    placeholder={isRemarksRequiredInEdit ? "Remarks / Description (required)" : "Remarks (optional)"}
+                                                                    className={`w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface transition-colors ${
+                                                                        editExpenseRemarksError
+                                                                            ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
+                                                                            : 'border-outline-variant dark:border-dark-outline-variant focus:ring-2 focus:ring-primary/30'
+                                                                    }`}
+                                                                />
+                                                                {editExpenseRemarksError && (
+                                                                    <p className="text-xs text-red-500 mt-1 font-medium flex items-center gap-1">
+                                                                        <span>⚠️</span> {editExpenseRemarksError}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                     <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
                                                         <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Manage Receipt Attachments</h4>
                                                         {(() => {
@@ -4086,7 +4206,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                 <Trash2 className="w-4 h-4" /> Delete Expense
                                                             </button>
                                                         )}
-                                                        <button type="button" onClick={() => setEditingExpense(null)} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                                        <button type="button" onClick={() => { setEditingExpense(null); setEditExpenseRemarksError(null); }} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
                                                         <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                                                             {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
                                                         </button>
