@@ -1384,14 +1384,17 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setShowCreateExpenseModal(true)}
-              className="bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Expense</span>
-            </button>
+            <Can permission={'finance.add_expense'}>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateExpenseModal(true)}
+                className="bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Expense</span>
+              </button>
+            </Can>
           </div>
         </div>
 
@@ -1436,6 +1439,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <th className="w-8 px-2 py-3"></th>
                     <th className="px-4 py-3">Exp</th>
                     <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3 min-w-[150px]">Remarks</th>
                     <th className="px-4 py-3">Worker</th>
                     <th className="px-4 py-3">Linked Ticket</th>
                     <th className="px-4 py-3">Sub Department</th>
@@ -1620,6 +1624,15 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             </div>
                           </td>
                           <td className="px-4 py-3 font-medium text-on-surface">{catName}</td>
+                          <td className="px-4 py-3 text-on-surface-variant max-w-[220px]" title={getCleanRemarks(exp.remarks) || undefined}>
+                            {getCleanRemarks(exp.remarks) ? (
+                              <div className="text-[11px] text-on-surface leading-relaxed line-clamp-2 font-normal">
+                                {getCleanRemarks(exp.remarks)}
+                              </div>
+                            ) : (
+                              <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-on-surface-variant">
                             <div className="flex items-center gap-2 min-w-0">
                               <AvatarCircle user={workerObj} name={workerName} size="xs" />
@@ -1754,7 +1767,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             {!exp.claim ? (
                               (isRejectedOrRework || isExpenseApproved) ? (
-                                <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                <Can permission={"finance.add_expense"}>
                                   <button
                                     type="button"
                                     disabled={updatingExpenseId === exp.expense_id}
@@ -1801,7 +1814,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             ? 'bg-slate-100/90 dark:bg-slate-800/45'
                             : 'bg-white dark:bg-surface-container-lowest'
                             }`}>
-                            <td colSpan={14} className="px-4 py-2.5">
+                            <td colSpan={15} className="px-4 py-2.5">
                               <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
                                 ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
                                 : 'bg-surface-container-low dark:bg-surface-container-low/70 border-outline-variant/60 shadow-2xs'
@@ -1940,7 +1953,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE */}
                         {isExpanded && (
                           <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
-                            <td colSpan={14} className="px-6 py-4 border-b border-outline-variant space-y-4">
+                            <td colSpan={15} className="px-6 py-4 border-b border-outline-variant space-y-4">
                               {/* Visual Stepper Pipeline */}
                               {approvalData?.group ? (
                                 <div>
@@ -2406,11 +2419,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                   placeholder={isRemarksRequired ? "Remarks / Description (required for this category)..." : "Optional notes or details about this expense..."}
                                   value={remarks}
                                   onChange={(e) => setRemarks(e.target.value)}
-                                  className={`w-full bg-surface-container-low border text-on-surface text-xs rounded p-3 focus:outline-none transition-all shadow-2xs resize-none ${
-                                    formError && isRemarksRequired && !remarks.trim()
-                                      ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-                                      : 'border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline'
-                                  }`}
+                                  className={`w-full bg-surface-container-low border text-on-surface text-xs rounded p-3 focus:outline-none transition-all shadow-2xs resize-none ${formError && isRemarksRequired && !remarks.trim()
+                                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                                    : 'border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-outline'
+                                    }`}
                                 />
                                 {formError && isRemarksRequired && !remarks.trim() && (
                                   <p className="text-xs text-red-500 mt-1 font-medium flex items-center gap-1">

@@ -207,9 +207,14 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-on-surface-variant truncate mt-0.5">
-                          Date: {exp.expense_date} {exp.ticket_details?.work_order_no ? `• WO: ${exp.ticket_details.work_order_no}` : ''} {exp.remarks ? `• ${exp.remarks}` : ''}
-                        </p>
+                        {(() => {
+                          const cleanRemarks = (exp.remarks || '').split('\n').filter(l => !l.trim().match(/^\[.+?\]:/)).join('\n').trim();
+                          return (
+                            <p className="text-[10px] text-on-surface-variant truncate mt-0.5" title={cleanRemarks || undefined}>
+                              Date: {exp.expense_date} {exp.ticket_details?.work_order_no ? `• WO: ${exp.ticket_details.work_order_no}` : ''} {cleanRemarks ? `• Remarks: ${cleanRemarks}` : ''}
+                            </p>
+                          );
+                        })()}
                       </div>
                     </div>
 

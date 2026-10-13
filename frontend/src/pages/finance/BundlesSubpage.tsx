@@ -251,6 +251,13 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     }
   };
 
+  const getCleanRemarks = (raw?: string) => {
+    if (!raw) return '';
+    const lines = raw.split('\n');
+    const cleanLines = lines.filter(line => !line.trim().match(/^\[.+?\]:/));
+    return cleanLines.join('\n').trim();
+  };
+
   // Create Bundle Modal Pagination State
   const [modalPage, setModalPage] = useState(1);
   const modalItemsPerPage = 5;
@@ -1253,6 +1260,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       <tr>
                                         <th className="px-3 py-2">Exp</th>
                                         <th className="px-3 py-2">Category</th>
+                                        <th className="px-3 py-2 min-w-[130px]">Remarks</th>
                                         <th className="px-3 py-2">Date</th>
                                         <th className="px-3 py-2">Responsible Store</th>
                                         <th className="px-3 py-2">Ticket / Work Order</th>
@@ -1265,10 +1273,20 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'N/A');
                                         const ticketNo = exp.ticket_details?.work_order_no || (typeof exp.ticket === 'object' && exp.ticket ? exp.ticket.work_order_no : (exp.ticket ? `#${exp.ticket}` : 'N/A'));
                                         const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : 'General');
+                                        const cleanRemarks = getCleanRemarks(exp.remarks);
                                         return (
                                           <tr key={exp.expense_id} className="hover:bg-surface-container-high transition-colors">
                                             <td className="px-3 py-2 font-semibold text-primary">#{exp.expense_id}</td>
-                                            <td className="px-3 py-2 text-on-surface">{catName}</td>
+                                            <td className="px-3 py-2 text-on-surface font-medium">{catName}</td>
+                                            <td className="px-3 py-2 text-on-surface-variant max-w-[200px]" title={cleanRemarks || undefined}>
+                                              {cleanRemarks ? (
+                                                <div className="text-[11px] text-on-surface leading-tight line-clamp-2">
+                                                  {cleanRemarks}
+                                                </div>
+                                              ) : (
+                                                <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
+                                              )}
+                                            </td>
                                             <td className="px-3 py-2 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
                                             <td className="px-3 py-2 text-on-surface-variant">{storeName}</td>
                                             <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -1301,18 +1319,20 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                                   <span>Receipt</span>
                                                 </button>
                                                 {b.status !== 'Paid' && !b.ledger_details && !(b as any).ledger_id && handleRemoveExpenseFromBundle && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleRemoveExpenseFromBundle(b.claim_id, exp.expense_id);
-                                                    }}
-                                                    className="px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                                    title="Remove Expense from Bundle"
-                                                  >
-                                                    <Trash2 className="w-3 h-3" />
-                                                    <span>Remove</span>
-                                                  </button>
+                                                  <Can permission='finance.edit_bundle' >
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleRemoveExpenseFromBundle(b.claim_id, exp.expense_id);
+                                                      }}
+                                                      className="px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                                      title="Remove Expense from Bundle"
+                                                    >
+                                                      <Trash2 className="w-3 h-3" />
+                                                      <span>Remove</span>
+                                                    </button>
+                                                  </Can>
                                                 )}
                                               </div>
                                             </td>
@@ -1476,11 +1496,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                             setSelectedLedgerBatchId('ALL');
                             setEmployeePage(1);
                           }}
-                          className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
-                            selectedLedgerBatchId === 'ALL'
-                              ? 'bg-primary text-on-primary shadow-xs ring-1 ring-primary/30'
-                              : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant border border-outline-variant/70'
-                          }`}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${selectedLedgerBatchId === 'ALL'
+                            ? 'bg-primary text-on-primary shadow-xs ring-1 ring-primary/30'
+                            : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant border border-outline-variant/70'
+                            }`}
                         >
                           All Batches
                         </button>
@@ -1504,20 +1523,18 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                   setEmployeePage(1);
                                 }}
                                 title={b.description || b.batch_name}
-                                className={`px-2.5 py-1 rounded text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
-                                  isSelected
-                                    ? 'bg-primary text-on-primary font-bold shadow-xs ring-1 ring-primary/40'
-                                    : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/70 font-medium'
-                                }`}
+                                className={`px-2.5 py-1 rounded text-xs transition-all cursor-pointer flex items-center gap-1.5 ${isSelected
+                                  ? 'bg-primary text-on-primary font-bold shadow-xs ring-1 ring-primary/40'
+                                  : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/70 font-medium'
+                                  }`}
                               >
                                 <span className="truncate max-w-[220px]">{b.batch_name}</span>
                                 {subDeptCount > 0 && (
                                   <span
-                                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                                      isSelected
-                                        ? 'bg-on-primary/20 text-on-primary'
-                                        : 'bg-surface-container-highest text-on-surface-variant'
-                                    }`}
+                                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isSelected
+                                      ? 'bg-on-primary/20 text-on-primary'
+                                      : 'bg-surface-container-highest text-on-surface-variant'
+                                      }`}
                                   >
                                     {subDeptCount}
                                   </span>
@@ -1773,7 +1790,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       </span>
                                     );
                                   })()}
-                                  {exp.remarks && <span className="italic truncate max-w-[200px]"> Remark : {exp.remarks}</span>}
+                                  {getCleanRemarks(exp.remarks) && (
+                                    <span className="italic truncate max-w-[260px] text-on-surface-variant font-normal" title={getCleanRemarks(exp.remarks)}>
+                                      • Remarks: {getCleanRemarks(exp.remarks)}
+                                    </span>
+                                  )}
                                 </span>
                                 <span className="shrink-0">{exp.expense_date}</span>
                               </div>
@@ -2019,7 +2040,12 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </span>
                               )}
                             </div>
-                            {exp.remarks && <p className="text-[11px] text-on-surface-variant italic mt-1">{exp.remarks}</p>}
+                            {getCleanRemarks(exp.remarks) && (
+                              <div className="mt-1.5 text-[11px] text-on-surface bg-surface-container px-2.5 py-1 rounded border border-outline-variant/50 flex items-start gap-1">
+                                <span className="font-semibold text-primary shrink-0">Remarks:</span>
+                                <span className="text-on-surface leading-tight">{getCleanRemarks(exp.remarks)}</span>
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${isExpApproved
@@ -2428,7 +2454,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
               <div className="p-4 rounded bg-surface-container-low border border-outline-variant/80 space-y-1.5 text-xs shadow-2xs">
                 <span className="text-[10px] font-semibold text-on-surface-variant  tracking-wider block">Expense Remarks / Description</span>
                 <p className="text-on-surface text-xs leading-relaxed italic bg-surface-container p-3 rounded border border-outline-variant/60">
-                  {previewExpense.remarks || 'No remarks recorded.'}
+                  {getCleanRemarks(previewExpense.remarks) || 'No remarks recorded.'}
                 </p>
               </div>
 

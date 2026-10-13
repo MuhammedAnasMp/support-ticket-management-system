@@ -12,6 +12,7 @@ import { SearchableSelect, type SelectOption } from '../../components/Searchable
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { LedgerGroupReportModal, type LedgerGroupCluster } from './LedgerGroupReportModal';
 import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
+import Can from '@/hooks/Can';
 
 interface LedgersSubpageProps {
   filteredLedgers?: LedgerItem[];
@@ -1514,8 +1515,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       {/* Top Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 rounded border border-outline-variant bg-surface-container shadow-2xs">
-          <span className="text-xs font-medium text-on-surface-variant block">Total Ledger Batches</span>
-          <span className="text-2xl font-semibold text-on-surface mt-1 block">{ledgers.length}</span>
+          <span className="text-xs font-medium text-on-surface-variant block">Total Ledgers</span>
+          <span className="text-2xl font-semibold text-on-surface mt-1 block">{allGroupedLedgerClusters.length}</span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container shadow-2xs">
           <span className="text-xs font-medium text-on-surface-variant block">Pending Approvals Queue</span>
@@ -1715,21 +1716,23 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
               </button>
             )}
+            <Can permission="finance.add_ledger" >
 
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedBundleIds([]);
-                setSelectedGroupId('');
-                setNewGroupName('');
-                if (setLedgerRemarks) setLedgerRemarks('');
-                setShowCreateLedgerModal(true);
-              }}
-              className="bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Assemble Ledger</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBundleIds([]);
+                  setSelectedGroupId('');
+                  setNewGroupName('');
+                  if (setLedgerRemarks) setLedgerRemarks('');
+                  setShowCreateLedgerModal(true);
+                }}
+                className="bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Assemble Ledger</span>
+              </button>
+            </Can>
           </div>
         </div>
 
@@ -1776,7 +1779,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     <th className="px-4 py-3">Created By</th>
                     <th className="px-4 py-3 text-right">Group Total</th>
                     <th className="px-4 py-3 text-center">Status</th>
+                    {/* <Can permission='finance.change_ledger'> */}
                     <th className="px-4 py-3 text-right">Actions</th>
+
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
@@ -1861,7 +1866,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                   {cluster.groupName}
                                 </span>
                                 <span className="text-[10px] font-mono text-on-surface-variant">
-                                  Group-{cluster.groupId}
+                                  Ledger-{cluster.groupId}
                                 </span>
                               </div>
                             </div>
@@ -1904,67 +1909,95 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                           </td>
 
                           {/* 8. Actions */}
+
+
+
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              {/* Add Bundle to Group Button (If not completed and not paid) */}
-                              {!cluster.isCompleted && !cluster.ledgers.some(l => l.status === 'Paid') && (
-                                <button
-                                  type="button"
-                                  onClick={() => openAddBundleModal(cluster)}
-                                  className="px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 transition-colors cursor-pointer text-[11px] font-semibold inline-flex items-center gap-1 shadow-xs shrink-0"
-                                  title={`Add an approved bundle into ${cluster.groupName}`}
-                                >
-                                  <PlusCircle className="w-3.5 h-3.5" />
-                                  <span>Add Bundle</span>
-                                </button>
-                              )}
+                              <Can permission='finance.change_ledger'>
+                                {/* Add Bundle to Group Button (If not completed and not paid) */}
+                                {!cluster.isCompleted && !cluster.ledgers.some(l => l.status === 'Paid') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddBundleModal(cluster)}
+                                    className="px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 transition-colors cursor-pointer text-[11px] font-semibold inline-flex items-center gap-1 shadow-xs shrink-0"
+                                    title={`Add an approved bundle into ${cluster.groupName}`}
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" />
+                                    <span>Add Bundle</span>
+                                  </button>
+                                )}
 
-                              {/* Group Submission Action (If draft/rework batches exist) */}
-                              {!cluster.isCompleted && hasDraftBatches && (
-                                <button
-                                  type="button"
-                                  disabled={submittingGroupId === cluster.groupId}
-                                  onClick={() => handleGroupSubmit(cluster)}
-                                  className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-semibold hover:bg-primary-container transition-colors cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center gap-1 shrink-0"
-                                  title="Submit the entire Ledger for approval"
-                                >
-                                  {submittingGroupId === cluster.groupId ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      <span>Submitting...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Send className="w-3.5 h-3.5" />
-                                      <span>{cluster.ledgers.some(l => l.status === 'Rework' || l.status === 'Rejected') ? 'Resubmit' : 'Submit'}</span>
-                                    </>
-                                  )}
-                                </button>
-                              )}
+                                {/* Group Submission Action (If draft/rework batches exist) */}
+                                {!cluster.isCompleted && hasDraftBatches && (
+                                  <button
+                                    type="button"
+                                    disabled={submittingGroupId === cluster.groupId}
+                                    onClick={() => handleGroupSubmit(cluster)}
+                                    className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-semibold hover:bg-primary-container transition-colors cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center gap-1 shrink-0"
+                                    title="Submit the entire Ledger for approval"
+                                  >
+                                    {submittingGroupId === cluster.groupId ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Submitting...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="w-3.5 h-3.5" />
+                                        <span>{cluster.ledgers.some(l => l.status === 'Rework' || l.status === 'Rejected') ? 'Resubmit' : 'Submit'}</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
 
-                              {/* Mark as Completed Button (When all batches are approved) */}
-                              {!cluster.isCompleted && cluster.allApproved && (
-                                <button
-                                  type="button"
-                                  onClick={() => setGroupToConfirmComplete(cluster)}
-                                  disabled={completingGroupId === cluster.groupId}
-                                  className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
-                                  title="Mark this Ledger as completed to lock it and enable Group Report"
-                                >
-                                  {completingGroupId === cluster.groupId ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      <span>Completing...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <CheckCircle className="w-3.5 h-3.5" />
-                                      <span>Complete</span>
-                                    </>
-                                  )}
-                                </button>
-                              )}
+                                {/* Mark as Completed Button (When all batches are approved) */}
+                                {!cluster.isCompleted && cluster.allApproved && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setGroupToConfirmComplete(cluster)}
+                                    disabled={completingGroupId === cluster.groupId}
+                                    className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
+                                    title="Mark this Ledger as completed to lock it and enable Group Report"
+                                  >
+                                    {completingGroupId === cluster.groupId ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Completing...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="w-3.5 h-3.5" />
+                                        <span>Complete</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
 
+
+                                {/* Delete Group Action (If draft or rework/rejected and not completed/in review/paid) */}
+                                {!cluster.isCompleted && !isGroupInReview && !cluster.ledgers.some(l => l.status === 'Paid') && (hasDraftBatches || cluster.ledgers.length === 0) && (
+                                  <button
+                                    type="button"
+                                    disabled={deletingGroupId === cluster.groupId}
+                                    onClick={() => onDeleteLedgerGroup(cluster)}
+                                    className="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 transition-colors cursor-pointer text-[11px] font-semibold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 shrink-0"
+                                    title={`Delete Ledger "${cluster.groupName}" and return attached bundles to available status`}
+                                  >
+                                    {deletingGroupId === cluster.groupId ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Removing...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Remove</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </Can>
                               {/* Group Report Button (When group is completed) */}
                               {cluster.isCompleted && (
                                 <button
@@ -1978,46 +2011,82 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 </button>
                               )}
 
-                              {/* Delete Group Action (If draft or rework/rejected and not completed/in review/paid) */}
-                              {!cluster.isCompleted && !isGroupInReview && !cluster.ledgers.some(l => l.status === 'Paid') && (hasDraftBatches || cluster.ledgers.length === 0) && (
-                                <button
-                                  type="button"
-                                  disabled={deletingGroupId === cluster.groupId}
-                                  onClick={() => onDeleteLedgerGroup(cluster)}
-                                  className="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 transition-colors cursor-pointer text-[11px] font-semibold inline-flex items-center gap-1 shadow-xs disabled:opacity-50 shrink-0"
-                                  title={`Delete Ledger "${cluster.groupName}" and return attached bundles to available status`}
-                                >
-                                  {deletingGroupId === cluster.groupId ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      <span>Deleting...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      <span>Delete</span>
-                                    </>
-                                  )}
-                                </button>
-                              )}
+
                             </div>
                           </td>
+
                         </tr>
 
-                        {/* 1.5 GROUP APPROVAL STEPPER (Controlled by Stepper On / Off toggle) */}
-                        {!isGroupCollapsed && showStepper && (
+                        {/* 1.5 GROUP APPROVAL STEPPER & INLINE ACTION CONTROLS */}
+                        {!isGroupCollapsed && (showStepper || (isGroupInReview && canUserApproveGroup)) && (
                           <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/60">
-                            <td colSpan={8} className="px-6 py-2.5 bg-indigo-50/40 dark:bg-indigo-950/20">
-                              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-outline-variant/40">
-                                <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                                  <GitCommit className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                                  <span>Approval Pipeline • {cluster.groupName}</span>
-                                </span>
-                                <span className="text-[10px] text-on-surface-variant font-medium">
-                                  Status: <span className="font-semibold text-on-surface">{groupStatus}</span>
-                                </span>
-                              </div>
-                              {renderGroupApprovalStepper(cluster)}
+                            <td colSpan={8} className="px-6 py-3 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+                              {showStepper && (
+                                <>
+                                  <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-outline-variant/40">
+                                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                                      <GitCommit className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                      <span>Approval Pipeline • {cluster.groupName}</span>
+                                    </span>
+                                    <span className="text-[10px] text-on-surface-variant font-medium">
+                                      Status: <span className="font-semibold text-on-surface">{groupStatus}</span>
+                                    </span>
+                                  </div>
+                                  {renderGroupApprovalStepper(cluster)}
+                                </>
+                              )}
+
+                              {/* Action Controls for Stepper in Expanded View */}
+                              {isGroupInReview && canUserApproveGroup && (
+                                <div className="p-3 bg-surface-container rounded border border-outline-variant/80 flex flex-wrap items-center justify-between gap-2 shadow-xs mt-2">
+                                  <div className="flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4 text-primary" />
+                                    <span className="text-xs font-bold text-on-surface">Action Pending Approval Step: {groupPendingStep}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <input
+                                      type="text"
+                                      value={groupReworkComments[cluster.groupId] || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setGroupReworkComments(prev => ({ ...prev, [cluster.groupId]: val }));
+                                        if (val.trim()) setGroupReworkErrors(prev => ({ ...prev, [cluster.groupId]: '' }));
+                                      }}
+                                      placeholder="Review comments (required for rework)..."
+                                      className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-64 ${groupReworkErrors[cluster.groupId]
+                                        ? 'border-rose-500 bg-rose-500/10'
+                                        : 'border-outline-variant bg-surface-container-low focus:border-primary'
+                                        }`}
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={actioningGroupId === cluster.groupId}
+                                      onClick={() => handleGroupAction(cluster, 'APPROVED')}
+                                      className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                                    >
+                                      {actioningGroupId === cluster.groupId && actioningGroupAction === 'APPROVED' ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>Approve</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={actioningGroupId === cluster.groupId}
+                                      onClick={() => handleGroupAction(cluster, 'REWORK')}
+                                      className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                                    >
+                                      {actioningGroupId === cluster.groupId && actioningGroupAction === 'REWORK' ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>Rework</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )}
@@ -2034,7 +2103,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               <th className="px-4 py-2">Expenses</th>
                               <th className="px-4 py-2">Worker</th>
                               <th className="px-4 py-2 text-right">Bundle Total</th>
+                              {/* <Can permission='finance.change_ledger'> */}
                               <th className="px-4 py-2 text-right">Actions</th>
+                              {/* </Can> */}
                             </tr>
                             {getGroupBundleBreakdown(cluster).map((bundleItem, bIdx) => {
                               const bundleKey = `${cluster.groupId}_${bundleItem.bundleId}`;
@@ -2092,48 +2163,49 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                     <td className="px-4 py-2.5 text-right font-bold text-on-surface">
                                       {bundleItem.totalAmount.toFixed(2)}
                                     </td>
-
-                                    <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
-                                      {!cluster.isCompleted && (() => {
-                                        const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
-                                        return (
-                                          <button
-                                            type="button"
-                                            disabled={isRemovingBundle}
-                                            onClick={async (e) => {
-                                              e.stopPropagation();
-                                              setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
-                                              try {
-                                                if (handleRemoveBundleFromGroup) {
-                                                  await handleRemoveBundleFromGroup(Number(cluster.groupId), bundleItem.bundleId);
-                                                } else if (handleRemoveBundleFromLedger) {
-                                                  const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
-                                                  if (targetLedger) {
-                                                    await handleRemoveBundleFromLedger(targetLedger.ledger_id, bundleItem.bundleId);
+                                    <Can permission='finance.change_ledger'>
+                                      <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                                        {!cluster.isCompleted && (() => {
+                                          const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
+                                          return (
+                                            <button
+                                              type="button"
+                                              disabled={isRemovingBundle}
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
+                                                try {
+                                                  if (handleRemoveBundleFromGroup) {
+                                                    await handleRemoveBundleFromGroup(Number(cluster.groupId), bundleItem.bundleId);
+                                                  } else if (handleRemoveBundleFromLedger) {
+                                                    const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
+                                                    if (targetLedger) {
+                                                      await handleRemoveBundleFromLedger(targetLedger.ledger_id, bundleItem.bundleId);
+                                                    }
                                                   }
+                                                } finally {
+                                                  setRemovingBundleKey(null);
                                                 }
-                                              } finally {
-                                                setRemovingBundleKey(null);
-                                              }
-                                            }}
-                                            className="px-2.5 py-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium disabled:opacity-50"
-                                            title="Remove Bundle from this Ledger"
-                                          >
-                                            {isRemovingBundle ? (
-                                              <>
-                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                <span>Removing Bundle...</span>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                                <span>Remove Bundle</span>
-                                              </>
-                                            )}
-                                          </button>
-                                        );
-                                      })()}
-                                    </td>
+                                              }}
+                                              className="px-2.5 py-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium disabled:opacity-50"
+                                              title="Remove Bundle from this Ledger"
+                                            >
+                                              {isRemovingBundle ? (
+                                                <>
+                                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                  <span>Removing Bundle...</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                  <span>Remove Bundle</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          );
+                                        })()}
+                                      </td>
+                                    </Can>
                                   </tr>
 
                                   {/* EXPANDED BUNDLE DETAILS TABLE */}
@@ -2152,7 +2224,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                 <th className="px-3 py-2.5">Category</th>
                                                 <th className="px-3 py-2.5">Date</th>
                                                 <th className="px-3 py-2.5 text-right">Amount</th>
-                                                <th className="px-3 py-2.5 text-right">Action</th>
+                                                <Can permission='finance.change_ledger'>
+                                                  <th className="px-3 py-2.5 text-right">Action</th>
+                                                </Can>
                                               </tr>
                                             </thead>
                                             <tbody className="divide-y divide-outline-variant/40">
@@ -2194,21 +2268,24 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                     <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
                                                       {parseFloat(exp.amount as any || '0').toFixed(2)}
                                                     </td>
-                                                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                                                      {parentLedger && isExpEditable && (
-                                                        <button
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleRemoveExpenseFromLedger(parentLedger.ledger_id, exp.expense_id);
-                                                          }}
-                                                          className="px-2 py-0.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
-                                                          title="Remove Expense from this Ledger Batch"
-                                                        >
-                                                          <Trash2 className="w-3 h-3" />
-                                                          <span>Remove</span>
-                                                        </button>
-                                                      )}
-                                                    </td>
+                                                    <Can permission='finance.change_ledger'>
+
+                                                      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                                        {parentLedger && isExpEditable && (
+                                                          <button
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              handleRemoveExpenseFromLedger(parentLedger.ledger_id, exp.expense_id);
+                                                            }}
+                                                            className="px-2 py-0.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                                                            title="Remove Expense from this Ledger Batch"
+                                                          >
+                                                            <Trash2 className="w-3 h-3" />
+                                                            <span>Remove</span>
+                                                          </button>
+                                                        )}
+                                                      </td>
+                                                    </Can>
                                                   </tr>
                                                 );
                                               })}
@@ -2889,10 +2966,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   <Boxes className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-on-surface">Assemble Ledger Batches</h3>
-                  <p className="text-[11px] text-on-surface-variant">
-                    Group approved worker claim bundles into Ledger Batches
-                  </p>
+                  <h3 className="text-sm font-semibold text-on-surface">Assemble Ledger</h3>
                 </div>
               </div>
               <button
@@ -3436,6 +3510,13 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           setSelectedTicketForModal={setSelectedTicketForModal}
           token={token}
           API_URL={API_URL}
+          onGroupRenamed={(groupId, newName) => {
+            setSelectedGroupForReport(prev => prev && String(prev.groupId) === String(groupId) ? { ...prev, groupName: newName } : prev);
+            setDynamicGroups(prev => prev.map(g => String(g.ledger_group_id) === String(groupId) ? { ...g, group_name: newName } : g));
+            if (onRefresh) {
+              onRefresh();
+            }
+          }}
         />
       )}
 

@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   X, Printer, Download, Copy, Check, FileText,
-  Boxes, Building2, User, Layers, CheckCircle2,
-  DollarSign, Receipt, Search, ShieldCheck, Loader2
+  Boxes, Building2, User, UserCheck, Layers, CheckCircle2,
+  DollarSign, Receipt, Search, ShieldCheck, Loader2, Pencil
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
@@ -32,6 +32,7 @@ interface LedgerGroupReportModalProps {
   setSelectedTicketForModal?: (ticket: any) => void;
   token?: string;
   API_URL?: string;
+  onGroupRenamed?: (groupId: number | string, newName: string) => void;
 }
 
 interface ExpenseColumnCategory {
@@ -66,15 +67,78 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   setSelectedTicketForModal,
   token,
   API_URL,
+  onGroupRenamed,
 }) => {
   const [activeTab, setActiveTab] = useState<'userwise' | 'storewise' | 'consolidated'>('userwise');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
-  const [groupByLocation, setGroupByLocation] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [groupByLocation, setGroupByLocation] = useState(true);
+  const [isVerticalOrientation, setIsVerticalOrientation] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [fetchedExpenseTypes, setFetchedExpenseTypes] = useState<any[]>([]);
   const [fetchedBatches, setFetchedBatches] = useState<LedgerBatchItem[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
+
+  // Ledger Group Rename States
+  const [currentGroupName, setCurrentGroupName] = useState(group.groupName);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState(group.groupName);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  // Sync if prop changes
+  useEffect(() => {
+    setCurrentGroupName(group.groupName);
+    setEditNameValue(group.groupName);
+  }, [group.groupName]);
+
+  const handleSaveGroupName = async () => {
+    const trimmed = editNameValue.trim();
+    if (!trimmed) {
+      setNameError('Group name cannot be empty');
+      return;
+    }
+    if (trimmed === currentGroupName) {
+      setIsEditingName(false);
+      setNameError(null);
+      return;
+    }
+    if (!API_URL) {
+      setNameError('API URL is not configured');
+      return;
+    }
+    setIsSavingName(true);
+    setNameError(null);
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) headers['Authorization'] = `Token ${token}`;
+
+      const res = await fetch(`${API_URL}/finance/ledger-groups/${group.groupId}/`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ group_name: trimmed })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errorMsg = Array.isArray(data.group_name)
+          ? data.group_name[0]
+          : (data.group_name || data.detail || data.error || 'Failed to rename ledger group');
+        throw new Error(errorMsg);
+      }
+      const updatedName = data.group_name || trimmed;
+      setCurrentGroupName(updatedName);
+      group.groupName = updatedName;
+      setIsEditingName(false);
+      if (onGroupRenamed) {
+        onGroupRenamed(group.groupId, updatedName);
+      }
+    } catch (err: any) {
+      setNameError(err.message || 'Failed to rename ledger group');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
 
   const printAreaRef = useRef<HTMLDivElement>(null);
 
@@ -280,9 +344,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         if (matched) return matched.batch_name;
       }
 
-      return group.groupName || `Ledger #${ledger.ledger_id}`;
+      return currentGroupName || `Ledger #${ledger.ledger_id}`;
     };
-  }, [fetchedBatches, group.groupName]);
+  }, [fetchedBatches, currentGroupName]);
 
   // Build Structured Ticket/Expense Rows
   const structuredRows = useMemo<TicketExpenseRow[]>(() => {
@@ -317,7 +381,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       const ledgerObj = group.ledgers.find(l => l.ledger_id === exp.ledger_id) || ({} as LedgerItem);
       const ledgerBatch = exp.batch_name || resolveLedgerBatchName(ledgerObj, exp.ticket_details?.sub_department_id || exp.sub_department_id, subDept);
-      const ledgerGroup = group.groupName || ledgerBatch;
+      const ledgerGroup = currentGroupName || ledgerBatch;
 
       const key = `${workerId}_${bundleId}_${ticketId || exp.expense_id}_${location}_${subDept}`;
 
@@ -381,7 +445,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           const subDept = bundle.ticket_details?.sub_department_name || 'General';
           const issueTitle = bundle.ticket_details?.title || bundle.remarks || 'Worker Settlement';
           const ledgerBatch = resolveLedgerBatchName(l, bundle.ticket_details?.sub_department_id, subDept);
-          const ledgerGroup = group.groupName || ledgerBatch;
+          const ledgerGroup = currentGroupName || ledgerBatch;
           const rawTicket = bundle.ticket_details;
           const ticketId = bundle.ticket_details?.ticket_id;
           const workOrderNo = bundle.ticket_details?.work_order_no || '';
@@ -418,7 +482,106 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     }
 
     return Array.from(rowMap.values());
-  }, [allExpenses, group.ledgers, group.groupName, resolveLedgerBatchName]);
+  }, [allExpenses, group.ledgers, currentGroupName, resolveLedgerBatchName]);
+
+  // Helper to format ticket and its expense numbers across multiple lines if vertical orientation is enabled
+  const formatTicketExpenseLines = (ticket: string, expIds: string[], isVertical: boolean): string[] => {
+    if (!expIds || expIds.length === 0) return [ticket];
+    if (ticket === `EXP-${expIds[0]}` && expIds.length === 1) return [ticket];
+    if (!isVertical || expIds.length <= 3) {
+      return [`${ticket}(${expIds.join(',')})`];
+    }
+
+    const lines: string[] = [];
+    const firstChunk = expIds.slice(0, 3);
+    const remaining = expIds.slice(3);
+
+    lines.push(`${ticket}(${firstChunk.join(',')},`);
+    const chunkSize = 7;
+    for (let i = 0; i < remaining.length; i += chunkSize) {
+      const chunk = remaining.slice(i, i + chunkSize);
+      const isLast = (i + chunkSize) >= remaining.length;
+      lines.push(`${chunk.join(',')}${isLast ? ')' : ','}`);
+    }
+    return lines;
+  };
+
+  // Helper to group any list of TicketExpenseRow by Location with tickets & summaries merged
+  const groupRowsByLocation = (rows: TicketExpenseRow[], cols: string[], isVertical: boolean = isVerticalOrientation) => {
+    const locMap = new Map<string, {
+      location: string;
+      rows: TicketExpenseRow[];
+      ticketExpMap: Map<string, string[]>;
+      ledgerBatches: string[];
+      summary: string;
+      amountsByType: Record<string, number>;
+      total: number;
+    }>();
+
+    for (const row of rows) {
+      const loc = (row.location || 'Unknown Location').trim();
+      if (!locMap.has(loc)) {
+        locMap.set(loc, {
+          location: loc,
+          rows: [],
+          ticketExpMap: new Map<string, string[]>(),
+          ledgerBatches: [],
+          summary: '',
+          amountsByType: {},
+          total: 0
+        });
+      }
+      const entry = locMap.get(loc)!;
+      entry.rows.push(row);
+
+      const tKey = row.ticketNo || String(row.expNo || 'Ticket');
+      if (!entry.ticketExpMap.has(tKey)) {
+        entry.ticketExpMap.set(tKey, []);
+      }
+      const expList = entry.ticketExpMap.get(tKey)!;
+      if (Array.isArray(row.expenseIds)) {
+        for (const id of row.expenseIds) {
+          const s = String(id).trim();
+          if (s && !expList.includes(s)) {
+            expList.push(s);
+          }
+        }
+      }
+
+      if (row.ledgerBatch && !entry.ledgerBatches.includes(row.ledgerBatch)) {
+        entry.ledgerBatches.push(row.ledgerBatch);
+      }
+      entry.total += row.total;
+      for (const col of cols) {
+        entry.amountsByType[col] = (entry.amountsByType[col] || 0) + (row.amountsByType[col] || 0);
+      }
+    }
+
+    const result = Array.from(locMap.values()).map(entry => {
+      const titles = entry.rows.map(r => r.issueTitle).filter(Boolean);
+      const summaryText = titles.length > 0
+        ? `${entry.rows.length} Expense${entry.rows.length > 1 ? 's' : ''}: ${titles.slice(0, 3).join('; ')}${titles.length > 3 ? ` (+${titles.length - 3} more)` : ''}`
+        : `${entry.rows.length} Expense Summary`;
+
+      const ticketLines: string[] = [];
+      entry.ticketExpMap.forEach((expIds, ticket) => {
+        ticketLines.push(...formatTicketExpenseLines(ticket, expIds, isVertical));
+      });
+
+      return {
+        ...entry,
+        summary: summaryText,
+        ticketLines,
+        expNoStr: ticketLines.join(' '),
+        ticketLinesPrint: ticketLines.join('<br />'),
+        ticketLinesText: ticketLines.join('\n'),
+        batchStr: entry.ledgerBatches.join(', ')
+      };
+    });
+
+    result.sort((a, b) => a.location.localeCompare(b.location));
+    return result;
+  };
 
   // Group structured rows by Worker for Tab 1 (User-wise Report)
   const workerGroupedRows = useMemo(() => {
@@ -430,6 +593,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       subtotalByType: Record<string, number>;
       totalAmount: number;
       uniqueLocationsCount: number;
+      locationRows: ReturnType<typeof groupRowsByLocation>;
     }>();
 
     for (const row of structuredRows) {
@@ -442,7 +606,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           rows: [],
           subtotalByType: {},
           totalAmount: 0,
-          uniqueLocationsCount: 0
+          uniqueLocationsCount: 0,
+          locationRows: []
         });
       }
 
@@ -459,10 +624,11 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     for (const entry of map.values()) {
       const locationsSet = new Set(entry.rows.map(r => r.location.trim().toLowerCase()));
       entry.uniqueLocationsCount = locationsSet.size;
+      entry.locationRows = groupRowsByLocation(entry.rows, allChildExpenseColumns, isVerticalOrientation);
     }
 
     return Array.from(map.values()).sort((a, b) => a.workerName.localeCompare(b.workerName));
-  }, [structuredRows, allChildExpenseColumns]);
+  }, [structuredRows, allChildExpenseColumns, isVerticalOrientation]);
 
   // Overall Grand Totals for User-wise Report
   const userwiseGrandTotals = useMemo(() => {
@@ -546,95 +712,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     return { colTotals, total };
   }, [storewiseFilteredRows, allChildExpenseColumns]);
 
-  // Helper to group any list of TicketExpenseRow by Location with tickets & summaries merged
-  const groupRowsByLocation = (rows: TicketExpenseRow[], cols: string[]) => {
-    const locMap = new Map<string, {
-      location: string;
-      rows: TicketExpenseRow[];
-      ticketExpMap: Map<string, string[]>;
-      ledgerBatches: string[];
-      summary: string;
-      amountsByType: Record<string, number>;
-      total: number;
-    }>();
-
-    for (const row of rows) {
-      const loc = (row.location || 'Unknown Location').trim();
-      if (!locMap.has(loc)) {
-        locMap.set(loc, {
-          location: loc,
-          rows: [],
-          ticketExpMap: new Map<string, string[]>(),
-          ledgerBatches: [],
-          summary: '',
-          amountsByType: {},
-          total: 0
-        });
-      }
-      const entry = locMap.get(loc)!;
-      entry.rows.push(row);
-
-      const tKey = row.ticketNo || String(row.expNo || 'Ticket');
-      if (!entry.ticketExpMap.has(tKey)) {
-        entry.ticketExpMap.set(tKey, []);
-      }
-      const expList = entry.ticketExpMap.get(tKey)!;
-      if (Array.isArray(row.expenseIds)) {
-        for (const id of row.expenseIds) {
-          const s = String(id).trim();
-          if (s && !expList.includes(s)) {
-            expList.push(s);
-          }
-        }
-      }
-
-      if (row.ledgerBatch && !entry.ledgerBatches.includes(row.ledgerBatch)) {
-        entry.ledgerBatches.push(row.ledgerBatch);
-      }
-      entry.total += row.total;
-      for (const col of cols) {
-        entry.amountsByType[col] = (entry.amountsByType[col] || 0) + (row.amountsByType[col] || 0);
-      }
-    }
-
-    const result = Array.from(locMap.values()).map(entry => {
-      const titles = entry.rows.map(r => r.issueTitle).filter(Boolean);
-      const summaryText = titles.length > 0
-        ? `${entry.rows.length} Expense${entry.rows.length > 1 ? 's' : ''}: ${titles.slice(0, 3).join('; ')}${titles.length > 3 ? ` (+${titles.length - 3} more)` : ''}`
-        : `${entry.rows.length} Expense Summary`;
-
-      const ticketLines: string[] = [];
-      entry.ticketExpMap.forEach((expIds, ticket) => {
-        if (expIds.length > 0) {
-          if (ticket === `EXP-${expIds[0]}` && expIds.length === 1) {
-            ticketLines.push(ticket);
-          } else {
-            ticketLines.push(`${ticket}(${expIds.join(',')})`);
-          }
-        } else {
-          ticketLines.push(ticket);
-        }
-      });
-
-      return {
-        ...entry,
-        summary: summaryText,
-        ticketLines,
-        expNoStr: ticketLines.join(', '),
-        ticketLinesPrint: ticketLines.join('<br />'),
-        ticketLinesText: ticketLines.join('\n'),
-        batchStr: entry.ledgerBatches.join(', ')
-      };
-    });
-
-    result.sort((a, b) => a.location.localeCompare(b.location));
-    return result;
-  };
-
   // Location-Grouped Rows for entire filtered set
   const locationGroupedRows = useMemo(() => {
-    return groupRowsByLocation(storewiseFilteredRows, allChildExpenseColumns);
-  }, [storewiseFilteredRows, allChildExpenseColumns]);
+    return groupRowsByLocation(storewiseFilteredRows, allChildExpenseColumns, isVerticalOrientation);
+  }, [storewiseFilteredRows, allChildExpenseColumns, isVerticalOrientation]);
 
   // Group rows by dynamic Ledger Batch for Store-wise Reporting (each batch includes locationRows)
   const storewiseByBatch = useMemo(() => {
@@ -648,7 +729,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           batchTotals[col] = (batchTotals[col] || 0) + (row.amountsByType[col] || 0);
         }
       }
-      const locationRows = groupRowsByLocation(batchRows, allChildExpenseColumns);
+      const locationRows = groupRowsByLocation(batchRows, allChildExpenseColumns, isVerticalOrientation);
       return {
         batchName,
         rows: batchRows,
@@ -657,7 +738,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         batchTotal
       };
     }).filter(b => b.rows.length > 0);
-  }, [dynamicLedgerBatches, structuredRows, allChildExpenseColumns]);
+  }, [dynamicLedgerBatches, structuredRows, allChildExpenseColumns, isVerticalOrientation]);
 
   // Filtered storewise grouped by batch (for UI view with batch filters and search)
   const storewiseFilteredByBatch = useMemo(() => {
@@ -675,7 +756,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           batchTotals[col] = (batchTotals[col] || 0) + (row.amountsByType[col] || 0);
         }
       }
-      const locationRows = groupRowsByLocation(batchRows, allChildExpenseColumns);
+      const locationRows = groupRowsByLocation(batchRows, allChildExpenseColumns, isVerticalOrientation);
       return {
         batchName,
         rows: batchRows,
@@ -684,7 +765,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         batchTotal
       };
     }).filter(b => b.rows.length > 0);
-  }, [dynamicLedgerBatches, selectedBatchFilter, storewiseFilteredRows, allChildExpenseColumns]);
+  }, [dynamicLedgerBatches, selectedBatchFilter, storewiseFilteredRows, allChildExpenseColumns, isVerticalOrientation]);
 
   // Consolidated Dynamic Ledger Batch Data for Tab 3 (Sheet 5 in Excel)
   const consolidatedBatchData = useMemo(() => {
@@ -729,6 +810,28 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     return { list, grandLabour, grandExpense, grandTotal };
   }, [structuredRows, dynamicLedgerBatches]);
 
+  // Consolidated User Payout Data for Tab 1 (User & amount to be given to him)
+  const consolidatedUserData = useMemo(() => {
+    let uSl = 1;
+    const list = workerGroupedRows.map(w => {
+      const bundleIds = new Set(w.rows.map(r => r.bundleId));
+      return {
+        sl: uSl++,
+        workerId: w.workerId,
+        workerName: w.workerName,
+        workerEmployeeNo: w.workerEmployeeNo,
+        bundleCount: bundleIds.size,
+        ticketCount: w.rows.length,
+        locationCount: w.uniqueLocationsCount,
+        totalAmount: w.totalAmount
+      };
+    });
+    const grandTotal = list.reduce((sum, item) => sum + item.totalAmount, 0);
+    const totalTickets = list.reduce((sum, item) => sum + item.ticketCount, 0);
+    const totalBundles = list.reduce((sum, item) => sum + item.bundleCount, 0);
+    return { list, grandTotal, totalTickets, totalBundles };
+  }, [workerGroupedRows]);
+
   // Professional Print Output Engine (Vector HTML Table Document)
   const handlePrintProfessionalReport = (targetTab?: 'userwise' | 'storewise' | 'consolidated') => {
     setIsCapturing(true);
@@ -769,13 +872,43 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         </tr>
       `;
 
+      // Build Consolidated User Payout Rows HTML
+      let consolidatedUserRowsHtml = '';
+      let cuSl = 1;
+      for (const item of consolidatedUserData.list) {
+        consolidatedUserRowsHtml += `
+          <tr style="border:1px solid #d1d5db;">
+            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:10.5px;color:#4b5563;">${cuSl++}</td>
+            <td style="padding:7px 12px;border:1px solid #d1d5db;font-size:11px;font-weight:700;color:#111827;">
+              ${item.workerName} ${item.workerEmployeeNo ? `<span style="font-weight:normal;color:#6b7280;font-size:10px;">(${item.workerEmployeeNo})</span>` : ''}
+            </td>
+            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.bundleCount}</td>
+            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.ticketCount}</td>
+            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.locationCount}</td>
+            <td style="text-align:right;padding:7px 14px;border:1px solid #d1d5db;font-size:11.5px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${item.totalAmount.toFixed(2)}</td>
+          </tr>
+        `;
+      }
+      consolidatedUserRowsHtml += `
+        <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;">
+          <td colspan="2" style="text-align:right;padding:9px 12px;font-size:12px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
+          <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${consolidatedUserData.totalBundles}</td>
+          <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${consolidatedUserData.totalTickets}</td>
+          <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${userwiseGrandTotals.uniqueLocationsCount}</td>
+          <td style="text-align:right;padding:9px 14px;border:1.5px solid #374151;font-size:13px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedUserData.grandTotal.toFixed(2)}</td>
+        </tr>
+      `;
+
       // Build Userwise Rows HTML
       let userwiseRowsHtml = '';
       let globalSl = 1;
+      const userLeadingSpan = groupByLocation ? 4 : 7;
+      const userTotalSpan = userLeadingSpan + allChildExpenseColumns.length + 1;
+
       for (const groupRow of workerGroupedRows) {
         userwiseRowsHtml += `
           <tr style="background:#eef2ff;font-weight:700;border:1px solid #9ca3af;">
-            <td colspan="${7 + allChildExpenseColumns.length + 1}" style="padding:6px 8px;font-size:11px;color:#1e3a8a;border:1px solid #9ca3af;">
+            <td colspan="${userTotalSpan}" style="padding:6px 8px;font-size:11px;color:#1e3a8a;border:1px solid #9ca3af;">
               👷 ${groupRow.workerName} ${groupRow.workerEmployeeNo ? `(${groupRow.workerEmployeeNo})` : ''} 
               <span style="font-weight:normal;color:#4b5563;font-size:10px;margin-left:8px;">
                 — ${groupRow.rows.length} Tickets | ${groupRow.uniqueLocationsCount} Locations | Subtotal: KD ${groupRow.totalAmount.toFixed(2)}
@@ -784,26 +917,47 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           </tr>
         `;
 
-        for (const row of groupRow.rows) {
-          let expCols = '';
-          for (const c of allChildExpenseColumns) {
-            const val = row.amountsByType[c] || 0;
-            expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
-          }
+        if (groupByLocation) {
+          for (const locRow of groupRow.locationRows) {
+            let expCols = '';
+            for (const c of allChildExpenseColumns) {
+              const val = locRow.amountsByType[c] || 0;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
+            }
 
-          userwiseRowsHtml += `
-            <tr style="border:1px solid #d1d5db;">
-              <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${globalSl++}</td>
-              <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">#${row.bundleId}</td>
-              <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:500;">${row.expNo}</td>
-              <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#111827;">${row.location}</td>
-              <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.subDepartment}</td>
-              <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${row.issueTitle}</td>
-              <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.ledgerBatch}</td>
-              ${expCols}
-              <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(2)}</td>
-            </tr>
-          `;
+            userwiseRowsHtml += `
+              <tr style="border:1px solid #d1d5db;">
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${globalSl++}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;line-height:1.35;white-space:nowrap;">${locRow.ticketLines && locRow.ticketLines.length > 0 ? locRow.ticketLines.join('<br />') : (locRow.expNoStr || '-')}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:700;color:#111827;">${locRow.location}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;">${locRow.summary}</td>
+                ${expCols}
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${locRow.total.toFixed(2)}</td>
+              </tr>
+            `;
+          }
+        } else {
+          for (const row of groupRow.rows) {
+            let expCols = '';
+            for (const c of allChildExpenseColumns) {
+              const val = row.amountsByType[c] || 0;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
+            }
+
+            userwiseRowsHtml += `
+              <tr style="border:1px solid #d1d5db;">
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${globalSl++}</td>
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">#${row.bundleId}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:500;">${row.expNo}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#111827;">${row.location}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.subDepartment}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${row.issueTitle}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.ledgerBatch}</td>
+                ${expCols}
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(2)}</td>
+              </tr>
+            `;
+          }
         }
 
         let subtotalCols = '';
@@ -814,7 +968,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         userwiseRowsHtml += `
           <tr style="background:#f3f4f6;font-weight:700;border:1px solid #9ca3af;">
-            <td colspan="7" style="text-align:right;padding:5px 8px;font-size:10px;color:#1f2937;border:1px solid #9ca3af;">
+            <td colspan="${userLeadingSpan}" style="text-align:right;padding:5px 8px;font-size:10px;color:#1f2937;border:1px solid #9ca3af;">
               Subtotal (${groupRow.workerName}):
             </td>
             ${subtotalCols}
@@ -831,7 +985,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       userwiseRowsHtml += `
         <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;">
-          <td colspan="7" style="text-align:right;padding:7px 8px;font-size:11px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;letter-spacing:0.5px;">
+          <td colspan="${userLeadingSpan}" style="text-align:right;padding:7px 8px;font-size:11px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;letter-spacing:0.5px;">
             GRAND TOTAL (${structuredRows.length} Tickets / ${userwiseGrandTotals.uniqueLocationsCount} Locations):
           </td>
           ${grandCols}
@@ -880,8 +1034,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             <p class="report-subtitle">${subtitle}</p>
           </div>
           <div style="text-align:right;">
-            <div style="font-size:12px;font-weight:700;color:#111827;">${group.groupName}</div>
-            <div style="font-size:10px;color:#6b7280;">Group ID: #${group.groupId} | Date: ${new Date().toLocaleDateString()}</div>
+            <div style="font-size:12px;font-weight:700;color:#111827;">${currentGroupName}</div>
+            <div style="font-size:10px;color:#6b7280;">Ledger : ${group.groupId} | Date: ${new Date().toLocaleDateString()}</div>
           </div>
         </div>
       `;
@@ -990,7 +1144,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         storewiseBatchPagesHtml += `
           <!-- LEDGER BATCH PAGE: ${batch.batchName} -->
           <div class="print-page batch-page" style="page-break-before: always; break-before: page; padding-top: 12px;">
-            ${getHeaderHtml(`Store & Department Expense Statement — ${batch.batchName}`)}
+            ${getHeaderHtml(`Sub-Department Wise Detailed — ${batch.batchName}`)}
             <table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #9ca3af;">
               <thead>
                 <tr style="background:#e5e7eb;border:1px solid #9ca3af;">
@@ -1037,30 +1191,64 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       let mainBodyHtml = '';
       if (isAllOrActiveTab === 'userwise') {
         mainBodyHtml = `
-          ${getHeaderHtml('Technician / User-Wise Detailed Expense Payout Statement')}
-          ${metaGridHtml}
-          <table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #9ca3af;">
-            <thead>
-              <tr style="background:#e5e7eb;border:1px solid #9ca3af;">
-                <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
-                <th rowspan="2" style="width:55px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">BUNDLE</th>
-                <th rowspan="2" style="width:70px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
-                <th rowspan="2" style="width:100px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
-                <th rowspan="2" style="width:90px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
-                <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">ISSUE TITLE</th>
-                <th rowspan="2" style="width:85px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LEDGER BATCH</th>
-                ${parentHeadersHtml}
-                <th rowspan="2" style="width:75px;text-align:right;border:1px solid #9ca3af;padding:6px 6px;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
-              </tr>
-              <tr>
-                ${subHeadersHtml}
-              </tr>
-            </thead>
-            <tbody>
-              ${userwiseRowsHtml}
-            </tbody>
-          </table>
-          ${signaturesHtml}
+  
+          <div class="print-page first-page">
+            <div>
+              ${getHeaderHtml('Worker Summary Report')}
+              ${metaGridHtml}
+              <div style="margin-top:16px;">
+                <table style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
+                  <thead>
+                    <tr style="background:#e5e7eb;border:1.5px solid #374151;">
+                      <th style="width:45px;text-align:center;padding:8px 6px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">SL</th>
+                      <th style="text-align:left;padding:8px 12px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">TECHNICIAN / USER</th>
+                      <th style="width:90px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">BUNDLES</th>
+                      <th style="width:90px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">TICKETS</th>
+                      <th style="width:100px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">LOCATIONS</th>
+                      <th style="width:160px;text-align:right;padding:8px 14px;border:1px solid #9ca3af;font-size:11.5px;font-weight:800;color:#065f46;background:#d1fae5;">AMOUNT TO BE GIVEN</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${consolidatedUserRowsHtml}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            ${signaturesHtml}
+          </div>
+
+          <div class="print-page batch-page second-page">
+            ${getHeaderHtml('Worker Wise Detailed Statement')}
+            ${metaGridHtml}
+            <table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #9ca3af;">
+              <thead>
+                <tr style="background:#e5e7eb;border:1px solid #9ca3af;">
+                  ${groupByLocation ? `
+                    <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
+                    <th rowspan="2" style="width:140px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
+                    <th rowspan="2" style="width:120px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">SUMMARY</th>
+                  ` : `
+                    <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
+                    <th rowspan="2" style="width:55px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">BUNDLE</th>
+                    <th rowspan="2" style="width:70px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
+                    <th rowspan="2" style="width:100px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:90px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
+                    <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">ISSUE TITLE</th>
+                    <th rowspan="2" style="width:85px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LEDGER BATCH</th>
+                  `}
+                  ${parentHeadersHtml}
+                  <th rowspan="2" style="width:75px;text-align:right;border:1px solid #9ca3af;padding:6px 6px;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
+                </tr>
+                <tr>
+                  ${subHeadersHtml}
+                </tr>
+              </thead>
+              <tbody>
+                ${userwiseRowsHtml}
+              </tbody>
+            </table>
+          </div>
         `;
       } else {
         // STOREWISE / CONSOLIDATED MERGED TAB:
@@ -1070,7 +1258,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           <!-- PAGE 1: Consolidated Financial Settlement Report -->
           <div class="print-page first-page">
             <div>
-              ${getHeaderHtml('Consolidated Financial Settlement Report (Executive Summary)')}
+              ${getHeaderHtml('Sub-Department Wise Summery')}
               ${metaGridHtml}
               <div style="margin-top:16px;">
                 <table style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
@@ -1101,12 +1289,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Weekly Expense Settlement Report - ${group.groupName}</title>
+            <title>Weekly Expense Settlement Report - ${currentGroupName}</title>
             <meta charset="utf-8" />
             <style>
               @page {
-                size: landscape;
-                margin: 10mm 8mm 10mm 8mm;
+                size: ${isVerticalOrientation ? 'portrait' : 'landscape'};
+                margin: ${isVerticalOrientation ? '8mm 6mm 8mm 6mm' : '10mm 8mm 10mm 8mm'};
               }
               *, *:before, *:after {
                 box-sizing: border-box;
@@ -1120,6 +1308,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
               }
+              ${isVerticalOrientation ? `
+                table {
+                  font-size: 8.5px !important;
+                }
+                th, td {
+                  padding: 3px 2.5px !important;
+                }
+              ` : ''}
               .report-header {
                 border-bottom: 2px solid #111827;
                 padding-bottom: 10px;
@@ -1179,8 +1375,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               }
               .first-page {
                 box-sizing: border-box;
-                height: 178mm;
-                min-height: 178mm;
+                height: ${isVerticalOrientation ? '265mm' : '178mm'};
+                min-height: ${isVerticalOrientation ? '265mm' : '178mm'};
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
@@ -1224,8 +1420,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   padding: 0;
                 }
                 .first-page {
-                  height: 178mm;
-                  min-height: 178mm;
+                  height: ${isVerticalOrientation ? '265mm' : '178mm'};
+                  min-height: ${isVerticalOrientation ? '265mm' : '178mm'};
                   display: flex;
                   flex-direction: column;
                   justify-content: space-between;
@@ -1259,8 +1455,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       iframe.style.position = 'fixed';
       iframe.style.left = '-10000px';
       iframe.style.top = '0';
-      iframe.style.width = '1024px';
-      iframe.style.height = '768px';
+      iframe.style.width = isVerticalOrientation ? '794px' : '1024px';
+      iframe.style.height = isVerticalOrientation ? '1123px' : '768px';
       iframe.style.border = 'none';
       iframe.style.zIndex = '-9999';
       document.body.appendChild(iframe);
@@ -1325,9 +1521,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     try {
       const isTargetTab = targetTab || activeTab;
       const { default: autoTable } = await import('jspdf-autotable');
-      const doc = new jsPDF('l', 'mm', 'a4');
-      const pageWidth = 297;
-      const pageHeight = 210;
+      const doc = new jsPDF(isVerticalOrientation ? 'p' : 'l', 'mm', 'a4');
+      const pageWidth = isVerticalOrientation ? 210 : 297;
+      const pageHeight = isVerticalOrientation ? 297 : 210;
 
       // Header Section
       doc.setFontSize(14);
@@ -1338,7 +1534,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(75, 85, 99);
-      doc.text(`Group: ${group.groupName} (ID #${group.groupId})   |   Generated: ${new Date().toLocaleDateString()}   |   Status: ${group.isCompleted ? 'Completed' : 'Pending Approval'}`, 14, 20);
+      doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   Generated: ${new Date().toLocaleDateString()}   |   Status: ${group.isCompleted ? 'Completed' : 'Pending Approval'}`, 14, 20);
 
       // Summary Metric Box
       doc.setFillColor(243, 244, 246);
@@ -1348,7 +1544,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       doc.setFont('helvetica', 'bold');
       doc.text(`Grand Total: KD ${userwiseGrandTotals.grandTotal.toFixed(2)}`, 18, 30.5);
       doc.setFont('helvetica', 'normal');
-      doc.text(`Technicians: ${workerGroupedRows.length}   |   Locations: ${userwiseGrandTotals.uniqueLocationsCount}   |   Batches: ${dynamicLedgerBatches.length}   |   Tickets: ${structuredRows.length}`, 95, 30.5);
+      if (isVerticalOrientation) {
+        doc.setFontSize(7.5);
+        doc.text(`Techs: ${workerGroupedRows.length} | Locs: ${userwiseGrandTotals.uniqueLocationsCount} | Batches: ${dynamicLedgerBatches.length} | Tickets: ${structuredRows.length}`, 88, 30.5);
+      } else {
+        doc.text(`Technicians: ${workerGroupedRows.length}   |   Locations: ${userwiseGrandTotals.uniqueLocationsCount}   |   Batches: ${dynamicLedgerBatches.length}   |   Tickets: ${structuredRows.length}`, 95, 30.5);
+      }
 
       if (isTargetTab === 'storewise') {
         // --- PAGE 1: CONSOLIDATED FINANCIAL SETTLEMENT REPORT ---
@@ -1426,7 +1627,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(75, 85, 99);
-        doc.text(`Group: ${group.groupName} (ID #${group.groupId})   |   ${groupByLocation ? `Store & Department Expense Statement by Location (${userwiseGrandTotals.uniqueLocationsCount} Locations)` : 'Store & Department Expense Statement by Ledger Batches'}`, 14, 20);
+        doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   ${groupByLocation ? `Store & Department Expense Statement by Location (${userwiseGrandTotals.uniqueLocationsCount} Locations)` : 'Store & Department Expense Statement by Ledger Batches'}`, 14, 20);
 
         const headerRow1: any[] = groupByLocation ? [
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
@@ -1473,7 +1674,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(75, 85, 99);
-            doc.text(`Group: ${group.groupName} (ID #${group.groupId})   |   Store & Department Expense Statement — ${batch.batchName}`, 14, 20);
+            doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
           } else {
             // Update subtitle on first batch page to include the batch name
             doc.setFillColor(255, 255, 255);
@@ -1481,7 +1682,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(75, 85, 99);
-            doc.text(`Group: ${group.groupName} (ID #${group.groupId})   |   Store & Department Expense Statement — ${batch.batchName}`, 14, 20);
+            doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
           }
 
           const isLastBatch = batchIndex === storewiseByBatch.length - 1;
@@ -1589,14 +1790,98 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             head: head2,
             body: batchBody,
             theme: 'grid',
-            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
-            bodyStyles: { fontSize: 7, cellPadding: 1.5 },
-            margin: { left: 10, right: 10 }
+            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isVerticalOrientation ? 6.5 : 7.5 },
+            bodyStyles: { fontSize: isVerticalOrientation ? 6 : 7, cellPadding: isVerticalOrientation ? 1 : 1.5 },
+            margin: { left: isVerticalOrientation ? 6 : 10, right: isVerticalOrientation ? 6 : 10 }
           });
         });
       } else {
+        // --- PAGE 1: CONSOLIDATED TECHNICIAN / USER PAYOUT STATEMENT ---
+        const userSummaryHead = [['SL', 'Technician / User', 'Bundles', 'Tickets', 'Locations', 'Amount to be Given (KD)']];
+        const userSummaryBody: any[] = [];
+        let uSl = 1;
+        for (const item of consolidatedUserData.list) {
+          userSummaryBody.push([
+            uSl++,
+            `${item.workerName}${item.workerEmployeeNo ? ` (${item.workerEmployeeNo})` : ''}`,
+            item.bundleCount,
+            item.ticketCount,
+            item.locationCount,
+            `KD ${item.totalAmount.toFixed(2)}`
+          ]);
+        }
+        userSummaryBody.push([
+          { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+          { content: String(consolidatedUserData.totalBundles), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
+          { content: String(consolidatedUserData.totalTickets), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
+          { content: String(userwiseGrandTotals.uniqueLocationsCount), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
+          { content: `KD ${consolidatedUserData.grandTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
+        ]);
+
+        autoTable(doc, {
+          startY: 38,
+          head: userSummaryHead,
+          body: userSummaryBody,
+          theme: 'grid',
+          headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 8.5 },
+          columnStyles: {
+            0: { cellWidth: 15, halign: 'center' },
+            1: { cellWidth: 100, fontStyle: 'bold' },
+            2: { cellWidth: 30, halign: 'center' },
+            3: { cellWidth: 30, halign: 'center' },
+            4: { cellWidth: 35, halign: 'center' },
+            5: { cellWidth: 48, halign: 'right', fontStyle: 'bold' }
+          },
+          margin: { left: 14, right: 14 }
+        });
+
+        // 7-Tier Signatures on Page 1
+        const signHead1 = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']];
+        const signBody1 = [
+          [
+            `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
+            '\n\n___________________\nMaintenance Engineer',
+            '\n\n___________________\nProject Engineer',
+            '\n\n___________________\nAccounts Dept',
+            '\n\n___________________\nInternal Audit',
+            '\n\n___________________\nFinance Manager',
+            `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
+          ]
+        ];
+
+        autoTable(doc, {
+          startY: (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : undefined,
+          head: signHead1,
+          body: signBody1,
+          theme: 'plain',
+          headStyles: { fontStyle: 'bold', fontSize: 7.5, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
+          bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99] },
+          margin: { left: 14, right: 14 },
+          pageBreak: 'avoid'
+        });
+
+        // --- PAGE 2+: DETAILED USER-WISE STATEMENT ---
+        doc.addPage();
+
+        // Header for Page 2
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(17, 24, 39);
+        doc.text('TECHNICIAN / USER-WISE DETAILED EXPENSE STATEMENT', 14, 14);
+
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Group: ${currentGroupName}   |   Itemized Category Breakdown Statement`, 14, 20);
+
         // Multi-level Header for Userwise
-        const headerRow1: any[] = [
+        const headerRow1: any[] = groupByLocation ? [
+          { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+          { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
+          { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+          { content: 'SUMMARY', rowSpan: 2, styles: { valign: 'middle' } }
+        ] : [
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
           { content: 'BUNDLE', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
           { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
@@ -1625,38 +1910,56 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         const head = [headerRow1, headerRow2];
         const body: any[] = [];
+        const leadingColSpan = groupByLocation ? 4 : 7;
 
         let globalSl = 1;
         for (const workerGroup of workerGroupedRows) {
           body.push([
             {
               content: `Worker: ${workerGroup.workerName} (${workerGroup.rows.length} Tickets, ${workerGroup.uniqueLocationsCount} Locations) - Subtotal: KD ${workerGroup.totalAmount.toFixed(2)}`,
-              colSpan: 7 + allChildExpenseColumns.length + 1,
+              colSpan: leadingColSpan + allChildExpenseColumns.length + 1,
               styles: { fillColor: [238, 242, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
             }
           ]);
 
-          for (const row of workerGroup.rows) {
-            const rowData: any[] = [
-              globalSl++,
-              `#${row.bundleId}`,
-              row.expNo,
-              row.location,
-              row.subDepartment,
-              row.issueTitle,
-              row.ledgerBatch
-            ];
-            for (const c of allChildExpenseColumns) {
-              const val = row.amountsByType[c] || 0;
-              rowData.push(val > 0 ? val.toFixed(2) : '-');
+          if (groupByLocation) {
+            for (const locRow of workerGroup.locationRows) {
+              const rowData: any[] = [
+                globalSl++,
+                locRow.ticketLinesText || locRow.expNoStr,
+                locRow.location,
+                locRow.summary
+              ];
+              for (const c of allChildExpenseColumns) {
+                const val = locRow.amountsByType[c] || 0;
+                rowData.push(val > 0 ? val.toFixed(2) : '-');
+              }
+              rowData.push(`KD ${locRow.total.toFixed(2)}`);
+              body.push(rowData);
             }
-            rowData.push(`KD ${row.total.toFixed(2)}`);
-            body.push(rowData);
+          } else {
+            for (const row of workerGroup.rows) {
+              const rowData: any[] = [
+                globalSl++,
+                `#${row.bundleId}`,
+                row.expNo,
+                row.location,
+                row.subDepartment,
+                row.issueTitle,
+                row.ledgerBatch
+              ];
+              for (const c of allChildExpenseColumns) {
+                const val = row.amountsByType[c] || 0;
+                rowData.push(val > 0 ? val.toFixed(2) : '-');
+              }
+              rowData.push(`KD ${row.total.toFixed(2)}`);
+              body.push(rowData);
+            }
           }
 
           // Subtotal row
           const subtotalRow: any[] = [
-            { content: `Subtotal (${workerGroup.workerName}):`, colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
+            { content: `Subtotal (${workerGroup.workerName}):`, colSpan: leadingColSpan, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
           ];
           for (const c of allChildExpenseColumns) {
             const sum = workerGroup.subtotalByType[c] || 0;
@@ -1668,7 +1971,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         // Grand Total Row
         const grandTotalRow: any[] = [
-          { content: 'GRAND TOTAL:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
+          { content: 'GRAND TOTAL:', colSpan: leadingColSpan, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
         ];
         for (const c of allChildExpenseColumns) {
           const sum = userwiseGrandTotals.colTotals[c] || 0;
@@ -1678,38 +1981,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         body.push(grandTotalRow);
 
         autoTable(doc, {
-          startY: 38,
+          startY: 26,
           head,
           body,
           theme: 'grid',
-          headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
-          bodyStyles: { fontSize: 7, cellPadding: 1.5 },
-          margin: { left: 10, right: 10 }
-        });
-
-        // Add 7-Tier Signature Section for userwise
-        const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']];
-        const signBody = [
-          [
-            `\n\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
-            '\n\n\n___________________\nMaintenance Engineer',
-            '\n\n\n___________________\nProject Engineer',
-            '\n\n\n___________________\nAccounts Dept',
-            '\n\n\n___________________\nInternal Audit',
-            '\n\n\n___________________\nFinance Manager',
-            `\n\n\n___________________\n${group.completedByName || 'Executive Approval'}`
-          ]
-        ];
-
-        autoTable(doc, {
-          startY: (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : undefined,
-          head: signHead,
-          body: signBody,
-          theme: 'plain',
-          headStyles: { fontStyle: 'bold', fontSize: 7.5, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
-          bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99] },
-          margin: { left: 10, right: 10 },
-          pageBreak: 'avoid'
+          headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isVerticalOrientation ? 6.5 : 7.5 },
+          bodyStyles: { fontSize: isVerticalOrientation ? 6 : 7, cellPadding: isVerticalOrientation ? 1 : 1.5 },
+          margin: { left: isVerticalOrientation ? 6 : 10, right: isVerticalOrientation ? 6 : 10 }
         });
       }
 
@@ -1719,10 +1997,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setTextColor(156, 163, 175);
-        doc.text(`Page ${i} of ${totalPages}   |   ${group.groupName} Settlement Report`, 14, pageHeight - 6);
+        doc.text(`Page ${i} of ${totalPages}   |   ${currentGroupName} Settlement Report`, 14, pageHeight - 6);
       }
 
-      const fileName = `Weekly_Expense_Report_${group.groupName.replace(/\s+/g, '_')}_${isTargetTab}_${new Date().toISOString().split('T')[0]}.pdf`;
+      const fileName = `Weekly_Expense_Report_${currentGroupName.replace(/\s+/g, '_')}_${isTargetTab}_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
     } catch (err) {
       console.error('Failed to export vector PDF:', err);
@@ -1773,23 +2051,68 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       XLSX.utils.book_append_sheet(wb, ws5, 'Consolidated Settlement');
 
       // ==========================================
-      // SHEET 2: Weekly Expance Payout Report userwise
+      // SHEET 2: Consolidated Technician Payout Summary
       // ==========================================
-      const s1HeaderRow1: any[] = ['Worker', 'SLNo', 'BUNDLE ID', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'ISSUE TITLE', 'Ledger Group'];
-      const s1HeaderRow2: any[] = ['', '', '', '', '', '', '', ''];
+      const sUserData: any[][] = [
+        ['', 'Consolidated Technician Payout Statement (Executive Summary)'],
+        ['SL', 'Technician / User', 'Employee ID', 'Bundles', 'Tickets', 'Locations', 'Amount to be Given (KD)']
+      ];
+      for (const item of consolidatedUserData.list) {
+        sUserData.push([
+          item.sl,
+          item.workerName,
+          item.workerEmployeeNo || '-',
+          item.bundleCount,
+          item.ticketCount,
+          item.locationCount,
+          Number(item.totalAmount.toFixed(2))
+        ]);
+      }
+      sUserData.push([
+        'GRAND TOTAL', '', '',
+        consolidatedUserData.totalBundles,
+        consolidatedUserData.totalTickets,
+        userwiseGrandTotals.uniqueLocationsCount,
+        Number(consolidatedUserData.grandTotal.toFixed(2))
+      ]);
+      sUserData.push([]);
+      sUserData.push(['SIGNATURES & APPROVALS:']);
+      sUserData.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']);
+      sUserData.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
+
+      const wsUserSummary = XLSX.utils.aoa_to_sheet(sUserData);
+      wsUserSummary['!cols'] = [{ wch: 8 }, { wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 24 }];
+      XLSX.utils.book_append_sheet(wb, wsUserSummary, 'User Payout Summary');
+
+      // ==========================================
+      // SHEET 3: Weekly Expance Payout Report userwise
+      // ==========================================
+      const s1HeaderRow1: any[] = groupByLocation
+        ? ['Worker', 'SL', 'TICKET -NO', 'LOCATION', 'SUMMARY']
+        : ['Worker', 'SLNo', 'BUNDLE ID', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'ISSUE TITLE', 'Ledger Group'];
+      const s1HeaderRow2: any[] = groupByLocation
+        ? ['', '', '', '', '']
+        : ['', '', '', '', '', '', '', ''];
+      const s1LeadingCols = groupByLocation ? 5 : 8;
+
       const s1Merges: XLSX.Range[] = [
-        { s: { r: 0, c: 6 }, e: { r: 0, c: 6 + allChildExpenseColumns.length } },
+        { s: { r: 0, c: groupByLocation ? 3 : 6 }, e: { r: 0, c: (groupByLocation ? 3 : 6) + allChildExpenseColumns.length } },
         { s: { r: 2, c: 0 }, e: { r: 3, c: 0 } },
         { s: { r: 2, c: 1 }, e: { r: 3, c: 1 } },
         { s: { r: 2, c: 2 }, e: { r: 3, c: 2 } },
         { s: { r: 2, c: 3 }, e: { r: 3, c: 3 } },
         { s: { r: 2, c: 4 }, e: { r: 3, c: 4 } },
-        { s: { r: 2, c: 5 }, e: { r: 3, c: 5 } },
-        { s: { r: 2, c: 6 }, e: { r: 3, c: 6 } },
-        { s: { r: 2, c: 7 }, e: { r: 3, c: 7 } },
       ];
 
-      let colIdx = 8;
+      if (!groupByLocation) {
+        s1Merges.push(
+          { s: { r: 2, c: 5 }, e: { r: 3, c: 5 } },
+          { s: { r: 2, c: 6 }, e: { r: 3, c: 6 } },
+          { s: { r: 2, c: 7 }, e: { r: 3, c: 7 } },
+        );
+      }
+
+      let colIdx = s1LeadingCols;
       for (const cat of expenseColumnsHierarchy) {
         const startC = colIdx;
         const endC = colIdx + cat.children.length - 1;
@@ -1810,7 +2133,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       s1Merges.push({ s: { r: 2, c: colIdx }, e: { r: 3, c: colIdx } });
 
       const s1Data: any[][] = [
-        ['report for maintenances', '', '', '', '', '', 'Weekly Expance Payout Report userwise'],
+        ['report for maintenances', '', '', '', '', '', 'Weekly Expance Payout Worker Report'],
         [],
         s1HeaderRow1,
         s1HeaderRow2
@@ -1821,62 +2144,111 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       for (const wGroup of workerGroupedRows) {
         const startWorkerRow = currentSheet1Row;
-        wGroup.rows.forEach((row, rIdx) => {
-          const rowData: any[] = [
-            rIdx === 0 ? wGroup.workerName : '',
-            globalSlNo++,
-            row.bundleId,
-            row.expNo,
-            row.location,
-            row.subDepartment,
-            row.issueTitle,
-            row.ledgerBatch
-          ];
 
-          for (const colName of allChildExpenseColumns) {
-            const amt = row.amountsByType[colName];
-            rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(2)) : '-');
+        if (groupByLocation) {
+          wGroup.locationRows.forEach((loc, rIdx) => {
+            const rowData: any[] = [
+              rIdx === 0 ? wGroup.workerName : '',
+              globalSlNo++,
+              loc.ticketLinesText || loc.expNoStr,
+              loc.location,
+              loc.summary
+            ];
+
+            for (const colName of allChildExpenseColumns) {
+              const amt = loc.amountsByType[colName];
+              rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(2)) : '-');
+            }
+            rowData.push(Number(loc.total.toFixed(2)));
+            s1Data.push(rowData);
+            currentSheet1Row++;
+          });
+
+          if (wGroup.locationRows.length > 1) {
+            s1Merges.push({ s: { r: startWorkerRow, c: 0 }, e: { r: currentSheet1Row - 1, c: 0 } });
           }
-          rowData.push(Number(row.total.toFixed(2)));
-          s1Data.push(rowData);
+
+          // Worker Subtotal Row
+          const subtotalRow: any[] = [
+            '',
+            '',
+            'Subtotal',
+            `${wGroup.locationRows.length} Locations (${wGroup.rows.length} Tickets)`,
+            ''
+          ];
+          for (const colName of allChildExpenseColumns) {
+            const sAmt = wGroup.subtotalByType[colName] || 0;
+            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(2)) : '-');
+          }
+          subtotalRow.push(Number(wGroup.totalAmount.toFixed(2)));
+          s1Data.push(subtotalRow);
           currentSheet1Row++;
-        });
+        } else {
+          wGroup.rows.forEach((row, rIdx) => {
+            const rowData: any[] = [
+              rIdx === 0 ? wGroup.workerName : '',
+              globalSlNo++,
+              row.bundleId,
+              row.expNo,
+              row.location,
+              row.subDepartment,
+              row.issueTitle,
+              row.ledgerBatch
+            ];
 
-        if (wGroup.rows.length > 1) {
-          s1Merges.push({ s: { r: startWorkerRow, c: 0 }, e: { r: currentSheet1Row - 1, c: 0 } });
+            for (const colName of allChildExpenseColumns) {
+              const amt = row.amountsByType[colName];
+              rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(2)) : '-');
+            }
+            rowData.push(Number(row.total.toFixed(2)));
+            s1Data.push(rowData);
+            currentSheet1Row++;
+          });
+
+          if (wGroup.rows.length > 1) {
+            s1Merges.push({ s: { r: startWorkerRow, c: 0 }, e: { r: currentSheet1Row - 1, c: 0 } });
+          }
+
+          // Worker Subtotal Row
+          const subtotalRow: any[] = [
+            '',
+            '',
+            '',
+            '',
+            `${wGroup.uniqueLocationsCount} Locations`,
+            '',
+            '',
+            ''
+          ];
+          for (const colName of allChildExpenseColumns) {
+            const sAmt = wGroup.subtotalByType[colName] || 0;
+            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(2)) : '-');
+          }
+          subtotalRow.push(Number(wGroup.totalAmount.toFixed(2)));
+          s1Data.push(subtotalRow);
+          currentSheet1Row++;
         }
+      }
 
-        // Worker Subtotal Row
-        const subtotalRow: any[] = [
+      // Grand Total Row
+      const grandTotalRow: any[] = groupByLocation
+        ? [
+          'GRAND TOTAL',
+          '',
+          '',
+          `${userwiseGrandTotals.uniqueLocationsCount} Locations (${structuredRows.length} Tickets)`,
+          ''
+        ]
+        : [
+          'GRAND TOTAL',
           '',
           '',
           '',
-          '',
-          `${wGroup.uniqueLocationsCount} Locations`,
+          `${userwiseGrandTotals.uniqueLocationsCount} Locations`,
           '',
           '',
           ''
         ];
-        for (const colName of allChildExpenseColumns) {
-          const sAmt = wGroup.subtotalByType[colName] || 0;
-          subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(2)) : '-');
-        }
-        subtotalRow.push(Number(wGroup.totalAmount.toFixed(2)));
-        s1Data.push(subtotalRow);
-        currentSheet1Row++;
-      }
-
-      // Grand Total Row
-      const grandTotalRow: any[] = [
-        'GRAND TOTAL',
-        '',
-        '',
-        '',
-        `${userwiseGrandTotals.uniqueLocationsCount} Locations`,
-        '',
-        '',
-        ''
-      ];
       for (const colName of allChildExpenseColumns) {
         const gAmt = userwiseGrandTotals.colTotals[colName] || 0;
         grandTotalRow.push(gAmt > 0 ? Number(gAmt.toFixed(2)) : '-');
@@ -1892,12 +2264,18 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       const ws1 = XLSX.utils.aoa_to_sheet(s1Data);
       ws1['!merges'] = s1Merges;
-      ws1['!cols'] = [
-        { wch: 16 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
-        { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 22 },
-        ...allChildExpenseColumns.map(() => ({ wch: 14 })),
-        { wch: 14 }
-      ];
+      ws1['!cols'] = groupByLocation
+        ? [
+          { wch: 18 }, { wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 28 },
+          ...allChildExpenseColumns.map(() => ({ wch: 14 })),
+          { wch: 14 }
+        ]
+        : [
+          { wch: 16 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+          { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 22 },
+          ...allChildExpenseColumns.map(() => ({ wch: 14 })),
+          { wch: 14 }
+        ];
       XLSX.utils.book_append_sheet(wb, ws1, 'Userwise Payout');
 
       // =========================================================
@@ -2051,7 +2429,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         XLSX.utils.book_append_sheet(wb, wsLoc, 'Location Statement');
       }
 
-      const fileName = `Weekly_Expense_Payout_Report_${group.groupName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `Weekly_Expense_Payout_Report_${currentGroupName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
     } catch (err) {
       console.error('Failed to export Excel report:', err);
@@ -2059,123 +2437,99 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     }
   };
 
-  // Copy Summary to Clipboard
-  const handleCopySummary = () => {
-    const lines = [
-      `======================================================`,
-      `WEEKLY EXPENSE PAYOUT REPORT: ${group.groupName}`,
-      `Group ID: ${group.groupId}`,
-      `Generated: ${new Date().toLocaleDateString()}`,
-      `Total Settlement Amount: KD ${group.totalAmount.toFixed(2)}`,
-      `Total Ledger Batches: ${dynamicLedgerBatches.length}`,
-      `Total Technicians: ${workerGroupedRows.length} | Total Locations: ${userwiseGrandTotals.uniqueLocationsCount}`,
-      `======================================================`,
-      ``,
-      `--- USER-WISE PAYOUT BREAKDOWN ---`,
-      ...workerGroupedRows.map(w => `• ${w.workerName} (${w.rows.length} tickets, ${w.uniqueLocationsCount} locations): KD ${w.totalAmount.toFixed(2)}`),
-      ``,
-      `--- DYNAMIC LEDGER BATCHES SUMMARY ---`,
-      ...consolidatedBatchData.list.map(s => `• ${s.section}: Labour KD ${s.labourCharge.toFixed(2)} + Exp KD ${s.expense.toFixed(2)} = Total KD ${s.total.toFixed(2)}`),
-      ``,
-      `GRAND TOTAL: KD ${consolidatedBatchData.grandTotal.toFixed(2)}`,
-      `======================================================`
-    ];
 
-    navigator.clipboard.writeText(lines.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
 
-  const renderSignaturesBlock = () => (
-    <div className="pt-4 border-t border-outline-variant space-y-2.5 print:mt-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          Verification & Authorization Workflow
-        </span>
-        <span className="text-[10px] text-on-surface-variant/80 font-medium">
-          7-Tier Official Approval Chain
-        </span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">1. Prepared By</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate">{group.createdByName || 'Site Accountant'}</p>
-          </div>
-          <div className="mt-2">
-            <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">Initiated</span>
-          </div>
-        </div>
+  // const renderSignaturesBlock = () => (
+  //   <div className="pt-4 border-t border-outline-variant space-y-2.5 print:mt-4">
+  //     <div className="flex items-center justify-between">
+  //       <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+  //         <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+  //         Verification & Authorization Workflow
+  //       </span>
+  //       <span className="text-[10px] text-on-surface-variant/80 font-medium">
+  //         7-Tier Official Approval Chain
+  //       </span>
+  //     </div>
+  //     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">1. Prepared By</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate">{group.createdByName || 'Site Accountant'}</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">Initiated</span>
+  //         </div>
+  //       </div>
 
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">2. Verify By MEngg</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Maintenance Engineer</p>
-          </div>
-          <div className="mt-2">
-            <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-primary/10 text-primary font-semibold">Maintenance Check</span>
-          </div>
-        </div>
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">2. Verify By MEngg</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Maintenance Engineer</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-primary/10 text-primary font-semibold">Maintenance Check</span>
+  //         </div>
+  //       </div>
 
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">3. Verify By Engg</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Project / Site Engineer</p>
-          </div>
-          <div className="mt-2">
-            <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-primary/10 text-primary font-semibold">Technical Check</span>
-          </div>
-        </div>
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">3. Verify By Engg</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Project / Site Engineer</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-primary/10 text-primary font-semibold">Technical Check</span>
+  //         </div>
+  //       </div>
 
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">4. Accountant</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Accounts Dept</p>
-          </div>
-          <div className="mt-2">
-            <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold">Ledger Verified</span>
-          </div>
-        </div>
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">4. Accountant</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Accounts Dept</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold">Ledger Verified</span>
+  //         </div>
+  //       </div>
 
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">5. Audit</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Internal Audit</p>
-          </div>
-          <div className="mt-2">
-            <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">Audit Review</span>
-          </div>
-        </div>
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">5. Audit</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Internal Audit</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">Audit Review</span>
+  //         </div>
+  //       </div>
 
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">6. Finance</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Finance Manager</p>
-          </div>
-          <div className="mt-2">
-            <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">Fund Allocation</span>
-          </div>
-        </div>
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">6. Finance</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Finance Manager</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">Fund Allocation</span>
+  //         </div>
+  //       </div>
 
-        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-          <div>
-            <span className="font-bold text-on-surface block text-[10.5px]">7. CEO/GM/Director</span>
-            <p className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate">{group.completedByName || 'Executive Approval'}</p>
-          </div>
-          <div className="mt-2">
-            <span className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-semibold ${group.isCompleted ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/15 text-amber-700'}`}>
-              {group.isCompleted ? 'Final Approved' : 'Pending Exec'}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
+  //         <div>
+  //           <span className="font-bold text-on-surface block text-[10.5px]">7. CEO/GM/Director</span>
+  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate">{group.completedByName || 'Executive Approval'}</p>
+  //         </div>
+  //         <div className="mt-2">
+  //           <span className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-semibold ${group.isCompleted ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/15 text-amber-700'}`}>
+  //             {group.isCompleted ? 'Final Approved' : 'Pending Exec'}
+  //           </span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   </div>
+
+  // );
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-container border border-outline-variant rounded max-w-6xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[94vh] print:max-h-none print:shadow-none print:border-0 print:p-0">
+      <div className="bg-surface-container border border-outline-variant rounded  w-full shadow-2xl overflow-hidden flex flex-col max-h-[94vh] print:max-h-none print:shadow-none print:border-0 print:p-0">
 
         {/* MODAL HEADER */}
         <div className="px-5 py-3.5 border-b border-outline-variant bg-surface-container-low flex items-center justify-between flex-wrap gap-3 shrink-0">
@@ -2184,30 +2538,122 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               <FileText className="w-5 h-5" />
             </div>
             <div>
+
+              {isEditingName ? (
+                <div className="mt-1 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={editNameValue}
+                      onChange={(e) => {
+                        setEditNameValue(e.target.value);
+                        if (nameError) setNameError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveGroupName();
+                        if (e.key === 'Escape') {
+                          setIsEditingName(false);
+                          setNameError(null);
+                          setEditNameValue(currentGroupName);
+                        }
+                      }}
+                      disabled={isSavingName}
+                      autoFocus
+                      className="px-2.5 py-1 text-sm font-semibold rounded border border-primary bg-surface-container-low text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-64 sm:w-80 shadow-2xs"
+                      placeholder="Enter new group name..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveGroupName}
+                      disabled={isSavingName}
+                      className="px-2.5 py-1 rounded bg-primary text-on-primary text-xs font-semibold hover:bg-primary/90 transition-colors flex items-center gap-1 disabled:opacity-50 cursor-pointer shadow-xs"
+                      title="Save Group Name"
+                    >
+                      {isSavingName ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      <span>Save</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingName(false);
+                        setNameError(null);
+                        setEditNameValue(currentGroupName);
+                      }}
+                      disabled={isSavingName}
+                      className="p-1 rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                      title="Cancel"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {nameError && (
+                    <span className="text-[11px] text-rose-500 font-medium">
+                      {nameError}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mt-0.5 group">
+                  <h2 className="text-base sm:text-lg font-bold text-on-surface">
+                    {currentGroupName}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditNameValue(currentGroupName);
+                      setNameError(null);
+                      setIsEditingName(true);
+                    }}
+                    className="p-1 rounded hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors cursor-pointer opacity-80 hover:opacity-100"
+                    title="Rename Ledger Group"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Weekly Settlement Report
-                </span>
                 <span className="text-xs font-mono text-on-surface-variant font-medium">
-                  Group #{group.groupId}
+                  Ledger - {group.groupId}
                 </span>
               </div>
-              <h2 className="text-base sm:text-lg font-bold text-on-surface mt-0.5">
-                {group.groupName}
-              </h2>
             </div>
           </div>
 
           <div className="flex items-center gap-2 print:hidden">
-            <button
+            {/* Global Vertical (Portrait) Orientation Checkbox */}
+            <label className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-surface-container border border-outline-variant text-xs font-semibold text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors select-none shadow-2xs">
+              <input
+                type="checkbox"
+                checked={groupByLocation}
+                onChange={(e) => setGroupByLocation(e.target.checked)}
+                className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <Building2 className="w-3.5 h-3.5 text-primary" />
+              <span>Group by Location</span>
+            </label>
+
+
+
+            <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-surface-container border border-outline text-xs font-semibold text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors select-none shadow-2xs mr-1">
+              <input
+                type="checkbox"
+                checked={isVerticalOrientation}
+                onChange={(e) => setIsVerticalOrientation(e.target.checked)}
+                className="w-3.5 h-3.5 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <FileText className="w-3.5 h-3.5 text-primary" />
+              <span>Vertical Orientation</span>
+            </label>
+
+            {/* <button
               onClick={handleCopySummary}
               className="px-3 py-1.5 rounded border border-outline text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
               title="Copy summary to clipboard"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-on-surface-variant" />}
               <span>{copied ? 'Copied!' : 'Copy'}</span>
-            </button>
+            </button> */}
 
             <button
               onClick={handleExportMultiSheetExcel}
@@ -2317,7 +2763,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   }`}
               >
                 <User className="w-3.5 h-3.5" />
-                <span>Weekly Expance Payout Report userwise (Sheet 1)</span>
+                <span>Worker Wise Report</span>
               </button>
 
               <button
@@ -2328,20 +2774,35 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   }`}
               >
                 <Boxes className="w-3.5 h-3.5" />
-                <span>Consolidated Financial Settlement & Ledger Batches</span>
+                <span>Location Wise Report</span>
               </button>
             </div>
 
-            {/* Search Input */}
-            <div className="relative w-64 print:hidden">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search ticket, store, worker..."
-                className="w-full pl-8 pr-3 py-1.5 rounded border border-outline bg-surface-container text-xs text-on-surface focus:outline-none focus:border-primary"
-              />
+            {/* Search Input, Group by Location & Vertical Orientation Toggles */}
+            <div className="flex items-center gap-2.5 print:hidden flex-wrap">
+              {/* <label className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-surface-container border border-outline-variant text-xs font-semibold text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors select-none shadow-2xs">
+                <input
+                  type="checkbox"
+                  checked={isVerticalOrientation}
+                  onChange={(e) => setIsVerticalOrientation(e.target.checked)}
+                  className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+                />
+                <FileText className="w-3.5 h-3.5 text-primary" />
+                <span>Vertical Orientation</span>
+              </label> */}
+
+
+
+              <div className="relative w-60">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search ticket, store, worker..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded border border-outline bg-surface-container text-xs text-on-surface focus:outline-none focus:border-primary"
+                />
+              </div>
             </div>
           </div>
 
@@ -2352,202 +2813,417 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             {/* TAB 1: WEEKLY EXPENSE PAYOUT REPORT USERWISE */}
             {/* ========================================== */}
             {activeTab === 'userwise' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+              <div className="space-y-8">
+                {/* 1. FIRST SECTION: CONSOLIDATED TECHNICIAN PAYOUT STATEMENT */}
+                {/* <div className="space-y-2 bg-surface-container-low/40 p-4 rounded-xl border border-outline-variant"> */}
+
+
+                <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
                   <span className="flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Weekly Expance Payout Report userwise
+                    <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <UserCheck className="w-5 h-5" />
+                    </div>
+                    {/* <FileText className="w-4 h-4" /> */}
+                    Worker Summary Report
                   </span>
-                  <span className="text-[11px] font-normal text-on-surface-variant">
-                    Multi-level category hierarchy: Parent & Sub-expense types
-                  </span>
+                  <div className="flex items-center gap-3">
+
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
-                  <table className="w-full text-xs text-left text-on-surface border-collapse">
-                    <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
+                <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                  <table className="w-full text-xs text-left text-on-surface">
+                    <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
                       <tr>
-                        <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
-                        <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNo</th>
-                        <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
-                        <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
-                        <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
-                        <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
-                        <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">ISSUE TITLE</th>
-                        <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Ledger Group</th>
-
-                        {/* Parent Expense Categories */}
-                        {expenseColumnsHierarchy.map(cat => (
-                          <th
-                            key={cat.parentName}
-                            colSpan={cat.children.length}
-                            className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary dark:text-primary-container uppercase tracking-wider text-[10px]"
-                          >
-                            {cat.parentName}
-                          </th>
-                        ))}
-
-                        <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-                          TOTAL
-                        </th>
-                      </tr>
-
-                      {/* Sub Expense Types */}
-                      <tr>
-                        {expenseColumnsHierarchy.map(cat => (
-                          cat.children.map(child => (
-                            <th
-                              key={`${cat.parentName}_${child}`}
-                              className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
-                            >
-                              {child}
-                            </th>
-                          ))
-                        ))}
+                        <th className="px-4 py-3 text-center w-12">SL</th>
+                        <th className="px-5 py-3">Worker</th>
+                        <th className="px-4 py-3 text-center">Bundles</th>
+                        <th className="px-4 py-3 text-center">Tickets</th>
+                        <th className="px-4 py-3 text-center">Locations</th>
+                        <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Amount to be Given (KD)</th>
                       </tr>
                     </thead>
-
-                    <tbody className="divide-y divide-outline-variant/60 text-xs">
-                      {workerGroupedRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={9 + allChildExpenseColumns.length} className="p-8 text-center text-on-surface-variant">
-                            No expenses found matching the current criteria.
+                    <tbody className="divide-y divide-outline-variant/60">
+                      {consolidatedUserData.list.map((item) => (
+                        <tr key={item.workerId || item.workerName} className="hover:bg-surface-container-high/40 transition-colors">
+                          <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
+                            {item.sl}
+                          </td>
+                          <td className="px-5 py-3 font-semibold text-on-surface">
+                            <div className="flex items-center gap-2.5">
+                              <User className="w-4 h-4 text-primary shrink-0" />
+                              <div>
+                                <span className="font-bold text-on-surface">{item.workerName}</span>
+                                {item.workerEmployeeNo && (
+                                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-on-surface-variant font-mono">
+                                    {item.workerEmployeeNo}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
+                            {item.bundleCount}
+                          </td>
+                          <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
+                            {item.ticketCount}
+                          </td>
+                          <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
+                            {item.locationCount}
+                          </td>
+                          <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 text-sm">
+                            KD {item.totalAmount.toFixed(2)}
                           </td>
                         </tr>
-                      ) : (
-                        workerGroupedRows.map((wGroup, wIdx) => (
-                          <React.Fragment key={wGroup.workerId || wIdx}>
-                            {wGroup.rows.map((row, rIdx) => (
-                              <tr key={row.uniqueKey || rIdx} className="hover:bg-surface-container-high/40 transition-colors">
-                                {rIdx === 0 && (
-                                  <td
-                                    rowSpan={wGroup.rows.length}
-                                    className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
-                                  >
-                                    <div className="sticky top-12 space-y-0.5">
-                                      <span className="font-semibold text-primary">{wGroup.workerName}</span>
-                                      {wGroup.workerEmployeeNo && (
-                                        <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
-                                      )}
-                                    </div>
-                                  </td>
-                                )}
-                                <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
-                                  {rIdx + 1}
-                                </td>
-                                <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
-                                  #{row.bundleId}
-                                </td>
-                                <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
-                                  {row.ticketObj && setSelectedTicketForModal ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedTicketForModal(row.ticketObj)}
-                                      className="text-primary hover:underline cursor-pointer font-bold"
-                                    >
-                                      {row.expNo}
-                                    </button>
-                                  ) : (
-                                    <span>{row.expNo}</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
-                                  {row.location}
-                                </td>
-                                <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                  {row.subDepartment}
-                                </td>
-                                <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
-                                  {row.issueTitle}
-                                </td>
-                                <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                  <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
-                                    {row.ledgerBatch}
-                                  </span>
-                                </td>
-
-                                {allChildExpenseColumns.map(colName => {
-                                  const amt = row.amountsByType[colName];
-                                  return (
-                                    <td
-                                      key={colName}
-                                      className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
-                                    >
-                                      {amt !== undefined && amt > 0 ? (
-                                        <span className="font-semibold">{amt.toFixed(2)}</span>
-                                      ) : (
-                                        <span className="text-on-surface-variant/40">-</span>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-
-                                <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                  {row.total.toFixed(2)}
-                                </td>
-                              </tr>
-                            ))}
-
-                            {/* Worker Subtotal Row */}
-                            <tr className="bg-surface-container-high/70 font-semibold border-b-2 border-outline-variant text-[11px]">
-                              <td colSpan={4} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
-                                Subtotal
-                              </td>
-                              <td className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
-                                {wGroup.uniqueLocationsCount} Locations
-                              </td>
-                              <td colSpan={3} className="px-3 py-2 border-r border-outline-variant"></td>
-
-                              {allChildExpenseColumns.map(colName => {
-                                const sAmt = wGroup.subtotalByType[colName] || 0;
-                                return (
-                                  <td
-                                    key={`subtotal_${colName}`}
-                                    className="px-2.5 py-2 text-right border-r border-outline-variant font-bold font-mono text-on-surface"
-                                  >
-                                    {sAmt > 0 ? sAmt.toFixed(2) : '-'}
-                                  </td>
-                                );
-                              })}
-
-                              <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                {wGroup.totalAmount.toFixed(2)}
-                              </td>
-                            </tr>
-                          </React.Fragment>
-                        ))
-                      )}
+                      ))}
                     </tbody>
-
-                    {/* TFOOT: GRAND TOTAL ROW */}
-                    <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
-                      <tr className="border-t border-outline-variant">
-                        <td colSpan={4} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
+                    <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
+                      <tr>
+                        <td colSpan={2} className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
                           GRAND TOTAL
                         </td>
-                        <td className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
-                          {userwiseGrandTotals.uniqueLocationsCount} Locations
+                        <td className="px-4 py-3.5 text-center font-mono text-on-surface">
+                          {consolidatedUserData.totalBundles}
                         </td>
-                        <td colSpan={3} className="px-3 py-3 border-r border-outline-variant"></td>
-
-                        {allChildExpenseColumns.map(colName => {
-                          const gAmt = userwiseGrandTotals.colTotals[colName] || 0;
-                          return (
-                            <td
-                              key={`grand_${colName}`}
-                              className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
-                            >
-                              {gAmt > 0 ? gAmt.toFixed(2) : '-'}
-                            </td>
-                          );
-                        })}
-
-                        <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
-                          KD {userwiseGrandTotals.grandTotal.toFixed(2)}
+                        <td className="px-4 py-3.5 text-center font-mono text-on-surface">
+                          {consolidatedUserData.totalTickets}
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-mono text-on-surface">
+                          {userwiseGrandTotals.uniqueLocationsCount}
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15 font-black">
+                          KD {consolidatedUserData.grandTotal.toFixed(2)}
                         </td>
                       </tr>
                     </tfoot>
                   </table>
+                </div>
+
+                {/* 7-TIER VERIFICATION & AUTHORIZATION WORKFLOW (Userwise Consolidated Payout) */}
+                {/* {renderSignaturesBlock()} */}
+                {/* </div> */}
+
+                {/* 2. SECOND SECTION: ITEMIZED / LOCATION-GROUPED EXPENSE STATEMENT BY CATEGORIES */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                    <span className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Worker Detailed Report
+                      {/* - {groupByLocation ? 'Location-Grouped' : 'Itemized'} */}
+                    </span>
+                    <div className="flex items-center gap-3">
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3">
+
+                          <span
+                            className={
+                              groupByLocation
+                                ? "text-[11px] font-normal text-on-surface-variant"
+                                : "text-[10px] font-normal text-red-600 animate-pulse"
+                            }
+                          >
+                            {groupByLocation
+                              ? `Grouped by location (${userwiseGrandTotals.uniqueLocationsCount} locations)`
+                              : "⚠ Location Will Be repeated"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
+                    <table className="w-full text-xs text-left text-on-surface border-collapse">
+                      <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
+                        <tr>
+                          {groupByLocation ? (
+                            <>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
+                              <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
+                              <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
+                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
+                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY</th>
+                            </>
+                          ) : (
+                            <>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
+                              <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNo</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
+                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">ISSUE TITLE</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Ledger Group</th>
+                            </>
+                          )}
+
+                          {/* Parent Expense Categories */}
+                          {expenseColumnsHierarchy.map(cat => (
+                            <th
+                              key={cat.parentName}
+                              colSpan={cat.children.length}
+                              className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary dark:text-primary-container uppercase tracking-wider text-[10px]"
+                            >
+                              {cat.parentName}
+                            </th>
+                          ))}
+
+                          <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                            TOTAL
+                          </th>
+                        </tr>
+
+                        {/* Sub Expense Types */}
+                        <tr>
+                          {expenseColumnsHierarchy.map(cat => (
+                            cat.children.map(child => (
+                              <th
+                                key={`${cat.parentName}_${child}`}
+                                className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
+                              >
+                                {child}
+                              </th>
+                            ))
+                          ))}
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-outline-variant/60 text-xs">
+                        {workerGroupedRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={(groupByLocation ? 5 : 8) + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
+                              No expenses found matching the current criteria.
+                            </td>
+                          </tr>
+                        ) : (
+                          workerGroupedRows.map((wGroup, wIdx) => (
+                            <React.Fragment key={wGroup.workerId || wIdx}>
+                              {groupByLocation ? (
+                                wGroup.locationRows.map((locRow, locIdx) => (
+                                  <tr key={locRow.location || locIdx} className="hover:bg-surface-container-high/40 transition-colors">
+                                    {locIdx === 0 && (
+                                      <td
+                                        rowSpan={wGroup.locationRows.length}
+                                        className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
+                                      >
+                                        <div className="sticky top-12 space-y-0.5">
+                                          <span className="font-semibold text-primary">{wGroup.workerName}</span>
+                                          {wGroup.workerEmployeeNo && (
+                                            <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    )}
+                                    <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                      {locIdx + 1}
+                                    </td>
+                                    <td className="px-3.5 py-2.5 border-r border-outline-variant font-mono text-[11px]">
+                                      <div className="flex flex-col gap-0.5 whitespace-nowrap font-semibold text-primary">
+                                        {locRow.ticketLines && locRow.ticketLines.length > 0 ? (
+                                          locRow.ticketLines.map((line, lIdx) => (
+                                            <span key={lIdx}>{line}</span>
+                                          ))
+                                        ) : (
+                                          <span>{locRow.expNoStr || '-'}</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant font-bold text-on-surface">
+                                      <div className="flex items-center gap-1.5">
+                                        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                                        <span>{locRow.location}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-2 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
+                                      <span className="font-medium text-on-surface">{locRow.summary}</span>
+                                    </td>
+
+                                    {allChildExpenseColumns.map(colName => {
+                                      const amt = locRow.amountsByType[colName];
+                                      return (
+                                        <td
+                                          key={colName}
+                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                        >
+                                          {amt !== undefined && amt > 0 ? (
+                                            <span className="font-semibold">{amt.toFixed(2)}</span>
+                                          ) : (
+                                            <span className="text-on-surface-variant/40">-</span>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+
+                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                      {locRow.total.toFixed(2)}
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                wGroup.rows.map((row, rIdx) => (
+                                  <tr key={row.uniqueKey || rIdx} className="hover:bg-surface-container-high/40 transition-colors">
+                                    {rIdx === 0 && (
+                                      <td
+                                        rowSpan={wGroup.rows.length}
+                                        className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
+                                      >
+                                        <div className="sticky top-12 space-y-0.5">
+                                          <span className="font-semibold text-primary">{wGroup.workerName}</span>
+                                          {wGroup.workerEmployeeNo && (
+                                            <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    )}
+                                    <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                      {rIdx + 1}
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
+                                      #{row.bundleId}
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
+                                      {row.ticketObj && setSelectedTicketForModal ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedTicketForModal(row.ticketObj)}
+                                          className="text-primary hover:underline cursor-pointer font-bold"
+                                        >
+                                          {row.expNo}
+                                        </button>
+                                      ) : (
+                                        <span>{row.expNo}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
+                                      {row.location}
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                      {row.subDepartment}
+                                    </td>
+                                    <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
+                                      {row.issueTitle}
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                      <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
+                                        {row.ledgerBatch}
+                                      </span>
+                                    </td>
+
+                                    {allChildExpenseColumns.map(colName => {
+                                      const amt = row.amountsByType[colName];
+                                      return (
+                                        <td
+                                          key={colName}
+                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                        >
+                                          {amt !== undefined && amt > 0 ? (
+                                            <span className="font-semibold">{amt.toFixed(2)}</span>
+                                          ) : (
+                                            <span className="text-on-surface-variant/40">-</span>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+
+                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                      {row.total.toFixed(2)}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+
+                              {/* Worker Subtotal Row */}
+                              <tr className="bg-surface-container-high/70 font-semibold border-b-2 border-outline-variant text-[11px]">
+                                {groupByLocation ? (
+                                  <>
+                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
+                                      Subtotal
+                                    </td>
+                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
+                                      {wGroup.locationRows.length} Locations ({wGroup.rows.length} Tickets)
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant"></td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td colSpan={4} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
+                                      Subtotal
+                                    </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
+                                      {wGroup.uniqueLocationsCount} Locations
+                                    </td>
+                                    <td colSpan={3} className="px-3 py-2 border-r border-outline-variant"></td>
+                                  </>
+                                )}
+
+                                {allChildExpenseColumns.map(colName => {
+                                  const sAmt = wGroup.subtotalByType[colName] || 0;
+                                  return (
+                                    <td
+                                      key={`subtotal_${colName}`}
+                                      className="px-2.5 py-2 text-right border-r border-outline-variant font-bold font-mono text-on-surface"
+                                    >
+                                      {sAmt > 0 ? sAmt.toFixed(2) : '-'}
+                                    </td>
+                                  );
+                                })}
+
+                                <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
+                                  {wGroup.totalAmount.toFixed(2)}
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          ))
+                        )}
+                      </tbody>
+
+                      {/* TFOOT: GRAND TOTAL ROW */}
+                      <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
+                        <tr className="border-t border-outline-variant">
+                          {groupByLocation ? (
+                            <>
+                              <td colSpan={2} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
+                                GRAND TOTAL
+                              </td>
+                              <td colSpan={2} className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
+                                {userwiseGrandTotals.uniqueLocationsCount} Locations ({structuredRows.length} Tickets)
+                              </td>
+                              <td className="px-3 py-3 border-r border-outline-variant"></td>
+                            </>
+                          ) : (
+                            <>
+                              <td colSpan={4} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
+                                GRAND TOTAL
+                              </td>
+                              <td className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
+                                {userwiseGrandTotals.uniqueLocationsCount} Locations
+                              </td>
+                              <td colSpan={3} className="px-3 py-3 border-r border-outline-variant"></td>
+                            </>
+                          )}
+
+                          {allChildExpenseColumns.map(colName => {
+                            const gAmt = userwiseGrandTotals.colTotals[colName] || 0;
+                            return (
+                              <td
+                                key={`grand_${colName}`}
+                                className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
+                              >
+                                {gAmt > 0 ? gAmt.toFixed(2) : '-'}
+                              </td>
+                            );
+                          })}
+
+                          <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
+                            KD {userwiseGrandTotals.grandTotal.toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -2558,84 +3234,82 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             {activeTab === 'storewise' && (
               <div className="space-y-8">
                 {/* 1. FIRST SHEET: CONSOLIDATED FINANCIAL SETTLEMENT REPORT */}
-                <div className="space-y-4 bg-surface-container-low/40 p-4 rounded-xl border border-outline-variant">
-                  <div className="bg-surface-container-low border border-outline-variant rounded p-3 flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                      <Layers className="w-5 h-5" />
+                {/* <div className="space-y-2 bg-surface-container-low/40 p-4 rounded-xl border border-outline-variant"> */}
+                <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                  <span className="flex items-center gap-2">
+                    <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <UserCheck className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">
-                        Consolidated Financial Settlement Report
-                      </h3>
-                      <p className="text-xs text-on-surface-variant mt-0.5">
-                        Executive Summary by Dynamic Ledger Batch Section including Labour Charges & Expenses
-                      </p>
-                    </div>
-                  </div>
+                    {/* <FileText className="w-4 h-4" /> */}
+                    Location Summary Report
+                  </span>
+                  <div className="flex items-center gap-3">
 
-                  <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
-                    <table className="w-full text-xs text-left text-on-surface">
-                      <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
-                        <tr>
-                          <th className="px-5 py-3">Section (Ledger Batch)</th>
-                          <th className="px-5 py-3 text-right">Labour Charge</th>
-                          <th className="px-5 py-3 text-right">Expense</th>
-                          <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-outline-variant/60">
-                        {consolidatedBatchData.list.map((item) => (
-                          <tr key={item.section} className="hover:bg-surface-container-high/40 transition-colors">
-                            <td className="px-5 py-3 font-semibold text-on-surface">
-                              <div className="flex items-center gap-2">
-                                <Boxes className="w-4 h-4 text-primary shrink-0" />
-                                <span>{item.section}</span>
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                              {item.labourCharge > 0 ? item.labourCharge.toFixed(2) : '-'}
-                            </td>
-                            <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                              {item.expense.toFixed(2)}
-                            </td>
-                            <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                              KD {item.total.toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
-                        <tr>
-                          <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
-                            GRAND TOTAL
-                          </td>
-                          <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                            {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(2) : '-'}
-                          </td>
-                          <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                            {consolidatedBatchData.grandExpense.toFixed(2)}
-                          </td>
-                          <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
-                            KD {consolidatedBatchData.grandTotal.toFixed(2)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(2)}
+                    </span>
                   </div>
-
-                  {/* 7-TIER VERIFICATION & AUTHORIZATION WORKFLOW (Consolidated Settlement) */}
-                  {renderSignaturesBlock()}
                 </div>
+                <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                  <table className="w-full text-xs text-left text-on-surface">
+                    <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
+                      <tr>
+                        <th className="px-5 py-3">Section (Ledger Batch)</th>
+                        <th className="px-5 py-3 text-right">Labour Charge</th>
+                        <th className="px-5 py-3 text-right">Expense</th>
+                        <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/60">
+                      {consolidatedBatchData.list.map((item) => (
+                        <tr key={item.section} className="hover:bg-surface-container-high/40 transition-colors">
+                          <td className="px-5 py-3 font-semibold text-on-surface">
+                            <div className="flex items-center gap-2">
+                              <Boxes className="w-4 h-4 text-primary shrink-0" />
+                              <span>{item.section}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                            {item.labourCharge > 0 ? item.labourCharge.toFixed(2) : '-'}
+                          </td>
+                          <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                            {item.expense.toFixed(2)}
+                          </td>
+                          <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                            KD {item.total.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
+                      <tr>
+                        <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
+                          GRAND TOTAL
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-mono text-on-surface">
+                          {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(2) : '-'}
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-mono text-on-surface">
+                          {consolidatedBatchData.grandExpense.toFixed(2)}
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
+                          KD {consolidatedBatchData.grandTotal.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* 7-TIER VERIFICATION & AUTHORIZATION WORKFLOW (Consolidated Settlement) */}
+                {/* {renderSignaturesBlock()} */}
+                {/* </div> */}
 
                 {/* 2. SECOND SHEET: STORE & DEPARTMENT EXPENSE STATEMENT BY LEDGER BATCHES */}
                 <div className="space-y-4 pt-2">
                   {/* Dynamic Ledger Batch Selector Pills */}
                   <div className="flex items-center justify-between flex-wrap gap-2.5 bg-surface-container p-2.5 rounded border border-outline-variant print:hidden">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-semibold text-on-surface-variant mr-1 flex items-center gap-1">
-                        <Boxes className="w-3.5 h-3.5 text-primary" />
-                        Ledger Batch:
-                      </span>
+
                       <button
                         onClick={() => setSelectedBatchFilter('all')}
                         className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedBatchFilter === 'all'
@@ -2643,7 +3317,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                           : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
                           }`}
                       >
-                        All Batches ({structuredRows.length} tickets • {allExpenses.length} exp)
+                        All Batches ({structuredRows.length} tickets | {allExpenses.length} exp)
                       </button>
                       {dynamicLedgerBatches.map(bName => {
                         const count = structuredRows.filter(r => (r.ledgerBatch || '').trim().toLowerCase() === bName.trim().toLowerCase()).length;
@@ -2657,43 +3331,37 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                               : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
                               }`}
                           >
-                            {bName} ({count} tickets • {expCount} exp)
+                            {bName} ({count} tickets | {expCount} exp)
                           </button>
                         );
                       })}
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      {/* Group by Location Toggle Checkbox */}
-                      <label className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-surface-container-high border border-outline-variant text-xs font-semibold text-on-surface cursor-pointer hover:bg-surface-container-highest transition-colors select-none shadow-2xs">
-                        <input
-                          type="checkbox"
-                          checked={groupByLocation}
-                          onChange={(e) => setGroupByLocation(e.target.checked)}
-                          className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
-                        />
-                        <Building2 className="w-3.5 h-3.5 text-primary" />
-                        <span>Group by Location</span>
-                      </label>
 
-                      <span className="text-xs text-on-surface-variant font-medium">
-                        Showing {groupByLocation ? `${locationGroupedRows.length} locations across ${storewiseFilteredByBatch.length} batches` : `${storewiseFilteredRows.length} entries`}
-                      </span>
-                    </div>
                   </div>
 
-                  {/* Title Banner */}
-                  <div className="bg-surface-container-low border border-outline-variant rounded p-3 flex items-center justify-between flex-wrap gap-2">
-                    <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+
+                  <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                    <h3 className="text-md font-bold  tracking-wider flex items-center gap-2">
                       <Boxes className="w-4 h-4 text-primary" />
-                      <span>{selectedBatchFilter === 'all' ? 'Store & Department Expense Statement' : selectedBatchFilter}</span>
+                      <span>{selectedBatchFilter === 'all' ? 'Location Detailed Report' : selectedBatchFilter}</span>
                     </h3>
-                    {groupByLocation && (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5" />
-                        Grouped by Location within Ledger Batches ({locationGroupedRows.length} Locations)
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3">
+
+                        <span
+                          className={
+                            groupByLocation
+                              ? "text-[11px] font-normal text-on-surface-variant"
+                              : "text-[10px] font-normal text-red-600 animate-pulse"
+                          }
+                        >
+                          {groupByLocation
+                            ? `Grouped by location (${userwiseGrandTotals.uniqueLocationsCount} locations)`
+                            : "⚠ Location Will Be repeated"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Table with Multi-Level Headers */}
@@ -3008,7 +3676,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             )}
 
             {/* 7-TIER VERIFICATION & AUTHORIZATION WORKFLOW (BOTTOM SIDE) */}
-            {renderSignaturesBlock()}
+            {/* {renderSignaturesBlock()} */}
 
           </div>
         </div>
@@ -3016,7 +3684,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         {/* MODAL FOOTER */}
         <div className="px-5 py-3 border-t border-outline-variant bg-surface-container-low flex items-center justify-between shrink-0">
           <span className="text-[11px] text-on-surface-variant">
-            Official Financial Settlement Document • {group.groupName}
+            Official Financial Settlement Document • {currentGroupName}
           </span>
           <button
             onClick={onClose}
