@@ -1422,6 +1422,13 @@ export const FinanceView: React.FC = () => {
         const ticketTitle = typeof rawTicket === 'object' && rawTicket ? (rawTicket.title || '').toLowerCase() : '';
         const ticketIdStr = typeof rawTicket === 'object' && rawTicket ? String(rawTicket.ticket_id || rawTicket.id || '') : (rawTicket ? String(rawTicket) : '');
         const storeName = (e.responsible_store?.store_name || (typeof rawTicket === 'object' ? rawTicket?.store?.store_name || rawTicket?.store_name : '') || '').toLowerCase();
+        const subDeptName = (
+          e.ticket_details?.sub_department_name ||
+          e.sub_department_name ||
+          (typeof rawTicket === 'object' ? rawTicket?.sub_department_name : '') ||
+          (typeof e.ticket === 'object' ? (e.ticket as any)?.nature?.sub_department?.sub_department_name : '') ||
+          ''
+        ).toLowerCase();
 
         return catName.includes(q) ||
           workerName.includes(q) ||
@@ -1431,7 +1438,8 @@ export const FinanceView: React.FC = () => {
           ticketWo.includes(q) ||
           ticketTitle.includes(q) ||
           ticketIdStr.includes(q) ||
-          storeName.includes(q);
+          storeName.includes(q) ||
+          subDeptName.includes(q);
       }
 
       return true;

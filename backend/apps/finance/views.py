@@ -21,7 +21,8 @@ from .serializers import (
     AuditEventSerializer, PaymentSerializer
 )
 from .services import (
-    BundleService, LedgerService, ApprovalService, PaymentService
+    BundleService, LedgerService, ApprovalService, PaymentService,
+    create_audit_event
 )
 
 

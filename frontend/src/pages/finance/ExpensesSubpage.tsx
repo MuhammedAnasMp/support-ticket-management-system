@@ -1438,6 +1438,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3">Worker</th>
                     <th className="px-4 py-3">Linked Ticket</th>
+                    <th className="px-4 py-3">Sub Department</th>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Responsible</th>
                     <th className="px-4 py-3">Expense Bill</th>
@@ -1465,6 +1466,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     const workerName = workerObj?.full_name || workerObj?.username || (exp.worker ? `Worker ${exp.worker}` : 'N/A');
                     const rawTicket = exp.ticket_details || exp.ticket;
                     const ticketNo = typeof rawTicket === 'object' && rawTicket ? (rawTicket.work_order_no || `${rawTicket.ticket_id || rawTicket.id}`) : (rawTicket ? `${rawTicket}` : 'N/A');
+                    const subDeptName = exp.ticket_details?.sub_department_name ||
+                      exp.sub_department_name ||
+                      (typeof rawTicket === 'object' && rawTicket?.sub_department_name) ||
+                      (typeof exp.ticket === 'object' && exp.ticket?.nature?.sub_department?.sub_department_name) ||
+                      '';
                     const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'General');
                     const rawStatus = exp.status_display || (exp.approved ? 'Approved' : 'Pending Approval');
                     const isExpanded = !!expandedExpenseIds[exp.expense_id];
@@ -1632,6 +1638,15 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               <span className="text-on-surface-variant/60 italic text-[11px]">No Ticket</span>
                             )}
                           </td>
+                          <td className="px-4 py-3 text-on-surface-variant font-medium">
+                            {subDeptName ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-container-high text-on-surface border border-outline-variant/60">
+                                {subDeptName}
+                              </span>
+                            ) : (
+                              <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
                           <td className="px-4 py-3 text-on-surface-variant">{storeName}</td>
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -1786,7 +1801,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             ? 'bg-slate-100/90 dark:bg-slate-800/45'
                             : 'bg-white dark:bg-surface-container-lowest'
                             }`}>
-                            <td colSpan={13} className="px-4 py-2.5">
+                            <td colSpan={14} className="px-4 py-2.5">
                               <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
                                 ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
                                 : 'bg-surface-container-low dark:bg-surface-container-low/70 border-outline-variant/60 shadow-2xs'
@@ -1925,7 +1940,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE */}
                         {isExpanded && (
                           <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
-                            <td colSpan={13} className="px-6 py-4 border-b border-outline-variant space-y-4">
+                            <td colSpan={14} className="px-6 py-4 border-b border-outline-variant space-y-4">
                               {/* Visual Stepper Pipeline */}
                               {approvalData?.group ? (
                                 <div>
@@ -2105,7 +2120,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                 </div>
 
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs">
                                   <div>
                                     <span className="text-[10px] text-on-surface-variant font-medium block">Expense Category</span>
                                     <span className="text-on-surface font-semibold">{catName}</span>
@@ -2116,6 +2131,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                       <AvatarCircle user={workerObj} name={workerName} size="xs" />
                                       <span className="text-on-surface font-medium truncate">{workerName}</span>
                                     </div>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] text-on-surface-variant font-medium block">Sub Department</span>
+                                    <span className="text-on-surface font-medium">{subDeptName || '-'}</span>
                                   </div>
                                   <div>
                                     <span className="text-[10px] text-on-surface-variant font-medium block">Responsible Store</span>

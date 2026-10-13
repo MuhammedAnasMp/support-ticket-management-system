@@ -137,6 +137,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
     ticket_details = serializers.SerializerMethodField()
     worker_detail = serializers.SerializerMethodField()
     expense_type_detail = serializers.SerializerMethodField()
+    sub_department_id = serializers.SerializerMethodField()
+    sub_department_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Expense
@@ -200,6 +202,16 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 'sub_department_name': sub_name,
                 'department_name': dept_name,
             }
+        return None
+
+    def get_sub_department_id(self, obj):
+        if obj.ticket and obj.ticket.nature and obj.ticket.nature.sub_department:
+            return obj.ticket.nature.sub_department.sub_department_id
+        return None
+
+    def get_sub_department_name(self, obj):
+        if obj.ticket and obj.ticket.nature and obj.ticket.nature.sub_department:
+            return obj.ticket.nature.sub_department.sub_department_name
         return None
 
     def get_worker_detail(self, obj):
