@@ -59,15 +59,11 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-on-surface tracking-tight">
-                Edit Claim Bundle #{selectedBundleForEdit.claim_id}
+                Edit Bundle {selectedBundleForEdit.claim_id}
               </h3>
               <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-normal mt-0.5">
-                <span>Worker:</span>
-                <AvatarCircle
-                  user={selectedBundleForEdit.worker_detail}
-                  name={selectedBundleForEdit.worker_detail?.full_name || selectedBundleForEdit.worker_detail?.username || 'Technician'}
-                  size="xs"
-                />
+
+
                 <span className="font-semibold text-on-surface">{selectedBundleForEdit.worker_detail?.full_name || selectedBundleForEdit.worker_detail?.username || 'Technician'}</span>
               </div>
             </div>
@@ -75,7 +71,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
           <button
             type="button"
             onClick={() => setSelectedBundleForEdit(null)}
-            className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+            className="p-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -84,7 +80,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
 
         {/* Modal Error Banner */}
         {errorMessage && (
-          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs animate-in fade-in">
+          <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs animate-in fade-in">
             <div className="flex items-center gap-2 min-w-0">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
               <span className="font-semibold">{errorMessage}</span>
@@ -111,22 +107,22 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             value={editBundleForm.remarks}
             onChange={(e) => setEditBundleForm({ ...editBundleForm, remarks: e.target.value })}
             placeholder="Optional remarks for this bundle..."
-            className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded-xl p-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline resize-none"
+            className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline resize-none"
           />
         </div>
 
         {/* Expenses List */}
         <div className="space-y-3 pt-2 border-t border-outline-variant/80">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface">
+            <h4 className="text-xs font-bold tracking-wider text-on-surface">
               Add or Remove Tied Expenses ({combinedExpenses.length})
             </h4>
             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-              Updated Total: ${updatedTotal.toFixed(2)}
+              {updatedTotal.toFixed(2)}
             </span>
           </div>
 
-          <div className="max-h-64 overflow-y-auto border border-outline-variant/80 rounded-xl divide-y divide-outline-variant/60 bg-surface-container-low scrollbar-thin shadow-2xs">
+          <div className="max-h-64 overflow-y-auto border border-outline-variant/80 rounded divide-y divide-outline-variant/60 bg-surface-container-low scrollbar-thin shadow-2xs">
             {combinedExpenses.length === 0 ? (
               <div className="p-6 text-center text-xs text-on-surface-variant italic">
                 No expenses found for this worker.
@@ -187,7 +183,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                             {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense #${exp.expense_id}`}
                           </p>
                           <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                            ${parseFloat(exp.amount).toFixed(2)}
+                            {parseFloat(exp.amount).toFixed(2)}
                           </span>
 
                           {/* Status Badges */}
@@ -233,7 +229,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                               selectedExpenseIds: editBundleForm.selectedExpenseIds.filter(id => id !== exp.expense_id)
                             });
                           }}
-                          className="px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-600 dark:text-rose-400 text-[10px] font-semibold hover:bg-rose-500/10 cursor-pointer transition-colors"
+                          className="px-2.5 py-1 rounded border border-rose-500/40 text-rose-600 dark:text-rose-400 text-[10px] font-semibold hover:bg-rose-500/10 cursor-pointer transition-colors"
                         >
                           Remove
                         </button>
@@ -247,7 +243,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                               selectedExpenseIds: [...editBundleForm.selectedExpenseIds, exp.expense_id]
                             });
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-primary text-on-primary text-[10px] font-semibold hover:bg-primary/90 cursor-pointer transition-colors shadow-xs"
+                          className="px-2.5 py-1 rounded bg-primary text-on-primary text-[10px] font-semibold hover:bg-primary/90 cursor-pointer transition-colors shadow-xs"
                         >
                           + Add
                         </button>
@@ -263,14 +259,14 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
         <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/80">
           <button
             onClick={() => setSelectedBundleForEdit(null)}
-            className="px-4 py-2 rounded-xl border border-outline-variant text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+            className="px-4 py-2 rounded border border-outline-variant text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveUpdateBundle}
             disabled={submitting || editBundleForm.selectedExpenseIds.length === 0}
-            className="px-5 py-2.5 rounded-xl bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98]"
+            className="px-5 py-2.5 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98]"
           >
             {submitting ? 'Saving Changes...' : 'Save Bundle Changes'}
           </button>

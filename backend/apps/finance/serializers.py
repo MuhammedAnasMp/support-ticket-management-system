@@ -53,12 +53,38 @@ def serialize_user_summary(user):
     }
 
 
-def serialize_approval_instance_summary(inst):
+def serialize_approval_instance_summary(inst, user=None):
     if not inst:
         return None
     action_by_full_name = None
     if inst.action_by:
         action_by_full_name = getattr(inst.action_by, 'full_name', '') or inst.action_by.username
+
+    assigned_users_names = []
+    assigned_users_ids = []
+    workflow_steps = []
+    if inst.step:
+        assigned_users_names = [u.full_name or u.username for u in inst.step.assigned_users.all()]
+        assigned_users_ids = [u.pk for u in inst.step.assigned_users.all()]
+        if inst.step.workflow:
+            steps = inst.step.workflow.steps.prefetch_related('assigned_users').select_related('assigned_role').order_by('step_order')
+            workflow_steps = [
+                {
+                    'step_id': s.step_id,
+                    'step_order': s.step_order,
+                    'step_name': s.step_name,
+                    'assigned_role_name': s.assigned_role.role_name if s.assigned_role else '',
+                    'assigned_users_ids': [u.pk for u in s.assigned_users.all()],
+                    'assigned_users_names': [u.full_name or u.username for u in s.assigned_users.all()],
+                    'is_final_step': s.is_final_step
+                }
+                for s in steps
+            ]
+
+    can_action = False
+    if user and getattr(user, 'is_authenticated', False) and inst.status == 'Pending':
+        from .services import ApprovalService
+        can_action = ApprovalService.can_user_action_step(user, inst.step, inst)
 
     return {
         'instance_id': inst.instance_id,
@@ -66,6 +92,10 @@ def serialize_approval_instance_summary(inst):
         'step_name': inst.step.step_name if inst.step else 'Step',
         'step_order': inst.step.step_order if inst.step else 0,
         'assigned_role_name': inst.step.assigned_role.role_name if (inst.step and inst.step.assigned_role) else '',
+        'assigned_users_names': assigned_users_names,
+        'assigned_users_ids': assigned_users_ids,
+        'workflow_steps': workflow_steps,
+        'can_action': can_action,
         'action_by': inst.action_by_id,
         'action_by_username': inst.action_by.username if inst.action_by else None,
         'action_by_full_name': action_by_full_name,
@@ -268,6 +298,7 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
     ticket_details = serializers.SerializerMethodField()
     expenses = serializers.SerializerMethodField()
     approval_history = serializers.SerializerMethodField()
+    approval_instances = serializers.SerializerMethodField()
     ledger_details = serializers.SerializerMethodField()
 
     class Meta:
@@ -303,9 +334,14 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         return ExpenseSerializer(obj.expenses.all(), many=True).data
 
     def get_approval_history(self, obj):
+        request = self.context.get('request')
+        user = request.user if request else None
         insts = list(obj.approval_instances.all())
         insts.sort(key=lambda x: (x.step.step_order if x.step else 0, x.created_at or timezone.now()))
-        return [serialize_approval_instance_summary(inst) for inst in insts]
+        return [serialize_approval_instance_summary(inst, user=user) for inst in insts]
+
+    def get_approval_instances(self, obj):
+        return self.get_approval_history(obj)
 
     def get_ledger_details(self, obj):
         ledgers = list(obj.ledgers.all())

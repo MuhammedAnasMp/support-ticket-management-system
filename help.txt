@@ -11,3 +11,6 @@ venv\Scripts\activate && daphne -b 127.0.0.1 -p 8000 config.asgi:application
 
 
 
+
+
+https://huggingface.co/miku552/Qwen3-1.7B-Q4_K_M-GGUF/tree/main

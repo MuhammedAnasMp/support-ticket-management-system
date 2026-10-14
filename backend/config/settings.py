@@ -126,11 +126,6 @@ if not DEBUG and os.environ.get("DB_NAME"):
     }
 else:
     print("<DEV>")
-    print("<DEV>")
-    print("<DEV>")
-    print("<DEV>")
-    print("<DEV>")
-
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',

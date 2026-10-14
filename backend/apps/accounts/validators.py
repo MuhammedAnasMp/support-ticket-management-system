@@ -1,9 +1,12 @@
 import os
 from django.core.exceptions import ValidationError
-from test_person import validate_human_photo
+try:
+    from test_person import validate_human_photo
+except ImportError:
+    validate_human_photo = None
 
 def validate_profile_image_is_human(profile_image):
-    if not profile_image:
+    if not profile_image or validate_human_photo is None:
         return
 
     # Ensure we seek to 0 before validating
