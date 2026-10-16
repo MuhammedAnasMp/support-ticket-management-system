@@ -50,7 +50,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
-      <div className="bg-surface-container rounded border border-outline-variant/80 max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl text-on-surface relative overflow-hidden transition-all">
+      <div className="bg-surface-container rounded border border-outline-variant/80 max-w-2xl w-full p-4 sm:p-3 space-y-3 shadow-2xl text-on-surface relative overflow-hidden transition-all">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/80 pb-3.5">
           <div className="flex items-center gap-3">

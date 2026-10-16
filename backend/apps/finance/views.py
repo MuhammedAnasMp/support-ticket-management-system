@@ -597,6 +597,55 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
 
+    @action(detail=True, methods=['post'], url_path='action')
+    def action_bundle(self, request, pk=None):
+        bundle = self.get_object()
+        action_name = request.data.get('action', 'APPROVED') # 'APPROVED', 'REJECTED', 'REWORK'
+        comments = request.data.get('comments')
+        user = request.user
+
+        pending_instance = bundle.approval_instances.filter(status='Pending').order_by('created_at').first()
+        if not pending_instance and bundle.status in ['Submitted', 'In Review']:
+            pending_instance = ApprovalService.start_workflow(bundle, user, ip_address=request.META.get('REMOTE_ADDR'))
+
+        if pending_instance:
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            try:
+                instance = ApprovalService.action_step(
+                    instance_id=pending_instance.instance_id,
+                    actor=user,
+                    action=action_name,
+                    comments=comments,
+                    ip_address=request.META.get('REMOTE_ADDR')
+                )
+                bundle.refresh_from_db()
+                return Response({'status': 'success', 'approval': ApprovalInstanceSerializer(instance).data, 'bundle': WorkerClaimSerializer(bundle).data}, status=status.HTTP_200_OK)
+            except DjangoValidationError as e:
+                msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
+                raise exceptions.ValidationError({'detail': msg})
+
+        is_admin = user.is_superuser or getattr(user, 'is_staff', False) or (hasattr(user, 'role') and user.role and user.role.role_name.lower() in ('administrator', 'admin'))
+        if not is_admin and not user.has_perm('finance.approve_bundle') and not user.has_perm('finance.approve_workerclaim'):
+            raise exceptions.PermissionDenied({'detail': 'You do not have permission to approve this bundle.'})
+
+        if action_name == 'APPROVED':
+            bundle.status = 'Approved'
+            bundle.save(update_fields=['status'])
+            create_audit_event('WorkerClaim', bundle.pk, 'MANUALLY_APPROVED', actor=user, payload={'comments': comments}, ip_address=request.META.get('REMOTE_ADDR'))
+        elif action_name == 'REWORK':
+            bundle.status = 'Rework'
+            bundle.save(update_fields=['status'])
+            bundle.approval_instances.filter(status='Pending').delete()
+            create_audit_event('WorkerClaim', bundle.pk, 'MANUALLY_REWORK', actor=user, payload={'comments': comments}, ip_address=request.META.get('REMOTE_ADDR'))
+        elif action_name == 'REJECTED':
+            bundle.status = 'Rejected'
+            bundle.save(update_fields=['status'])
+            bundle.approval_instances.filter(status='Pending').delete()
+            create_audit_event('WorkerClaim', bundle.pk, 'MANUALLY_REJECTED', actor=user, payload={'comments': comments}, ip_address=request.META.get('REMOTE_ADDR'))
+
+        bundle.refresh_from_db()
+        return Response({'status': 'success', 'bundle': WorkerClaimSerializer(bundle).data}, status=status.HTTP_200_OK)
+
 
     def perform_destroy(self, instance):
         user = self.request.user
@@ -1145,8 +1194,32 @@ class ApprovalInstanceViewSet(viewsets.ReadOnlyModelViewSet):
 
         from django.core.exceptions import ValidationError as DjangoValidationError
         try:
+            # 1. Look up directly by ApprovalInstance primary key
+            target_instance = ApprovalInstance.objects.filter(pk=pk).first()
+
+            # 2. If not found, pk may be a claim_id, expense_id, or ledger_id
+            if not target_instance:
+                target_instance = (
+                    ApprovalInstance.objects.filter(claim_id=pk, status='Pending').order_by('created_at').first() or
+                    ApprovalInstance.objects.filter(expense_id=pk, status='Pending').order_by('created_at').first() or
+                    ApprovalInstance.objects.filter(ledger_id=pk, status='Pending').order_by('created_at').first()
+                )
+
+            # 3. If still not found, check if a WorkerClaim, Expense, or Ledger exists in review that needs workflow initialization
+            if not target_instance:
+                bundle = WorkerClaim.objects.filter(pk=pk, status__in=['In Review', 'Submitted']).first()
+                if bundle:
+                    target_instance = ApprovalService.start_workflow(bundle, request.user, ip_address=request.META.get('REMOTE_ADDR'))
+                else:
+                    exp = Expense.objects.filter(pk=pk, approved=False).first()
+                    if exp:
+                        target_instance = ApprovalService.start_workflow(exp, request.user, ip_address=request.META.get('REMOTE_ADDR'))
+
+            if not target_instance:
+                raise exceptions.NotFound({'detail': f'Approval instance #{pk} not found.'})
+
             instance = ApprovalService.action_step(
-                instance_id=pk,
+                instance_id=target_instance.instance_id,
                 actor=request.user,
                 action=action_name,
                 comments=comments,

@@ -442,26 +442,47 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     try {
       const activePendingApp = approvalData?.group?.items?.find(i => i.status === 'Pending') || approvalData?.app;
 
-      if (approvalsProps?.handleActionApproval && activePendingApp) {
-        await approvalsProps.handleActionApproval(action, comment, activePendingApp);
-        setReworkComments(prev => ({ ...prev, [bundle.claim_id]: '' }));
-      } else if (activePendingApp?.instance_id) {
-        const res = await fetch(`${API_URL}/finance/approvals/${activePendingApp.instance_id}/action/`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Token ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ action, comments: comment })
-        });
+      let actionDone = false;
+      if (approvalsProps?.handleActionApproval && activePendingApp && activePendingApp.instance_id && activePendingApp.instance_id !== bundle.claim_id) {
+        try {
+          await approvalsProps.handleActionApproval(action, comment, activePendingApp);
+          actionDone = true;
+        } catch (e) {
+          // If handleActionApproval fails, fall through to direct endpoints
+        }
+      }
+
+      if (!actionDone) {
+        let res: Response | null = null;
+        if (activePendingApp?.instance_id && activePendingApp.instance_id !== bundle.claim_id) {
+          res = await fetch(`${API_URL}/finance/approvals/${activePendingApp.instance_id}/action/`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Token ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ action, comments: comment })
+          });
+        }
+        if (!res || !res.ok) {
+          res = await fetch(`${API_URL}/finance/claim/${bundle.claim_id}/action/`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Token ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ action, comments: comment })
+          });
+        }
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || 'Failed to action bundle');
         }
-        setReworkComments(prev => ({ ...prev, [bundle.claim_id]: '' }));
-        if (onRefresh) {
-          await onRefresh();
-        }
+      }
+
+      setReworkComments(prev => ({ ...prev, [bundle.claim_id]: '' }));
+      if (onRefresh) {
+        await onRefresh();
       }
     } catch (err: any) {
       setReworkErrors(prev => ({ ...prev, [bundle.claim_id]: err.message || 'Failed to action bundle' }));
@@ -1274,7 +1295,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     <span>Edit</span>
                                   </button>
                                 </Can>
-                                <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
+                                <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                   <button
                                     onClick={() => onHandleSubmitBundle(b.claim_id)}
                                     disabled={submittingBundleId === b.claim_id || submitting}
@@ -1290,7 +1311,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     )}
                                   </button>
                                 </Can>
-                                <Can permission={["finance.delete_bundle", "finance.delete_workerclaim"] as any}>
+                                <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                   <button
                                     onClick={() => handleDeleteBundle(b.claim_id)}
                                     disabled={submitting}
@@ -1485,9 +1506,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                               {/* Rejected or Rework Banner & Edit Button */}
                               {isRejectedOrRework && (
-                                <div className={`p-3.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${
-                                  isRejected ? 'border-rose-500/30 bg-rose-500/10' : 'border-purple-500/30 bg-purple-500/10'
-                                }`}>
+                                <div className={`p-3.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${isRejected ? 'border-rose-500/30 bg-rose-500/10' : 'border-purple-500/30 bg-purple-500/10'
+                                  }`}>
                                   <div className="space-y-0.5">
                                     <div className="flex items-center gap-2">
                                       <span className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white shadow-xs ${isRejected ? 'bg-rose-600' : 'bg-purple-600'}`}>
@@ -1522,9 +1542,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         type="button"
                                         disabled={submittingBundleId === b.claim_id || submitting}
                                         onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                        className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${
-                                          isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
-                                        }`}
+                                        className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
+                                          }`}
                                       >
                                         {submittingBundleId === b.claim_id ? (
                                           <>
@@ -1568,11 +1587,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                           if (val.trim()) setReworkErrors(prev => ({ ...prev, [b.claim_id]: '' }));
                                         }}
                                         placeholder="Review comments (required for rework)..."
-                                        className={`px-3 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-64 transition-all ${
-                                          reworkErrors[b.claim_id]
-                                            ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                                            : 'border-outline-variant bg-surface-container-low focus:border-primary'
-                                        }`}
+                                        className={`px-3 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-64 transition-all ${reworkErrors[b.claim_id]
+                                          ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                                          : 'border-outline-variant bg-surface-container-low focus:border-primary'
+                                          }`}
                                       />
                                       <button
                                         type="button"
@@ -1711,6 +1729,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                                       type="button"
                                                       onClick={(e) => {
                                                         e.stopPropagation();
+                                                        if ((b.expenses?.length || 0) <= 1) {
+                                                          alert("Cannot remove the only expense. Please delete the Bundle instead.");
+                                                          return;
+                                                        }
                                                         handleRemoveExpenseFromBundle(b.claim_id, exp.expense_id);
                                                       }}
                                                       className="px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 transition-colors inline-flex items-center gap-1 cursor-pointer"
@@ -2471,6 +2493,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 type="button"
                                 onClick={async (e) => {
                                   e.stopPropagation();
+                                  if ((selectedBundleForView.expenses?.length || 0) <= 1) {
+                                    alert("Cannot remove the only expense. Please delete the Bundle instead.");
+                                    return;
+                                  }
                                   await handleRemoveExpenseFromBundle(selectedBundleForView.claim_id, exp.expense_id);
                                   const updatedExpenses = (selectedBundleForView.expenses || []).filter(item => item.expense_id !== exp.expense_id);
                                   if (updatedExpenses.length === 0) {

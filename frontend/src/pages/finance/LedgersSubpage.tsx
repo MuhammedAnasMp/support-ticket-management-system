@@ -1987,12 +1987,12 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                     {deletingGroupId === cluster.groupId ? (
                                       <>
                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        <span>Removing...</span>
+                                        <span>Deleting...</span>
                                       </>
                                     ) : (
                                       <>
                                         <Trash2 className="w-3.5 h-3.5" />
-                                        <span>Remove</span>
+                                        <span>Delete</span>
                                       </>
                                     )}
                                   </button>
@@ -2173,6 +2173,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                               disabled={isRemovingBundle}
                                               onClick={async (e) => {
                                                 e.stopPropagation();
+                                                const totalBundlesInGroup = getGroupBundleBreakdown(cluster).length;
+                                                if (totalBundlesInGroup <= 1) {
+                                                  alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+                                                  return;
+                                                }
                                                 setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
                                                 try {
                                                   if (handleRemoveBundleFromGroup) {
@@ -2193,7 +2198,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                               {isRemovingBundle ? (
                                                 <>
                                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                  <span>Removing Bundle...</span>
+                                                  <span>Removing...</span>
                                                 </>
                                               ) : (
                                                 <>
@@ -2275,6 +2280,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                           <button
                                                             onClick={(e) => {
                                                               e.stopPropagation();
+                                                              if ((parentLedger.expenses?.length || 0) <= 1) {
+                                                                alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                return;
+                                                              }
                                                               handleRemoveExpenseFromLedger(parentLedger.ledger_id, exp.expense_id);
                                                             }}
                                                             className="px-2 py-0.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
@@ -2625,6 +2634,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                         <button
                                                                           onClick={(e) => {
                                                                             e.stopPropagation();
+                                                                            if (ledgerExpenses.length <= 1) {
+                                                                              alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                              return;
+                                                                            }
                                                                             handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
                                                                           }}
                                                                           className="px-2 py-0.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
@@ -2827,6 +2840,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                         <button
                                                                           onClick={(e) => {
                                                                             e.stopPropagation();
+                                                                            if (ledgerExpenses.length <= 1) {
+                                                                              alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                              return;
+                                                                            }
                                                                             handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
                                                                           }}
                                                                           className="px-2 py-0.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"
@@ -2911,6 +2928,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                             <button
                                                               onClick={(e) => {
                                                                 e.stopPropagation();
+                                                                if (ledgerExpenses.length <= 1) {
+                                                                  alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                  return;
+                                                                }
                                                                 handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
                                                               }}
                                                               className="px-2 py-0.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px]"

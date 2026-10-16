@@ -241,6 +241,12 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleRemoveExpenseFromBundle = async (bundleId: number, expenseId: number) => {
+    const targetBundle = (bundles || []).find(b => b.claim_id === bundleId);
+    if ((targetBundle?.expenses?.length ?? 0) <= 1) {
+      alert("Cannot remove the only expense. Please delete the Bundle instead.");
+      setErrorMessage("Cannot remove the only expense. Please delete the Bundle instead.");
+      return;
+    }
     if (!window.confirm(`Are you sure you want to remove Expense #${expenseId} from Bundle #${bundleId}? The bundle status will reset to Draft.`)) return;
     setSubmitting(true);
     setErrorMessage(null);
@@ -337,6 +343,12 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleRemoveExpenseFromLedger = async (ledgerId: number, expenseId: number) => {
+    const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
+    if ((targetLedger?.expenses?.length ?? 0) <= 1) {
+      alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+      setErrorMessage("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+      return;
+    }
     if (!window.confirm(`Are you sure you want to remove Expense ${expenseId} from this Ledger Batch?`)) return;
     setSubmitting(true);
     setErrorMessage(null);
@@ -407,6 +419,12 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleRemoveBundleFromLedger = async (ledgerId: number, bundleId: number) => {
+    const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
+    if ((targetLedger?.bundles?.length ?? 0) <= 1) {
+      alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+      setErrorMessage("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+      return;
+    }
     if (!window.confirm(`Are you sure you want to detach Bundle #${bundleId} from Ledger #${ledgerId}?`)) return;
     setSubmitting(true);
     setErrorMessage(null);
@@ -428,6 +446,14 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleRemoveBundleFromGroup = async (groupId: number, bundleId: number) => {
+    const groupLedgers = (ledgers || []).filter(l => l.ledger_group === groupId || l.ledger_group_id === groupId || l.ledger_group_detail?.ledger_group_id === groupId);
+    const distinctBundleIds = new Set<number>();
+    groupLedgers.forEach(l => (l.bundles || []).forEach((b: any) => { const id = b.claim_id || b.id; if (id) distinctBundleIds.add(id); }));
+    if (distinctBundleIds.size <= 1) {
+      alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+      setErrorMessage("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+      return;
+    }
     if (!window.confirm(`Are you sure you want to remove Bundle #${bundleId} from this Ledger Group?`)) return;
     setSubmitting(true);
     setErrorMessage(null);
@@ -1173,7 +1199,10 @@ export const FinanceView: React.FC = () => {
     setErrorMessage(null);
     try {
       const isDirectExp = (targetApp as any).is_direct_expense;
-      const expId = targetApp.expense || targetApp.expense_id || targetApp.instance_id;
+      const isBundle = Boolean(targetApp.claim || targetApp.claim_id || targetApp.target_summary?.type === 'Bundle');
+      const bundleId = targetApp.claim || targetApp.claim_id || (targetApp.target_summary?.type === 'Bundle' ? targetApp.target_summary?.id : undefined);
+      const isExp = Boolean(targetApp.expense || targetApp.expense_id || targetApp.target_summary?.type === 'Expense' || isDirectExp);
+      const expId = targetApp.expense || targetApp.expense_id;
       let res: Response;
 
       const bodyPayload: any = { action: actionToPerform, comments: commentsToSend };
@@ -1197,12 +1226,20 @@ export const FinanceView: React.FC = () => {
           body: JSON.stringify(bodyPayload)
         });
 
-        if (!res.ok && expId) {
-          res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
-            method: 'POST',
-            headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyPayload)
-          });
+        if (!res.ok) {
+          if (isBundle && bundleId) {
+            res = await fetch(`${API_URL}/finance/claim/${bundleId}/action/`, {
+              method: 'POST',
+              headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyPayload)
+            });
+          } else if (isExp && expId) {
+            res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
+              method: 'POST',
+              headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyPayload)
+            });
+          }
         }
       }
 
@@ -1254,7 +1291,28 @@ export const FinanceView: React.FC = () => {
         }));
       }
 
-      // 3. Update Expenses state directly if applicable
+      // 3. Update Bundles state directly if applicable
+      const targetClaimId = bundleId || (updatedInstance && updatedInstance.claim_id);
+      if (targetClaimId) {
+        setBundles(prev => prev.map(b => {
+          if (b.claim_id === targetClaimId) {
+            if (data.bundle && typeof data.bundle === 'object') {
+              return { ...b, ...data.bundle };
+            }
+            const nextStatus = actionToPerform === 'REWORK'
+              ? 'Rework'
+              : actionToPerform === 'REJECTED'
+                ? 'Rejected'
+                : (data.all_completed || data.status === 'Approved')
+                  ? 'Approved'
+                  : b.status;
+            return { ...b, status: nextStatus };
+          }
+          return b;
+        }));
+      }
+
+      // 4. Update Expenses state directly if applicable
       if (expId) {
         setExpenses(prev => prev.map(e => {
           if (e.expense_id === expId) {
@@ -1275,7 +1333,7 @@ export const FinanceView: React.FC = () => {
         }));
       }
 
-      // 4. Silent background sync without table spinner
+      // 5. Silent background sync without table spinner
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);

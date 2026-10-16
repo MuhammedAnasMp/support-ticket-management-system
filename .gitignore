@@ -172,3 +172,4 @@ backend/qwen3-1.7b-q4_k_m.gguf
 backend/test_summery.py
 backend/maintenance_summary.txt
 backend/maintenance.txt
+backend/pull_db.bat

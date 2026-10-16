@@ -492,6 +492,10 @@ class BundleService:
                 raise ValidationError(
                     f"Bundle #{bundle_id} is already paid and cannot be modified.")
 
+            if bundle.expenses.count() <= 1:
+                raise ValidationError(
+                    "Cannot remove the only expense. Please delete the Bundle instead.")
+
             for lg in bundle.ledgers.all():
                 if getattr(lg.ledger_group, 'is_completed', False) or lg.status == 'Paid':
                     raise ValidationError(
@@ -828,6 +832,10 @@ class LedgerService:
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
 
+            if ledger.expenses.count() <= 1:
+                raise ValidationError(
+                    "Cannot remove the only expense. Please delete the Ledger Batch instead.")
+
             expense = Expense.objects.select_for_update().get(pk=expense_id)
 
             # Unlink expense from its bundle if it belongs to one
@@ -1105,6 +1113,12 @@ class LedgerService:
             bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
             ledgers = list(group.ledgers.select_for_update().all())
 
+            # Check if this is the only bundle in the group
+            total_bundles = sum(l.bundles.count() for l in ledgers)
+            if total_bundles <= 1:
+                raise ValidationError(
+                    "Cannot remove the only bundle. Please delete the Ledger Batch instead.")
+
             # Check if any ledger containing this bundle or its expenses is Paid
             for l in ledgers:
                 if l.status == 'Paid' and (bundle in l.bundles.all() or any(e.claim_id == bundle_id for e in l.expenses.all())):
@@ -1155,6 +1169,10 @@ class LedgerService:
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
+
+            if ledger.bundles.count() <= 1:
+                raise ValidationError(
+                    "Cannot remove the only bundle. Please delete the Ledger Batch instead.")
 
             bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
             if bundle not in ledger.bundles.all():
