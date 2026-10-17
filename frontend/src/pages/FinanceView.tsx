@@ -110,6 +110,14 @@ export const FinanceView: React.FC = () => {
   const [showApprovalModal, setShowApprovalModal] = useState<ApprovalInstanceItem | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState<PaymentItem | WorkerClaimItem | LedgerItem | null>(null);
 
+  // Syncing state for newly created bundle row loader
+  const [isSyncingNewBundle, setIsSyncingNewBundle] = useState<boolean>(false);
+  const [syncingBundleInfo, setSyncingBundleInfo] = useState<{
+    claim_id?: number | string;
+    worker_name?: string;
+    amount?: number;
+  } | null>(null);
+
   // Bundle Detail View & Edit Modal States
   const [selectedBundleForView, setSelectedBundleForView] = useState<WorkerClaimItem | null>(null);
   const [selectedBundleForEdit, setSelectedBundleForEdit] = useState<WorkerClaimItem | null>(null);
@@ -247,7 +255,7 @@ export const FinanceView: React.FC = () => {
       setErrorMessage("Cannot remove the only expense. Please delete the Bundle instead.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to remove Expense #${expenseId} from Bundle #${bundleId}? The bundle status will reset to Draft.`)) return;
+    if (!window.confirm(`Are you sure you want to remove Expense ${expenseId} from Bundle ${bundleId}? The bundle status will reset to Draft.`)) return;
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -262,7 +270,7 @@ export const FinanceView: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to remove expense from bundle');
 
-      setSuccessMessage(`Expense #${expenseId} removed from Bundle #${bundleId}. Bundle status reset to Draft.`);
+      setSuccessMessage(`Expense ${expenseId} removed from Bundle ${bundleId}. Bundle status reset to Draft.`);
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -345,8 +353,8 @@ export const FinanceView: React.FC = () => {
   const handleRemoveExpenseFromLedger = async (ledgerId: number, expenseId: number) => {
     const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
     if ((targetLedger?.expenses?.length ?? 0) <= 1) {
-      alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
-      setErrorMessage("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+      alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
+      setErrorMessage("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
       return;
     }
     if (!window.confirm(`Are you sure you want to remove Expense ${expenseId} from this Ledger Batch?`)) return;
@@ -380,7 +388,7 @@ export const FinanceView: React.FC = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to add bundle to ledger');
-      setSuccessMessage(`Bundle #${bundleId} attached to Ledger Batch #${ledgerId}.`);
+      setSuccessMessage(`Bundle ${bundleId} attached to Ledger Batch ${ledgerId}.`);
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -404,11 +412,11 @@ export const FinanceView: React.FC = () => {
           body: JSON.stringify({ bundle_id: bId, bundle_ids: [bId] })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || `Failed to add Bundle #${bId} to ledger group`);
+        if (!res.ok) throw new Error(data.detail || `Failed to add Bundle ${bId} to ledger group`);
       }
 
       const count = bundleIds.length;
-      setSuccessMessage(`${count} bundle${count > 1 ? 's' : ''} successfully added to Ledger Group #${groupId}.`);
+      setSuccessMessage(`${count} bundle${count > 1 ? 's' : ''} successfully added to Ledger Group ${groupId}.`);
       await fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -425,7 +433,7 @@ export const FinanceView: React.FC = () => {
       setErrorMessage("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to detach Bundle #${bundleId} from Ledger #${ledgerId}?`)) return;
+    if (!window.confirm(`Are you sure you want to detach Bundle ${bundleId} from Ledger ${ledgerId}?`)) return;
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -436,7 +444,7 @@ export const FinanceView: React.FC = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to remove bundle');
-      setSuccessMessage(`Bundle #${bundleId} detached from Ledger #${ledgerId}.`);
+      setSuccessMessage(`Bundle ${bundleId} detached from Ledger ${ledgerId}.`);
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -454,7 +462,7 @@ export const FinanceView: React.FC = () => {
       setErrorMessage("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to remove Bundle #${bundleId} from this Ledger Group?`)) return;
+    if (!window.confirm(`Are you sure you want to remove Bundle ${bundleId} from this Ledger Group?`)) return;
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -465,7 +473,7 @@ export const FinanceView: React.FC = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to remove bundle from group');
-      setSuccessMessage(`Bundle #${bundleId} removed from Ledger Group.`);
+      setSuccessMessage(`Bundle ${bundleId} removed from Ledger Group.`);
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -486,7 +494,7 @@ export const FinanceView: React.FC = () => {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || data.error || 'Failed to delete Ledger Group');
       }
-      setSuccessMessage(`Ledger Group #${groupId} deleted successfully.`);
+      setSuccessMessage(`Ledger Group ${groupId} deleted successfully.`);
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -527,10 +535,10 @@ export const FinanceView: React.FC = () => {
     const dateParams = (filterDateFrom && filterDateTo)
       ? `&from_date=${filterDateFrom}&to_date=${filterDateTo}`
       : filterDateFrom
-      ? `&from_date=${filterDateFrom}`
-      : filterDateTo
-      ? `&to_date=${filterDateTo}`
-      : '';
+        ? `&from_date=${filterDateFrom}`
+        : filterDateTo
+          ? `&to_date=${filterDateTo}`
+          : '';
 
     const approvalsUrl = roleFilterOnly
       ? `${API_URL}/finance/approvals/?assigned_to_me=true&page_size=all${dateParams}`
@@ -753,6 +761,11 @@ export const FinanceView: React.FC = () => {
 
     for (const [gId, groupBatches] of groupBatchesMap.entries()) {
       const matchedDynGroup = ledgerGroups?.find(g => String(g.ledger_group_id) === String(gId));
+      const isPaid = Boolean(
+        matchedDynGroup?.is_paid ||
+        groupBatches.some(b => b.ledger_group_detail?.is_paid) ||
+        (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Paid'))
+      );
       const isCompleted = Boolean(
         matchedDynGroup?.is_completed ||
         groupBatches.some(b => b.ledger_group_detail?.is_completed)
@@ -760,7 +773,9 @@ export const FinanceView: React.FC = () => {
 
       // Determine unified Ledger Group status
       let groupStatus = 'Draft';
-      if (isCompleted) {
+      if (isPaid) {
+        groupStatus = 'Paid';
+      } else if (isCompleted) {
         groupStatus = 'Completed';
       } else if (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Paid')) {
         groupStatus = 'Paid';
@@ -1041,6 +1056,7 @@ export const FinanceView: React.FC = () => {
     const firstSelected = unclaimedExpenses.find(e => selectedExpenseIds.includes(e.expense_id));
     const firstWorkerObj = firstSelected ? (typeof firstSelected.worker === 'object' ? firstSelected.worker : firstSelected.worker_detail) : null;
     const targetWorkerId = firstWorkerObj ? firstWorkerObj.id : undefined;
+    const workerName = firstWorkerObj?.full_name || firstWorkerObj?.username || 'Worker';
 
     try {
       const res = await fetch(`${API_URL}/finance/claim/create-bundle/`, {
@@ -1062,25 +1078,48 @@ export const FinanceView: React.FC = () => {
         const errorMsg = data.detail || (typeof data === 'object' ? Object.values(data).flat().join(' ') : 'Failed to create claim bundle');
         throw new Error(errorMsg);
       }
-      setSuccessMessage(`Bundle #${data.claim_id} created successfully.`);
+
+      // Activate the skeleton row loader immediately with the created bundle's metadata
+      const newBundleInfo = {
+        claim_id: data.claim_id,
+        worker_name: (typeof data.worker_detail === 'object' ? (data.worker_detail?.full_name || data.worker_detail?.username) : '') || workerName || 'Worker',
+        amount: data.total_amount ? Number(data.total_amount) : selectedExpensesTotal
+      };
+      setSyncingBundleInfo(newBundleInfo);
+      setIsSyncingNewBundle(true);
+
+      setSuccessMessage(`Bundle ${data.claim_id} created successfully.`);
       setShowCreateBundleModal(false);
       setSelectedExpenseIds([]);
       setBundleRemarks('');
-      fetchData(true);
+
+      // Optimistically append/insert to bundles list if not present
+      if (data && data.claim_id) {
+        setBundles(prev => {
+          if (prev.some(b => b.claim_id === data.claim_id)) return prev;
+          return [data, ...prev];
+        });
+      }
+
+      await fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
       setSubmitting(false);
+      // Keep skeleton loader active briefly so it transitions smoothly when fresh data is displayed
+      setTimeout(() => {
+        setIsSyncingNewBundle(false);
+        setSyncingBundleInfo(null);
+      }, 800);
     }
   };
 
   const handleSubmitBundle = async (claimId: number) => {
     const bundleToSubmit = (bundles || []).find(c => c.claim_id === claimId);
     if (bundleToSubmit && (!bundleToSubmit.expenses || bundleToSubmit.expenses.length === 0)) {
-      setErrorMessage(`Cannot submit Bundle #${claimId}: No expenses attached to this bundle.`);
+      setErrorMessage(`Cannot submit Bundle ${claimId}: No expenses attached to this bundle.`);
       return;
     }
-    setSubmitting(true);
     setErrorMessage(null);
     try {
       const res = await fetch(`${API_URL}/finance/claim/${claimId}/submit/`, {
@@ -1090,11 +1129,13 @@ export const FinanceView: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Submission failed');
       setSuccessMessage(`Bundle ${claimId} submitted into multi-step approval workflow.`);
-      fetchData(true);
+
+      // Optimistically update status so UI reflects submission immediately
+      setBundles(prev => prev.map(b => b.claim_id === claimId ? { ...b, status: 'Submitted' } : b));
+
+      await fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -1157,7 +1198,7 @@ export const FinanceView: React.FC = () => {
     const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
     const bundleCount = (targetLedger?.bundles?.length || 0) + (targetLedger?.expenses?.length || 0);
     if (targetLedger && bundleCount === 0) {
-      setErrorMessage(`Cannot submit Ledger Batch #${ledgerId}: Must have at least one claim bundle attached.`);
+      setErrorMessage(`Cannot submit Ledger Batch ${ledgerId}: Must have at least one claim bundle attached.`);
       return;
     }
     setSubmitting(true);
@@ -1459,7 +1500,8 @@ export const FinanceView: React.FC = () => {
       if (filterDateTo && e.expense_date && e.expense_date > filterDateTo) return false;
 
       if (statusFilter !== 'ALL') {
-        const st = e.status_display || (e.approved ? 'Approved' : 'Pending Approval');
+        const isPaid = Boolean(e.is_paid || e.status_display === 'Paid' || (e.claim && ((e.claim as any).status === 'Paid' || (e as any).claim_status === 'Paid')));
+        const st = isPaid ? 'Paid' : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
         if (st.toLowerCase() !== statusFilter.toLowerCase()) return false;
       }
 
@@ -1807,6 +1849,8 @@ export const FinanceView: React.FC = () => {
           setErrorMessage={setErrorMessage}
           setSelectedTicketForModal={setSelectedTicketForModal}
           onRefresh={() => fetchData(true)}
+          isSyncingNewBundle={isSyncingNewBundle}
+          syncingBundleInfo={syncingBundleInfo}
         />
       )}
 

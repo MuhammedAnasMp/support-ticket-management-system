@@ -180,7 +180,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className={`font-semibold ${!isSelectable ? 'text-on-surface-variant' : 'text-on-surface'}`}>
-                            {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense #${exp.expense_id}`}
+                            {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense ${exp.expense_id}`}
                           </p>
                           <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                             {parseFloat(exp.amount).toFixed(2)}

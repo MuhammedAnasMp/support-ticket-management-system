@@ -168,7 +168,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             return;
         }
         setLoadingNatures(true);
-        fetch(`${API_URL}/maintenance/worknature/?department=${createForm.department_id}`, {
+        fetch(`${API_URL}/maintenance/worknature/?department=${createForm.department_id}&exclude_office=true`, {
             headers: token ? { Authorization: `Token ${token}` } : {}
         })
             .then(res => res.json())
@@ -184,12 +184,28 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             .finally(() => setLoadingNatures(false));
     }, [createForm.department_id, token]);
 
-    const filteredNatures = localNatures;
+    const isOfficeNature = useCallback((n: any): boolean => {
+        if (!n) return false;
+        const subDeptName = (
+            n.sub_department?.sub_department_name ||
+            n.sub_department_name ||
+            (typeof n.sub_department === 'string' ? n.sub_department : '') ||
+            ''
+        ).toLowerCase().trim();
+        if (subDeptName === 'office') return true;
+        const natureName = (n.nature_name || '').toLowerCase().trim();
+        if (natureName === 'office related' || natureName === 'office') return true;
+        return false;
+    }, []);
+
+    const filteredNatures = useMemo(() => {
+        return (localNatures || []).filter(n => !isOfficeNature(n));
+    }, [localNatures, isOfficeNature]);
 
     const selectedNature = useMemo(() => {
         return filteredNatures.find(n => Number(n.nature_id) === Number(createForm.nature_id)) ||
-            natures.find(n => Number(n.nature_id) === Number(createForm.nature_id));
-    }, [filteredNatures, natures, createForm.nature_id]);
+            (natures || []).filter(n => !isOfficeNature(n)).find(n => Number(n.nature_id) === Number(createForm.nature_id));
+    }, [filteredNatures, natures, createForm.nature_id, isOfficeNature]);
 
     const isMediaRequired = selectedNature ? (selectedNature.media_required !== false) : false;
 

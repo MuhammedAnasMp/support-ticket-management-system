@@ -5,7 +5,7 @@ import permissions from "./default_permissions.json";
 export type PermissionKey = keyof typeof permissions.permission_definitions;
 
 interface CanProps {
-    permission: PermissionKey | PermissionKey[] | boolean;
+    permission: PermissionKey | PermissionKey[] | boolean | (string & {}) | (string & {})[];
     children: React.ReactNode;
 
     // Optional: yellow badge instead of red

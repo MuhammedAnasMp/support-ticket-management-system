@@ -727,6 +727,46 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(group)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='pay')
+    def pay_group(self, request, pk=None):
+        group = self.get_object()
+        user = request.user
+        role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
+        is_cash_office = (
+            role_name in ('cash office', 'cash officer', 'cashier') or
+            user.has_perm('finance.pay_ledger') or
+            user.has_perm('finance.pay_ledger_group') or
+            user.is_superuser or
+            role_name in ('administrator', 'admin')
+        )
+        if not is_cash_office:
+            return Response(
+                {'detail': 'Permission denied. Only Cash Office role or authorized payment officers can disburse cash settlement.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        payment_method = request.data.get('payment_method', 'Cash')
+        payment_reference = request.data.get('transaction_reference') or request.data.get('payment_reference')
+        remarks = request.data.get('remarks') or request.data.get('payment_remarks')
+        recipient_name = request.data.get('recipient_name')
+
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        try:
+            paid_group = PaymentService.pay_ledger_group(
+                group_id=group.ledger_group_id,
+                actor=request.user,
+                payment_method=payment_method,
+                payment_reference=payment_reference,
+                remarks=remarks,
+                recipient_name=recipient_name,
+                ip_address=request.META.get('REMOTE_ADDR')
+            )
+            serializer = self.get_serializer(paid_group)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=True, methods=['post'], url_path='submit')
     def submit_group(self, request, pk=None):
         group = self.get_object()
@@ -969,6 +1009,45 @@ class LedgerViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
+
+    @action(detail=True, methods=['post'], url_path='pay')
+    def pay_ledger(self, request, pk=None):
+        ledger = self.get_object()
+        user = request.user
+        role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
+        is_cash_office = (
+            role_name in ('cash office', 'cash officer', 'cashier') or
+            user.has_perm('finance.pay_ledger') or
+            user.is_superuser or
+            role_name in ('administrator', 'admin')
+        )
+        if not is_cash_office:
+            return Response(
+                {'detail': 'Permission denied. Only Cash Office role or authorized payment officers can disburse cash settlement.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        payment_method = request.data.get('payment_method', 'Cash')
+        amount_paid = request.data.get('amount_paid', ledger.total_amount)
+        transaction_reference = request.data.get('transaction_reference') or request.data.get('payment_reference')
+        remarks = request.data.get('remarks')
+
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        try:
+            PaymentService.process_payment(
+                actor=request.user,
+                payment_method=payment_method,
+                amount_paid=amount_paid,
+                ledger_id=ledger.ledger_id,
+                transaction_reference=transaction_reference,
+                remarks=remarks,
+                ip_address=request.META.get('REMOTE_ADDR')
+            )
+            ledger.refresh_from_db()
+            return Response(LedgerSerializer(ledger).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='add-expense')
     def add_expense(self, request, pk=None):

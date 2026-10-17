@@ -97,7 +97,7 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
             { value: '', label: 'All Stores' },
             ...stores.map((s) => ({
                 value: String(s.store_id),
-                label: s.store_name || `Store #${s.store_id}`
+                label: s.store_name || `Store ${s.store_id}`
             }))
         ];
     }, [stores]);
@@ -107,7 +107,7 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
             { value: '', label: 'All Departments' },
             ...departments.map((d) => ({
                 value: String(d.department_id),
-                label: d.department_name || `Dept #${d.department_id}`
+                label: d.department_name || `Dept ${d.department_id}`
             }))
         ];
     }, [departments]);
@@ -123,44 +123,40 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                     <button
                         type="button"
                         onClick={() => setPreset('today')}
-                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${
-                            activePreset === 'today'
+                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'today'
                                 ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
                                 : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
-                        }`}
+                            }`}
                     >
                         Today
                     </button>
                     <button
                         type="button"
                         onClick={() => setPreset('week')}
-                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${
-                            activePreset === 'week'
+                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'week'
                                 ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
                                 : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
-                        }`}
+                            }`}
                     >
                         This Week
                     </button>
                     <button
                         type="button"
                         onClick={() => setPreset('month')}
-                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${
-                            activePreset === 'month'
+                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'month'
                                 ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
                                 : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
-                        }`}
+                            }`}
                     >
                         This Month
                     </button>
                     <button
                         type="button"
                         onClick={() => setPreset('last30')}
-                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${
-                            activePreset === 'last30'
+                        className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'last30'
                                 ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
                                 : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
-                        }`}
+                            }`}
                     >
                         Last 30 Days
                     </button>

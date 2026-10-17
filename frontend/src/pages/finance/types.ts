@@ -35,6 +35,9 @@ export interface ExpenseItem {
   approved?: boolean;
   status_display?: string;
   claim?: any;
+  is_paid?: boolean;
+  paid_at?: string;
+  paid_by?: any;
 }
 
 export interface ApprovalStepInfo {
@@ -43,6 +46,7 @@ export interface ApprovalStepInfo {
   step_name: string;
   assigned_role_name: string;
   assigned_users_names?: string[];
+  assigned_users_ids?: number[];
   is_final_step?: boolean;
 }
 
@@ -194,6 +198,14 @@ export interface LedgerGroupItem {
   completed_at?: string;
   completed_by?: number;
   completed_by_detail?: { id: number; username: string; full_name?: string };
+  is_paid?: boolean;
+  paid_at?: string;
+  paid_by?: number;
+  paid_by_detail?: { id: number; username: string; full_name?: string };
+  payment_method?: string;
+  payment_reference?: string;
+  payment_remarks?: string;
+  recipient_name?: string;
   ledgers_count?: number;
 }
 
@@ -209,6 +221,7 @@ export interface StoreDetailItem {
 export interface LedgerItem {
   ledger_id: number;
   ledger_group?: number;
+  ledger_group_id?: number;
   ledger_group_detail?: LedgerGroupItem;
   ledger_batch?: number;
   ledger_batch_detail?: LedgerBatchItem;

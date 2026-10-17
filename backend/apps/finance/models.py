@@ -154,6 +154,10 @@ class Expense(models.Model):
     is_claimed = models.BooleanField(default=False)
     claim = models.ForeignKey(
         WorkerClaim, on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    is_paid = models.BooleanField(default=False)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='paid_expenses')
 
     class Meta:
         permissions = [
@@ -269,6 +273,20 @@ class LedgerGroup(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     completed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='completed_ledger_groups')
+    is_paid = models.BooleanField(default=False)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='paid_ledger_groups')
+    payment_method = models.CharField(max_length=50, blank=True, null=True, default='Cash')
+    payment_reference = models.CharField(max_length=100, blank=True, null=True)
+    payment_remarks = models.TextField(blank=True, null=True)
+    recipient_name = models.CharField(max_length=150, blank=True, null=True)
+
+    class Meta:
+        permissions = [
+            ('pay_ledger_group', 'Can pay ledger group'),
+            ('settle_cash_ledger', 'Can settle cash for ledger group'),
+        ]
 
     def __str__(self):
         return f"Ledger Group #{self.ledger_group_id} - {self.group_name}"
@@ -308,6 +326,7 @@ class Ledger(models.Model):
         permissions = [
             ('approve_ledger', 'Can approve ledger'),
             ('reject_ledger', 'Can reject ledger'),
+            ('pay_ledger', 'Can pay ledger'),
         ]
 
     def __str__(self):
@@ -450,6 +469,7 @@ class Payment(models.Model):
     paid_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_payments')
     paid_at = models.DateTimeField(auto_now_add=True)
+    recipient_name = models.CharField(max_length=150, blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
 
     def __str__(self):

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus
 } from 'lucide-react';
@@ -15,6 +15,7 @@ interface PendingMediaItem {
 import { Pagination } from './Pagination';
 import { SearchableSelect, type SelectOption } from '../../components/SearchableSelect';
 import Can from '../../hooks/Can';
+import { confirmPopup } from '../../components/tailgrids/core/ConfirmationPopup';
 
 interface ExpensesSubpageProps {
   expenses: ExpenseItem[];
@@ -31,6 +32,7 @@ interface ExpensesSubpageProps {
   currentUser: any;
   API_URL: string;
   approvalsProps?: ApprovalsSubpageProps;
+  ledgerBatches?: any[];
   onRefresh?: () => void;
   currentPage?: number;
   totalItems?: number;
@@ -54,6 +56,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   currentUser,
   API_URL,
   approvalsProps,
+  ledgerBatches: propLedgerBatches,
   onRefresh,
   currentPage: propCurrentPage,
   totalItems: propTotalItems,
@@ -136,7 +139,13 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   const [expenseTypesList, setExpenseTypesList] = useState<any[]>([]);
   const [workersList, setWorkersList] = useState<any[]>([]);
   const [storesList, setStoresList] = useState<any[]>([]);
+  const [fetchedLedgerBatches, setFetchedLedgerBatches] = useState<any[]>([]);
+  const [hasFetchedLedgerBatches, setHasFetchedLedgerBatches] = useState<boolean>(false);
   const [loadingDropdowns, setLoadingDropdowns] = useState<boolean>(false);
+
+  const ledgerBatches = useMemo(() => {
+    return (propLedgerBatches && propLedgerBatches.length > 0) ? propLedgerBatches : fetchedLedgerBatches;
+  }, [propLedgerBatches, fetchedLedgerBatches]);
 
   // Dynamic ticket search states
   const [ticketSearchQuery, setTicketSearchQuery] = useState<string>('');
@@ -171,6 +180,28 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     setSelectedExpenseIdsForBulk([]);
   }, [filteredExpenses.length]);
 
+  // Load ledger batches independently (guarded to avoid re-fetch loop)
+  const batchesFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!token) return;
+    if (propLedgerBatches && propLedgerBatches.length > 0) {
+      setHasFetchedLedgerBatches(true);
+      return;
+    }
+    if (batchesFetchedRef.current) return;
+    batchesFetchedRef.current = true;
+
+    const headers = { Authorization: `Token ${token}` };
+    fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { headers })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const rawBatches = Array.isArray(data) ? data : (data?.results || []);
+        setFetchedLedgerBatches(rawBatches);
+        setHasFetchedLedgerBatches(true);
+      })
+      .catch(() => setHasFetchedLedgerBatches(true));
+  }, [token, API_URL, propLedgerBatches?.length]);
+
   // Fetch dropdown metadata when modal opens (tickets fetched via page=1&page_size=100)
   useEffect(() => {
     if ((showCreateExpenseModal || editingExpense) && token) {
@@ -181,8 +212,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         fetch(`${API_URL}/maintenance/ticket/?page=1&page_size=100&search=`, { headers }).then(res => res.ok ? res.json() : []),
         fetch(`${API_URL}/finance/expensetype/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
         fetch(`${API_URL}/accounts/customuser/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
-        fetch(`${API_URL}/stores/store/?page_size=all`, { headers }).then(res => res.ok ? res.json() : [])
-      ]).then(([ticketsRes, expTypesRes, usersRes, storesRes]) => {
+        fetch(`${API_URL}/stores/store/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
+        fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { headers }).then(res => res.ok ? res.json() : [])
+      ]).then(([ticketsRes, expTypesRes, usersRes, storesRes, batchesRes]) => {
         const rawTickets = Array.isArray(ticketsRes) ? ticketsRes : (ticketsRes?.results || []);
         setTicketsList(rawTickets);
 
@@ -194,6 +226,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
         const rawStores = Array.isArray(storesRes) ? storesRes : (storesRes?.results || []);
         setStoresList(rawStores);
+
+        const rawBatches = Array.isArray(batchesRes) ? batchesRes : (batchesRes?.results || []);
+        setFetchedLedgerBatches(rawBatches);
+        setHasFetchedLedgerBatches(true);
       }).catch(err => {
         console.error('Error fetching dropdown metadata for expense creation:', err);
       }).finally(() => {
@@ -263,21 +299,21 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     const rawStore = ticket.store || ticket.store_detail || ticket.store_details;
     if (typeof rawStore === 'object' && rawStore !== null) {
       const sId = String(rawStore.store_id || rawStore.id || '');
-      const sName = rawStore.store_name || rawStore.name || `Store #${sId}`;
+      const sName = rawStore.store_name || rawStore.name || `Store ${sId}`;
       return { storeId: sId, storeName: sName };
     } else if (typeof rawStore === 'number' || (typeof rawStore === 'string' && rawStore !== '')) {
       const sId = String(rawStore);
       const foundStore = storesList.find(s => String(s.store_id || s.id) === sId);
       return {
         storeId: sId,
-        storeName: foundStore ? (foundStore.store_name || foundStore.name) : `Store #${sId}`
+        storeName: foundStore ? (foundStore.store_name || foundStore.name) : `Store ${sId}`
       };
     } else if (ticket.store_id) {
       const sId = String(ticket.store_id);
       const foundStore = storesList.find(s => String(s.store_id || s.id) === sId);
       return {
         storeId: sId,
-        storeName: foundStore ? (foundStore.store_name || foundStore.name) : `Store #${sId}`
+        storeName: foundStore ? (foundStore.store_name || foundStore.name) : `Store ${sId}`
       };
     }
     return null;
@@ -354,7 +390,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         { value: '', label: 'Select Allocated Worker' },
         ...ticketWorkers.map(w => ({
           value: String(w.user_id || w.id),
-          label: `${w.full_name || w.username || `User #${w.user_id || w.id}`}${w.employee_no ? ` (${w.employee_no})` : ''}`
+          label: `${w.full_name || w.username || `User ${w.user_id || w.id}`}${w.employee_no ? ` (${w.employee_no})` : ''}`
         }))
       ];
     }
@@ -372,34 +408,128 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     const dep = ticket.department || ticket.department_detail || ticket.department_details;
     if (typeof dep === 'object' && dep !== null) {
       const dId = String(dep.department_id || dep.id || '');
-      const dName = dep.department_name || dep.name || `Dept #${dId}`;
+      const dName = dep.department_name || dep.name || `Dept ${dId}`;
       return { departmentId: dId, departmentName: dName };
     } else if (typeof dep === 'number' || (typeof dep === 'string' && dep !== '')) {
-      return { departmentId: String(dep), departmentName: `Dept #${dep}` };
+      return { departmentId: String(dep), departmentName: `Dept ${dep}` };
     } else if (ticket.department_id) {
-      return { departmentId: String(ticket.department_id), departmentName: `Dept #${ticket.department_id}` };
+      return { departmentId: String(ticket.department_id), departmentName: `Dept ${ticket.department_id}` };
     }
     return null;
   }, [selectedTicketId, ticketsList]);
 
+  // Derived selected ticket object and sub-department resolution
+  const selectedTicketObj = useMemo(() => {
+    if (!selectedTicketId || !ticketsList.length) return null;
+    return ticketsList.find(t => String(t.ticket_id || t.id) === String(selectedTicketId)) || null;
+  }, [selectedTicketId, ticketsList]);
+
+  const selectedTicketSubDeptId = useMemo(() => {
+    if (!selectedTicketObj) return null;
+    const tAny = selectedTicketObj as any;
+    const raw =
+      tAny?.nature?.sub_department?.sub_department_id ??
+      tAny?.nature?.sub_department?.id ??
+      (typeof tAny?.nature?.sub_department === 'number' || typeof tAny?.nature?.sub_department === 'string'
+        ? tAny.nature.sub_department
+        : null) ??
+      tAny?.sub_department?.sub_department_id ??
+      tAny?.sub_department?.id ??
+      (typeof tAny?.sub_department === 'number' || typeof tAny?.sub_department === 'string'
+        ? tAny.sub_department
+        : null) ??
+      tAny?.sub_department_id ??
+      tAny?.nature?.sub_department_id;
+
+    if (raw != null && !isNaN(Number(raw))) {
+      return Number(raw);
+    }
+    return null;
+  }, [selectedTicketObj]);
+
+  const selectedTicketSubDeptName = useMemo(() => {
+    if (!selectedTicketObj) return '';
+    const tAny = selectedTicketObj as any;
+    const rawName =
+      tAny?.nature?.sub_department?.sub_department_name ??
+      tAny?.sub_department?.sub_department_name ??
+      (typeof tAny?.nature?.sub_department === 'string' ? tAny.nature.sub_department : '') ??
+      (typeof tAny?.sub_department === 'string' ? tAny.sub_department : '');
+    return String(rawName || '');
+  }, [selectedTicketObj]);
+
+  const isTicketSubDeptInLedgerBatch = useMemo(() => {
+    if (!selectedTicketId || !selectedTicketObj) return true;
+    if (!hasFetchedLedgerBatches) return true;
+    if (ledgerBatches.length === 0) return false;
+
+    if (!selectedTicketSubDeptId && !selectedTicketSubDeptName) {
+      return false;
+    }
+
+    const lowerName = selectedTicketSubDeptName ? selectedTicketSubDeptName.toLowerCase().trim() : '';
+
+    return ledgerBatches.some((b: any) => {
+      if (b.active === false) return false;
+
+      if (Array.isArray(b.sub_departments)) {
+        const hasMatch = b.sub_departments.some((sd: any) => {
+          const sdId = Number(typeof sd === 'object' && sd !== null ? (sd.sub_department_id || sd.id) : sd);
+          if (selectedTicketSubDeptId != null && !isNaN(sdId) && sdId === selectedTicketSubDeptId) return true;
+          if (lowerName && typeof sd === 'object' && sd?.sub_department_name) {
+            return String(sd.sub_department_name).toLowerCase().trim() === lowerName;
+          }
+          return false;
+        });
+        if (hasMatch) return true;
+      }
+
+      if (Array.isArray(b.sub_departments_detail)) {
+        const hasMatch = b.sub_departments_detail.some((sd: any) => {
+          if (!sd) return false;
+          const sdId = Number(sd.sub_department_id || sd.id);
+          if (selectedTicketSubDeptId != null && !isNaN(sdId) && sdId === selectedTicketSubDeptId) return true;
+          if (lowerName && sd.sub_department_name) {
+            return String(sd.sub_department_name).toLowerCase().trim() === lowerName;
+          }
+          return false;
+        });
+        if (hasMatch) return true;
+      }
+
+      return false;
+    });
+  }, [selectedTicketId, selectedTicketObj, hasFetchedLedgerBatches, ledgerBatches, selectedTicketSubDeptId, selectedTicketSubDeptName]);
+
   // 4. Derived ticket creation date (formatted as YYYY-MM-DD for min date attribute)
   const ticketCreatedDateFormatted = useMemo(() => {
     if (!selectedTicketId || !ticketsList.length) return null;
-    const ticket = ticketsList.find(t => String(t.ticket_id || t.id) === String(selectedTicketId));
+
+    const ticket = ticketsList.find(
+      t => String(t.ticket_id || t.id) === String(selectedTicketId)
+    );
+
     if (!ticket) return null;
+
     const rawDate = ticket.created_date || (ticket as any).created_at;
     if (!rawDate) return null;
+
     try {
       const d = new Date(rawDate);
+
       if (!isNaN(d.getTime())) {
-        return d.toISOString().split('T')[0];
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+
+        return `${day}-${month}-${year}`;
       }
+
       return String(rawDate).split('T')[0];
     } catch {
       return null;
     }
   }, [selectedTicketId, ticketsList]);
-
   const filteredExpenseTypes = useMemo(() => {
     if (!selectedTicketId) return [];
     if (!selectedTicketDepartment?.departmentId) return expenseTypesList;
@@ -544,6 +674,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     const missingFields: string[] = [];
     if (!selectedTicketId) {
       missingFields.push('Ticket (Please select a maintenance ticket)');
+    } else if (!isTicketSubDeptInLedgerBatch) {
+      setFormError(`Cannot add expenses for current department${selectedTicketSubDeptName ? ` (${selectedTicketSubDeptName})` : ''}`);
+      return;
     }
     if (!selectedExpenseTypeId) {
       missingFields.push('Expense Category (Please select category)');
@@ -619,7 +752,12 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   };
 
   const handleDeleteExistingReceipt = async (mediaId: number) => {
-    if (!window.confirm('Are you sure you want to delete this attached receipt?')) return;
+    const confirmed = await confirmPopup({
+      preset: 'delete',
+      title: 'Delete Attached Receipt',
+      description: 'Are you sure you want to delete this attached receipt file? This action cannot be undone.',
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`${API_URL}/common/media/${mediaId}/`, {
         method: 'DELETE',
@@ -640,6 +778,52 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       }
     } catch (err) {
       console.error('Failed to delete media receipt:', err);
+    }
+  };
+
+  const [deletingExpenseId, setDeletingExpenseId] = useState<number | null>(null);
+
+  const handleDeleteExpense = async () => {
+    if (!editingExpense) return;
+    if (editingExpense.is_claimed) {
+      setFormError('Claimed expenses cannot be deleted. Remove from the bundle/claim first.');
+      return;
+    }
+    if (editingExpense.approved) {
+      setFormError('Approved expenses cannot be deleted.');
+      return;
+    }
+
+    const confirmed = await confirmPopup({
+      preset: 'delete',
+      title: 'Delete Expense',
+      description: `Are you sure you want to delete Expense ${editingExpense.expense_id} (${editingExpense.amount} KWD)? This action cannot be undone.`,
+    });
+    if (!confirmed) return;
+
+    setDeletingExpenseId(editingExpense.expense_id);
+    try {
+      const res = await fetch(`${API_URL}/finance/expense/${editingExpense.expense_id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Token ${token}`
+        }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Failed to delete expense');
+      }
+      resetForm();
+      setEditingExpense(null);
+      if (onRefresh) {
+        await onRefresh();
+      } else {
+        window.location.reload();
+      }
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to delete expense.');
+    } finally {
+      setDeletingExpenseId(null);
     }
   };
 
@@ -825,7 +1009,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       return {
         app: matchingApp,
         group: {
-          label: `Expense #${exp.expense_id}`,
+          label: `Expense ${exp.expense_id}`,
           type: 'Expense' as const,
           id: exp.expense_id,
           items: historyItems,
@@ -860,7 +1044,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       return {
         app: null,
         group: {
-          label: `Expense #${exp.expense_id}`,
+          label: `Expense ${exp.expense_id}`,
           type: 'Expense' as const,
           id: exp.expense_id,
           items: approvedItems as any,
@@ -904,7 +1088,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       return {
         app: fallbackItems[0] as any,
         group: {
-          label: `Expense #${exp.expense_id}`,
+          label: `Expense ${exp.expense_id}`,
           type: 'Expense' as const,
           id: exp.expense_id,
           items: fallbackItems as any,
@@ -980,7 +1164,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       const rawStatus = exp.status_display || (exp.approved ? 'Approved' : 'Pending Approval');
       const approvalData = getExpenseApprovalGroup(exp);
       const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
-      const isApproved = exp.approved === true || rawStatus === 'Approved';
+      const isPaid = Boolean(exp.is_paid || rawStatus === 'Paid' || (exp.claim && (exp.claim.status === 'Paid' || exp.claim_status === 'Paid')));
+      const isApproved = isPaid || exp.approved === true || rawStatus === 'Approved';
       const isRework = !isApproved && !activePendingInstance && (
         rawStatus === 'Rework' ||
         (approvalData?.app?.status === 'Rework')
@@ -990,7 +1175,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         (approvalData?.app?.status === 'Rejected')
       );
       const requiresApproval = (exp.expense_type_detail as any)?.approve_required !== false && (exp.expense_type as any)?.approve_required !== false;
-      if (isApproved || isRework || isRejected || !requiresApproval) return false;
+      if (isPaid || isApproved || isRework || isRejected || !requiresApproval) return false;
 
       // Check if current user is authorized to approve this specific active pending step
       if (isAdmin) return true;
@@ -1130,7 +1315,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         <div className={`flex items-start justify-between px-1 py-1 ${compact ? 'min-w-[480px]' : 'min-w-[650px]'}`}>
           {/* START NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
-            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
+            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
               Start
             </div>
             <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Submitted</span>
@@ -1189,7 +1374,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
                 {/* STEP NODE */}
                 <div className={`flex flex-col items-center text-center shrink-0 ${compact ? 'w-[130px]' : 'w-[170px]'}`}>
-                  <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded flex items-center justify-center transition-all border shrink-0 ${circleClass}`}>
+                  <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded-full flex items-center justify-center transition-all border shrink-0 ${circleClass}`}>
                     {iconNode}
                   </div>
                   <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-semibold text-on-surface mt-1 line-clamp-1 w-full`}>{step.step_name}</span>
@@ -1263,7 +1448,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
           {/* END NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
-            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded flex items-center justify-center font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
+            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full flex items-center justify-center font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
               End
             </div>
             <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Approved</span>
@@ -1444,7 +1629,6 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <th className="px-4 py-3">Linked Ticket</th>
                     <th className="px-4 py-3">Sub Department</th>
                     <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Responsible</th>
                     <th className="px-4 py-3">Expense Bill</th>
                     <th className="px-4 py-3 text-right">Amount</th>
                     <th className="px-4 py-3">Approval & Assignee</th>
@@ -1490,17 +1674,22 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
                     const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
 
-                    const isExpenseApproved = exp.approved === true || rawStatus === 'Approved';
+                    const isExpensePaid = Boolean(
+                      exp.is_paid ||
+                      rawStatus === 'Paid' ||
+                      (exp.claim && (exp.claim.status === 'Paid' || exp.claim_status === 'Paid'))
+                    );
+                    const isExpenseApproved = !isExpensePaid && (exp.approved === true || rawStatus === 'Approved');
 
                     // An expense is actively in Rework ONLY if it has not yet been resubmitted to Pending
-                    const isCurrentlyRework = !isExpenseApproved && !activePendingInstance && (
+                    const isCurrentlyRework = !isExpensePaid && !isExpenseApproved && !activePendingInstance && (
                       rawStatus === 'Rework' ||
                       (approvalData?.app?.status === 'Rework') ||
                       (latestInstance?.status === 'Rework')
                     );
 
                     // An expense is actively in Rejected ONLY if it has not yet been resubmitted to Pending
-                    const isCurrentlyRejected = !isExpenseApproved && !activePendingInstance && !isCurrentlyRework && (
+                    const isCurrentlyRejected = !isExpensePaid && !isExpenseApproved && !activePendingInstance && !isCurrentlyRework && (
                       rawStatus === 'Rejected' ||
                       (approvalData?.app?.status === 'Rejected') ||
                       (latestInstance?.status === 'Rejected')
@@ -1510,9 +1699,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     const isRejected = isCurrentlyRejected;
                     const isRejectedOrRework = isRework || isRejected;
 
-                    const statusText = isExpenseApproved ? 'Approved' : isRework ? 'Rework' : isRejected ? 'Rejected' : 'Pending Approval';
+                    const statusText = isExpensePaid ? 'Paid' : isExpenseApproved ? 'Approved' : isRework ? 'Rework' : isRejected ? 'Rejected' : 'Pending Approval';
 
-                    const isPendingState = !isExpenseApproved && !isRejectedOrRework && (!!activePendingInstance || approvalData?.app?.status === 'Pending' || rawStatus === 'Pending Approval');
+                    const isPendingState = !isExpensePaid && !isExpenseApproved && !isRejectedOrRework && (!!activePendingInstance || approvalData?.app?.status === 'Pending' || rawStatus === 'Pending Approval');
                     const isExpensePending = isPendingState && ((exp.expense_type_detail as any)?.approve_required !== false && (exp.expense_type as any)?.approve_required !== false);
 
                     const activeApp: any = activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app || {
@@ -1661,7 +1850,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             )}
                           </td>
                           <td className="px-4 py-3 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
-                          <td className="px-4 py-3 text-on-surface-variant">{storeName}</td>
+                          {/* <td className="px-4 py-3 text-on-surface-variant">{storeName}</td> */}
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             {mediaList.length === 0 ? (
                               <span className="text-on-surface-variant/40 italic text-[11px]">None</span>
@@ -1765,7 +1954,12 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             )}
                           </td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            {!exp.claim ? (
+                            {isExpensePaid ? (
+                              <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                <span>Paid</span>
+                              </span>
+                            ) : !exp.claim ? (
                               (isRejectedOrRework || isExpenseApproved) ? (
                                 <Can permission={"finance.add_expense"}>
                                   <button
@@ -2260,7 +2454,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         { value: '', label: 'Select Linked Maintenance Ticket' },
                         ...ticketsList.map(t => ({
                           value: String(t.ticket_id || t.id),
-                          label: `Ticket #${t.ticket_id || t.id} ${t.work_order_no ? `(WO: ${t.work_order_no})` : ''} - ${t.title || 'Support Ticket'}`
+                          label: `Ticket ${t.ticket_id || t.id} ${t.work_order_no ? `(WO: ${t.work_order_no})` : ''} - ${t.title || 'Support Ticket'}`
                         }))
                       ]}
                       placeholder="-- Search Ticket by WO# or Title"
@@ -2271,6 +2465,16 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <div className="p-8 rounded bg-surface-container-low border border-dashed border-outline-variant text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-2 my-4">
                       <Ticket className="w-8 h-8 text-on-surface-variant/40" />
                       <span>Select a maintenance ticket above to unlock workers, store, and expense details.</span>
+                    </div>
+                  ) : !isTicketSubDeptInLedgerBatch ? (
+                    <div className="p-6 rounded bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex flex-col items-center justify-center gap-2.5 my-4 text-center animate-in fade-in duration-200">
+                      <AlertCircle className="w-7 h-7 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <div className="space-y-1">
+                        <p className="font-bold text-sm text-amber-900 dark:text-amber-200">Cannot Add Expense for Current Department</p>
+                        <p className="text-on-surface-variant text-xs max-w-md">
+                          The selected ticket is under <strong>{selectedTicketSubDeptName || selectedTicketDepartment?.departmentName || 'this department'}</strong>, which is not configured in any Ledger Batch. Expenses cannot be created for this department.
+                        </p>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -2547,7 +2751,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={submitting || !selectedTicketId || !selectedExpenseTypeId || !amount}
+                    disabled={submitting || !selectedTicketId || !selectedExpenseTypeId || !amount || !isTicketSubDeptInLedgerBatch}
                     className="px-5 py-2.5 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 active:scale-[0.98] shadow-md hover:shadow-primary/25 disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer inline-flex items-center gap-2"
                   >
                     {submitting ? (
@@ -2724,7 +2928,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               <div className="flex justify-between py-1 border-b border-outline-variant/50">
                 <span className="text-on-surface-variant font-medium">Worker:</span>
                 <span className="font-semibold text-on-surface">
-                  {previewExpenseItem.worker_detail?.full_name || previewExpenseItem.worker_detail?.username || `Worker #${previewExpenseItem.worker}`}
+                  {previewExpenseItem.worker_detail?.full_name || previewExpenseItem.worker_detail?.username || `Worker ${previewExpenseItem.worker}`}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-outline-variant/50">
@@ -2739,9 +2943,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   {(() => {
                     const rawTicket: any = previewExpenseItem.ticket_details || previewExpenseItem.ticket;
                     if (typeof rawTicket === 'object' && rawTicket) {
-                      return rawTicket.work_order_no || (rawTicket.ticket_id ? `#${rawTicket.ticket_id}` : 'Linked Ticket');
+                      return rawTicket.work_order_no || (rawTicket.ticket_id ? `${rawTicket.ticket_id}` : 'Linked Ticket');
                     }
-                    return rawTicket ? `#${rawTicket}` : 'None';
+                    return rawTicket ? `${rawTicket}` : 'None';
                   })()}
                 </span>
               </div>
@@ -2793,7 +2997,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="font-medium text-on-surface truncate text-[11px]">{m.file_name || `Receipt #${m.media_id}`}</p>
+                              <p className="font-medium text-on-surface truncate text-[11px]">{m.file_name || `Receipt ${m.media_id}`}</p>
                               <p className="text-[9px] text-primary font-semibold flex items-center gap-0.5 mt-0.5">
                                 <Eye className="w-2.5 h-2.5" /> Preview
                               </p>
@@ -3178,31 +3382,56 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               </div>
 
               {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/80">
-                <button
-                  type="button"
-                  onClick={() => { resetForm(); setEditingExpense(null); }}
-                  className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={Boolean(updatingExpenseId) || submitting}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {Boolean(updatingExpenseId) || submitting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Updating Expense...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Save & Resubmit</span>
-                    </>
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-outline-variant/80">
+                <div>
+                  {!editingExpense.is_claimed && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteExpense}
+                      disabled={Boolean(updatingExpenseId) || deletingExpenseId !== null || submitting}
+                      className="px-3.5 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border border-rose-500/30 rounded transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {deletingExpenseId !== null ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Deleting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete Expense</span>
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => { resetForm(); setEditingExpense(null); }}
+                    className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={Boolean(updatingExpenseId) || deletingExpenseId !== null || submitting}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {Boolean(updatingExpenseId) || submitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Updating Expense...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Save & Resubmit</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -11,6 +11,7 @@ import { EditBundleModal } from './EditBundleModal';
 import type { ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 import Can from '../../hooks/Can';
+import { BundleReportModal } from './BundleReportModal';
 
 interface BundlesSubpageProps {
   filteredBundles?: WorkerClaimItem[];
@@ -78,6 +79,12 @@ interface BundlesSubpageProps {
   itemsPerPage?: number;
   onPageChange?: (page: number) => void;
   onItemsPerPageChange?: (num: number) => void;
+  isSyncingNewBundle?: boolean;
+  syncingBundleInfo?: {
+    claim_id?: number | string;
+    worker_name?: string;
+    amount?: number;
+  } | null;
 }
 
 export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
@@ -134,7 +141,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   totalItems: propTotalItems,
   itemsPerPage: propItemsPerPage,
   onPageChange: propOnPageChange,
-  onItemsPerPageChange: propOnItemsPerPageChange
+  onItemsPerPageChange: propOnItemsPerPageChange,
+  isSyncingNewBundle = false,
+  syncingBundleInfo = null
 }) => {
   // Inline Approval State
   const [reworkComments, setReworkComments] = useState<Record<number, string>>({});
@@ -158,22 +167,27 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   // Multi-line & Bulk Action State
   const [isMultiLineView, setIsMultiLineView] = useState<boolean>(false);
   const [bulkApproving, setBulkApproving] = useState<boolean>(false);
-  const [submittingBundleId, setSubmittingBundleId] = useState<number | null>(null);
+  const [submittingBundleIds, setSubmittingBundleIds] = useState<Record<number, boolean>>({});
+  const [selectedBundleForReport, setSelectedBundleForReport] = useState<WorkerClaimItem | null>(null);
 
   const onHandleSubmitBundle = async (claimId: number) => {
     const targetBundle = (bundles || []).find(b => b.claim_id === claimId);
     if (!targetBundle?.expenses || targetBundle.expenses.length === 0) {
-      if (setErrorMessage) setErrorMessage(`Cannot submit Bundle #${claimId}: No expenses attached to this bundle.`);
+      if (setErrorMessage) setErrorMessage(`Cannot submit Bundle ${claimId}: No expenses attached to this bundle.`);
       return;
     }
-    setSubmittingBundleId(claimId);
+    setSubmittingBundleIds(prev => ({ ...prev, [claimId]: true }));
     try {
       await handleSubmitBundle(claimId);
       if (onRefresh) {
         await onRefresh();
       }
     } finally {
-      setSubmittingBundleId(null);
+      setSubmittingBundleIds(prev => {
+        const next = { ...prev };
+        delete next[claimId];
+        return next;
+      });
     }
   };
   const [bulkActionMsg, setBulkActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -307,7 +321,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       return {
         app: matchingApp,
         group: {
-          label: `Bundle #${bundle.claim_id}`,
+          label: `Bundle ${bundle.claim_id}`,
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: historyItems,
@@ -344,7 +358,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       return {
         app: null,
         group: {
-          label: `Bundle #${bundle.claim_id}`,
+          label: `Bundle ${bundle.claim_id}`,
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: approvedItems as any,
@@ -386,7 +400,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       return {
         app: fallbackItems[0] as any,
         group: {
-          label: `Bundle #${bundle.claim_id}`,
+          label: `Bundle ${bundle.claim_id}`,
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: fallbackItems as any,
@@ -413,7 +427,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       return {
         app: draftItems[0] as any,
         group: {
-          label: `Bundle #${bundle.claim_id}`,
+          label: `Bundle ${bundle.claim_id}`,
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: draftItems as any,
@@ -539,7 +553,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         <div className={`flex items-start justify-between px-1 py-1 ${compact ? 'min-w-[480px]' : 'min-w-[650px]'}`}>
           {/* START NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
-            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
+            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
               Start
             </div>
             <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Submitted</span>
@@ -598,7 +612,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                 {/* STEP NODE */}
                 <div className={`flex flex-col items-center text-center shrink-0 ${compact ? 'w-[130px]' : 'w-[170px]'}`}>
-                  <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded flex items-center justify-center transition-all border shrink-0 ${circleClass}`}>
+                  <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded-full flex items-center justify-center transition-all border shrink-0 ${circleClass}`}>
                     {iconNode}
                   </div>
                   <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-semibold text-on-surface mt-1 line-clamp-1 w-full`}>{step.step_name}</span>
@@ -672,7 +686,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
           {/* END NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
-            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded flex items-center justify-center font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
+            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full flex items-center justify-center font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
               End
             </div>
             <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Approved</span>
@@ -683,6 +697,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   };
 
   const renderBundleApprovalStepper = (bundle: WorkerClaimItem, compact = false) => {
+    if (bundle.status === 'Draft') return null;
     const approvalData = getBundleApprovalGroup(bundle);
     if (!approvalData?.group) return null;
     return renderApprovalStepper(approvalData.group, compact);
@@ -1109,7 +1124,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           <div className="p-12 text-center text-xs text-on-surface-variant flex items-center justify-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin text-primary" /> Loading bundles...
           </div>
-        ) : filteredBundles.length === 0 ? (
+        ) : filteredBundles.length === 0 && !isSyncingNewBundle ? (
           <div className="p-12 text-center text-on-surface-variant space-y-2">
             <Receipt className="w-8 h-8 mx-auto text-outline" />
             <p className="text-xs font-medium text-on-surface">No worker claims match your search/filters</p>
@@ -1132,402 +1147,486 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
-                  {paginatedBundles.map((b, idx) => {
-                    const isExpanded = !!expandedBundleIds[b.claim_id];
-                    const isOdd = idx % 2 === 1;
-                    const bundleExpenses = Array.isArray(b.expenses) ? b.expenses : [];
-                    const approvalData = getBundleApprovalGroup(b);
-
-                    const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
-                    const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
-                    const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
-                    const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
-
-                    const isBundleApproved = b.status === 'Approved' || b.status === 'Paid';
-
-                    const isCurrentlyRework = !isBundleApproved && !activePendingInstance && (
-                      b.status === 'Rework' ||
-                      (approvalData?.app?.status === 'Rework') ||
-                      (latestInstance?.status === 'Rework')
-                    );
-
-                    const isCurrentlyRejected = !isBundleApproved && !activePendingInstance && !isCurrentlyRework && (
-                      b.status === 'Rejected' ||
-                      (approvalData?.app?.status === 'Rejected') ||
-                      (latestInstance?.status === 'Rejected')
-                    );
-
-                    const isRework = isCurrentlyRework;
-                    const isRejected = isCurrentlyRejected;
-                    const isRejectedOrRework = isRework || isRejected;
-
-                    const isBundlePending = !isBundleApproved && !isRejectedOrRework && (
-                      b.status === 'Submitted' || b.status === 'In Review' || !!activePendingInstance
-                    );
-
-                    const activeApp: any = activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app || {
-                      instance_id: b.claim_id,
-                      step_name: 'Bundle Approval',
-                      step_order: 1,
-                      assigned_role_name: 'Administrator',
-                      status: isRework ? ('Rework' as const) : isRejected ? ('Rejected' as const) : ('Pending' as const),
-                      created_at: b.claim_date || '',
-                      can_action: isAdmin,
-                      claim: b.claim_id,
-                      claim_id: b.claim_id
-                    };
-
-                    const currentStepInfo = activeApp.workflow_steps?.find(
-                      (s: any) => s.step_id === activeApp.step_id || s.step_name === activeApp.step_name || s.step_order === activeApp.step_order
-                    );
-
-                    const canActionBundle = checkCanUserActionStep(activeApp, currentStepInfo);
-
-                    const hasCurrentUserApproved = (b.status === 'In Review' || b.status === 'Submitted') && Boolean(
-                      (approvalData?.group?.items || (b as any).approval_history || []).some(
-                        (inst: any) => inst.status === 'Approved' && (
-                          (inst.action_by_username && currentUsername && inst.action_by_username.toLowerCase() === currentUsername.toLowerCase()) ||
-                          (inst.action_by && currentUserId && (String(inst.action_by) === String(currentUserId) || String(inst.action_by?.id) === String(currentUserId)))
-                        )
-                      )
-                    );
-
-                    return (
-                      <React.Fragment key={b.claim_id}>
-                        <tr
-                          onClick={() => toggleExpandBundle(b.claim_id)}
-                          className={`cursor-pointer transition-colors ${isExpanded
-                            ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
-                            : isMultiLineView
-                              ? isOdd
-                                ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
-                                : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
-                              : 'hover:bg-surface-container-high'
-                            }`}
-                        >
-                          <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleExpandBundle(b.claim_id); }}>
-                            <button
-                              type="button"
-                              className={`p-1 rounded transition-colors cursor-pointer ${isExpanded ? 'bg-primary text-on-primary shadow-xs' : 'hover:bg-surface-container-highest text-on-surface-variant'}`}
-                            >
-                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-primary">
-                            Bundle {b.claim_id}
-                            {bundleExpenses.length > 0 && (
-                              <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-semibold">
-                                {bundleExpenses.length} exp
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 font-medium">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <AvatarCircle
-                                user={b.worker_detail}
-                                name={b.worker_detail ? (b.worker_detail.full_name || b.worker_detail.username) : `Worker ${(b.worker_detail as any)?.id || ''}`}
-                                size="xs"
-                              />
-                              <span className="truncate">{b.worker_detail ? `${b.worker_detail.full_name || b.worker_detail.username}` : `Worker ${(b.worker_detail as any)?.id || ''}`}</span>
+                  {/* SKELETON / ROW LOADER UNTIL THE NEW BUNDLE IS VISIBLE IN UI */}
+                  {isSyncingNewBundle && (
+                    <React.Fragment key="syncing-bundle-skeleton">
+                      <tr className="animate-pulse bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary transition-all">
+                        <td className="w-8 px-2 py-3 text-center">
+                          <div className="w-5 h-5 mx-auto rounded flex items-center justify-center bg-primary/20 text-primary">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-primary">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-primary">
+                              {syncingBundleInfo?.claim_id ? `Bundle ${syncingBundleInfo.claim_id}` : 'New Bundle'}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/25 text-primary font-bold animate-pulse">
+                              Syncing...
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[10px] shrink-0">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            </div>
+                            <span className="font-medium text-on-surface">
+                              {syncingBundleInfo?.worker_name || 'Technician'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant">
+                          <span className="text-xs font-mono">Today</span>
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant">
+                          <div className="h-4 w-24 bg-slate-300/60 dark:bg-slate-700/60 rounded animate-pulse" />
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-primary">
+                          {syncingBundleInfo?.amount ? `KD ${syncingBundleInfo.amount.toFixed(2)}` : (
+                            <div className="h-4 w-16 bg-slate-300/60 dark:bg-slate-700/60 rounded ml-auto animate-pulse" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Creating...</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5 opacity-40 pointer-events-none">
+                            <div className="h-6 w-14 bg-slate-300/60 dark:bg-slate-700/60 rounded" />
+                          </div>
+                        </td>
+                      </tr>
+                      {isMultiLineView && (
+                        <tr className="border-b-2 border-outline-variant/80 bg-primary/5 dark:bg-primary/10">
+                          <td colSpan={8} className="px-4 py-2.5">
+                            <div className="flex items-center gap-2 p-2.5 rounded border border-outline-variant/60 bg-surface-container-low animate-pulse">
+                              <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                              <span className="text-xs text-on-surface-variant font-medium">Preparing approval workflow pipeline...</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-on-surface-variant">{new Date(b.claim_date).toLocaleDateString()}</td>
-                          <td className="px-4 py-3 font-medium">
-                            {b.ledger_details ? (
-                              <span
-                                className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 inline-flex items-center gap-1"
-                                title={`Ledger ID #${b.ledger_details.ledger_id} (${b.ledger_details.status})`}
-                              >
-                                <span>{b.ledger_details.group_name} ({b.ledger_details.status})</span>
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-on-surface-variant/60 italic">No Ledger</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold">{parseFloat(b.total_claimed_amount).toFixed(2)}</td>
-                          <td className="px-4 py-3">
-                            {renderStatusBadge(
-                              b.status,
-                              (b.status === 'Submitted' || b.status === 'In Review') && canActionBundle,
-                              (activePendingInstance || activeApp)?.step_name,
-                              hasCurrentUserApproved
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
-                            {isRejectedOrRework ? (
-                              <div className="inline-flex items-center gap-1.5">
-                                <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
-                                  <button
-                                    onClick={() => openEditBundleModal(b)}
-                                    className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
-                                    title="Edit Bundle & Modify Tied Expenses"
-                                  >
-                                    <PlusCircle className="w-3.5 h-3.5" />
-                                    <span>Edit</span>
-                                  </button>
-                                </Can>
-                                <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
-                                  <button
-                                    onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                    disabled={submittingBundleId === b.claim_id || submitting}
-                                    className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
-                                  >
-                                    {submittingBundleId === b.claim_id ? (
-                                      <>
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        <span>Submitting...</span>
-                                      </>
-                                    ) : (
-                                      <span>Resubmit</span>
-                                    )}
-                                  </button>
-                                </Can>
-                              </div>
-                            ) : (b.status === 'Draft') ? (
-                              <div className="inline-flex items-center gap-1.5">
-                                <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
-                                  <button
-                                    onClick={() => openEditBundleModal(b)}
-                                    className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
-                                    title="Edit Bundle & Modify Tied Expenses"
-                                  >
-                                    <PlusCircle className="w-3.5 h-3.5" />
-                                    <span>Edit</span>
-                                  </button>
-                                </Can>
-                                <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
-                                  <button
-                                    onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                    disabled={submittingBundleId === b.claim_id || submitting}
-                                    className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
-                                  >
-                                    {submittingBundleId === b.claim_id ? (
-                                      <>
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        <span>Submitting...</span>
-                                      </>
-                                    ) : (
-                                      <span>Submit Approval</span>
-                                    )}
-                                  </button>
-                                </Can>
-                                <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
-                                  <button
-                                    onClick={() => handleDeleteBundle(b.claim_id)}
-                                    disabled={submitting}
-                                    className="p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center disabled:opacity-50"
-                                    title="Delete Bundle & Release Tied Expenses"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </Can>
-                              </div>
-                            ) : (b.status === 'Submitted' || b.status === 'In Review') ? (
-                              canActionBundle ? (
-                                <div className="inline-flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleExpandBundle(b.claim_id)}
-                                    className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-[11px] font-semibold hover:bg-amber-500/25 transition-all cursor-pointer inline-flex items-center gap-1"
-                                    title="Click to expand row and action approval"
-                                  >
-                                    <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-                                    <span>Review / Action</span>
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">In Review</span>
-                              )
-                            ) : isBundleApproved ? (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3" /> Approved
-                              </span>
-                            ) : null}
-                          </td>
                         </tr>
+                      )}
+                    </React.Fragment>
+                  )}
+                  {paginatedBundles
+                    .filter(b => !isSyncingNewBundle || String(b.claim_id) !== String(syncingBundleInfo?.claim_id))
+                    .map((b, idx) => {
+                      const isExpanded = !!expandedBundleIds[b.claim_id];
+                      const isOdd = idx % 2 === 1;
+                      const bundleExpenses = Array.isArray(b.expenses) ? b.expenses : [];
+                      const approvalData = getBundleApprovalGroup(b);
 
-                        {/* MULTI-LINE VIEW SECOND ROW (Pipeline 1-----2-----3-----4 + Quick Approve/Rework) */}
-                        {isMultiLineView && !isExpanded && (
-                          <tr className={`border-b-2 border-outline-variant/80 transition-colors ${isOdd ? 'bg-slate-100/90 dark:bg-slate-800/45' : 'bg-white dark:bg-surface-container-lowest'
-                            }`}>
-                            <td colSpan={8} className="px-4 py-2.5">
-                              <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
-                                ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
-                                : 'bg-surface-container-low dark:bg-surface-container-low/70 border-outline-variant/60 shadow-2xs'
-                                }`}>
-                                {/* Left/Main: Compact Horizontal Stepper Pipeline */}
-                                <div className="flex-1 overflow-x-auto min-w-0">
-                                  {approvalData?.group ? (
-                                    renderApprovalStepper(approvalData.group, true)
-                                  ) : (
-                                    <div className="text-xs text-on-surface-variant/70 italic px-2 py-1">
-                                      No approval workflow required for this bundle.
-                                    </div>
-                                  )}
-                                </div>
+                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
+                      const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
+                      const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
+                      const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
 
-                                {/* Right: Quick Action Controls (Comment Box + Approve + Rework) */}
-                                <div className="shrink-0 flex flex-col items-end gap-1.5 pt-2 xl:pt-0 border-t xl:border-t-0 border-outline-variant/40">
-                                  {isBundlePending && !isRejectedOrRework && canActionBundle ? (
-                                    <>
-                                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full xl:w-auto">
-                                        <input
-                                          type="text"
-                                          value={reworkComments[b.claim_id] || ''}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            setReworkComments(prev => ({ ...prev, [b.claim_id]: val }));
-                                            if (val.trim() && reworkErrors[b.claim_id]) {
-                                              setReworkErrors(prev => {
-                                                const next = { ...prev };
-                                                delete next[b.claim_id];
-                                                return next;
-                                              });
-                                            }
-                                          }}
-                                          placeholder="Comment (Required for Rework)..."
-                                          className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-48 xl:w-56 transition-all ${reworkErrors[b.claim_id]
-                                            ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                                            : 'border-outline bg-surface-container-low focus:border-primary'
-                                            }`}
-                                        />
-                                        <button
-                                          type="button"
-                                          disabled={actioningBundleId === b.claim_id}
-                                          onClick={() => handleInlineBundleAction(b, 'APPROVED')}
-                                          className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-                                          title="Approve this claim bundle step"
-                                        >
-                                          {actioningBundleId === b.claim_id && actioningActionType === 'APPROVED' ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Approving...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Check className="w-3.5 h-3.5" />
-                                              <span>Approve</span>
-                                            </>
-                                          )}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={actioningBundleId === b.claim_id}
-                                          onClick={() => handleInlineBundleAction(b, 'REWORK')}
-                                          className="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-                                          title="Request rework for this claim bundle"
-                                        >
-                                          {actioningBundleId === b.claim_id && actioningActionType === 'REWORK' ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Reworking...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <RotateCcw className="w-3.5 h-3.5" />
-                                              <span>Rework</span>
-                                            </>
-                                          )}
-                                        </button>
-                                      </div>
-                                      {reworkErrors[b.claim_id] && (
-                                        <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
-                                          <span>{reworkErrors[b.claim_id]}</span>
-                                        </div>
-                                      )}
-                                    </>
-                                  ) : (b.status === 'Draft' || b.status === 'Rework' || b.status === 'Rejected') ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
-                                        <button
-                                          onClick={() => openEditBundleModal(b)}
-                                          className="px-2.5 py-1.5 rounded border border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
-                                        >
-                                          <PlusCircle className="w-3.5 h-3.5" />
-                                          <span>Edit</span>
-                                        </button>
-                                      </Can>
-                                      <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
-                                        <button
-                                          onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                          disabled={submittingBundleId === b.claim_id || submitting}
-                                          className="px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
-                                        >
-                                          {submittingBundleId === b.claim_id ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Submitting...</span>
-                                            </>
-                                          ) : (
-                                            <span>{b.status === 'Rework' || b.status === 'Rejected' ? 'Resubmit' : 'Submit'}</span>
-                                          )}
-                                        </button>
-                                      </Can>
-                                    </div>
-                                  ) : b.status === 'Approved' ? (
-                                    <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                                      <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-                                    </span>
-                                  ) : b.status === 'Paid' ? (
-                                    <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1">
-                                      <DollarSign className="w-3.5 h-3.5" /> Paid
-                                    </span>
-                                  ) : null}
-                                </div>
+                      const isBundleApproved = b.status === 'Approved' || b.status === 'Paid';
+
+                      const isCurrentlyRework = !isBundleApproved && !activePendingInstance && (
+                        b.status === 'Rework' ||
+                        (approvalData?.app?.status === 'Rework') ||
+                        (latestInstance?.status === 'Rework')
+                      );
+
+                      const isCurrentlyRejected = !isBundleApproved && !activePendingInstance && !isCurrentlyRework && (
+                        b.status === 'Rejected' ||
+                        (approvalData?.app?.status === 'Rejected') ||
+                        (latestInstance?.status === 'Rejected')
+                      );
+
+                      const isRework = isCurrentlyRework;
+                      const isRejected = isCurrentlyRejected;
+                      const isRejectedOrRework = isRework || isRejected;
+
+                      const isBundlePending = b.status !== 'Draft' && !isBundleApproved && !isRejectedOrRework && (
+                        b.status === 'Submitted' || b.status === 'In Review' || !!activePendingInstance
+                      );
+
+                      const activeApp: any = activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app || {
+                        instance_id: b.claim_id,
+                        step_name: 'Bundle Approval',
+                        step_order: 1,
+                        assigned_role_name: 'Administrator',
+                        status: isRework ? ('Rework' as const) : isRejected ? ('Rejected' as const) : ('Pending' as const),
+                        created_at: b.claim_date || '',
+                        can_action: isAdmin,
+                        claim: b.claim_id,
+                        claim_id: b.claim_id
+                      };
+
+                      const currentStepInfo = activeApp.workflow_steps?.find(
+                        (s: any) => s.step_id === activeApp.step_id || s.step_name === activeApp.step_name || s.step_order === activeApp.step_order
+                      );
+
+                      const canActionBundle = b.status !== 'Draft' && checkCanUserActionStep(activeApp, currentStepInfo);
+
+                      const hasCurrentUserApproved = (b.status === 'In Review' || b.status === 'Submitted') && Boolean(
+                        (approvalData?.group?.items || (b as any).approval_history || []).some(
+                          (inst: any) => inst.status === 'Approved' && (
+                            (inst.action_by_username && currentUsername && inst.action_by_username.toLowerCase() === currentUsername.toLowerCase()) ||
+                            (inst.action_by && currentUserId && (String(inst.action_by) === String(currentUserId) || String(inst.action_by?.id) === String(currentUserId)))
+                          )
+                        )
+                      );
+
+                      return (
+                        <React.Fragment key={b.claim_id}>
+                          <tr
+                            onClick={() => toggleExpandBundle(b.claim_id)}
+                            className={`cursor-pointer transition-colors ${isExpanded
+                              ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
+                              : isMultiLineView
+                                ? isOdd
+                                  ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
+                                  : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
+                                : 'hover:bg-surface-container-high'
+                              }`}
+                          >
+                            <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleExpandBundle(b.claim_id); }}>
+                              <button
+                                type="button"
+                                className={`p-1 rounded transition-colors cursor-pointer ${isExpanded ? 'bg-primary text-on-primary shadow-xs' : 'hover:bg-surface-container-highest text-on-surface-variant'}`}
+                              >
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-primary">
+                              Bundle {b.claim_id}
+                              {bundleExpenses.length > 0 && (
+                                <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-semibold">
+                                  {bundleExpenses.length} exp
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-medium">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <AvatarCircle
+                                  user={b.worker_detail}
+                                  name={b.worker_detail ? (b.worker_detail.full_name || b.worker_detail.username) : `Worker ${(b.worker_detail as any)?.id || ''}`}
+                                  size="xs"
+                                />
+                                <span className="truncate">{b.worker_detail ? `${b.worker_detail.full_name || b.worker_detail.username}` : `Worker ${(b.worker_detail as any)?.id || ''}`}</span>
                               </div>
                             </td>
+                            <td className="px-4 py-3 text-on-surface-variant">{new Date(b.claim_date).toLocaleDateString()}</td>
+                            <td className="px-4 py-3 font-medium">
+                              {b.ledger_details ? (
+                                <span
+                                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 inline-flex items-center gap-1"
+                                  title={`Ledger ID ${b.ledger_details.ledger_id} (${b.ledger_details.status})`}
+                                >
+                                  <span>{b.ledger_details.group_name} ({b.ledger_details.status})</span>
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-on-surface-variant/60 italic">No Ledger</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold">{parseFloat(b.total_claimed_amount).toFixed(2)}</td>
+                            <td className="px-4 py-3">
+                              {renderStatusBadge(
+                                b.status,
+                                (b.status === 'Submitted' || b.status === 'In Review') && canActionBundle,
+                                (activePendingInstance || activeApp)?.step_name,
+                                hasCurrentUserApproved
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                              {isRejectedOrRework ? (
+                                <div className="inline-flex items-center gap-1.5">
+                                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                    <button
+                                      onClick={() => openEditBundleModal(b)}
+                                      className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                      title="Edit Bundle & Modify Tied Expenses"
+                                    >
+                                      <PlusCircle className="w-3.5 h-3.5" />
+                                      <span>Edit</span>
+                                    </button>
+                                  </Can>
+                                  <Can permission="finance.edit_bundle">
+                                    <button
+                                      onClick={() => onHandleSubmitBundle(b.claim_id)}
+                                      disabled={Boolean(submittingBundleIds[b.claim_id])}
+                                      className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
+                                    >
+                                      {submittingBundleIds[b.claim_id] ? (
+                                        <>
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          <span>Submitting...</span>
+                                        </>
+                                      ) : (
+                                        <span>Resubmit</span>
+                                      )}
+                                    </button>
+                                  </Can>
+                                </div>
+                              ) : (b.status === 'Draft') ? (
+                                <div className="inline-flex items-center gap-1.5">
+                                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                    <button
+                                      onClick={() => openEditBundleModal(b)}
+                                      className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                      title="Edit Bundle & Modify Tied Expenses"
+                                    >
+                                      <PlusCircle className="w-3.5 h-3.5" />
+                                      <span>Edit</span>
+                                    </button>
+                                  </Can>
+                                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                    <button
+                                      onClick={() => onHandleSubmitBundle(b.claim_id)}
+                                      disabled={Boolean(submittingBundleIds[b.claim_id])}
+                                      className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
+                                    >
+                                      {submittingBundleIds[b.claim_id] ? (
+                                        <>
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          <span>Submitting...</span>
+                                        </>
+                                      ) : (
+                                        <span>Submit Approval</span>
+                                      )}
+                                    </button>
+                                  </Can>
+                                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                    <button
+                                      onClick={() => handleDeleteBundle(b.claim_id)}
+                                      disabled={submitting}
+                                      className="p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center disabled:opacity-50"
+                                      title="Delete Bundle & Release Tied Expenses"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </Can>
+                                </div>
+                              ) : (b.status === 'Submitted' || b.status === 'In Review') ? (
+                                <div className="inline-flex items-center gap-1.5">
+                                  {b.status === 'In Review' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedBundleForReport(b)}
+                                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                      title="Open bundle settlement report & print statement"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>Report</span>
+                                    </button>
+                                  )}
+                                  {canActionBundle ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpandBundle(b.claim_id)}
+                                      className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-[11px] font-semibold hover:bg-amber-500/25 transition-all cursor-pointer inline-flex items-center gap-1"
+                                      title="Click to expand row and action approval"
+                                    >
+                                      <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                                      <span>Review / Action</span>
+                                    </button>
+                                  ) : (
+                                    b.status !== 'In Review' && (
+                                      <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">In Review</span>
+                                    )
+                                  )}
+                                </div>
+                              ) : isBundleApproved ? (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Approved
+                                </span>
+                              ) : null}
+                            </td>
                           </tr>
-                        )}
 
-                        {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE & TIED EXPENSES */}
-                        {isExpanded && (
-                          <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
-                            <td colSpan={8} className="px-6 py-4 border-b border-outline-variant space-y-4">
-                              {/* Visual Stepper Pipeline with "Approval Progress Steps" header */}
-                              {approvalData?.group ? (
-                                <div>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
-                                      Approval Progress Steps
-                                    </span>
-                                    {approvalData.app && (
-                                      <span className="text-[11px] text-on-surface-variant font-medium">
-                                        Current Step: <strong className="text-primary">{approvalData.app.step_name}</strong>
-                                      </span>
+                          {/* MULTI-LINE VIEW SECOND ROW (Pipeline 1-----2-----3-----4 + Quick Approve/Rework) */}
+                          {isMultiLineView && !isExpanded && (
+                            <tr className={`border-b-2 border-outline-variant/80 transition-colors ${isOdd ? 'bg-slate-100/90 dark:bg-slate-800/45' : 'bg-white dark:bg-surface-container-lowest'
+                              }`}>
+                              <td colSpan={8} className="px-4 py-2.5">
+                                <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
+                                  ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
+                                  : 'bg-surface-container-low dark:bg-surface-container-low/70 border-outline-variant/60 shadow-2xs'
+                                  }`}>
+                                  {/* Left/Main: Compact Horizontal Stepper Pipeline */}
+                                  <div className="flex-1 overflow-x-auto min-w-0">
+                                    {b.status !== 'Draft' && (approvalData?.group ? (
+                                      renderApprovalStepper(approvalData.group, true)
+                                    ) : (
+                                      <div className="text-xs text-on-surface-variant/70 italic px-2 py-1">
+                                        No approval workflow required for this bundle.
+                                      </div>
+                                    ))}
+                                    {b.status === 'Draft' && (
+                                      <div className="text-xs text-on-surface-variant/70 italic px-2 py-1">
+                                        Draft Bundle — Submit approval when ready to initiate workflow.
+                                      </div>
                                     )}
                                   </div>
-                                  {renderApprovalStepper(approvalData.group)}
-                                </div>
-                              ) : (
-                                <div className="p-3 bg-surface-container-low rounded border border-outline-variant text-xs text-on-surface-variant italic">
-                                  No approval workflow required or assigned for this claim bundle.
-                                </div>
-                              )}
 
-                              {/* Rejected or Rework Banner & Edit Button */}
-                              {isRejectedOrRework && (
-                                <div className={`p-3.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${isRejected ? 'border-rose-500/30 bg-rose-500/10' : 'border-purple-500/30 bg-purple-500/10'
-                                  }`}>
-                                  <div className="space-y-0.5">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white shadow-xs ${isRejected ? 'bg-rose-600' : 'bg-purple-600'}`}>
-                                        {isRejected ? 'Rejected' : 'Rework'}
+                                  {/* Right: Quick Action Controls (Comment Box + Approve + Rework) */}
+                                  <div className="shrink-0 flex flex-col items-end gap-1.5 pt-2 xl:pt-0 border-t xl:border-t-0 border-outline-variant/40">
+                                    {isBundlePending && !isRejectedOrRework && canActionBundle ? (
+                                      <>
+                                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full xl:w-auto">
+                                          <input
+                                            type="text"
+                                            value={reworkComments[b.claim_id] || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setReworkComments(prev => ({ ...prev, [b.claim_id]: val }));
+                                              if (val.trim() && reworkErrors[b.claim_id]) {
+                                                setReworkErrors(prev => {
+                                                  const next = { ...prev };
+                                                  delete next[b.claim_id];
+                                                  return next;
+                                                });
+                                              }
+                                            }}
+                                            placeholder="Comment (Required for Rework)..."
+                                            className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-48 xl:w-56 transition-all ${reworkErrors[b.claim_id]
+                                              ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                                              : 'border-outline bg-surface-container-low focus:border-primary'
+                                              }`}
+                                          />
+                                          <button
+                                            type="button"
+                                            disabled={actioningBundleId === b.claim_id}
+                                            onClick={() => handleInlineBundleAction(b, 'APPROVED')}
+                                            className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                                            title="Approve this claim bundle step"
+                                          >
+                                            {actioningBundleId === b.claim_id && actioningActionType === 'APPROVED' ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Approving...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Check className="w-3.5 h-3.5" />
+                                                <span>Approve</span>
+                                              </>
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={actioningBundleId === b.claim_id}
+                                            onClick={() => handleInlineBundleAction(b, 'REWORK')}
+                                            className="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                                            title="Request rework for this claim bundle"
+                                          >
+                                            {actioningBundleId === b.claim_id && actioningActionType === 'REWORK' ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Reworking...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <RotateCcw className="w-3.5 h-3.5" />
+                                                <span>Rework</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                        {reworkErrors[b.claim_id] && (
+                                          <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
+                                            <span>{reworkErrors[b.claim_id]}</span>
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (b.status === 'Draft' || b.status === 'Rework' || b.status === 'Rejected') ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                          <button
+                                            onClick={() => openEditBundleModal(b)}
+                                            className="px-2.5 py-1.5 rounded border border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                          >
+                                            <PlusCircle className="w-3.5 h-3.5" />
+                                            <span>Edit</span>
+                                          </button>
+                                        </Can>
+                                        <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
+                                          <button
+                                            onClick={() => onHandleSubmitBundle(b.claim_id)}
+                                            disabled={Boolean(submittingBundleIds[b.claim_id])}
+                                            className="px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
+                                          >
+                                            {submittingBundleIds[b.claim_id] ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Submitting...</span>
+                                              </>
+                                            ) : (
+                                              <span>{b.status === 'Rework' || b.status === 'Rejected' ? 'Resubmit' : 'Submit'}</span>
+                                            )}
+                                          </button>
+                                        </Can>
+                                      </div>
+                                    ) : b.status === 'Approved' ? (
+                                      <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approved
                                       </span>
-                                      <span className="text-xs font-semibold text-on-surface">
-                                        {(reworkInstance?.step_name || rejectedInstance?.step_name || activeApp.step_name) || 'Approval'}
+                                    ) : b.status === 'Paid' ? (
+                                      <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1">
+                                        <DollarSign className="w-3.5 h-3.5" /> Paid
                                       </span>
-                                    </div>
-                                    <p className="text-[11px] text-on-surface-variant">
-                                      {(reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments)
-                                        ? `Reason: ${reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments}`
-                                        : isRejected
-                                          ? 'Rejected. Please edit bundle and resubmit.'
-                                          : 'Rework needed. Please edit bundle and resubmit.'}
-                                    </p>
+                                    ) : null}
                                   </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
 
-                                  <div className="flex items-center gap-2">
-                                    <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                          {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE & TIED EXPENSES */}
+                          {isExpanded && (
+                            <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
+                              <td colSpan={8} className="px-6 py-4 border-b border-outline-variant space-y-4">
+                                {/* Visual Stepper Pipeline with "Approval Progress Steps" header */}
+                                {b.status !== 'Draft' && (approvalData?.group ? (
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
+                                        Approval Progress Steps
+                                      </span>
+                                      {approvalData.app && (
+                                        <span className="text-[11px] text-on-surface-variant font-medium">
+                                          Current Step: <strong className="text-primary">{approvalData.app.step_name}</strong>
+                                        </span>
+                                      )}
+                                    </div>
+                                    {renderApprovalStepper(approvalData.group)}
+                                  </div>
+                                ) : (
+                                  <div className="p-3 bg-surface-container-low rounded border border-outline-variant text-xs text-on-surface-variant italic">
+                                    No approval workflow required or assigned for this claim bundle.
+                                  </div>
+                                ))}
+
+                                {/* Rejected or Rework Banner & Edit Button */}
+                                {isRejectedOrRework && (
+                                  <div className={`p-3.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${isRejected ? 'border-rose-500/30 bg-rose-500/10' : 'border-purple-500/30 bg-purple-500/10'
+                                    }`}>
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white shadow-xs ${isRejected ? 'bg-rose-600' : 'bg-purple-600'}`}>
+                                          {isRejected ? 'Rejected' : 'Rework'}
+                                        </span>
+                                        <span className="text-xs font-semibold text-on-surface">
+                                          {(reworkInstance?.step_name || rejectedInstance?.step_name || activeApp.step_name) || 'Approval'}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] text-on-surface-variant">
+                                        {(reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments)
+                                          ? `Reason: ${reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments}`
+                                          : isRejected
+                                            ? 'Rejected. Please edit bundle and resubmit.'
+                                            : 'Rework needed. Please edit bundle and resubmit.'}
+                                      </p>
+                                    </div>
+
+                                    {/* <div className="flex items-center gap-2">
+                                    <Can permission="finance.edit_bundle">
                                       <button
                                         type="button"
                                         onClick={() => openEditBundleModal(b)}
@@ -1537,7 +1636,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         <span>Edit Bundle</span>
                                       </button>
                                     </Can>
-                                    <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
+                                    <Can permission="finance.edit_bundle">
                                       <button
                                         type="button"
                                         disabled={submittingBundleId === b.claim_id || submitting}
@@ -1558,206 +1657,206 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         )}
                                       </button>
                                     </Can>
+                                  </div> */}
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {/* Action / Review Card if pending, not rework/rejected, and user can action or is administrator */}
-                              {isBundlePending && !isRejectedOrRework && canActionBundle && (
-                                <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                                        Pending Action
-                                      </span>
-                                      <span className="text-xs font-semibold text-on-surface">
-                                        {activeApp.step_name || 'Bundle Approval'} ({activeApp.assigned_role_name || (currentStepInfo?.assigned_users_names?.length ? currentStepInfo.assigned_users_names.join(', ') : 'Administrator')})
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex flex-col items-end gap-1.5 w-full md:w-auto">
-                                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full md:w-auto">
-                                      <input
-                                        type="text"
-                                        value={reworkComments[b.claim_id] || ''}
-                                        onChange={(e) => {
-                                          const val = e.target.value;
-                                          setReworkComments(prev => ({ ...prev, [b.claim_id]: val }));
-                                          if (val.trim()) setReworkErrors(prev => ({ ...prev, [b.claim_id]: '' }));
-                                        }}
-                                        placeholder="Review comments (required for rework)..."
-                                        className={`px-3 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-64 transition-all ${reworkErrors[b.claim_id]
-                                          ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                                          : 'border-outline-variant bg-surface-container-low focus:border-primary'
-                                          }`}
-                                      />
-                                      <button
-                                        type="button"
-                                        disabled={actioningBundleId === b.claim_id}
-                                        onClick={() => handleInlineBundleAction(b, 'APPROVED')}
-                                        className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-                                        title="Approve this bundle step"
-                                      >
-                                        {actioningBundleId === b.claim_id && actioningActionType === 'APPROVED' ? (
-                                          <>
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            <span>Approving...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Check className="w-3.5 h-3.5" />
-                                            <span>Approve</span>
-                                          </>
-                                        )}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={actioningBundleId === b.claim_id}
-                                        onClick={() => handleInlineBundleAction(b, 'REWORK')}
-                                        className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-                                        title="Request rework for this bundle"
-                                      >
-                                        {actioningBundleId === b.claim_id && actioningActionType === 'REWORK' ? (
-                                          <>
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            <span>Reworking...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <RotateCcw className="w-3.5 h-3.5" />
-                                            <span>Rework</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    </div>
-                                    {reworkErrors[b.claim_id] && (
-                                      <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
-                                        <span>{reworkErrors[b.claim_id]}</span>
+                                {/* Action / Review Card if pending, not rework/rejected, and user can action or is administrator */}
+                                {isBundlePending && !isRejectedOrRework && canActionBundle && (
+                                  <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                          Pending Action
+                                        </span>
+                                        <span className="text-xs font-semibold text-on-surface">
+                                          {activeApp.step_name || 'Bundle Approval'} ({activeApp.assigned_role_name || (currentStepInfo?.assigned_users_names?.length ? currentStepInfo.assigned_users_names.join(', ') : 'Administrator')})
+                                        </span>
                                       </div>
-                                    )}
+                                    </div>
+
+                                    <div className="flex flex-col items-end gap-1.5 w-full md:w-auto">
+                                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full md:w-auto">
+                                        <input
+                                          type="text"
+                                          value={reworkComments[b.claim_id] || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setReworkComments(prev => ({ ...prev, [b.claim_id]: val }));
+                                            if (val.trim()) setReworkErrors(prev => ({ ...prev, [b.claim_id]: '' }));
+                                          }}
+                                          placeholder="Review comments (required for rework)..."
+                                          className={`px-3 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-64 transition-all ${reworkErrors[b.claim_id]
+                                            ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                                            : 'border-outline-variant bg-surface-container-low focus:border-primary'
+                                            }`}
+                                        />
+                                        <button
+                                          type="button"
+                                          disabled={actioningBundleId === b.claim_id}
+                                          onClick={() => handleInlineBundleAction(b, 'APPROVED')}
+                                          className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                                          title="Approve this bundle step"
+                                        >
+                                          {actioningBundleId === b.claim_id && actioningActionType === 'APPROVED' ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              <span>Approving...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Check className="w-3.5 h-3.5" />
+                                              <span>Approve</span>
+                                            </>
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={actioningBundleId === b.claim_id}
+                                          onClick={() => handleInlineBundleAction(b, 'REWORK')}
+                                          className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                                          title="Request rework for this bundle"
+                                        >
+                                          {actioningBundleId === b.claim_id && actioningActionType === 'REWORK' ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              <span>Reworking...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <RotateCcw className="w-3.5 h-3.5" />
+                                              <span>Rework</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
+                                      {reworkErrors[b.claim_id] && (
+                                        <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
+                                          <span>{reworkErrors[b.claim_id]}</span>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
+                                )}
+
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold  tracking-wider text-on-surface">
+                                    Expenses in Bundle {b.claim_id} ({bundleExpenses.length})
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedBundleForView(b);
+                                    }}
+                                    className="text-xs text-primary hover:underline font-medium cursor-pointer flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>View Full</span>
+                                  </button>
                                 </div>
-                              )}
 
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold  tracking-wider text-on-surface">
-                                  Expenses in Bundle {b.claim_id} ({bundleExpenses.length})
-                                </span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedBundleForView(b);
-                                  }}
-                                  className="text-xs text-primary hover:underline font-medium cursor-pointer flex items-center gap-1"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>View Full</span>
-                                </button>
-                              </div>
-
-                              {bundleExpenses.length === 0 ? (
-                                <p className="text-xs text-on-surface-variant italic">No expenses recorded in this bundle.</p>
-                              ) : (
-                                <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-sm">
-                                  <table className="w-full text-xs text-left text-on-surface">
-                                    <thead className="bg-surface-container-low text-on-surface-variant  text-[9px] tracking-wider border-b border-outline-variant">
-                                      <tr>
-                                        <th className="px-3 py-2">Exp</th>
-                                        <th className="px-3 py-2">Category</th>
-                                        <th className="px-3 py-2 min-w-[130px]">Remarks</th>
-                                        <th className="px-3 py-2">Date</th>
-                                        <th className="px-3 py-2">Responsible Store</th>
-                                        <th className="px-3 py-2">Ticket / Work Order</th>
-                                        <th className="px-3 py-2 text-right">Amount ($)</th>
-                                        <th className="px-3 py-2 text-right">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-outline-variant">
-                                      {bundleExpenses.map((exp: any) => {
-                                        const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'N/A');
-                                        const ticketNo = exp.ticket_details?.work_order_no || (typeof exp.ticket === 'object' && exp.ticket ? exp.ticket.work_order_no : (exp.ticket ? `#${exp.ticket}` : 'N/A'));
-                                        const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : 'General');
-                                        const cleanRemarks = getCleanRemarks(exp.remarks);
-                                        return (
-                                          <tr key={exp.expense_id} className="hover:bg-surface-container-high transition-colors">
-                                            <td className="px-3 py-2 font-semibold text-primary">{exp.expense_id}</td>
-                                            <td className="px-3 py-2 text-on-surface font-medium">{catName}</td>
-                                            <td className="px-3 py-2 text-on-surface-variant max-w-[200px]" title={cleanRemarks || undefined}>
-                                              {cleanRemarks ? (
-                                                <div className="text-[11px] text-on-surface leading-tight line-clamp-2">
-                                                  {cleanRemarks}
-                                                </div>
-                                              ) : (
-                                                <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
-                                              )}
-                                            </td>
-                                            <td className="px-3 py-2 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
-                                            <td className="px-3 py-2 text-on-surface-variant">{storeName}</td>
-                                            <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                                              {((exp.ticket_details || exp.ticket) && setSelectedTicketForModal) ? (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setSelectedTicketForModal(typeof (exp.ticket_details || exp.ticket) === 'object' ? (exp.ticket_details || exp.ticket) : { ticket_id: (exp.ticket_details || exp.ticket) })}
-                                                  className="font-mono font-medium text-primary hover:underline text-[11px] cursor-pointer"
-                                                >
-                                                  {ticketNo}
-                                                </button>
-                                              ) : (
-                                                <span className="text-on-surface-variant/60 font-mono text-[11px]">{ticketNo}</span>
-                                              )}
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                              {parseFloat(exp.amount || '0').toFixed(2)}
-                                            </td>
-                                            <td className="px-3 py-2 text-right">
-                                              <div className="inline-flex items-center justify-end gap-1.5">
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setPreviewExpense(exp);
-                                                  }}
-                                                  className="px-2 py-0.5 rounded border border-outline text-[11px] text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                                  title="Preview Expense Receipt & Details"
-                                                >
-                                                  {/* <Eye className="w-3 h-3" /> */}
-                                                  <span>Receipt</span>
-                                                </button>
-                                                {b.status !== 'Paid' && !b.ledger_details && !(b as any).ledger_id && handleRemoveExpenseFromBundle && (
-                                                  <Can permission='finance.edit_bundle' >
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if ((b.expenses?.length || 0) <= 1) {
-                                                          alert("Cannot remove the only expense. Please delete the Bundle instead.");
-                                                          return;
-                                                        }
-                                                        handleRemoveExpenseFromBundle(b.claim_id, exp.expense_id);
-                                                      }}
-                                                      className="px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                                      title="Remove Expense from Bundle"
-                                                    >
-                                                      <Trash2 className="w-3 h-3" />
-                                                      <span>Remove</span>
-                                                    </button>
-                                                  </Can>
+                                {bundleExpenses.length === 0 ? (
+                                  <p className="text-xs text-on-surface-variant italic">No expenses recorded in this bundle.</p>
+                                ) : (
+                                  <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-sm">
+                                    <table className="w-full text-xs text-left text-on-surface">
+                                      <thead className="bg-surface-container-low text-on-surface-variant  text-[9px] tracking-wider border-b border-outline-variant">
+                                        <tr>
+                                          <th className="px-3 py-2">Exp</th>
+                                          <th className="px-3 py-2">Category</th>
+                                          <th className="px-3 py-2 min-w-[130px]">Remarks</th>
+                                          <th className="px-3 py-2">Date</th>
+                                          <th className="px-3 py-2">Responsible Store</th>
+                                          <th className="px-3 py-2">Ticket / Work Order</th>
+                                          <th className="px-3 py-2 text-right">Amount ($)</th>
+                                          <th className="px-3 py-2 text-right">Action</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-outline-variant">
+                                        {bundleExpenses.map((exp: any) => {
+                                          const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'N/A');
+                                          const ticketNo = exp.ticket_details?.work_order_no || (typeof exp.ticket === 'object' && exp.ticket ? exp.ticket.work_order_no : (exp.ticket ? `${exp.ticket}` : 'N/A'));
+                                          const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : 'General');
+                                          const cleanRemarks = getCleanRemarks(exp.remarks);
+                                          return (
+                                            <tr key={exp.expense_id} className="hover:bg-surface-container-high transition-colors">
+                                              <td className="px-3 py-2 font-semibold text-primary">{exp.expense_id}</td>
+                                              <td className="px-3 py-2 text-on-surface font-medium">{catName}</td>
+                                              <td className="px-3 py-2 text-on-surface-variant max-w-[200px]" title={cleanRemarks || undefined}>
+                                                {cleanRemarks ? (
+                                                  <div className="text-[11px] text-on-surface leading-tight line-clamp-2">
+                                                    {cleanRemarks}
+                                                  </div>
+                                                ) : (
+                                                  <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
                                                 )}
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
+                                              </td>
+                                              <td className="px-3 py-2 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
+                                              <td className="px-3 py-2 text-on-surface-variant">{storeName}</td>
+                                              <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                                {((exp.ticket_details || exp.ticket) && setSelectedTicketForModal) ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setSelectedTicketForModal(typeof (exp.ticket_details || exp.ticket) === 'object' ? (exp.ticket_details || exp.ticket) : { ticket_id: (exp.ticket_details || exp.ticket) })}
+                                                    className="font-mono font-medium text-primary hover:underline text-[11px] cursor-pointer"
+                                                  >
+                                                    {ticketNo}
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-on-surface-variant/60 font-mono text-[11px]">{ticketNo}</span>
+                                                )}
+                                              </td>
+                                              <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                                                {parseFloat(exp.amount || '0').toFixed(2)}
+                                              </td>
+                                              <td className="px-3 py-2 text-right">
+                                                <div className="inline-flex items-center justify-end gap-1.5">
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setPreviewExpense(exp);
+                                                    }}
+                                                    className="px-2 py-0.5 rounded border border-outline text-[11px] text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                                    title="Preview Expense Receipt & Details"
+                                                  >
+                                                    {/* <Eye className="w-3 h-3" /> */}
+                                                    <span>Receipt</span>
+                                                  </button>
+                                                  {b.status !== 'Paid' && !b.ledger_details && !(b as any).ledger_id && handleRemoveExpenseFromBundle && (
+                                                    <Can permission='finance.edit_bundle' >
+                                                      <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          if ((b.expenses?.length || 0) <= 1) {
+                                                            alert("Cannot remove the only expense. Please delete the Bundle instead.");
+                                                            return;
+                                                          }
+                                                          handleRemoveExpenseFromBundle(b.claim_id, exp.expense_id);
+                                                        }}
+                                                        className="px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-[11px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                                        title="Remove Expense from Bundle"
+                                                      >
+                                                        <Trash2 className="w-3 h-3" />
+                                                        <span>Remove</span>
+                                                      </button>
+                                                    </Can>
+                                                  )}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -2353,9 +2452,22 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   </div>
                 </div>
               </div>
-              <button onClick={() => setSelectedBundleForView(null)} className="p-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedBundleForView.status === 'In Review' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBundleForReport(selectedBundleForView)}
+                    className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all shadow-xs hover:shadow cursor-pointer"
+                    title="Print bundle settlement report"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Report</span>
+                  </button>
+                )}
+                <button onClick={() => setSelectedBundleForView(null)} className="p-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
@@ -2395,6 +2507,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
             {/* Visual Approval Pipeline Stepper inside View Modal */}
             {(() => {
+              if (selectedBundleForView.status === 'Draft') return null;
               const modalApprovalData = getBundleApprovalGroup(selectedBundleForView);
               if (!modalApprovalData?.group) return null;
               return (
@@ -2650,10 +2763,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         await onHandleSubmitBundle(selectedBundleForView.claim_id);
                         setSelectedBundleForView(null);
                       }}
-                      disabled={submittingBundleId === selectedBundleForView.claim_id || submitting}
+                      disabled={Boolean(submittingBundleIds[selectedBundleForView.claim_id])}
                       className="px-4 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98] inline-flex items-center gap-1.5"
                     >
-                      {submittingBundleId === selectedBundleForView.claim_id ? (
+                      {submittingBundleIds[selectedBundleForView.claim_id] ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           <span>Submitting...</span>
@@ -2719,10 +2832,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         const workerDisplayName = (() => {
           const w = previewExpense.worker_detail || previewExpense.worker;
           if (typeof w === 'object' && w !== null) {
-            return w.full_name || w.username || (w.id ? `Worker #${w.id}` : 'Technician');
+            return w.full_name || w.username || (w.id ? `Worker ${w.id}` : 'Technician');
           }
           if (typeof w === 'number' || typeof w === 'string') {
-            return `Worker #${w}`;
+            return `Worker ${w}`;
           }
           return 'Technician';
         })();
@@ -2730,10 +2843,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         const storeDisplayName = (() => {
           const s = previewExpense.responsible_store;
           if (typeof s === 'object' && s !== null) {
-            return s.store_name || (s.store_id ? `Store #${s.store_id}` : 'N/A');
+            return s.store_name || (s.store_id ? `Store ${s.store_id}` : 'N/A');
           }
           if (typeof s === 'number' || typeof s === 'string') {
-            return `Store #${s}`;
+            return `Store ${s}`;
           }
           return 'N/A';
         })();
@@ -2804,7 +2917,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   <div className="space-y-2.5">
                     {/* Main Showcase Image Display Box */}
                     <div
-                      onClick={() => currentReceipt && setPreviewMediaUrl({ url: currentReceipt.file_url, title: currentReceipt.file_name || `Expense #${previewExpense.expense_id} Receipt` })}
+                      onClick={() => currentReceipt && setPreviewMediaUrl({ url: currentReceipt.file_url, title: currentReceipt.file_name || `Expense ${previewExpense.expense_id} Receipt` })}
                       className="group relative w-full h-72 sm:h-80 rounded border border-outline-variant bg-black/60 overflow-hidden cursor-pointer flex items-center justify-center transition-all shadow-inner"
                     >
                       <img
@@ -2821,7 +2934,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       </div>
                       <div className="absolute bottom-3 right-3 bg-black/75 backdrop-blur-md px-3 py-1 rounded text-[11px] font-medium text-white flex items-center gap-1.5 shadow-md">
                         <Paperclip className="w-3.5 h-3.5 text-primary" />
-                        <span>{currentReceipt.file_name || `Receipt #${currentReceipt.media_id}`}</span>
+                        <span>{currentReceipt.file_name || `Receipt ${currentReceipt.media_id}`}</span>
                       </div>
                     </div>
 
@@ -3007,6 +3120,19 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             />
           </div>
         </div>
+      )}
+
+      {/* POPUP MODAL 4: BUNDLE SETTLEMENT REPORT */}
+      {selectedBundleForReport && (
+        <BundleReportModal
+          bundle={selectedBundleForReport}
+          onClose={() => setSelectedBundleForReport(null)}
+          setSelectedTicketForModal={setSelectedTicketForModal}
+          token={token}
+          currentUser={currentUser}
+          API_URL={API_URL}
+          autoPrint={false}
+        />
       )}
     </div>
   );

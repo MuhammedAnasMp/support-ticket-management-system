@@ -115,6 +115,8 @@
     "finance.add_workerclaim": "Allows can add worker claim.",
     "finance.approve_expense": "Allows can approve expense.",
     "finance.approve_ledger": "Allows can approve ledger.",
+    "finance.pay_ledger": "Allows can mark ledger as paid / cash settlement.",
+    "finance.pay_ledger_group": "Allows can mark ledger group as paid / cash settlement.",
     "finance.approve_workerclaim": "Allows can approve worker claim.",
     "finance.change_amount": "Allows can change amount.",
     "finance.change_approvalinstance": "Allows can change approval instance.",

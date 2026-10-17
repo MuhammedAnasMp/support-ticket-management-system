@@ -188,6 +188,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return [serialize_approval_instance_summary(inst) for inst in insts]
 
     def get_status_display(self, obj):
+        if getattr(obj, 'is_paid', False) or (obj.claim and obj.claim.status == 'Paid') or (hasattr(obj, 'ledgers') and obj.ledgers.filter(status='Paid').exists()):
+            return 'Paid'
         insts = self._get_sorted_approval_instances(obj)
         if insts:
             latest_inst = insts[0]
@@ -402,6 +404,7 @@ class LedgerBatchWriteSerializer(serializers.ModelSerializer):
 class LedgerGroupSerializer(serializers.ModelSerializer):
     created_by_detail = serializers.SerializerMethodField()
     completed_by_detail = serializers.SerializerMethodField()
+    paid_by_detail = serializers.SerializerMethodField()
     ledgers_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -431,6 +434,9 @@ class LedgerGroupSerializer(serializers.ModelSerializer):
 
     def get_completed_by_detail(self, obj):
         return serialize_user_summary(obj.completed_by)
+
+    def get_paid_by_detail(self, obj):
+        return serialize_user_summary(obj.paid_by)
 
 
 class LedgerSerializer(serializers.ModelSerializer):

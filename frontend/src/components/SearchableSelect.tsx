@@ -15,6 +15,8 @@ interface SearchableSelectProps {
   options: SelectOption[];
   placeholder?: string;
   className?: string;
+  containerClassName?: string;
+  dropdownClassName?: string;
   disabled?: boolean;
   required?: boolean;
   id?: string;
@@ -32,6 +34,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   options,
   placeholder = 'Select option...',
   className = '',
+  containerClassName = '',
+  dropdownClassName = '',
   disabled = false,
   required = false,
   id,
@@ -109,7 +113,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const baseInputCls = className || "w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all placeholder:text-on-surface-variant/60 shadow-2xs";
 
   return (
-    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-50' : ''}`}>
+    <div ref={containerRef} className={`relative ${containerClassName || 'w-full'} ${isOpen ? 'z-50' : ''}`}>
       {/* Hidden native input for HTML form validation */}
       {required && (
         <input
@@ -131,15 +135,15 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         onClick={() => setIsOpen(prev => !prev)}
         className={`${baseInputCls} flex items-center justify-between gap-2 text-left cursor-pointer select-none`}
       >
-        <span className={`truncate ${!selectedOption ? 'text-on-surface-variant/60 font-normal' : 'text-on-surface font-medium'}`}>
+        <span className={`truncate ${!selectedOption ? 'text-on-surface-variant/60 font-normal' : ''}`}>
           {selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-on-surface-variant shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 opacity-75 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && !disabled && (
-        <div className={`absolute left-0 right-0 ${placement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-[100] bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md`}>
+        <div className={`absolute ${dropdownClassName || 'left-0 right-0'} ${placement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-[100] bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md`}>
           {/* Search Box */}
           <div className="p-2 border-b border-outline-variant/60 bg-surface-container-low flex items-center gap-2">
             {loading ? (

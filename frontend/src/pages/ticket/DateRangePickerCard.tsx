@@ -191,7 +191,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                     right: 0,
                     borderRadius: '1rem 1rem 0 0',
                 }}
-                className="z-[1000] bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant shadow-2xl overflow-hidden max-h-[90dvh] overflow-y-auto rounded-2xl"
+                className="z-[1000] bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant shadow-2xl overflow-hidden max-h-[90dvh] overflow-y-auto rounded"
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-outline-variant dark:border-dark-outline-variant">
@@ -204,7 +204,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                     <button
                         type="button"
                         onClick={() => setIsOpen(false)}
-                        className="p-1.5 rounded-lg text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
+                        className="p-1.5 rounded text-outline hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high transition-colors"
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -219,7 +219,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                         id="date-type-select"
                         value={draftDateType}
                         onChange={(e) => setDraftDateType(e.target.value)}
-                        className="w-full text-xs font-semibold bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors"
+                        className="w-full text-xs font-semibold bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant rounded px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors"
                     >
                         {DATE_TYPE_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -238,6 +238,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                         ranges={draft}
                         months={1}
                         direction="horizontal"
+
                     />
                 </div>
 
@@ -253,7 +254,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                     <button
                         type="button"
                         onClick={handleApply}
-                        className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors"
+                        className="px-5 py-2 rounded bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors"
                     >
                         Apply Filter
                     </button>

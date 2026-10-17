@@ -7,7 +7,7 @@ import {
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import type { LedgerItem, ExpenseItem, LedgerBatchItem } from './types';
+import { getUserId, type LedgerItem, type ExpenseItem, type LedgerBatchItem, type WorkerClaimItem } from './types';
 
 export interface LedgerGroupCluster {
   groupId: number | string;
@@ -17,10 +17,18 @@ export interface LedgerGroupCluster {
   isCompleted?: boolean;
   completedAt?: string;
   completedByName?: string;
+  isPaid?: boolean;
+  paidAt?: string;
+  paidByName?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  paymentRemarks?: string;
+  recipientName?: string;
   ledgers: LedgerItem[];
   totalAmount: number;
   totalBundlesCount: number;
   totalExpensesCount: number;
+  totalWorkersCount?: number;
   allApproved: boolean;
   approvedCount: number;
   totalCount: number;
@@ -179,7 +187,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     for (const l of group.ledgers) {
       const batchName = l.ledger_batch_detail?.batch_name ||
         (typeof l.ledger_batch === 'object' ? (l.ledger_batch as any)?.batch_name : null) ||
-        `Ledger Batch #${l.ledger_id}`;
+        `Ledger Batch ${l.ledger_id}`;
 
       const directExps = Array.isArray(l.expenses) ? l.expenses : [];
       for (const exp of directExps) {
@@ -195,13 +203,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       }
     }
 
-    // Phase 2: For any ledger that had no direct expenses (legacy data), gather from its bundles
+    // Phase 2: Also gather expenses from bundles for any ledger expenses not directly present
     for (const l of group.ledgers) {
-      const directExps = Array.isArray(l.expenses) ? l.expenses : [];
-      if (directExps.length === 0 && Array.isArray(l.bundles)) {
+      if (Array.isArray(l.bundles)) {
         const batchName = l.ledger_batch_detail?.batch_name ||
           (typeof l.ledger_batch === 'object' ? (l.ledger_batch as any)?.batch_name : null) ||
-          `Ledger Batch #${l.ledger_id}`;
+          `Ledger Batch ${l.ledger_id}`;
 
         for (const bundle of l.bundles) {
           const bundleId = bundle.claim_id;
@@ -344,9 +351,43 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         if (matched) return matched.batch_name;
       }
 
-      return currentGroupName || `Ledger #${ledger.ledger_id}`;
+      return currentGroupName || `Ledger ${ledger.ledger_id}`;
     };
   }, [fetchedBatches, currentGroupName]);
+
+  // Map all bundles in group by ID for quick lookup of worker and details
+  const groupBundlesMap = useMemo(() => {
+    const map = new Map<string, WorkerClaimItem>();
+    for (const l of group.ledgers) {
+      if (Array.isArray(l.bundles)) {
+        for (const b of l.bundles) {
+          if (b.claim_id != null) {
+            map.set(String(b.claim_id), b);
+          }
+        }
+      }
+    }
+    return map;
+  }, [group.ledgers]);
+
+  // Map of expense_id -> bundle for reverse lookup
+  const expenseToBundleMap = useMemo(() => {
+    const map = new Map<number, WorkerClaimItem>();
+    for (const l of group.ledgers) {
+      if (Array.isArray(l.bundles)) {
+        for (const b of l.bundles) {
+          if (Array.isArray(b.expenses)) {
+            for (const bexp of b.expenses) {
+              if (bexp.expense_id != null) {
+                map.set(bexp.expense_id, b);
+              }
+            }
+          }
+        }
+      }
+    }
+    return map;
+  }, [group.ledgers]);
 
   // Build Structured Ticket/Expense Rows
   const structuredRows = useMemo<TicketExpenseRow[]>(() => {
@@ -355,10 +396,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
     // 1. Build rows from all expenses
     for (const exp of allExpenses) {
-      const wObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : exp.worker_detail;
-      const workerId = wObj?.id || (typeof exp.worker === 'number' ? exp.worker : 'unknown');
-      const workerName = wObj?.full_name || wObj?.username || `Technician ${workerId}`;
-      const workerEmpNo = wObj?.employee_no || '';
+      const rawClaimId = exp.bundle_id || (exp as any).claim_id || (typeof exp.claim === 'object' ? exp.claim?.claim_id : exp.claim);
+      const matchedBundle = (rawClaimId != null ? groupBundlesMap.get(String(rawClaimId)) : undefined)
+        || (exp.expense_id != null ? expenseToBundleMap.get(exp.expense_id) : undefined);
+
+      const wObj = (typeof exp.worker === 'object' && exp.worker ? exp.worker : null)
+        || exp.worker_detail
+        || matchedBundle?.worker_detail
+        || (typeof matchedBundle?.worker === 'object' ? matchedBundle.worker : null);
+
+      const resolvedWorkerId = getUserId(wObj) ?? getUserId(exp.worker) ?? getUserId(matchedBundle?.worker_detail) ?? getUserId(matchedBundle?.worker);
+      const workerId = resolvedWorkerId != null ? resolvedWorkerId : 'unknown';
+      const workerName = wObj?.full_name || wObj?.username || matchedBundle?.worker_detail?.full_name || matchedBundle?.worker_detail?.username || (workerId !== 'unknown' ? `Technician ${workerId}` : 'Unknown Technician');
+      const workerEmpNo = wObj?.employee_no || matchedBundle?.worker_detail?.employee_no || '';
 
       const rawTicket = (exp.ticket_details || (exp as any).ticket) as any;
       const ticketId = exp.ticket_details?.ticket_id ||
@@ -369,7 +419,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       const ticketNo = workOrderNo || (ticketId ? `WO-${ticketId}` : (exp.expense_id ? `EXP-${exp.expense_id}` : 'General'));
       const expNo = ticketNo;
       const expId = exp.expense_id != null ? String(exp.expense_id) : '';
-      const bundleId = exp.bundle_id || (exp as any).claim_id || (exp as any).claim || '-';
+      const bundleId = exp.bundle_id || rawClaimId || (matchedBundle ? matchedBundle.claim_id : '-');
 
       if (bundleId && bundleId !== '-') {
         processedBundleIds.add(String(bundleId));
@@ -377,13 +427,21 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       const location = exp.responsible_store?.store_name || exp.ticket_details?.store_name || (exp as any).store_name || 'General';
       const subDept = exp.ticket_details?.sub_department_name || exp.sub_department_name || 'General';
-      const issueTitle = exp.ticket_details?.title || (exp as any).title || exp.remarks || 'Maintenance Request';
+      const rawRemarks = (exp.remarks || '').trim();
+      const rawTitle = (exp.ticket_details?.title || (exp as any).title || '').trim();
+      const issueTitle = rawRemarks
+        ? (rawTitle && rawTitle.toLowerCase() !== rawRemarks.toLowerCase()
+          ? `${rawTitle} - ${rawRemarks}`
+          : rawRemarks)
+        : (rawTitle || 'Maintenance Request');
 
       const ledgerObj = group.ledgers.find(l => l.ledger_id === exp.ledger_id) || ({} as LedgerItem);
       const ledgerBatch = exp.batch_name || resolveLedgerBatchName(ledgerObj, exp.ticket_details?.sub_department_id || exp.sub_department_id, subDept);
       const ledgerGroup = currentGroupName || ledgerBatch;
 
-      const key = `${workerId}_${bundleId}_${ticketId || exp.expense_id}_${location}_${subDept}`;
+      const key = exp.expense_id != null
+        ? `exp_${exp.expense_id}`
+        : `exp_${workerId}_${bundleId}_${ticketId || 'no_ticket'}_${location}_${subDept}_${Math.random()}`;
 
       if (!rowMap.has(key)) {
         rowMap.set(key, {
@@ -437,9 +495,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             continue;
           }
 
-          const wObj = bundle.worker_detail;
-          const workerId = wObj?.id || bundle.worker || 'unknown';
-          const workerName = wObj?.full_name || wObj?.username || `Technician ${workerId}`;
+          const wObj = bundle.worker_detail || (typeof bundle.worker === 'object' ? bundle.worker : null);
+          const resolvedWorkerId = getUserId(wObj) ?? getUserId(bundle.worker);
+          const workerId = resolvedWorkerId != null ? resolvedWorkerId : 'unknown';
+          const workerName = wObj?.full_name || wObj?.username || (workerId !== 'unknown' ? `Technician ${workerId}` : 'Unknown Technician');
           const workerEmpNo = wObj?.employee_no || '';
           const location = bundle.ticket_details?.store_name || l.store_detail?.store_name || 'General';
           const subDept = bundle.ticket_details?.sub_department_name || 'General';
@@ -482,7 +541,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     }
 
     return Array.from(rowMap.values());
-  }, [allExpenses, group.ledgers, currentGroupName, resolveLedgerBatchName]);
+  }, [allExpenses, group.ledgers, currentGroupName, resolveLedgerBatchName, groupBundlesMap, expenseToBundleMap]);
 
   // Helper to format ticket and its expense numbers across multiple lines if vertical orientation is enabled
   const formatTicketExpenseLines = (ticket: string, expIds: string[], isVertical: boolean): string[] => {
@@ -597,7 +656,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     }>();
 
     for (const row of structuredRows) {
-      const key = String(row.workerId);
+      const key = String(row.workerId && row.workerId !== 'unknown' ? row.workerId : (row.workerName || 'unknown'));
       if (!map.has(key)) {
         map.set(key, {
           workerId: row.workerId,
@@ -814,14 +873,25 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   const consolidatedUserData = useMemo(() => {
     let uSl = 1;
     const list = workerGroupedRows.map(w => {
-      const bundleIds = new Set(w.rows.map(r => r.bundleId));
+      const rawBundleIds = Array.from(new Set(w.rows.map(r => r.bundleId).filter(b => b && b !== '-' && b !== 'unknown')));
+      const sortedBundleIds = rawBundleIds.sort((a, b) => {
+        const numA = Number(String(a).replace(/^[^\d]*/, ''));
+        const numB = Number(String(b).replace(/^[^\d]*/, ''));
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return String(a).localeCompare(String(b));
+      });
+      const formattedBundleIds = sortedBundleIds.map(id => String(id).startsWith('#') ? String(id) : `${id}`);
+      const bundleNumbersStr = formattedBundleIds.join(', ');
+      const uniqueTickets = new Set(w.rows.map(r => r.ticketNo || r.expNo).filter(Boolean));
       return {
         sl: uSl++,
         workerId: w.workerId,
         workerName: w.workerName,
         workerEmployeeNo: w.workerEmployeeNo,
-        bundleCount: bundleIds.size,
-        ticketCount: w.rows.length,
+        bundleCount: sortedBundleIds.length,
+        bundleIds: sortedBundleIds,
+        bundleNumbersStr,
+        ticketCount: uniqueTickets.size,
         locationCount: w.uniqueLocationsCount,
         totalAmount: w.totalAmount
       };
@@ -882,10 +952,15 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             <td style="padding:7px 12px;border:1px solid #d1d5db;font-size:11px;font-weight:700;color:#111827;">
               ${item.workerName} ${item.workerEmployeeNo ? `<span style="font-weight:normal;color:#6b7280;font-size:10px;">(${item.workerEmployeeNo})</span>` : ''}
             </td>
-            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.bundleCount}</td>
+            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">
+              ${item.bundleCount} ${item.bundleNumbersStr ? `<span style="font-size:10px;color:#4b5563;font-weight:600;">(${item.bundleNumbersStr})</span>` : ''}
+            </td>
             <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.ticketCount}</td>
             <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.locationCount}</td>
             <td style="text-align:right;padding:7px 14px;border:1px solid #d1d5db;font-size:11.5px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${item.totalAmount.toFixed(2)}</td>
+            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;vertical-align:bottom;">
+              <div style="border-bottom:1.5px solid #6b7280;width:80%;margin:0 auto 4px auto;height:16px;"></div>
+            </td>
           </tr>
         `;
       }
@@ -896,6 +971,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${consolidatedUserData.totalTickets}</td>
           <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${userwiseGrandTotals.uniqueLocationsCount}</td>
           <td style="text-align:right;padding:9px 14px;border:1.5px solid #374151;font-size:13px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedUserData.grandTotal.toFixed(2)}</td>
+          <td style="border:1.5px solid #374151;background:#e5e7eb;"></td>
         </tr>
       `;
 
@@ -947,8 +1023,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             userwiseRowsHtml += `
               <tr style="border:1px solid #d1d5db;">
                 <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${globalSl++}</td>
-                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">#${row.bundleId}</td>
-                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:500;">${row.expNo}</td>
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">${row.bundleId}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:500;">
+                  ${row.expNo}${row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}` ? `<br/><span style="font-size:8.5px;color:#6b7280;">(EXP-${row.expenseIds[0]})</span>` : ''}
+                </td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#111827;">${row.location}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.subDepartment}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${row.issueTitle}</td>
@@ -986,7 +1064,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       userwiseRowsHtml += `
         <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;">
           <td colspan="${userLeadingSpan}" style="text-align:right;padding:7px 8px;font-size:11px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;letter-spacing:0.5px;">
-            GRAND TOTAL (${structuredRows.length} Tickets / ${userwiseGrandTotals.uniqueLocationsCount} Locations):
+            GRAND TOTAL (${new Set(structuredRows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets / ${userwiseGrandTotals.uniqueLocationsCount} Locations):
           </td>
           ${grandCols}
           <td style="text-align:right;padding:7px 6px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${userwiseGrandTotals.grandTotal.toFixed(2)}</td>
@@ -1021,16 +1099,20 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             <span>Finance Manager</span>
           </div>
           <div class="sign-box">
-            <strong>CEO / GM / Director</strong>
+            <strong>CEO / CCOO / Director</strong>
             <span>${group.completedByName || 'Executive Approval'}</span>
           </div>
         </div>
       `;
 
-      const getHeaderHtml = (subtitle: string) => `
+      const reportTitle = isAllOrActiveTab === 'userwise'
+        ? 'Worker-wise Settlement'
+        : 'Sub-Department Expenses by Location';
+
+      const getHeaderHtml = (subtitle: string, customTitle?: string) => `
         <div class="report-header">
           <div>
-            <h1 class="report-title">Weekly Expense Settlement Report</h1>
+            <h1 class="report-title">${customTitle || reportTitle}</h1>
             <p class="report-subtitle">${subtitle}</p>
           </div>
           <div style="text-align:right;">
@@ -1102,7 +1184,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             batchRowsHtml += `
               <tr style="border:1px solid #d1d5db;">
                 <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${sl++}</td>
-                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">#${row.bundleId}</td>
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">${row.bundleId}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:500;">${row.expNo}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#111827;">${row.location}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.subDepartment}</td>
@@ -1206,6 +1288,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                       <th style="width:90px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">TICKETS</th>
                       <th style="width:100px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">LOCATIONS</th>
                       <th style="width:160px;text-align:right;padding:8px 14px;border:1px solid #9ca3af;font-size:11.5px;font-weight:800;color:#065f46;background:#d1fae5;">AMOUNT TO BE GIVEN</th>
+                      <th style="width:110px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">PAID</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1214,7 +1297,6 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 </table>
               </div>
             </div>
-            ${signaturesHtml}
           </div>
 
           <div class="print-page batch-page second-page">
@@ -1289,7 +1371,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Weekly Expense Settlement Report - ${currentGroupName}</title>
+            <title>${reportTitle} - ${currentGroupName}</title>
             <meta charset="utf-8" />
             <style>
               @page {
@@ -1526,15 +1608,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       const pageHeight = isVerticalOrientation ? 297 : 210;
 
       // Header Section
+      const pdfMainTitle = isTargetTab === 'userwise'
+        ? 'WORKER SETTLEMENT (FOR OFFICE)'
+        : 'LOCATION-WISE EXPENSE (FOR ACCOUNTS)';
+
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(17, 24, 39);
-      doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
+      doc.text(pdfMainTitle, 14, 14);
 
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(75, 85, 99);
-      doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   Generated: ${new Date().toLocaleDateString()}   |   Status: ${group.isCompleted ? 'Completed' : 'Pending Approval'}`, 14, 20);
+      doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Generated: ${new Date().toLocaleDateString()}   |   Status: ${group.isCompleted ? 'Completed' : 'Pending Approval'}`, 14, 20);
 
       // Summary Metric Box
       doc.setFillColor(243, 244, 246);
@@ -1590,7 +1676,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         });
 
         // 7-Tier Signatures on Page 1
-        const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']];
+        const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']];
         const signBody = [
           [
             `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
@@ -1627,7 +1713,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(75, 85, 99);
-        doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   ${groupByLocation ? `Store & Department Expense Statement by Location (${userwiseGrandTotals.uniqueLocationsCount} Locations)` : 'Store & Department Expense Statement by Ledger Batches'}`, 14, 20);
+        doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   ${groupByLocation ? `Store & Department Expense Statement by Location (${userwiseGrandTotals.uniqueLocationsCount} Locations)` : 'Store & Department Expense Statement by Ledger Batches'}`, 14, 20);
 
         const headerRow1: any[] = groupByLocation ? [
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
@@ -1674,7 +1760,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(75, 85, 99);
-            doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
+            doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
           } else {
             // Update subtitle on first batch page to include the batch name
             doc.setFillColor(255, 255, 255);
@@ -1682,7 +1768,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(75, 85, 99);
-            doc.text(`Group: ${currentGroupName} (ID #${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
+            doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
           }
 
           const isLastBatch = batchIndex === storewiseByBatch.length - 1;
@@ -1747,7 +1833,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             for (const row of batch.rows) {
               const rowData: any[] = [
                 sl++,
-                `#${row.bundleId}`,
+                `${row.bundleId}`,
                 row.expNo,
                 row.location,
                 row.subDepartment,
@@ -1797,17 +1883,18 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         });
       } else {
         // --- PAGE 1: CONSOLIDATED TECHNICIAN / USER PAYOUT STATEMENT ---
-        const userSummaryHead = [['SL', 'Technician / User', 'Bundles', 'Tickets', 'Locations', 'Amount to be Given (KD)']];
+        const userSummaryHead = [['SL', 'Technician / User', 'Bundles', 'Tickets', 'Locations', 'Amount to be Given (KD)', 'Paid']];
         const userSummaryBody: any[] = [];
         let uSl = 1;
         for (const item of consolidatedUserData.list) {
           userSummaryBody.push([
             uSl++,
             `${item.workerName}${item.workerEmployeeNo ? ` (${item.workerEmployeeNo})` : ''}`,
-            item.bundleCount,
+            item.bundleNumbersStr ? `${item.bundleCount} (${item.bundleNumbersStr})` : item.bundleCount,
             item.ticketCount,
             item.locationCount,
-            `KD ${item.totalAmount.toFixed(2)}`
+            `KD ${item.totalAmount.toFixed(2)}`,
+            '__________'
           ]);
         }
         userSummaryBody.push([
@@ -1815,7 +1902,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           { content: String(consolidatedUserData.totalBundles), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
           { content: String(consolidatedUserData.totalTickets), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
           { content: String(userwiseGrandTotals.uniqueLocationsCount), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
-          { content: `KD ${consolidatedUserData.grandTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
+          { content: `KD ${consolidatedUserData.grandTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } },
+          { content: '', styles: { fillColor: [229, 231, 235] } }
         ]);
 
         autoTable(doc, {
@@ -1826,39 +1914,15 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
           bodyStyles: { fontSize: 8.5 },
           columnStyles: {
-            0: { cellWidth: 15, halign: 'center' },
-            1: { cellWidth: 100, fontStyle: 'bold' },
-            2: { cellWidth: 30, halign: 'center' },
-            3: { cellWidth: 30, halign: 'center' },
-            4: { cellWidth: 35, halign: 'center' },
-            5: { cellWidth: 48, halign: 'right', fontStyle: 'bold' }
+            0: { cellWidth: 14, halign: 'center' },
+            1: { cellWidth: 80, fontStyle: 'bold' },
+            2: { cellWidth: 26, halign: 'center' },
+            3: { cellWidth: 24, halign: 'center' },
+            4: { cellWidth: 28, halign: 'center' },
+            5: { cellWidth: 44, halign: 'right', fontStyle: 'bold' },
+            6: { cellWidth: 32, halign: 'center', fontStyle: 'normal' }
           },
           margin: { left: 14, right: 14 }
-        });
-
-        // 7-Tier Signatures on Page 1
-        const signHead1 = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']];
-        const signBody1 = [
-          [
-            `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
-            '\n\n___________________\nMaintenance Engineer',
-            '\n\n___________________\nProject Engineer',
-            '\n\n___________________\nAccounts Dept',
-            '\n\n___________________\nInternal Audit',
-            '\n\n___________________\nFinance Manager',
-            `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
-          ]
-        ];
-
-        autoTable(doc, {
-          startY: (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : undefined,
-          head: signHead1,
-          body: signBody1,
-          theme: 'plain',
-          headStyles: { fontStyle: 'bold', fontSize: 7.5, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
-          bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99] },
-          margin: { left: 14, right: 14 },
-          pageBreak: 'avoid'
         });
 
         // --- PAGE 2+: DETAILED USER-WISE STATEMENT ---
@@ -1914,9 +1978,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         let globalSl = 1;
         for (const workerGroup of workerGroupedRows) {
+          const uniqueTkts = new Set(workerGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size;
           body.push([
             {
-              content: `Worker: ${workerGroup.workerName} (${workerGroup.rows.length} Tickets, ${workerGroup.uniqueLocationsCount} Locations) - Subtotal: KD ${workerGroup.totalAmount.toFixed(2)}`,
+              content: `Worker: ${workerGroup.workerName} (${uniqueTkts} Tickets, ${workerGroup.uniqueLocationsCount} Locations) - Subtotal: KD ${workerGroup.totalAmount.toFixed(2)}`,
               colSpan: leadingColSpan + allChildExpenseColumns.length + 1,
               styles: { fillColor: [238, 242, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
             }
@@ -1939,10 +2004,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             }
           } else {
             for (const row of workerGroup.rows) {
+              const rowTicketDisplay = row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}`
+                ? `${row.expNo} (EXP-${row.expenseIds[0]})`
+                : row.expNo;
               const rowData: any[] = [
                 globalSl++,
-                `#${row.bundleId}`,
-                row.expNo,
+                `${row.bundleId}`,
+                rowTicketDisplay,
                 row.location,
                 row.subDepartment,
                 row.issueTitle,
@@ -2042,7 +2110,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // Signatures row for Consolidated Sheet
       s5Data.push([]);
       s5Data.push(['SIGNATURES & APPROVALS:']);
-      s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']);
+      s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
       s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
 
       const ws5 = XLSX.utils.aoa_to_sheet(s5Data);
@@ -2055,17 +2123,18 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // ==========================================
       const sUserData: any[][] = [
         ['', 'Consolidated Technician Payout Statement (Executive Summary)'],
-        ['SL', 'Technician / User', 'Employee ID', 'Bundles', 'Tickets', 'Locations', 'Amount to be Given (KD)']
+        ['SL', 'Technician / User', 'Employee ID', 'Bundles', 'Tickets', 'Locations', 'Amount to be Given (KD)', 'Paid']
       ];
       for (const item of consolidatedUserData.list) {
         sUserData.push([
           item.sl,
           item.workerName,
           item.workerEmployeeNo || '-',
-          item.bundleCount,
+          item.bundleNumbersStr ? `${item.bundleCount} (${item.bundleNumbersStr})` : item.bundleCount,
           item.ticketCount,
           item.locationCount,
-          Number(item.totalAmount.toFixed(2))
+          Number(item.totalAmount.toFixed(2)),
+          ''
         ]);
       }
       sUserData.push([
@@ -2073,15 +2142,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         consolidatedUserData.totalBundles,
         consolidatedUserData.totalTickets,
         userwiseGrandTotals.uniqueLocationsCount,
-        Number(consolidatedUserData.grandTotal.toFixed(2))
+        Number(consolidatedUserData.grandTotal.toFixed(2)),
+        ''
       ]);
-      sUserData.push([]);
-      sUserData.push(['SIGNATURES & APPROVALS:']);
-      sUserData.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']);
-      sUserData.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
 
       const wsUserSummary = XLSX.utils.aoa_to_sheet(sUserData);
-      wsUserSummary['!cols'] = [{ wch: 8 }, { wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 24 }];
+      wsUserSummary['!cols'] = [{ wch: 8 }, { wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 16 }];
       XLSX.utils.book_append_sheet(wb, wsUserSummary, 'User Payout Summary');
 
       // ==========================================
@@ -2173,7 +2239,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             '',
             '',
             'Subtotal',
-            `${wGroup.locationRows.length} Locations (${wGroup.rows.length} Tickets)`,
+            `${wGroup.locationRows.length} Locations (${new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets)`,
             ''
           ];
           for (const colName of allChildExpenseColumns) {
@@ -2185,11 +2251,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           currentSheet1Row++;
         } else {
           wGroup.rows.forEach((row, rIdx) => {
+            const rowTicketDisplay = row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}`
+              ? `${row.expNo} (EXP-${row.expenseIds[0]})`
+              : row.expNo;
             const rowData: any[] = [
               rIdx === 0 ? wGroup.workerName : '',
               globalSlNo++,
               row.bundleId,
-              row.expNo,
+              rowTicketDisplay,
               row.location,
               row.subDepartment,
               row.issueTitle,
@@ -2215,7 +2284,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             '',
             '',
             '',
-            `${wGroup.uniqueLocationsCount} Locations`,
+            `${wGroup.uniqueLocationsCount} Locations (${new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets, ${wGroup.rows.length} Expenses)`,
             '',
             '',
             ''
@@ -2259,7 +2328,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // Signatures row for Sheet 1
       s1Data.push([]);
       s1Data.push(['SIGNATURES & APPROVALS:']);
-      s1Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / GM / Director']);
+      s1Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
       s1Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
 
       const ws1 = XLSX.utils.aoa_to_sheet(s1Data);
@@ -2438,94 +2507,6 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   };
 
 
-
-  // const renderSignaturesBlock = () => (
-  //   <div className="pt-4 border-t border-outline-variant space-y-2.5 print:mt-4">
-  //     <div className="flex items-center justify-between">
-  //       <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
-  //         <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-  //         Verification & Authorization Workflow
-  //       </span>
-  //       <span className="text-[10px] text-on-surface-variant/80 font-medium">
-  //         7-Tier Official Approval Chain
-  //       </span>
-  //     </div>
-  //     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">1. Prepared By</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate">{group.createdByName || 'Site Accountant'}</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">Initiated</span>
-  //         </div>
-  //       </div>
-
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">2. Verify By MEngg</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Maintenance Engineer</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-primary/10 text-primary font-semibold">Maintenance Check</span>
-  //         </div>
-  //       </div>
-
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">3. Verify By Engg</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Project / Site Engineer</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-primary/10 text-primary font-semibold">Technical Check</span>
-  //         </div>
-  //       </div>
-
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">4. Accountant</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Accounts Dept</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold">Ledger Verified</span>
-  //         </div>
-  //       </div>
-
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">5. Audit</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Internal Audit</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">Audit Review</span>
-  //         </div>
-  //       </div>
-
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">6. Finance</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">Finance Manager</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className="inline-block px-1.5 py-0.5 rounded text-[8.5px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">Fund Allocation</span>
-  //         </div>
-  //       </div>
-
-  //       <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center flex flex-col justify-between">
-  //         <div>
-  //           <span className="font-bold text-on-surface block text-[10.5px]">7. CEO/GM/Director</span>
-  //           <p className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate">{group.completedByName || 'Executive Approval'}</p>
-  //         </div>
-  //         <div className="mt-2">
-  //           <span className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-semibold ${group.isCompleted ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/15 text-amber-700'}`}>
-  //             {group.isCompleted ? 'Final Approved' : 'Pending Exec'}
-  //           </span>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   </div>
-
-  // );
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
@@ -2763,7 +2744,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   }`}
               >
                 <User className="w-3.5 h-3.5" />
-                <span>Worker Wise Report</span>
+                <span>Worker-wise Settlement(For Office)</span>
               </button>
 
               <button
@@ -2774,7 +2755,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   }`}
               >
                 <Boxes className="w-3.5 h-3.5" />
-                <span>Location Wise Report</span>
+                <span>Sub-Department Expenses(For Accounts)</span>
               </button>
             </div>
 
@@ -2840,10 +2821,11 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                       <tr>
                         <th className="px-4 py-3 text-center w-12">SL</th>
                         <th className="px-5 py-3">Worker</th>
-                        <th className="px-4 py-3 text-center">Bundles</th>
+                        <th className="px-4 py-3 text-center">Bundles(ID)</th>
                         <th className="px-4 py-3 text-center">Tickets</th>
                         <th className="px-4 py-3 text-center">Locations</th>
                         <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Amount to be Given (KD)</th>
+                        <th className="px-5 py-3 text-center w-36">Paid</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/60">
@@ -2866,7 +2848,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                             </div>
                           </td>
                           <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
-                            {item.bundleCount}
+                            <span>{item.bundleCount}</span>
+                            {item.bundleNumbersStr && (
+                              <span className="ml-1.5 text-[11px] font-semibold text-primary">
+                                ({item.bundleNumbersStr})
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
                             {item.ticketCount}
@@ -2876,6 +2863,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                           </td>
                           <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 text-sm">
                             KD {item.totalAmount.toFixed(2)}
+                          </td>
+                          <td className="px-5 py-3 text-center">
+                            <div className="w-24 mx-auto border-b-2 border-dashed border-outline-variant/80 h-5" title="Manually mark payment status"></div>
                           </td>
                         </tr>
                       ))}
@@ -2897,6 +2887,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                         <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15 font-black">
                           KD {consolidatedUserData.grandTotal.toFixed(2)}
                         </td>
+                        <td className="px-5 py-3.5 text-center"></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -3000,7 +2991,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                           </tr>
                         ) : (
                           workerGroupedRows.map((wGroup, wIdx) => (
-                            <React.Fragment key={wGroup.workerId || wIdx}>
+                            <React.Fragment key={wGroup.workerId || wGroup.workerName || wIdx}>
                               {groupByLocation ? (
                                 wGroup.locationRows.map((locRow, locIdx) => (
                                   <tr key={locRow.location || locIdx} className="hover:bg-surface-container-high/40 transition-colors">
@@ -3085,17 +3076,24 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                       #{row.bundleId}
                                     </td>
                                     <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
-                                      {row.ticketObj && setSelectedTicketForModal ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => setSelectedTicketForModal(row.ticketObj)}
-                                          className="text-primary hover:underline cursor-pointer font-bold"
-                                        >
-                                          {row.expNo}
-                                        </button>
-                                      ) : (
-                                        <span>{row.expNo}</span>
-                                      )}
+                                      <div className="flex flex-col">
+                                        {row.ticketObj && setSelectedTicketForModal ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedTicketForModal(row.ticketObj)}
+                                            className="text-primary hover:underline cursor-pointer font-bold text-left"
+                                          >
+                                            {row.expNo}
+                                          </button>
+                                        ) : (
+                                          <span>{row.expNo}</span>
+                                        )}
+                                        {row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}` && (
+                                          <span className="text-[10px] text-on-surface-variant font-mono">
+                                            (EXP-{row.expenseIds[0]})
+                                          </span>
+                                        )}
+                                      </div>
                                     </td>
                                     <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
                                       {row.location}
@@ -3143,7 +3141,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                       Subtotal
                                     </td>
                                     <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
-                                      {wGroup.locationRows.length} Locations ({wGroup.rows.length} Tickets)
+                                      {wGroup.locationRows.length} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets)
                                     </td>
                                     <td className="px-3 py-2 border-r border-outline-variant"></td>
                                   </>
@@ -3153,7 +3151,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                       Subtotal
                                     </td>
                                     <td className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
-                                      {wGroup.uniqueLocationsCount} Locations
+                                      {wGroup.uniqueLocationsCount} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets, {wGroup.rows.length} Expenses)
                                     </td>
                                     <td colSpan={3} className="px-3 py-2 border-r border-outline-variant"></td>
                                   </>

@@ -85,7 +85,11 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
 
         department = self.request.query_params.get('department')
         if department:
-            return queryset.filter(sub_department__department_id=department)
+            queryset = queryset.filter(sub_department__department_id=department)
+
+        exclude_office = self.request.query_params.get('exclude_office')
+        if exclude_office == 'true' or (department and self.request.query_params.get('include_office') != 'true'):
+            queryset = queryset.exclude(sub_department__sub_department_name__iexact='office')
 
         if not user.is_superuser:
             user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]

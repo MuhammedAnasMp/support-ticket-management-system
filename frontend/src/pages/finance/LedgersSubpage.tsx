@@ -4,15 +4,16 @@ import {
   CheckCircle2, AlertTriangle, Boxes, Tag, ChevronDown, ChevronRight, Rows3,
   ChevronsUp, Check, RotateCcw, User, Calendar, Users, Receipt,
   FileText, ExternalLink, Eye, EyeOff, Clock, FolderKanban, Lock, CheckCircle, Package,
-  RefreshCw, Plus, GitCommit, Send
+  RefreshCw, Plus, GitCommit, Send, CreditCard, Banknote
 } from 'lucide-react';
-import type { LedgerItem, WorkerClaimItem, LedgerGroupItem, ExpenseItem, LedgerBatchItem, ApprovalStepInfo, ApprovalInstanceItem } from './types';
+import { getUserId, type LedgerItem, type WorkerClaimItem, type LedgerGroupItem, type ExpenseItem, type LedgerBatchItem, type ApprovalStepInfo, type ApprovalInstanceItem } from './types';
 import { Pagination } from './Pagination';
 import { SearchableSelect, type SelectOption } from '../../components/SearchableSelect';
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { LedgerGroupReportModal, type LedgerGroupCluster } from './LedgerGroupReportModal';
 import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 import Can from '@/hooks/Can';
+import { usePermission } from '@/hooks/usePermission';
 
 interface LedgersSubpageProps {
   filteredLedgers?: LedgerItem[];
@@ -139,6 +140,23 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   };
 
+  const { hasPermission } = usePermission();
+
+  const isCashOffice = useMemo(() => {
+    if (currentUser?.is_superuser) return true;
+    const roleName = (
+      (currentUser?.role as any)?.role_name ||
+      (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+      ''
+    ).toLowerCase();
+    return (
+      roleName === 'administrator' ||
+      hasPermission('finance.pay_ledger_group') ||
+      hasPermission('finance.pay_ledger') ||
+      hasPermission('finance.settle_cash_ledger')
+    );
+  }, [currentUser, hasPermission]);
+
   // Ledger Group Accordion State (groupId -> boolean expanded)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Record<string | number, boolean>>({});
 
@@ -224,8 +242,91 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   };
 
+  // Cash Settlement / Pay Group Modal States
+  const [groupToPay, setGroupToPay] = useState<LedgerGroupCluster | null>(null);
+  const [payingGroupId, setPayingGroupId] = useState<string | number | null>(null);
+  const [payRecipientName, setPayRecipientName] = useState('');
+  const [payRemarks, setPayRemarks] = useState('');
+  const [payingGroupError, setPayingGroupError] = useState<string | null>(null);
+
+  // Cash Settlement API Handler
+  const handlePayLedgerGroup = async (cluster: LedgerGroupCluster) => {
+    if (!cluster || !cluster.groupId || !API_URL) return;
+    if (!payRecipientName.trim()) {
+      setPayingGroupError('Please enter the recipient name.');
+      return;
+    }
+    setPayingGroupId(cluster.groupId);
+    setPayingGroupError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/finance/ledger-groups/${cluster.groupId}/pay/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          payment_method: 'Cash',
+          recipient_name: payRecipientName.trim(),
+          payment_remarks: payRemarks.trim() || undefined
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || 'Failed to complete cash settlement.');
+      }
+
+      const paidGroup: LedgerGroupItem = data;
+
+      // Synchronize dynamicGroups state in place
+      setDynamicGroups(prev =>
+        prev.map(g => (String(g.ledger_group_id) === String(paidGroup.ledger_group_id) ? { ...g, ...paidGroup, is_paid: true, is_completed: true } : g))
+      );
+
+      // Instantly update ledgers in memory
+      const updatedLedgers: LedgerItem[] = cluster.ledgers.map(l => ({
+        ...l,
+        status: 'Paid' as const,
+        ledger_group_detail: {
+          ...(l.ledger_group_detail || {}),
+          ...paidGroup,
+          is_paid: true,
+          is_completed: true,
+          paid_at: paidGroup.paid_at,
+          paid_by_detail: paidGroup.paid_by_detail,
+          payment_method: paidGroup.payment_method,
+          payment_reference: paidGroup.payment_reference,
+          payment_remarks: paidGroup.payment_remarks,
+          recipient_name: paidGroup.recipient_name,
+        } as LedgerGroupItem,
+        bundles: (l.bundles || []).map(b => ({ ...b, status: 'Paid' as const })),
+        expenses: (l.expenses || []).map(e => ({ ...e, is_paid: true, status_display: 'Paid' }))
+      }));
+
+      if (onLedgersUpdated) {
+        onLedgersUpdated(updatedLedgers);
+      } else if (onLedgerUpdated) {
+        updatedLedgers.forEach(l => onLedgerUpdated(l));
+      }
+
+      setGroupToPay(null);
+      setPayRecipientName('');
+      setPayRemarks('');
+
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (err: any) {
+      setPayingGroupError(err.message || 'Failed to complete cash settlement.');
+    } finally {
+      setPayingGroupId(null);
+    }
+  };
+
   // Group-level Submission & Approval States
-  const [submittingGroupId, setSubmittingGroupId] = useState<string | number | null>(null);
+  const [submittingGroupIds, setSubmittingGroupIds] = useState<Record<string | number, boolean>>({});
   const [actioningGroupId, setActioningGroupId] = useState<string | number | null>(null);
   const [actioningGroupAction, setActioningGroupAction] = useState<'APPROVED' | 'REWORK' | null>(null);
   const [groupReworkComments, setGroupReworkComments] = useState<Record<string | number, string>>({});
@@ -242,7 +343,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       });
       return;
     }
-    setSubmittingGroupId(cluster.groupId);
+    setSubmittingGroupIds(prev => ({ ...prev, [cluster.groupId]: true }));
     setBulkActionMsg(null);
     try {
       const res = await fetch(`${API_URL}/finance/ledger-groups/${cluster.groupId}/submit/`, {
@@ -274,7 +375,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         text: err.message || 'Failed to submit ledger group'
       });
     } finally {
-      setSubmittingGroupId(null);
+      setSubmittingGroupIds(prev => {
+        const next = { ...prev };
+        delete next[cluster.groupId];
+        return next;
+      });
     }
   };
 
@@ -909,7 +1014,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         <div className="flex items-start justify-between min-w-[520px]">
           {/* START NODE */}
           <div className="flex flex-col items-center shrink-0 w-16">
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border shrink-0 ${isDraft
+            <div className={`w-5 h-5 roundedf flex items-center justify-center text-[9px] font-bold border shrink-0 ${isDraft
               ? 'bg-surface-container text-on-surface-variant border-outline-variant/80'
               : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40'
               }`}>
@@ -964,7 +1069,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               <React.Fragment key={step.step_id || idx}>
                 <div className={`flex-1 h-0.5 mx-1 mt-2.5 transition-colors ${isPrevCompleted && (isApproved || isPending) ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
                 <div className="flex flex-col items-center shrink-0 w-24 text-center">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] border transition-all ${circleClass}`}>
+                  <div className={`w-5 h-5 roundedf flex items-center justify-center text-[9px] border transition-all ${circleClass}`}>
                     {iconNode}
                   </div>
                   <span className="text-[9px] font-bold text-on-surface mt-1 truncate max-w-full" title={step.step_name}>
@@ -1158,19 +1263,36 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       const compByName = gDetail?.completed_by_detail?.full_name || gDetail?.completed_by_detail?.username
         || matchedDynGroup?.completed_by_detail?.full_name || matchedDynGroup?.completed_by_detail?.username;
 
+      const isPaid = Boolean(gDetail?.is_paid || matchedDynGroup?.is_paid);
+      const paidAt = gDetail?.paid_at || matchedDynGroup?.paid_at;
+      const paidByName = gDetail?.paid_by_detail?.full_name || gDetail?.paid_by_detail?.username
+        || matchedDynGroup?.paid_by_detail?.full_name || matchedDynGroup?.paid_by_detail?.username;
+      const paymentMethod = gDetail?.payment_method || matchedDynGroup?.payment_method;
+      const paymentReference = gDetail?.payment_reference || matchedDynGroup?.payment_reference;
+      const paymentRemarks = gDetail?.payment_remarks || matchedDynGroup?.payment_remarks;
+      const recipientName = gDetail?.recipient_name || matchedDynGroup?.recipient_name;
+
       if (!map.has(gId)) {
         map.set(gId, {
           groupId: gId,
           groupName: gName,
           createdByName: cName,
           createdAt: cAt,
-          isCompleted: isComp,
+          isCompleted: isComp || isPaid,
           completedAt: compAt,
           completedByName: compByName,
+          isPaid: isPaid,
+          paidAt: paidAt,
+          paidByName: paidByName,
+          paymentMethod: paymentMethod,
+          paymentReference: paymentReference,
+          paymentRemarks: paymentRemarks,
+          recipientName: recipientName,
           ledgers: [],
           totalAmount: 0,
           totalBundlesCount: 0,
           totalExpensesCount: 0,
+          totalWorkersCount: 0,
           allApproved: false,
           approvedCount: 0,
           totalCount: 0,
@@ -1184,16 +1306,90 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         if (compAt) cluster.completedAt = compAt;
         if (compByName) cluster.completedByName = compByName;
       }
+      if (isPaid) {
+        cluster.isPaid = true;
+        cluster.isCompleted = true;
+        if (paidAt) cluster.paidAt = paidAt;
+        if (paidByName) cluster.paidByName = paidByName;
+        if (paymentMethod) cluster.paymentMethod = paymentMethod;
+        if (paymentReference) cluster.paymentReference = paymentReference;
+        if (paymentRemarks) cluster.paymentRemarks = paymentRemarks;
+        if (recipientName) cluster.recipientName = recipientName;
+      }
       cluster.totalAmount += parseFloat(l.total_amount || '0');
-      cluster.totalBundlesCount += (l.bundles?.length || 0);
-      cluster.totalExpensesCount += (l.expenses?.length || 0);
     }
 
-    // Compute approval stats
+    // Compute approval, payment stats, deduplicated counts & unique workers
     for (const cluster of map.values()) {
       cluster.totalCount = cluster.ledgers.length;
       cluster.approvedCount = cluster.ledgers.filter(l => l.status === 'Approved' || l.status === 'Paid').length;
       cluster.allApproved = cluster.totalCount > 0 && cluster.approvedCount === cluster.totalCount;
+      if (cluster.totalCount > 0 && cluster.ledgers.every(l => l.status === 'Paid')) {
+        cluster.isPaid = true;
+        cluster.isCompleted = true;
+      }
+      if (cluster.isPaid) {
+        cluster.isCompleted = true;
+      }
+
+      // Deduplicate distinct bundles across ledgers in the group
+      const bundleIdSet = new Set<string | number>();
+      for (const l of cluster.ledgers) {
+        for (const b of (l.bundles || [])) {
+          const bId = b.claim_id ?? (b as any).id;
+          if (bId != null) bundleIdSet.add(bId);
+        }
+      }
+      cluster.totalBundlesCount = bundleIdSet.size > 0
+        ? bundleIdSet.size
+        : cluster.ledgers.reduce((acc, l) => acc + (l.bundles?.length || 0), 0);
+
+      // Deduplicate distinct expenses across direct expenses and bundle expenses
+      const expenseIdSet = new Set<string | number>();
+      let noIdExpenses = 0;
+      for (const l of cluster.ledgers) {
+        for (const exp of (l.expenses || [])) {
+          const id = exp.expense_id ?? (exp as any).id;
+          if (id != null) expenseIdSet.add(id);
+          else noIdExpenses++;
+        }
+        for (const b of (l.bundles || [])) {
+          for (const exp of (b.expenses || [])) {
+            const id = exp.expense_id ?? (exp as any).id;
+            if (id != null) expenseIdSet.add(id);
+            else noIdExpenses++;
+          }
+        }
+      }
+      cluster.totalExpensesCount = (expenseIdSet.size + noIdExpenses) > 0
+        ? (expenseIdSet.size + noIdExpenses)
+        : cluster.ledgers.reduce((acc, l) => acc + (l.expenses?.length || 0), 0);
+
+      // Compute unique workers across all bundles and expenses
+      const workerSet = new Set<string | number>();
+      for (const l of cluster.ledgers) {
+        for (const b of (l.bundles || [])) {
+          const wObj = (typeof b.worker === 'object' && b.worker ? b.worker : null) || b.worker_detail;
+          const wId = getUserId(wObj) ?? getUserId(b.worker);
+          const wKey = wId != null ? wId : (wObj?.username || wObj?.full_name || (b.worker ? String(b.worker) : null));
+          if (wKey) workerSet.add(wKey);
+
+          for (const exp of (b.expenses || [])) {
+            const expWObj = (typeof exp.worker === 'object' && exp.worker ? exp.worker : null) || exp.worker_detail;
+            const expWId = getUserId(expWObj) ?? getUserId(exp.worker);
+            const expKey = expWId != null ? expWId : (expWObj?.username || expWObj?.full_name || (exp.worker ? String(exp.worker) : null));
+            if (expKey) workerSet.add(expKey);
+          }
+        }
+
+        for (const exp of (l.expenses || [])) {
+          const expWObj = (typeof exp.worker === 'object' && exp.worker ? exp.worker : null) || exp.worker_detail;
+          const expWId = getUserId(expWObj) ?? getUserId(exp.worker);
+          const expKey = expWId != null ? expWId : (expWObj?.username || expWObj?.full_name || (exp.worker ? String(exp.worker) : null));
+          if (expKey) workerSet.add(expKey);
+        }
+      }
+      cluster.totalWorkersCount = workerSet.size;
     }
 
     return Array.from(map.values());
@@ -1227,6 +1423,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   // Bulk Approve Handler for Ledger Groups
   const handleBulkApproveLedgers = async () => {
     if (pendingActionableGroups.length === 0) return;
+
     setBulkApproving(true);
     setBulkActionMsg(null);
     try {
@@ -1558,7 +1755,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               <button
                 type="button"
                 onClick={() => setHierarchyGrouping('bundle_wise')}
-                className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${hierarchyGrouping === 'bundle_wise'
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${hierarchyGrouping === 'bundle_wise'
                   ? 'bg-primary text-on-primary shadow-xs'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
                   }`}
@@ -1570,7 +1767,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               <button
                 type="button"
                 onClick={() => setHierarchyGrouping('batch_wise')}
-                className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${hierarchyGrouping === 'batch_wise'
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${hierarchyGrouping === 'batch_wise'
                   ? 'bg-primary text-on-primary shadow-xs'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
                   }`}
@@ -1789,17 +1986,20 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     const isGroupCollapsed = !expandedGroupIds[cluster.groupId];
 
                     // Compute unified group status and permissions
-                    const groupStatus = cluster.isCompleted
-                      ? 'Completed'
-                      : cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')
-                        ? 'Approved'
-                        : cluster.ledgers.some(l => l.status === 'Rework')
-                          ? 'Rework'
-                          : cluster.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')
-                            ? 'In Review'
-                            : cluster.ledgers.some(l => l.status === 'Rejected')
-                              ? 'Rejected'
-                              : 'Draft';
+                    const isGroupPaid = cluster.isPaid || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Paid'));
+                    const groupStatus = isGroupPaid
+                      ? 'Paid'
+                      : cluster.isCompleted
+                        ? 'Completed'
+                        : cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')
+                          ? 'Approved'
+                          : cluster.ledgers.some(l => l.status === 'Rework')
+                            ? 'Rework'
+                            : cluster.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')
+                              ? 'In Review'
+                              : cluster.ledgers.some(l => l.status === 'Rejected')
+                                ? 'Rejected'
+                                : 'Draft';
 
                     const canUserApproveGroup = cluster.ledgers.some(l => {
                       if (l.status !== 'Submitted' && l.status !== 'In Review') return false;
@@ -1916,7 +2116,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
                               <Can permission='finance.change_ledger'>
                                 {/* Add Bundle to Group Button (If not completed and not paid) */}
-                                {!cluster.isCompleted && !cluster.ledgers.some(l => l.status === 'Paid') && (
+                                {!cluster.isCompleted && !cluster.ledgers.some(l => l.status === 'Paid' || l.status === "In Review") && (
                                   <button
                                     type="button"
                                     onClick={() => openAddBundleModal(cluster)}
@@ -1932,12 +2132,12 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 {!cluster.isCompleted && hasDraftBatches && (
                                   <button
                                     type="button"
-                                    disabled={submittingGroupId === cluster.groupId}
+                                    disabled={Boolean(submittingGroupIds[cluster.groupId])}
                                     onClick={() => handleGroupSubmit(cluster)}
                                     className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-semibold hover:bg-primary-container transition-colors cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center gap-1 shrink-0"
                                     title="Submit the entire Ledger for approval"
                                   >
-                                    {submittingGroupId === cluster.groupId ? (
+                                    {submittingGroupIds[cluster.groupId] ? (
                                       <>
                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                         <span>Submitting...</span>
@@ -1998,6 +2198,42 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                   </button>
                                 )}
                               </Can>
+                              {/* Cash Settlement / Pay Button for Cash Office (When group is completed and NOT yet paid) */}
+                              {cluster.isCompleted && !isGroupPaid && isCashOffice && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setGroupToPay(cluster);
+                                    setPayRecipientName('');
+                                    setPayRemarks('');
+                                    setPayingGroupError(null);
+                                  }}
+                                  disabled={payingGroupId === cluster.groupId}
+                                  className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
+                                  title="Perform Cash Settlement / Mark as Paid for this completed Ledger"
+                                >
+                                  {payingGroupId === cluster.groupId ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      <span>Settling...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Banknote className="w-3.5 h-3.5" />
+                                      <span>Cash Settlement</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Paid Badge if already settled */}
+                              {isGroupPaid && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                  <span>Settled</span>
+                                </span>
+                              )}
+
                               {/* Group Report Button (When group is completed) */}
                               {cluster.isCompleted && (
                                 <button
@@ -2018,7 +2254,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                         </tr>
 
                         {/* 1.5 GROUP APPROVAL STEPPER & INLINE ACTION CONTROLS */}
-                        {!isGroupCollapsed && (showStepper || (isGroupInReview && canUserApproveGroup)) && (
+                        {!isGroupCollapsed && (showStepper || (isGroupInReview && canUserApproveGroup)) && (groupStatus !== "Draft") && (
                           <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/60">
                             <td colSpan={8} className="px-6 py-3 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
                               {showStepper && (
@@ -2036,7 +2272,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 </>
                               )}
 
-                              {/* Action Controls for Stepper in Expanded View */}
+
                               {isGroupInReview && canUserApproveGroup && (
                                 <div className="p-3 bg-surface-container rounded border border-outline-variant/80 flex flex-wrap items-center justify-between gap-2 shadow-xs mt-2">
                                   <div className="flex items-center gap-2">
@@ -2165,7 +2401,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                     </td>
                                     <Can permission='finance.change_ledger'>
                                       <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
-                                        {!cluster.isCompleted && (() => {
+                                        {!cluster.isCompleted && groupStatus !== "In Review" && (() => {
                                           const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
                                           return (
                                             <button
@@ -2281,7 +2517,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                             onClick={(e) => {
                                                               e.stopPropagation();
                                                               if ((parentLedger.expenses?.length || 0) <= 1) {
-                                                                alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
                                                                 return;
                                                               }
                                                               handleRemoveExpenseFromLedger(parentLedger.ledger_id, exp.expense_id);
@@ -2492,7 +2728,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                               <span className={`text-xs ${isExpanded ? 'font-bold text-purple-950 dark:text-purple-100' : 'font-semibold text-on-surface'}`}>
                                                                 {sd.subDeptName}
                                                               </span>
-                                                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isExpanded
+                                                              <span className={`text-[10px] px-2 py-0.5 roundedf font-medium ${isExpanded
                                                                 ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300'
                                                                 : 'bg-surface-container-highest text-on-surface-variant'
                                                                 }`}>
@@ -2557,7 +2793,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                     <span className={`text-xs truncate ${isChildExpanded ? 'font-bold text-rose-950 dark:text-rose-100' : 'font-semibold text-on-surface'}`}>
                                                                       {w.workerName}
                                                                     </span>
-                                                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-medium ${isChildExpanded
+                                                                    <span className={`text-[10px] px-1.5 py-0.2 roundedf font-medium ${isChildExpanded
                                                                       ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
                                                                       : 'bg-surface-container-highest text-on-surface-variant'
                                                                       }`}>
@@ -2635,7 +2871,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                           onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             if (ledgerExpenses.length <= 1) {
-                                                                              alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                              alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
                                                                               return;
                                                                             }
                                                                             handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
@@ -2702,7 +2938,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                               </span>
 
                                                               <span
-                                                                className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isExpanded
+                                                                className={`text-[10px] px-2 py-0.5 roundedf font-medium ${isExpanded
                                                                   ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300'
                                                                   : 'bg-surface-container-highest text-on-surface-variant'
                                                                   }`}
@@ -2763,7 +2999,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                     <span className={`text-xs ${isChildExpanded ? 'font-bold text-rose-950 dark:text-rose-100' : 'font-semibold text-on-surface'}`}>
                                                                       {sd.subDeptName}
                                                                     </span>
-                                                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-medium ${isChildExpanded
+                                                                    <span className={`text-[10px] px-1.5 py-0.2 roundedf font-medium ${isChildExpanded
                                                                       ? 'bg-rose-50/20 text-rose-700 dark:text-rose-300'
                                                                       : 'bg-surface-container-highest text-on-surface-variant'
                                                                       }`}>
@@ -2841,7 +3077,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                           onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             if (ledgerExpenses.length <= 1) {
-                                                                              alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                              alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
                                                                               return;
                                                                             }
                                                                             handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
@@ -2929,7 +3165,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                               onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 if (ledgerExpenses.length <= 1) {
-                                                                  alert("Cannot remove the only expense. Please delete the Ledger Batch instead.");
+                                                                  alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
                                                                   return;
                                                                 }
                                                                 handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
@@ -3088,7 +3324,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                         {classificationResult.unmappedSubDepts.map(sd => (
                           <span
                             key={sd.subDeptName}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container border border-amber-500/40 text-on-surface font-semibold text-xs shadow-2xs"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container border border-amber-500/40 text-on-surface font-semibold text-xs shadow-2xs"
                           >
                             <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                             <span>{sd.subDeptName}</span>
@@ -3160,7 +3396,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     return (
                       <div className="flex items-center justify-between p-2.5 rounded bg-surface-container-high border border-outline-variant text-xs">
                         <div className="flex items-center gap-2 text-on-surface-variant">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                          <span className="w-2 h-2 roundedf bg-amber-500 shrink-0" />
                           <span>This group has no attached batches and is currently unused.</span>
                         </div>
                         <button
@@ -3266,7 +3502,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       {/* MODAL: ATTACH BUNDLE TO LEDGER  */}
       {selectedGroupForAddBundle && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface-container rounded-xl border border-outline-variant max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+          <div className="bg-surface-container rounded border border-outline-variant max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-outline-variant pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
@@ -3544,9 +3780,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       {/* Confirmation Modal for Marking Ledger  as Completed */}
       {groupToConfirmComplete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-2xl max-w-md w-full p-6 text-on-surface space-y-4">
+          <div className="bg-surface-container-lowest border border-outline-variant rounded shadow-2xl max-w-md w-full p-6 text-on-surface space-y-4">
             <div className="flex items-start gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+              <div className="p-2.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div className="flex-1">
@@ -3557,7 +3793,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               </div>
             </div>
 
-            <div className="bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 rounded-xl p-3.5 text-xs space-y-2 text-amber-900 dark:text-amber-200">
+            <div className="bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 rounded p-3.5 text-xs space-y-2 text-amber-900 dark:text-amber-200">
               <div className="font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
                 <Lock className="w-3.5 h-3.5" />
                 <span>Important Locking Rules:</span>
@@ -3584,7 +3820,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   setCompletingGroupError(null);
                 }}
                 disabled={completingGroupId !== null}
-                className="px-4 py-2 rounded-xl border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -3592,7 +3828,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 type="button"
                 onClick={() => handleCompleteLedgerGroup(groupToConfirmComplete)}
                 disabled={completingGroupId !== null}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
               >
                 {completingGroupId !== null ? (
                   <>
@@ -3603,6 +3839,156 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   <>
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span>Yes, Mark as Completed</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cash Settlement / Payment Modal */}
+      {groupToPay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-surface-container-lowest border border-outline-variant rounded shadow-2xl max-w-lg w-full p-6 text-on-surface space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-outline-variant/60 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/30 shrink-0">
+                  <Banknote className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-on-surface">Cash Settlement & Payment</h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    Role: <span className="font-semibold text-teal-600 dark:text-teal-400">Cash Office</span> • Final Payment Step
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setGroupToPay(null);
+                  setPayingGroupError(null);
+                }}
+                disabled={payingGroupId !== null}
+                className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Group Summary Box */}
+            <div className="p-4 rounded bg-surface-container-low border border-outline-variant/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Ledger Group</div>
+                  <div className="text-sm font-bold text-on-surface">{groupToPay.groupName}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Settlement Total</div>
+                  <div className="text-lg font-extrabold text-teal-600 dark:text-teal-400">
+                    KD {groupToPay.totalAmount.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-outline-variant/50 text-center">
+                <div className="p-2 rounded bg-surface-container/60">
+                  <div className="text-[10px] text-on-surface-variant font-medium">Batches</div>
+                  <div className="text-xs font-bold text-on-surface">{groupToPay.ledgers.length}</div>
+                </div>
+                <div className="p-2 rounded bg-surface-container/60">
+                  <div className="text-[10px] text-on-surface-variant font-medium">Workers</div>
+                  <div className="text-xs font-bold text-on-surface">{groupToPay.totalWorkersCount ?? 0}</div>
+                </div>
+                <div className="p-2 rounded bg-surface-container/60">
+                  <div className="text-[10px] text-on-surface-variant font-medium">Expenses</div>
+                  <div className="text-xs font-bold text-on-surface">{groupToPay.totalExpensesCount}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Details Form */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1">
+                  Payment Method
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="px-3.5 py-2 rounded text-xs font-bold bg-teal-600 text-white border border-teal-600 shadow-xs inline-flex items-center gap-1.5">
+                    <Banknote className="w-4 h-4" />
+                    <span>Cash</span>
+                  </span>
+                  {/* <span className="text-[11px] text-on-surface-variant font-medium">(Cash Disbursement Only)</span> */}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1">
+                  Recipient Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Enter receiver / technician / site engineer name..."
+                  value={payRecipientName}
+                  onChange={(e) => {
+                    setPayRecipientName(e.target.value);
+                    if (payingGroupError) setPayingGroupError(null);
+                  }}
+                  className="w-full px-3 py-2 rounded bg-surface-container-low border border-outline-variant focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none text-xs text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1">
+                  Remarks / Settlement Notes <span className="text-[10px] font-normal text-on-surface-variant">(Optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Disbursement details or handover remarks..."
+                  value={payRemarks}
+                  onChange={(e) => setPayRemarks(e.target.value)}
+                  className="w-full px-3 py-2 rounded bg-surface-container-low border border-outline-variant focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none text-xs text-on-surface resize-none"
+                />
+              </div>
+            </div>
+
+
+
+            {payingGroupError && (
+              <div className="p-3 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{payingGroupError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setGroupToPay(null);
+                  setPayingGroupError(null);
+                }}
+                disabled={payingGroupId !== null}
+                className="px-4 py-2 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePayLedgerGroup(groupToPay)}
+                disabled={payingGroupId !== null}
+                className="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
+              >
+                {payingGroupId !== null ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Settling Cash Payment...</span>
+                  </>
+                ) : (
+                  <>
+                    <Banknote className="w-3.5 h-3.5" />
+                    <span>Confirm Cash Settlement</span>
                   </>
                 )}
               </button>

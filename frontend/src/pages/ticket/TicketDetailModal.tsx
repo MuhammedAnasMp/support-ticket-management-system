@@ -1,6 +1,8 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
@@ -16,6 +18,10 @@ import {
 } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
+import { SearchableSelect, type SelectOption } from '@/components/SearchableSelect';
+import { confirmPopup } from '@/components/tailgrids/core/ConfirmationPopup';
+
+const EMPTY_LIST: any[] = [];
 
 interface TicketDetailModalProps {
     selectedTicket: Ticket | null;
@@ -25,6 +31,7 @@ interface TicketDetailModalProps {
     workers?: any[];
     subDepartments?: any[];
     expenseTypes?: any[];
+    ledgerBatches?: any[];
     readOnly?: boolean;
     onClose: () => void;
     onRefreshList: () => void;
@@ -34,10 +41,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     selectedTicket,
     token,
     user,
-    statuses: propStatuses = [],
-    workers: propWorkers = [],
-    subDepartments: propSubDepartments = [],
-    expenseTypes: propExpenseTypes = [],
+    statuses: propStatuses = EMPTY_LIST,
+    workers: propWorkers = EMPTY_LIST,
+    subDepartments: propSubDepartments = EMPTY_LIST,
+    expenseTypes: propExpenseTypes = EMPTY_LIST,
+    ledgerBatches: propLedgerBatches = EMPTY_LIST,
     readOnly = false,
     onClose,
     onRefreshList,
@@ -57,6 +65,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [fetchedWorkers, setFetchedWorkers] = useState<any[]>([]);
     const [fetchedSubDepartments, setFetchedSubDepartments] = useState<any[]>([]);
     const [fetchedExpenseTypes, setFetchedExpenseTypes] = useState<any[]>([]);
+    const [fetchedLedgerBatches, setFetchedLedgerBatches] = useState<any[]>([]);
+    const [hasFetchedLedgerBatches, setHasFetchedLedgerBatches] = useState<boolean>(false);
+    const [departmentNatures, setDepartmentNatures] = useState<any[]>([]);
 
     const safeList = (data: any) => Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
 
@@ -67,6 +78,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const statuses = useMemo(() => (propStatuses && propStatuses.length > 0 ? propStatuses : fetchedStatuses), [propStatuses, fetchedStatuses]);
     const workers = useMemo(() => (propWorkers && propWorkers.length > 0 ? propWorkers : fetchedWorkers), [propWorkers, fetchedWorkers]);
     const subDepartments = useMemo(() => (propSubDepartments && propSubDepartments.length > 0 ? propSubDepartments : fetchedSubDepartments), [propSubDepartments, fetchedSubDepartments]);
+    const ledgerBatches = useMemo(() => (propLedgerBatches && propLedgerBatches.length > 0 ? propLedgerBatches : fetchedLedgerBatches), [propLedgerBatches, fetchedLedgerBatches]);
     const expenseTypes = useMemo(() => {
         const raw = (propExpenseTypes && (Array.isArray(propExpenseTypes) ? propExpenseTypes.length > 0 : (propExpenseTypes as any)?.results?.length > 0))
             ? propExpenseTypes
@@ -74,9 +86,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         return Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.results) ? (raw as any).results : []);
     }, [propExpenseTypes, fetchedExpenseTypes]);
 
-    const filteredExpenseTypes = useMemo(() => {
-        if (!expenseTypes || expenseTypes.length === 0) return [];
-
+    const ticketDeptId = useMemo(() => {
         const tAny = ticketDetails as any;
         const rawTicketDept =
             ticketDetails?.department?.department_id ??
@@ -89,8 +99,66 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             tAny?.nature?.sub_department?.department?.id ??
             tAny?.nature?.sub_department?.department;
 
-        const ticketDeptId = rawTicketDept != null && !isNaN(Number(rawTicketDept)) ? Number(rawTicketDept) : null;
+        return rawTicketDept != null && !isNaN(Number(rawTicketDept)) ? Number(rawTicketDept) : null;
+    }, [ticketDetails]);
 
+    // Fetch work natures for the ticket's department
+    useEffect(() => {
+        if (!token) return;
+        const url = ticketDeptId
+            ? `${API_URL}/maintenance/worknature/?department=${ticketDeptId}&exclude_office=true`
+            : `${API_URL}/maintenance/worknature/?exclude_office=true`;
+
+        fetch(url, {
+            headers: { 'Authorization': `Token ${token}` }
+        })
+            .then(r => r.ok ? r.json() : [])
+            .then(data => {
+                const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+                setDepartmentNatures(list);
+            })
+            .catch(err => {
+                console.error('Error fetching work natures:', err);
+            });
+    }, [token, ticketDeptId]);
+
+    const isOfficeNature = useCallback((n: any): boolean => {
+        if (!n) return false;
+        const subDeptName = (
+            n.sub_department?.sub_department_name ||
+            n.sub_department_name ||
+            (typeof n.sub_department === 'string' ? n.sub_department : '') ||
+            ''
+        ).toLowerCase().trim();
+        if (subDeptName === 'office') return true;
+        const natureName = (n.nature_name || '').toLowerCase().trim();
+        if (natureName === 'office related' || natureName === 'office') return true;
+        return false;
+    }, []);
+
+    const availableNatures = useMemo(() => {
+        const nonOfficeNatures = (departmentNatures || []).filter(n => !isOfficeNature(n));
+        const currentNature = ticketDetails?.nature as any;
+        if (!currentNature) return nonOfficeNatures;
+        const currentId = typeof currentNature === 'object' ? (currentNature?.nature_id || currentNature?.id) : currentNature;
+        if (currentId && !nonOfficeNatures.some((n: any) => (n.nature_id || n.id) === currentId)) {
+            if (!isOfficeNature(currentNature)) {
+                const placeholder = typeof currentNature === 'object' ? currentNature : { nature_id: currentId, nature_name: String(currentNature) };
+                return [placeholder, ...nonOfficeNatures];
+            }
+        }
+        return nonOfficeNatures;
+    }, [departmentNatures, ticketDetails?.nature, isOfficeNature]);
+
+    const natureOptions: SelectOption[] = useMemo(() => {
+        return availableNatures.map((n: any) => ({
+            value: n.nature_id || n.id,
+            label: n.nature_name
+        }));
+    }, [availableNatures]);
+
+    const filteredExpenseTypes = useMemo(() => {
+        if (!expenseTypes || expenseTypes.length === 0) return [];
         if (!ticketDeptId) {
             return expenseTypes;
         }
@@ -110,7 +178,97 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         });
 
         return filtered.length > 0 ? filtered : expenseTypes;
-    }, [expenseTypes, ticketDetails]);
+    }, [expenseTypes, ticketDeptId]);
+
+    const ticketSubDeptId = useMemo(() => {
+        const tAny = ticketDetails as any;
+        const raw =
+            tAny?.nature?.sub_department?.sub_department_id ??
+            tAny?.nature?.sub_department?.id ??
+            (typeof tAny?.nature?.sub_department === 'number' || typeof tAny?.nature?.sub_department === 'string'
+                ? tAny.nature.sub_department
+                : null) ??
+            tAny?.sub_department?.sub_department_id ??
+            tAny?.sub_department?.id ??
+            (typeof tAny?.sub_department === 'number' || typeof tAny?.sub_department === 'string'
+                ? tAny.sub_department
+                : null) ??
+            tAny?.sub_department_id ??
+            tAny?.nature?.sub_department_id;
+
+        if (raw != null && !isNaN(Number(raw))) {
+            return Number(raw);
+        }
+
+        const rawName =
+            tAny?.nature?.sub_department?.sub_department_name ??
+            tAny?.sub_department?.sub_department_name ??
+            (typeof tAny?.nature?.sub_department === 'string' ? tAny.nature.sub_department : null) ??
+            (typeof tAny?.sub_department === 'string' ? tAny.sub_department : null);
+
+        if (rawName && subDepartments && subDepartments.length > 0) {
+            const found = subDepartments.find((s: any) =>
+                String(s.sub_department_name || '').toLowerCase().trim() === String(rawName).toLowerCase().trim()
+            );
+            if (found) return Number(found.sub_department_id || found.id);
+        }
+        return null;
+    }, [ticketDetails, subDepartments]);
+
+    const ticketSubDeptName = useMemo(() => {
+        const tAny = ticketDetails as any;
+        const rawName =
+            tAny?.nature?.sub_department?.sub_department_name ??
+            tAny?.sub_department?.sub_department_name ??
+            (typeof tAny?.nature?.sub_department === 'string' ? tAny.nature.sub_department : '') ??
+            (typeof tAny?.sub_department === 'string' ? tAny.sub_department : '');
+        if (rawName) return String(rawName);
+
+        if (ticketSubDeptId && subDepartments && subDepartments.length > 0) {
+            const found = subDepartments.find((s: any) => Number(s.sub_department_id || s.id) === ticketSubDeptId);
+            if (found) return found.sub_department_name || '';
+        }
+        return '';
+    }, [ticketDetails, ticketSubDeptId, subDepartments]);
+
+    const isSubDeptInLedgerBatch = useMemo(() => {
+        if (!hasFetchedLedgerBatches) return true;
+        if (!ledgerBatches || ledgerBatches.length === 0) return false;
+        if (!ticketSubDeptId && !ticketSubDeptName) return false;
+
+        const lowerName = ticketSubDeptName ? ticketSubDeptName.toLowerCase().trim() : '';
+
+        return ledgerBatches.some((b: any) => {
+            if (b.active === false) return false;
+
+            if (Array.isArray(b.sub_departments)) {
+                const hasMatch = b.sub_departments.some((sd: any) => {
+                    const sdId = Number(typeof sd === 'object' && sd !== null ? (sd.sub_department_id || sd.id) : sd);
+                    if (ticketSubDeptId != null && !isNaN(sdId) && sdId === ticketSubDeptId) return true;
+                    if (lowerName && typeof sd === 'object' && sd?.sub_department_name) {
+                        return String(sd.sub_department_name).toLowerCase().trim() === lowerName;
+                    }
+                    return false;
+                });
+                if (hasMatch) return true;
+            }
+
+            if (Array.isArray(b.sub_departments_detail)) {
+                const hasMatch = b.sub_departments_detail.some((sd: any) => {
+                    if (!sd) return false;
+                    const sdId = Number(sd.sub_department_id || sd.id);
+                    if (ticketSubDeptId != null && !isNaN(sdId) && sdId === ticketSubDeptId) return true;
+                    if (lowerName && sd.sub_department_name) {
+                        return String(sd.sub_department_name).toLowerCase().trim() === lowerName;
+                    }
+                    return false;
+                });
+                if (hasMatch) return true;
+            }
+
+            return false;
+        });
+    }, [hasFetchedLedgerBatches, ledgerBatches, ticketSubDeptId, ticketSubDeptName]);
 
     const userRoleName = useMemo(() => {
         return (
@@ -134,8 +292,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         );
     }, [user, userRoleName]);
 
+    const metadataFetchedRef = useRef(false);
+
     useEffect(() => {
         if (!token) return;
+        if (metadataFetchedRef.current) return;
+        metadataFetchedRef.current = true;
+
         const headers = { 'Authorization': `Token ${token}` };
         fetch(`${API_URL}/maintenance/priority/`, { headers })
             .then(r => r.ok ? r.json() : [])
@@ -178,7 +341,21 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 })
                 .catch(() => { });
         }
-    }, [token, propStatuses, propWorkers, propSubDepartments, propExpenseTypes]);
+        if (!propLedgerBatches || propLedgerBatches.length === 0) {
+            fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { headers })
+                .then(r => r.ok ? r.json() : [])
+                .then(data => {
+                    const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+                    setFetchedLedgerBatches(list);
+                    setHasFetchedLedgerBatches(true);
+                })
+                .catch(() => {
+                    setHasFetchedLedgerBatches(true);
+                });
+        } else {
+            setHasFetchedLedgerBatches(true);
+        }
+    }, [token, propStatuses, propWorkers, propSubDepartments, propExpenseTypes, propLedgerBatches]);
 
     const departmentPriorities = useMemo(() => {
         if (priorities && priorities.length > 0) {
@@ -207,6 +384,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         ];
     }, [priorities, ticketDetails.department, ticketDetails.priority]);
 
+    const priorityOptions: SelectOption[] = useMemo(() => {
+        return departmentPriorities.map((p: any) => ({
+            value: p.priority_id,
+            label: `${p.priority_name} Priority`
+        }));
+    }, [departmentPriorities]);
+
     const handlePrioritySelect = async (newPriorityId: number) => {
         if (!token || !ticketDetails || actionLoading) return;
         const selectedP = departmentPriorities.find(p => p.priority_id === newPriorityId) || priorities.find(p => p.priority_id === newPriorityId);
@@ -233,6 +417,49 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             }
         } catch (err) {
             console.error('Error changing ticket priority:', err);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleNatureSelect = async (newNatureId: number) => {
+        if (!await confirmPopup("general")) return;
+
+        if (!token || !ticketDetails || actionLoading) return;
+
+        const selectedNature = availableNatures.find(n => (n.nature_id || n.id) === newNatureId);
+        if (!selectedNature) return;
+
+        setActionLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/maintenance/ticket/${ticketDetails.ticket_id}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Token ${token}`
+                },
+                body: JSON.stringify({ nature: newNatureId })
+            });
+
+            if (res.ok) {
+                const updated = await res.json().catch(() => ({}));
+                const resolvedNature = (updated.nature && typeof updated.nature === 'object') ? updated.nature : selectedNature;
+                const resolvedSubDept = resolvedNature?.sub_department || (typeof (selectedNature as any)?.sub_department === 'object' ? (selectedNature as any).sub_department : undefined);
+
+                setTicketDetails(prev => ({
+                    ...prev,
+                    nature: resolvedNature,
+                    ...(resolvedSubDept ? { sub_department: resolvedSubDept } : {})
+                }));
+                onRefreshList();
+                await refreshTicketData();
+            } else {
+                const errorData = await res.json().catch(() => ({}));
+                console.error('Failed to update nature', errorData);
+                alert(errorData.detail || errorData.nature?.[0] || 'Failed to update work nature');
+            }
+        } catch (err) {
+            console.error('Error changing ticket nature:', err);
         } finally {
             setActionLoading(false);
         }
@@ -1361,6 +1588,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>, workerId: number) => {
         e.preventDefault();
+        if (!isSubDeptInLedgerBatch) {
+            showError("Cannot add expenses for current department .");
+            return;
+        }
         const formData = new FormData(e.currentTarget);
         const expTypeId = String(formData.get('expense_type_id') || selectedExpenseTypeId);
         const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === expTypeId);
@@ -1469,7 +1700,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             safeAllocations.forEach(alloc => {
                 const hasLoggedHours = safeWorkLogs.some(wl => Number(wl.worker?.user_id) === Number(alloc.worker?.user_id));
                 if (!hasLoggedHours) {
-                    missingWorkers.push(alloc.worker?.full_name || alloc.worker?.username || `Worker #${alloc.worker?.user_id}`);
+                    missingWorkers.push(alloc.worker?.full_name || alloc.worker?.username || `Worker ${alloc.worker?.user_id}`);
                 }
             });
             if (missingWorkers.length > 0) {
@@ -1558,7 +1789,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 safeAllocations.forEach(alloc => {
                     const hasLoggedHours = safeWorkLogs.some(wl => Number(wl.worker?.user_id) === Number(alloc.worker?.user_id));
                     if (!hasLoggedHours) {
-                        missingWorkers.push(alloc.worker?.full_name || alloc.worker?.username || `Worker #${alloc.worker?.user_id}`);
+                        missingWorkers.push(alloc.worker?.full_name || alloc.worker?.username || `Worker ${alloc.worker?.user_id}`);
                     }
                 });
                 if (missingWorkers.length > 0) {
@@ -1608,6 +1839,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             return canViewStatus(s.status_name) && canMoveStatus(ticketDetails.status?.status_name, s.status_name);
         });
     }, [statuses, ticketDetails.status, ticketDetails.department, readOnly]);
+
+    const statusOptions: SelectOption[] = useMemo(() => {
+        return allowedDropdownStatuses.map((st: any) => ({
+            value: st.status_id,
+            label: st.status_name
+        }));
+    }, [allowedDropdownStatuses]);
 
     const handleStatusSelect = async (targetStatusId: number) => {
         const target = statuses.find(s => s.status_id === targetStatusId);
@@ -1661,8 +1899,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     // Derived variables
-    const ticketDeptId = Number(ticketDetails.department?.department_id ?? ticketDetails.department);
-
     const hasIssueCategoryForDept = mediaCategories.some(cat => {
         const isIssue = cat.category_name === 'Before Repair' || cat.category_name?.toLowerCase().includes('issue');
         if (!isIssue) return false;
@@ -1839,12 +2075,28 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     {ticketDetails.store?.store_name || (typeof ticketDetails.store === 'string' ? ticketDetails.store : 'N/A')}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-2 text-xs text-outline">
-                                                <AlertCircle className="w-4 h-4 shrink-0 text-outline" />
-                                                <span>
-                                                    {ticketDetails.nature?.nature_name || (typeof ticketDetails.nature === 'string' ? ticketDetails.nature : 'N/A')}
-                                                </span>
-                                            </div>
+                                            {canChangePriority && availableNatures.length > 0 ? (
+                                                <div className="flex items-center gap-1 shrink-0" title={`Click to change ticket work nature${ticketSubDeptName ? ` (Sub-Department: ${ticketSubDeptName})` : ''}`}>
+                                                    <AlertCircle className="w-3.5 h-3.5 text-outline shrink-0" />
+                                                    <SearchableSelect
+                                                        value={ticketDetails.nature?.nature_id ?? (typeof ticketDetails.nature === 'object' ? (ticketDetails.nature as any)?.id : (typeof ticketDetails.nature === 'number' ? ticketDetails.nature : ''))}
+                                                        onChange={val => handleNatureSelect(Number(val))}
+                                                        options={natureOptions}
+                                                        placeholder="Select nature..."
+                                                        disabled={actionLoading}
+                                                        containerClassName="w-28 sm:w-36 shrink-0"
+                                                        dropdownClassName="w-64 sm:w-72 min-w-[240px] left-0 sm:left-auto sm:right-0 shadow-2xl"
+                                                        className="w-full text-[11px] font-semibold py-0.5 px-2 rounded border border-outline-variant dark:border-dark-outline-variant bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface shadow-2xs hover:border-primary transition-colors flex items-center justify-between gap-1"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 text-xs text-outline">
+                                                    <AlertCircle className="w-4 h-4 shrink-0 text-outline" />
+                                                    <span>
+                                                        {ticketDetails.nature?.nature_name || (typeof ticketDetails.nature === 'string' ? ticketDetails.nature : 'N/A')}
+                                                    </span>
+                                                </div>
+                                            )}
 
                                             {(() => {
                                                 const lvl = ticketDetails.priority?.level ?? 1;
@@ -1857,22 +2109,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 return (
                                                     <>
                                                         {canChangePriority && departmentPriorities.length > 0 ? (
-                                                            <div className="relative inline-flex items-center">
-                                                                <select
-                                                                    value={ticketDetails.priority?.priority_id}
-                                                                    disabled={actionLoading}
-                                                                    onChange={e => handlePrioritySelect(Number(e.target.value))}
-                                                                    className={`appearance-none font-bold text-[11px] pl-2.5 pr-6 py-0.5 rounded border shadow-2xs outline-none cursor-pointer transition-colors ${badgeColorClass}`}
-                                                                    title="Click to change ticket priority"
-                                                                >
-                                                                    {departmentPriorities.map((p, idx) => (
-                                                                        <option key={`priority-opt-${p.priority_id || idx}-${p.priority_name}`} value={p.priority_id} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-sans text-xs font-semibold py-1">
-                                                                            {p.priority_name} Priority
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                                <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none opacity-75 shrink-0" />
-                                                            </div>
+                                                            <SearchableSelect
+                                                                value={ticketDetails.priority?.priority_id ?? ''}
+                                                                onChange={val => handlePrioritySelect(Number(val))}
+                                                                options={priorityOptions}
+                                                                placeholder="Select priority..."
+                                                                disabled={actionLoading}
+                                                                containerClassName="w-28 sm:w-32 shrink-0"
+                                                                dropdownClassName="w-56 min-w-[200px] left-0 sm:left-auto sm:right-0 shadow-2xl"
+                                                                className={`w-full font-bold text-[11px] px-2 py-0.5 rounded border shadow-2xs cursor-pointer transition-colors flex items-center justify-between gap-1 ${badgeColorClass}`}
+                                                            />
                                                         ) : (
                                                             <span className={`inline-flex items-center font-bold text-[11px] px-2.5 py-0.5 rounded border shadow-2xs ${badgeColorClass}`}>
                                                                 {ticketDetails.priority?.priority_name || 'Priority'} Priority
@@ -1882,21 +2128,19 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 );
                                             })()}
 
-                                            <div className="flex items-center gap-2 text-xs text-outline">
+                                            <div className="flex items-center gap-2 text-xs text-outline shrink-0">
                                                 {/* <span className="font-semibold text-xs text-outline dark:text-dark-outline">Status:</span> */}
                                                 {allowedDropdownStatuses.length > 1 ? (
-                                                    <select
-                                                        value={ticketDetails.status?.status_id}
+                                                    <SearchableSelect
+                                                        value={ticketDetails.status?.status_id ?? ''}
+                                                        onChange={val => handleStatusSelect(Number(val))}
+                                                        options={statusOptions}
+                                                        placeholder="Select status..."
                                                         disabled={actionLoading}
-                                                        onChange={e => handleStatusSelect(Number(e.target.value))}
-                                                        className={`text-[10px] font-bold p-1 rounded shrink-0 border border-outline-variant dark:border-dark-outline-variant outline-none cursor-pointer focus:ring-1 focus:ring-primary/20 ${statusColor(ticketDetails.status?.status_name || '')}`}
-                                                    >
-                                                        {allowedDropdownStatuses.map(st => (
-                                                            <option key={st.status_id} value={st.status_id} className="text-xs bg-surface text-on-surface">
-                                                                {st.status_name}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                        containerClassName="w-28 sm:w-32 shrink-0"
+                                                        dropdownClassName="w-56 min-w-[200px] left-0 sm:left-auto sm:right-0 shadow-2xl"
+                                                        className={`w-full text-[10px] font-bold py-0.5 px-2 rounded shrink-0 border border-outline-variant dark:border-dark-outline-variant outline-none cursor-pointer focus:ring-1 focus:ring-primary/20 flex items-center justify-between gap-1 ${statusColor(ticketDetails.status?.status_name || '')}`}
+                                                    />
                                                 ) : (
                                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(ticketDetails.status?.status_name || '')}`}>
                                                         {ticketDetails.status?.status_name || 'Pending'}
@@ -2372,16 +2616,27 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                     </span>
                                                                 </p>
                                                                 {!readOnly && (
-                                                                    <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
-                                                                        <button
-                                                                            onClick={() => setIsAddExpenseModalOpen(true)}
-                                                                            className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
-                                                                        >
-                                                                            <Plus className="w-4 h-4" /> Add Expense
-                                                                        </button>
-                                                                    </Can>
+                                                                    isSubDeptInLedgerBatch ? (
+                                                                        <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
+                                                                            <button
+                                                                                onClick={() => setIsAddExpenseModalOpen(true)}
+                                                                                className="min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 border border-primary text-primary text-xs font-bold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all"
+                                                                            >
+                                                                                <Plus className="w-4 h-4" /> Add Expense
+                                                                            </button>
+                                                                        </Can>
+                                                                    ) : null
                                                                 )}
                                                             </div>
+
+                                                            {!readOnly && !isSubDeptInLedgerBatch && (
+                                                                <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-amber-800 dark:text-amber-300 text-xs">
+                                                                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                                                                    <span>
+                                                                        Cannot add expenses for current department{ticketSubDeptName ? ` (${ticketSubDeptName})` : ''}
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                             {workerExpenses.length === 0 ? (
                                                                 <div className="p-4 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded">
                                                                     {/* <DollarSign className="w-6 h-6 mx-auto text-outline mb-1" /> */}
@@ -3645,6 +3900,14 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         {allocations.find(a => a.worker.user_id === activeWorkerId)?.worker.full_name}
                                     </span>
                                 </p>
+                                {!isSubDeptInLedgerBatch && (
+                                    <div className="p-2.5 mb-4 rounded bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-amber-800 dark:text-amber-300 text-xs">
+                                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                                        <span>
+                                            Cannot add expenses for current department{ticketSubDeptName ? ` (${ticketSubDeptName})` : ''}
+                                        </span>
+                                    </div>
+                                )}
                                 <form onSubmit={e => handleAddExpense(e, activeWorkerId)} className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
@@ -3737,11 +4000,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     }}
                                                     placeholder={isRemarksRequiredForType ? "Remarks / Description (required)" : "Remarks (optional)"}
                                                     disabled={actionLoading}
-                                                    className={`w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface transition-colors ${
-                                                        addExpenseRemarksError
-                                                            ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
-                                                            : 'border-outline-variant dark:border-dark-outline-variant focus:ring-2 focus:ring-primary/30'
-                                                    }`}
+                                                    className={`w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface transition-colors ${addExpenseRemarksError
+                                                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
+                                                        : 'border-outline-variant dark:border-dark-outline-variant focus:ring-2 focus:ring-primary/30'
+                                                        }`}
                                                 />
                                                 {addExpenseRemarksError && (
                                                     <p className="text-xs text-red-500 mt-1 font-medium flex items-center gap-1">
@@ -3753,7 +4015,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     })()}
                                     <div className="flex justify-end gap-2 pt-2">
                                         <button type="button" onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
-                                        <button type="submit" disabled={actionLoading} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
+                                        <button type="submit" disabled={actionLoading || !isSubDeptInLedgerBatch} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
                                             {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Add Expense
                                         </button>
                                     </div>
@@ -4135,11 +4397,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                         if (editExpenseRemarksError) setEditExpenseRemarksError(null);
                                                                     }}
                                                                     placeholder={isRemarksRequiredInEdit ? "Remarks / Description (required)" : "Remarks (optional)"}
-                                                                    className={`w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface transition-colors ${
-                                                                        editExpenseRemarksError
-                                                                            ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
-                                                                            : 'border-outline-variant dark:border-dark-outline-variant focus:ring-2 focus:ring-primary/30'
-                                                                    }`}
+                                                                    className={`w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface transition-colors ${editExpenseRemarksError
+                                                                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
+                                                                        : 'border-outline-variant dark:border-dark-outline-variant focus:ring-2 focus:ring-primary/30'
+                                                                        }`}
                                                                 />
                                                                 {editExpenseRemarksError && (
                                                                     <p className="text-xs text-red-500 mt-1 font-medium flex items-center gap-1">
@@ -4202,7 +4463,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     <div className="flex justify-end gap-2 pt-4 border-t border-outline-variant dark:border-dark-outline-variant">
 
                                                         {!editingExpense.is_claimed && (
-                                                            <button type="button" onClick={() => { if (window.confirm('Are you sure you want to delete this expense?')) handleDeleteExpense(editingExpense.expense_id); }} className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded mr-auto flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    if (await confirmPopup("delete")) {
+                                                                        handleDeleteExpense(editingExpense.expense_id);
+                                                                    }
+                                                                }}
+                                                                className="min-h-[15px] px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded mr-auto flex items-center gap-2 cursor-pointer"
+                                                            >
                                                                 <Trash2 className="w-4 h-4" /> Delete Expense
                                                             </button>
                                                         )}

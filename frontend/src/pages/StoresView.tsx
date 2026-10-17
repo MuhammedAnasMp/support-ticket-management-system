@@ -344,7 +344,7 @@ export const StoresView: React.FC = () => {
                     {user.full_name || user.username}
                   </span>
                   <span className="text-[10px] text-outline  leading-tight">
-                    {user.employee_no ? `#${user.employee_no}` : user.username}
+                    {user.employee_no ? `${user.employee_no}` : user.username}
                   </span>
                 </div>
               </div>

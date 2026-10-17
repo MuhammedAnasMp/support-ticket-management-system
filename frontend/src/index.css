@@ -375,11 +375,11 @@ body {
 
 .date-range-inner .rdrDateRangeWrapper,
 .date-range-inner .rdrDateDisplay {
-  width: 100%;
+  width: 95%;
 }
 
 .date-range-inner .rdrMonth {
-  width: 100%;
+  width: 95%;
   box-sizing: border-box;
 }
 

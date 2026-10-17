@@ -834,7 +834,7 @@ class LedgerService:
 
             if ledger.expenses.count() <= 1:
                 raise ValidationError(
-                    "Cannot remove the only expense. Please delete the Ledger Batch instead.")
+                    "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.")
 
             expense = Expense.objects.select_for_update().get(pk=expense_id)
 
@@ -1378,10 +1378,30 @@ class PaymentService:
             if bundle:
                 bundle.status = 'Paid'
                 bundle.save(update_fields=['status'])
+                now = timezone.now()
+                Expense.objects.filter(claim=bundle).update(is_paid=True, paid_at=now, paid_by=actor)
             elif ledger:
                 ledger.status = 'Paid'
                 ledger.save(update_fields=['status'])
                 ledger.bundles.update(status='Paid')
+                now = timezone.now()
+                ledger.expenses.update(is_paid=True, paid_at=now, paid_by=actor)
+                Expense.objects.filter(claim__in=ledger.bundles.all()).update(is_paid=True, paid_at=now, paid_by=actor)
+                if ledger.ledger_group:
+                    group = ledger.ledger_group
+                    if group.ledgers.exclude(status='Paid').count() == 0:
+                        group.is_paid = True
+                        group.paid_at = now
+                        group.paid_by = actor
+                        group.payment_method = payment_method
+                        group.payment_reference = transaction_reference
+                        group.payment_remarks = remarks
+                        group.save(update_fields=['is_paid', 'paid_at', 'paid_by', 'payment_method', 'payment_reference', 'payment_remarks'])
+            elif expense:
+                expense.is_paid = True
+                expense.paid_at = timezone.now()
+                expense.paid_by = actor
+                expense.save(update_fields=['is_paid', 'paid_at', 'paid_by'])
 
             create_audit_event(
                 entity_name, entity_id, 'PAYMENT_PROCESSED', actor=actor,
@@ -1391,3 +1411,77 @@ class PaymentService:
             )
 
             return payment
+
+    @classmethod
+    def pay_ledger_group(cls, group_id, actor, payment_method='Cash', payment_reference=None, remarks=None, recipient_name=None, ip_address=None):
+        """
+        Disburses payment for an entire completed Ledger Group.
+        Marks the Ledger Group as Paid, marks all its Ledgers as Paid,
+        marks all its Bundles as Paid, and marks all tied Expenses as Paid.
+        """
+        with transaction.atomic():
+            group = LedgerGroup.objects.select_for_update().get(pk=group_id)
+
+            if not group.is_completed:
+                raise ValidationError(
+                    f"Cannot pay Ledger Group '{group.group_name}'. The group must be marked as Completed first."
+                )
+
+            if group.is_paid:
+                raise ValidationError(
+                    f"Ledger Group '{group.group_name}' is already marked as Paid."
+                )
+
+            now = timezone.now()
+            group.is_paid = True
+            group.paid_at = now
+            group.paid_by = actor
+            group.payment_method = payment_method or 'Cash'
+            group.payment_reference = payment_reference
+            group.payment_remarks = remarks
+            group.recipient_name = recipient_name
+            group.save(update_fields=['is_paid', 'paid_at', 'paid_by', 'payment_method', 'payment_reference', 'payment_remarks', 'recipient_name'])
+
+            # Mark all ledgers in this group as Paid
+            group.ledgers.update(status='Paid')
+
+            # Mark all bundles in those ledgers as Paid
+            all_bundles = WorkerClaim.objects.filter(ledgers__ledger_group=group).distinct()
+            all_bundles.update(status='Paid')
+
+            # Mark all direct expenses on ledgers as Paid
+            direct_expenses = Expense.objects.filter(ledgers__ledger_group=group).distinct()
+            direct_expenses.update(is_paid=True, paid_at=now, paid_by=actor)
+
+            # Mark all bundle expenses as Paid
+            bundle_expenses = Expense.objects.filter(claim__in=all_bundles).distinct()
+            bundle_expenses.update(is_paid=True, paid_at=now, paid_by=actor)
+
+            # Record Payment object
+            first_ledger = group.ledgers.first()
+            payment = Payment.objects.create(
+                ledger=first_ledger,
+                amount_paid=group.total_amount,
+                payment_method=payment_method or 'Cash',
+                transaction_reference=payment_reference,
+                recipient_name=recipient_name,
+                paid_by=actor,
+                remarks=remarks or f"Cash settlement for Ledger Group '{group.group_name}'"
+            )
+
+            create_audit_event(
+                'LedgerGroup', group.ledger_group_id, 'GROUP_PAID', actor=actor,
+                payload={
+                    'payment_id': payment.payment_id,
+                    'total_amount': str(group.total_amount),
+                    'payment_method': payment_method,
+                    'reference': payment_reference,
+                    'recipient_name': recipient_name,
+                    'ledgers_count': group.ledgers.count(),
+                    'bundles_count': all_bundles.count(),
+                    'expenses_count': direct_expenses.count() + bundle_expenses.count()
+                },
+                ip_address=ip_address
+            )
+
+            return group
