@@ -14,7 +14,7 @@ import Can, { permissionDebugEnabled } from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
 import {
     API_URL, type Ticket, type Allocation, type WorkLog, type Expense, type MediaCategory, type Media,
-    AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo, rotateImageFile, RotatableVideoPlayer
+    AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo, isAudio, rotateImageFile, RotatableVideoPlayer
 } from './TicketsTypesAndComponents';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
@@ -617,6 +617,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [isLogHoursModalOpen, setIsLogHoursModalOpen] = useState(false);
     const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState(false);
     const [isManageIssueMediaOpen, setIsManageIssueMediaOpen] = useState(false);
+    const [issueMediaError, setIssueMediaError] = useState<string | null>(null);
     const [isManageCompletedMediaOpen, setIsManageCompletedMediaOpen] = useState(false);
 
     // Sub-Modals Edit Target Entities
@@ -1311,6 +1312,25 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const handleDeleteMedia = async (mediaId: number) => {
+        // Find if target media is Before Repair (issueMedia)
+        const targetMedia = mediaList.find(m => m.media_id === mediaId) ||
+            (ticketDetails as any)?.media?.find((m: any) => m.media_id === mediaId);
+
+        const isIssueMedia = targetMedia
+            ? (targetMedia.category?.category_name === 'Before Repair' || targetMedia.category?.category_name?.toLowerCase().includes('issue'))
+            : issueMedia.some(m => m.media_id === mediaId);
+
+        if (isIssueMedia && targetMedia && !isAudio(targetMedia.file_name || '')) {
+            const nonAudioIssueMedia = issueMedia.filter(m => !isAudio(m.file_name || ''));
+            if (nonAudioIssueMedia.length <= 1) {
+                const msg = 'Cannot delete media: At least one Before Repair photo or video must be kept.';
+                showError(msg);
+                setIssueMediaError(msg);
+                alert(msg);
+                return;
+            }
+        }
+
         if (!window.confirm('Are you sure you want to delete this media file?')) return;
         setActionLoading(true);
         try {
@@ -1319,10 +1339,18 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 headers: { Authorization: `Token ${token}` }
             });
             if (response.ok) {
+                setIssueMediaError(null);
                 await refreshTicketData();
+            } else {
+                const errData = await response.json().catch(() => ({}));
+                const errDetail = errData.detail || 'Failed to delete media file.';
+                showError(errDetail);
+                setIssueMediaError(errDetail);
+                alert(errDetail);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
+            showError(err.message || 'Error deleting media');
         } finally {
             setActionLoading(false);
         }
@@ -1566,6 +1594,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const handleUploadIssueMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setIssueMediaError(null);
         const files = Array.from(e.target.files || []);
         if (files.length > 0) {
             queueFilesForReview(files, 'Before Repair');
@@ -2285,6 +2314,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 onDelete={(!readOnly && (ticketDetails.status?.status_name === 'Rejected' || user?.user_id === ticketDetails.created_by?.user_id || hasPermission('maintenance.update_before_repair'))) ? handleDeleteMedia : undefined}
                                                 token={token}
                                                 onRefreshTicket={refreshTicketData}
+                                                minNonAudioCount={1}
+                                                minNonAudioWarning="Cannot delete media: At least one Before Repair photo or video must be kept."
                                             />
                                         </div>
                                         <Divider />
@@ -4494,14 +4525,30 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {
                     isManageIssueMediaOpen && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsManageIssueMediaOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => { setIsManageIssueMediaOpen(false); setIssueMediaError(null); }} className="absolute inset-0 bg-black touch-manipulation" />
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-3 sm:p-3 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage Before Repair</h3>
-                                    <button onClick={() => setIsManageIssueMediaOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => { setIsManageIssueMediaOpen(false); setIssueMediaError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <div className="space-y-4">
-                                    <MediaGrid items={issueMedia} emptyLabel="No Before Repair uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
+                                    {issueMediaError && (
+                                        <div className="flex items-center gap-2 p-2.5 rounded bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs">
+                                            <AlertCircle className="w-4 h-4 shrink-0" />
+                                            <span className="flex-1 font-medium">{issueMediaError}</span>
+                                            <button type="button" onClick={() => setIssueMediaError(null)} className="p-0.5 hover:opacity-70 cursor-pointer">
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
+                                    <MediaGrid
+                                        items={issueMedia}
+                                        emptyLabel="No Before Repair uploaded yet"
+                                        onEdit={triggerReplaceMedia}
+                                        onDelete={handleDeleteMedia}
+                                        minNonAudioCount={1}
+                                        minNonAudioWarning="Cannot delete media: At least one Before Repair photo or video must be kept."
+                                    />
                                     <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
                                         {/* Action Toolbar for Live Capture */}
                                         <div className="grid grid-cols-3 gap-2">

@@ -175,6 +175,8 @@ export interface MediaGridProps {
     onDelete?: (mediaId: number) => void;
     token?: string | null;
     onRefreshTicket?: () => void;
+    minNonAudioCount?: number;
+    minNonAudioWarning?: string;
 }
 
 // ─── Compact Audio Card Component for Small Grid Cells ───────────────────────
@@ -405,6 +407,8 @@ export interface MediaPreviewModalProps {
     token?: string | null;
     onDelete?: (mediaId: number) => void;
     onRefreshTicket?: () => void;
+    minNonAudioCount?: number;
+    minNonAudioWarning?: string;
 }
 
 export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
@@ -414,7 +418,9 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
     onClose,
     token,
     onDelete,
-    onRefreshTicket
+    onRefreshTicket,
+    minNonAudioCount,
+    minNonAudioWarning
 }) => {
     const [currentIndex, setCurrentIndex] = useState<number>(
         controlledIndex !== undefined && controlledIndex !== null ? controlledIndex : initialIndex
@@ -422,6 +428,14 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
     const [customPreviewUrls, setCustomPreviewUrls] = useState<Record<number, string>>({});
     const [rotation, setRotation] = useState<number>(0);
     const [isSavingRotation, setIsSavingRotation] = useState(false);
+
+    const nonAudioItemsCount = (items || []).filter(m => !isAudio(m?.file_name || '')).length;
+
+    const isCurrentDeletionBlocked = (name: string) => {
+        if (!minNonAudioCount) return false;
+        if (isAudio(name || '')) return false;
+        return nonAudioItemsCount <= minNonAudioCount;
+    };
 
     useEffect(() => {
         if (controlledIndex !== undefined && controlledIndex !== null) {
@@ -635,12 +649,17 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => {
+                                        if (isCurrentDeletionBlocked(currentName)) {
+                                            const msg = minNonAudioWarning || 'Cannot delete media: At least one photo or video must be kept.';
+                                            alert(msg);
+                                            return;
+                                        }
                                         const mId = currentItem.media_id!;
                                         onClose();
                                         onDelete(mId);
                                     }}
                                     className="p-1.5 rounded-full bg-red-600/80 hover:bg-red-600 text-white cursor-pointer transition-colors"
-                                    title="Delete File"
+                                    title={isCurrentDeletionBlocked(currentName) ? (minNonAudioWarning || 'At least one photo or video must be kept') : 'Delete File'}
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </button>
@@ -749,8 +768,25 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
     );
 };
 
-export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit, onDelete, token, onRefreshTicket }) => {
+export const MediaGrid: React.FC<MediaGridProps> = ({
+    items,
+    emptyLabel,
+    onEdit,
+    onDelete,
+    token,
+    onRefreshTicket,
+    minNonAudioCount,
+    minNonAudioWarning
+}) => {
     const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+    const nonAudioItemsCount = (items || []).filter(m => !isAudio(m.file_name || '')).length;
+
+    const isNonAudioDeletionBlocked = (m: Media) => {
+        if (!minNonAudioCount) return false;
+        if (isAudio(m.file_name || '')) return false;
+        return nonAudioItemsCount <= minNonAudioCount;
+    };
 
     const openPreviewIndex = (idx: number) => {
         setPreviewIndex(idx);
@@ -843,10 +879,15 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
+                                                if (isNonAudioDeletionBlocked(m)) {
+                                                    const msg = minNonAudioWarning || 'Cannot delete media: At least one photo or video must be kept.';
+                                                    alert(msg);
+                                                    return;
+                                                }
                                                 onDelete(m.media_id);
                                             }}
                                             className="p-1 bg-black/60 hover:bg-red-600 text-white rounded transition-colors"
-                                            title="Delete file"
+                                            title={isNonAudioDeletionBlocked(m) ? (minNonAudioWarning || 'At least one photo or video must be kept') : 'Delete file'}
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -868,6 +909,8 @@ export const MediaGrid: React.FC<MediaGridProps> = ({ items, emptyLabel, onEdit,
                     token={token}
                     onDelete={onDelete}
                     onRefreshTicket={onRefreshTicket}
+                    minNonAudioCount={minNonAudioCount}
+                    minNonAudioWarning={minNonAudioWarning}
                 />
             )}
         </>

@@ -400,6 +400,26 @@ class MediaViewSet(viewsets.ModelViewSet):
         media.save()
         return Response(MediaSerializer(media).data)
 
+    def perform_destroy(self, instance):
+        if instance.ticket and instance.category:
+            cat_name = (instance.category.category_name or '').lower().strip()
+            if cat_name == 'before repair' or 'issue' in cat_name:
+                file_name = (instance.file_name or '').lower()
+                is_audio = 'voice_note' in file_name or 'recording' in file_name or file_name.endswith(('.mp3', '.wav', '.ogg', '.m4a', '.aac'))
+                if not is_audio:
+                    before_media = Media.objects.filter(
+                        ticket=instance.ticket,
+                        category=instance.category
+                    ).exclude(media_id=instance.media_id)
+                    non_audio_remaining = [
+                        m for m in before_media
+                        if not ('voice_note' in (m.file_name or '').lower() or 'recording' in (m.file_name or '').lower() or (m.file_name or '').lower().endswith(('.mp3', '.wav', '.ogg', '.m4a', '.aac')))
+                    ]
+                    if len(non_audio_remaining) < 1:
+                        from rest_framework.exceptions import ValidationError
+                        raise ValidationError({'detail': 'Cannot delete media: At least one Before Repair photo or video must be kept.'})
+        instance.delete()
+
 
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
