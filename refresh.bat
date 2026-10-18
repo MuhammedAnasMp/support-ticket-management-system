@@ -132,14 +132,14 @@ echo ==========================================
 echo Restarting mtracker service
 echo ==========================================
 
-powershell -NoProfile -Command "Stop-Service mtracker -Force"
+powershell -NoProfile -Command "sc stop mtracker"
 
 if errorlevel 1 (
     echo ERROR: Failed to stop mtracker service.
     exit /b 1
 )
 
-powershell -NoProfile -Command "Start-Service mtracker"
+powershell -NoProfile -Command "sc start mtracker"
 
 if errorlevel 1 (
     echo ERROR: Failed to start mtracker service.
