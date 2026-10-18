@@ -2987,7 +2987,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                         e.stopPropagation();
                                                                         toggleNestedSubDeptAccordion(l.ledger_id, wKey, sdKey);
                                                                       }}
-                                                                      title={isChildExpanded ? 'Collapse sub-department expenses' : 'Expand sub-department expenses'}
+                                                                      title={isChildExpanded ? 'Collapse sub-department expenses' : 'Expand expenses'}
                                                                     >
                                                                       {isChildExpanded ? (
                                                                         <ChevronDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
@@ -3880,11 +3880,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
             <div className="p-4 rounded bg-surface-container-low border border-outline-variant/80 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Ledger Group</div>
+                  <div className="text-[11px]  tracking-wider text-on-surface-variant font-medium">Ledger Group</div>
                   <div className="text-sm font-bold text-on-surface">{groupToPay.groupName}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[11px] uppercase tracking-wider text-on-surface-variant font-medium">Settlement Total</div>
+                  <div className="text-[11px]  tracking-wider text-on-surface-variant font-medium">Settlement Total</div>
                   <div className="text-lg font-extrabold text-teal-600 dark:text-teal-400">
                     KD {groupToPay.totalAmount.toFixed(2)}
                   </div>
@@ -3909,18 +3909,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
             {/* Payment Details Form */}
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-on-surface mb-1">
-                  Payment Method
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="px-3.5 py-2 rounded text-xs font-bold bg-teal-600 text-white border border-teal-600 shadow-xs inline-flex items-center gap-1.5">
-                    <Banknote className="w-4 h-4" />
-                    <span>Cash</span>
-                  </span>
-                  {/* <span className="text-[11px] text-on-surface-variant font-medium">(Cash Disbursement Only)</span> */}
-                </div>
-              </div>
+
 
               <div>
                 <label className="block text-xs font-semibold text-on-surface mb-1">

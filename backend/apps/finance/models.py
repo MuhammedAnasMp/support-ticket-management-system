@@ -1,3 +1,6 @@
+from django.core.exceptions import ValidationError
+from django.dispatch import receiver
+from django.db.models.signals import m2m_changed
 from django.db import models, transaction
 from django.conf import settings
 from datetime import timedelta
@@ -141,7 +144,7 @@ class Expense(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_expenses')
     expense_type = models.ForeignKey(
         ExpenseType, on_delete=models.PROTECT, related_name='expenses')
-    amount = models.DecimalField(decimal_places=2, max_digits=10)
+    amount = models.DecimalField(decimal_places=3, max_digits=10)
     expense_date = models.DateField()
     remarks = models.TextField(blank=True, null=True)
     # receipt = models.ForeignKey(
@@ -277,7 +280,8 @@ class LedgerGroup(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
     paid_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='paid_ledger_groups')
-    payment_method = models.CharField(max_length=50, blank=True, null=True, default='Cash')
+    payment_method = models.CharField(
+        max_length=50, blank=True, null=True, default='Cash')
     payment_reference = models.CharField(max_length=100, blank=True, null=True)
     payment_remarks = models.TextField(blank=True, null=True)
     recipient_name = models.CharField(max_length=150, blank=True, null=True)
@@ -476,11 +480,6 @@ class Payment(models.Model):
         return f"Payment #{self.payment_id} - Amount: {self.amount_paid} ({self.payment_method})"
 
 
-from django.db.models.signals import m2m_changed
-from django.dispatch import receiver
-from django.core.exceptions import ValidationError
-
-
 @receiver(m2m_changed, sender=LedgerBatch.sub_departments.through)
 def prevent_duplicate_subdepartments_across_batches(sender, instance, action, pk_set, **kwargs):
     if kwargs.get('raw', False):
@@ -488,11 +487,11 @@ def prevent_duplicate_subdepartments_across_batches(sender, instance, action, pk
     if action == 'pre_add' and pk_set:
         from apps.stores.models import SubDepartment
         for subdept_id in pk_set:
-            existing_batch = LedgerBatch.objects.exclude(pk=instance.pk).filter(sub_departments__pk=subdept_id).first()
+            existing_batch = LedgerBatch.objects.exclude(
+                pk=instance.pk).filter(sub_departments__pk=subdept_id).first()
             if existing_batch:
                 subdept = SubDepartment.objects.filter(pk=subdept_id).first()
                 subdept_name = subdept.sub_department_name if subdept else f"ID #{subdept_id}"
                 raise ValidationError(
                     f"Sub-department '{subdept_name}' is already assigned to Ledger Batch '{existing_batch.batch_name}'. A sub-department cannot belong to multiple Ledger Batches."
                 )
-

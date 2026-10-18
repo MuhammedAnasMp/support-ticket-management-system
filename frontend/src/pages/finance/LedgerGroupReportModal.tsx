@@ -1107,7 +1107,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       const reportTitle = isAllOrActiveTab === 'userwise'
         ? 'Worker-wise Settlement'
-        : 'Sub-Department Expenses by Location';
+        : 'Expenses by Location';
 
       const getHeaderHtml = (subtitle: string, customTitle?: string) => `
         <div class="report-header">
@@ -2755,7 +2755,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   }`}
               >
                 <Boxes className="w-3.5 h-3.5" />
-                <span>Sub-Department Expenses(For Accounts)</span>
+                <span>Expenses(For Accounts)</span>
               </button>
             </div>
 
