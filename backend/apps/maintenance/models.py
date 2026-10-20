@@ -29,6 +29,7 @@ class Priority(models.Model):
 class Status(models.Model):
     status_id = models.AutoField(primary_key=True)
     status_name = models.CharField(max_length=50)
+    short_code = models.CharField(max_length=10, blank=True, null=True)
     active = models.BooleanField(default=True)
     order = models.PositiveIntegerField(default=1)
 
@@ -42,7 +43,7 @@ class Status(models.Model):
         ]
 
     def __str__(self):
-        return self.status_name
+        return f"{self.status_name} ({self.short_code})" if self.short_code else self.status_name
 
 
 class StatusChangeRule(models.Model):
@@ -407,6 +408,11 @@ class Allocation(models.Model):
             ("change_planned_hours", "Can change planned hours"),
             ("view_remarks", "Can view remarks"),
             ("change_remarks", "Can change remarks"),
+            ("can_add_worker_in_location_approval", "Can add worker in Location Approval"),
+            ("can_add_worker_in_completed", "Can add worker in Completed"),
+            ("can_add_worker_in_reconciled", "Can add worker in Reconciled"),
+            ("can_add_worker_in_rejected", "Can add worker in Rejected"),
+            ("can_add_worker_in_blocked", "Can add worker in Blocked"),
         ]
 
     def __str__(self):

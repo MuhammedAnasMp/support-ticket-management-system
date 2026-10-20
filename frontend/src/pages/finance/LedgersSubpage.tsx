@@ -634,7 +634,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         const unused = isGroupUnused(g);
         return {
           value: String(g.ledger_group_id),
-          label: `${g.group_name} (${parseFloat(g.total_amount).toFixed(2)} KD)${unused ? ' • [Unused]' : ''}`,
+          label: `${g.group_name} (${parseFloat(g.total_amount).toFixed(3)} KD)${unused ? ' • [Unused]' : ''}`,
           canDelete: unused,
           deleteTooltip: `Delete unused group "${g.group_name}"`
         };
@@ -2095,7 +2095,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                           {/* 6. Group Total */}
                           <td className="px-4 py-3 text-right font-bold text-on-surface text-xs whitespace-nowrap">
-                            KD {cluster.totalAmount.toFixed(2)}
+                            KD {cluster.totalAmount.toFixed(3)}
                           </td>
 
                           {/* 7. Status */}
@@ -2397,7 +2397,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                       </div>
                                     </td>
                                     <td className="px-4 py-2.5 text-right font-bold text-on-surface">
-                                      {bundleItem.totalAmount.toFixed(2)}
+                                      {bundleItem.totalAmount.toFixed(3)}
                                     </td>
                                     <Can permission='finance.change_ledger'>
                                       <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
@@ -2507,7 +2507,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                     </td>
                                                     <td className="px-3 py-2 text-on-surface-variant text-[11px]">{exp.expense_date || '-'}</td>
                                                     <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                      {parseFloat(exp.amount as any || '0').toFixed(2)}
+                                                      {parseFloat(exp.amount as any || '0').toFixed(3)}
                                                     </td>
                                                     <Can permission='finance.change_ledger'>
 
@@ -2618,7 +2618,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                       {l.created_by_detail?.full_name || l.created_by_detail?.username || 'User'}
                                     </td>
                                     <td className="px-4 py-2.5 text-right font-bold text-on-surface">
-                                      {parseFloat(l.total_amount).toFixed(2)}
+                                      {parseFloat(l.total_amount).toFixed(3)}
                                     </td>
 
                                     <td className="px-4 py-2.5 text-center text-on-surface-variant text-[11px]" onClick={(e) => e.stopPropagation()}>
@@ -2652,7 +2652,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                             )}
                                           </div>
                                           <div className="font-bold text-on-surface">
-                                            KD {parseFloat(l.total_amount).toFixed(2)}
+                                            KD {parseFloat(l.total_amount).toFixed(3)}
                                           </div>
                                         </div>
                                       </td>
@@ -2737,7 +2737,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                             </div>
                                                           </td>
                                                           <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                                                            {sd.totalAmount.toFixed(2)}
+                                                            {sd.totalAmount.toFixed(3)}
                                                           </td>
                                                           <td className="px-3 py-2.5 text-right">
                                                             <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${isExpanded
@@ -2802,7 +2802,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                   </div>
                                                                 </td>
                                                                 <td className="px-3 py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
-                                                                  {w.totalAmount.toFixed(2)}
+                                                                  {w.totalAmount.toFixed(3)}
                                                                 </td>
                                                                 <td className="px-3 py-2 text-right">
                                                                   <span className={`text-[10px] px-1.5 py-0.2 rounded ${isChildExpanded
@@ -2863,7 +2863,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                       )}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                                      {parseFloat(exp.amount).toFixed(2)}
+                                                                      {parseFloat(exp.amount).toFixed(3)}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                                                                       {isLedgerEditable && (
@@ -2948,7 +2948,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                             </div>
                                                           </td>
                                                           <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                                                            {w.totalAmount.toFixed(2)}
+                                                            {w.totalAmount.toFixed(3)}
                                                           </td>
                                                           <td className="px-3 py-2.5 text-right">
                                                             <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${isExpanded
@@ -3008,7 +3008,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                   </div>
                                                                 </td>
                                                                 <td className="px-3 py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
-                                                                  {sd.totalAmount.toFixed(2)}
+                                                                  {sd.totalAmount.toFixed(3)}
                                                                 </td>
                                                                 <td className="px-3 py-2 text-right">
                                                                   <span className={`text-[10px] px-1.5 py-0.2 rounded ${isChildExpanded
@@ -3069,7 +3069,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                       )}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                                      {parseFloat(exp.amount).toFixed(2)}
+                                                                      {parseFloat(exp.amount).toFixed(3)}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                                                                       {isLedgerEditable && (
@@ -3157,7 +3157,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                           )}
                                                         </td>
                                                         <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                          {parseFloat(exp.amount).toFixed(2)}
+                                                          {parseFloat(exp.amount).toFixed(3)}
                                                         </td>
                                                         <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                                                           {isLedgerEditable && (
@@ -3296,7 +3296,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                           </div>
                           <div className="text-right">
                             <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
-                              KD {parseFloat(b.total_claimed_amount).toFixed(2)}
+                              KD {parseFloat(b.total_claimed_amount).toFixed(3)}
                             </span>
                             <span className="text-[10px] text-on-surface-variant">
                               {b.period_from && b.period_to ? `${b.period_from} → ${b.period_to}` : 'Approved'}
@@ -3342,7 +3342,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                           Ledger Batch Distribution ({classificationResult.classifiedBatches.length})
                         </span>
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                          Total: {classificationResult.totalAmount.toFixed(2)}
+                          Total: {classificationResult.totalAmount.toFixed(3)} KD
                         </span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -3358,7 +3358,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               </span>
                             </div>
                             <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                              {group.total.toFixed(2)}
+                              {group.total.toFixed(3)}
                             </span>
                           </div>
                         ))}
@@ -3646,7 +3646,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                       <div className="text-[11px] font-medium text-on-surface-variant">
                         {selectedCount > 0 ? (
                           <span>
-                            <strong className="text-primary font-semibold">{selectedCount}</strong> selected • <strong className="text-emerald-600 dark:text-emerald-400 font-bold">KD {selectedTotalAmount.toFixed(2)}</strong>
+                            <strong className="text-primary font-semibold">{selectedCount}</strong> selected • <strong className="text-emerald-600 dark:text-emerald-400 font-bold">KD {selectedTotalAmount.toFixed(3)}</strong>
                           </span>
                         ) : (
                           <span>0 selected</span>
@@ -3706,7 +3706,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                             </div>
                             <div className="text-right shrink-0">
                               <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
-                                KD {parseFloat(b.total_claimed_amount).toFixed(2)}
+                                KD {parseFloat(b.total_claimed_amount).toFixed(3)}
                               </span>
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20">
                                 Approved
@@ -3886,7 +3886,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 <div className="text-right">
                   <div className="text-[11px]  tracking-wider text-on-surface-variant font-medium">Settlement Total</div>
                   <div className="text-lg font-extrabold text-teal-600 dark:text-teal-400">
-                    KD {groupToPay.totalAmount.toFixed(2)}
+                    KD {groupToPay.totalAmount.toFixed(3)}
                   </div>
                 </div>
               </div>

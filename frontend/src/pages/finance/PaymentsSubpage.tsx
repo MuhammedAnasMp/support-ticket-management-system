@@ -101,7 +101,7 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
                         {p.claim ? `Bundle ${p.claim}` : p.ledger ? `Ledger ${p.ledger}` : 'Expense'}
                       </td>
                       <td className="px-4 py-3 text-right  font-semibold text-emerald-600 dark:text-emerald-400">
-                        {parseFloat(p.amount_paid).toFixed(2)}
+                        {parseFloat(p.amount_paid).toFixed(3)}
                       </td>
                       <td className="px-4 py-3 text-on-surface-variant">{p.paid_by_username || 'System'}</td>
                       <td className="px-4 py-3 text-on-surface-variant">{new Date(p.paid_at).toLocaleString()}</td>
@@ -211,7 +211,7 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
                 <label className="block font-medium text-on-surface-variant mb-1">Amount Paid (KD)</label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   value={paymentAmount || ('total_claimed_amount' in showPaymentModal ? showPaymentModal.total_claimed_amount : 'total_amount' in showPaymentModal ? showPaymentModal.total_amount : showPaymentModal.amount_paid)}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   className="w-full bg-surface-container border border-outline text-on-surface rounded p-2 "

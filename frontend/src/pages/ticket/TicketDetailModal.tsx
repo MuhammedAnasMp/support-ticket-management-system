@@ -1159,7 +1159,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         setActionLoading(true);
         try {
             const rawAmount = parseFloat(editExpenseForm.amount);
-            const formattedAmount = isNaN(rawAmount) ? editExpenseForm.amount : rawAmount.toFixed(2);
+            const formattedAmount = isNaN(rawAmount) ? editExpenseForm.amount : rawAmount.toFixed(3);
             const response = await fetch(`${API_URL}/finance/expense/${editingExpense.expense_id}/`, {
                 method: 'PATCH',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -1647,7 +1647,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             const signal = uploadAbortRef.current?.signal;
             const rawAmountStr = formData.get('amount') as string;
             const rawAmountVal = parseFloat(rawAmountStr);
-            const amountToSend = isNaN(rawAmountVal) ? rawAmountStr : rawAmountVal.toFixed(2);
+            const amountToSend = isNaN(rawAmountVal) ? rawAmountStr : rawAmountVal.toFixed(3);
             const response = await fetch(`${API_URL}/finance/expense/`, {
                 method: 'POST',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -2433,15 +2433,21 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                             {(() => {
                                                 if (readOnly) return null;
-                                                const statusName = (ticketDetails.status?.status_name || '').toLowerCase();
-                                                const isAssignableStatus = ['open', 'approved', 'in progress'].includes(statusName);
-                                                if (!isAssignableStatus) return null;
+                                                const statusName = (ticketDetails.status?.status_name || '').toLowerCase().trim();
+                                                const statusSlug = statusName.replace(/\s+/g, '_');
+
+                                                // In Open, Approved, and In Progress, standard add_allocation applies.
+                                                // In Location Approval, maintenance.can_add_worker_in_location_approval applies.
+                                                // In Completed, maintenance.can_add_worker_in_completed applies.
+                                                // For other statuses, maintenance.can_add_worker_in_<status_slug> applies.
+                                                const allocationPermission = ['open', 'approved', 'in progress'].includes(statusName)
+                                                    ? 'maintenance.add_allocation'
+                                                    : `maintenance.can_add_worker_in_${statusSlug}`;
 
                                                 return (
-                                                    <Can permission="maintenance.add_allocation">
+                                                    <Can permission={allocationPermission}>
                                                         <button
                                                             onClick={() => setIsAssignModalOpen(true)}
-                                                            // className="min-h-[15px] hidden sm:flex items-center justify-center gap-2 bg-primary text-white text-xs font-semibold px-4 py-2 rounded cursor-pointer shadow-xs shrink-0 hover:bg-primary-hover active:scale-95 transition-all touch-manipulation ml-auto"
                                                             className='min-h-[15px] hidden sm:flex items-center justify-center gap-1 px-2 py-2 bg-primary text-white text-xs font-semibold rounded cursor-pointer hover:bg-primary/10 active:scale-95 transition-all'
                                                         >
                                                             <Plus className="w-4 h-4" /> Allocate
@@ -2643,7 +2649,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                 <p className="text-[11px] font-bold text-outline uppercase tracking-wider flex items-center gap-1.5">
                                                                     <span>Logged Expenses ({workerExpenses.length})</span>
                                                                     <span className="text-emerald-600 dark:text-emerald-400 font-bold normal-case tracking-normal">
-                                                                        • {workerExpensesTotal.toFixed(2)} KWD
+                                                                        • {workerExpensesTotal.toFixed(3)} KWD
                                                                     </span>
                                                                 </p>
                                                                 {!readOnly && (
@@ -3044,8 +3050,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 icon: <UserPlus className="w-4 h-4" />,
                                 color: 'bg-primary hover:bg-primary/90 text-white',
                                 onClick: () => { setIsAssignModalOpen(true); setIsFabOpen(false); },
-                                permission: 'maintenance.add_allocation',
-                                show: isActive,
+                                permission: ['open', 'approved', 'in progress'].includes((ticketDetails.status?.status_name || '').toLowerCase().trim())
+                                    ? 'maintenance.add_allocation'
+                                    : `maintenance.can_add_worker_in_${(ticketDetails.status?.status_name || '').toLowerCase().trim().replace(/\s+/g, '_')}`,
+                                show: true,
                             },
                             // Approve
                             {
@@ -3643,13 +3651,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     <label className="block text-[10px] font-semibold uppercase text-outline mb-1">Hourly Rate (KWD)</label>
                                                     <input
                                                         type="number"
-                                                        step="0.01"
-                                                        min="0.01"
+                                                        step="0.001"
+                                                        min="0.001"
                                                         required
                                                         value={hourlyRateToCreate}
                                                         onChange={e => setHourlyRateToCreate(e.target.value)}
                                                         className="w-full text-xs bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 outline-none focus:border-primary text-on-surface dark:text-dark-on-surface"
-                                                        placeholder="e.g. 5.00"
+                                                        placeholder="e.g. 5.000"
                                                     />
                                                 </div>
                                             </div>
@@ -3953,7 +3961,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     </div>
                                     <div>
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                        <input required name="amount" type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
+                                        <input required name="amount" type="number" step="0.001" min="0" inputMode="decimal" placeholder="0.000" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                     </div>
                                     {(() => {
                                         const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(selectedExpenseTypeId));
@@ -4396,7 +4404,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     </div>
                                                     <div>
                                                         <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                                        <input type="number" step="0.01" min="0" inputMode="decimal" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
+                                                        <input type="number" step="0.001" min="0" inputMode="decimal" placeholder="0.000" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
                                                     </div>
                                                     {(() => {
                                                         const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;

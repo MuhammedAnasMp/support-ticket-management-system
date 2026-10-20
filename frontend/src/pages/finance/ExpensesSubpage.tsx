@@ -39,6 +39,8 @@ interface ExpensesSubpageProps {
   itemsPerPage?: number;
   onPageChange?: (page: number) => void;
   onItemsPerPageChange?: (num: number) => void;
+  isSyncingNewExpense?: boolean;
+  syncingExpenseInfo?: any;
 }
 
 export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
@@ -62,8 +64,16 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   totalItems: propTotalItems,
   itemsPerPage: propItemsPerPage,
   onPageChange: propOnPageChange,
-  onItemsPerPageChange: propOnItemsPerPageChange
+  onItemsPerPageChange: propOnItemsPerPageChange,
+  isSyncingNewExpense: propIsSyncingNewExpense = false,
+  syncingExpenseInfo: propSyncingExpenseInfo = null
 }) => {
+  // Skeleton loader syncing state for instant feedback on new expense creation
+  const [localIsSyncing, setLocalIsSyncing] = useState<boolean>(false);
+  const [localSyncingInfo, setLocalSyncingInfo] = useState<any>(null);
+  const effectiveIsSyncing = propIsSyncingNewExpense || localIsSyncing;
+  const effectiveSyncingInfo = propSyncingExpenseInfo || localSyncingInfo;
+
   // Expanded row state for accordion / stepper view
   const [expandedExpenseIds, setExpandedExpenseIds] = useState<Record<number, boolean>>({});
   const toggleExpandExpense = (id: number) => {
@@ -705,6 +715,24 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       return;
     }
 
+    // Resolve metadata for instant skeleton preview
+    const ticketObj = ticketsList.find((t: any) => String(t.ticket_id || t.id) === String(selectedTicketId));
+    const workerObj = workersList.find((w: any) => String(w.id || w.user_id) === String(selectedWorkerId)) || currentUser;
+    const catObj = expenseTypesList.find((et: any) => String(et.expense_type_id || et.id) === String(selectedExpenseTypeId));
+
+    const optimisticInfo = {
+      expense_id: null,
+      category: catObj?.expense_name || 'General',
+      remarks: remarks.trim() || undefined,
+      worker_name: workerObj?.full_name || workerObj?.username || (workerObj ? `Worker ${workerObj.id || workerObj.user_id}` : 'Technician'),
+      ticket_no: ticketObj?.work_order_no || (ticketObj?.ticket_id ? `#${ticketObj.ticket_id}` : `#${selectedTicketId}`),
+      sub_department: ticketObj?.sub_department_name || ticketObj?.nature?.sub_department?.sub_department_name || '',
+      expense_date: expenseDate || new Date().toISOString().split('T')[0],
+      amount: parseFloat(amount) || 0,
+      receipts_count: attachedMediaList.length,
+      has_receipts: attachedMediaList.length > 0
+    };
+
     const payload = {
       ticket: parseInt(selectedTicketId, 10),
       worker: selectedWorkerId ? parseInt(selectedWorkerId, 10) : currentUser?.id,
@@ -717,12 +745,21 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       media_rotations: attachedMediaList.map(item => ({ file_name: item.file.name, rotation: item.rotation }))
     };
 
+    setLocalSyncingInfo(optimisticInfo);
+    setLocalIsSyncing(true);
+    setShowCreateExpenseModal(false);
+
     try {
       await handleCreateExpense(payload);
       resetForm();
-      setShowCreateExpenseModal(false);
     } catch (err: any) {
+      setShowCreateExpenseModal(true);
       setFormError(err.message || 'Failed to create expense entry.');
+    } finally {
+      setTimeout(() => {
+        setLocalIsSyncing(false);
+        setLocalSyncingInfo(null);
+      }, 800);
     }
   };
 
@@ -1465,7 +1502,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Total Expenses Recorded</span>
           <span className="text-2xl font-semibold text-on-surface mt-1 block">{filteredExpenses.length}</span>
-          <span className="text-xs text-on-surface-variant mt-1 block">{totalAmount.toFixed(2)} total</span>
+          <span className="text-xs text-on-surface-variant mt-1 block">{totalAmount.toFixed(3)} KD total</span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Approved Expenses</span>
@@ -1602,7 +1639,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
           <div className="p-12 text-center text-xs text-on-surface-variant flex items-center justify-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin text-primary" /> Loading expenses...
           </div>
-        ) : filteredExpenses.length === 0 ? (
+        ) : filteredExpenses.length === 0 && !effectiveIsSyncing ? (
           <div className="p-12 text-center text-on-surface-variant space-y-2">
             <Receipt className="w-8 h-8 mx-auto text-outline" />
             <p className="text-xs font-medium text-on-surface">No expenses found</p>
@@ -1630,7 +1667,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                     <th className="px-4 py-3">Sub Department</th>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Expense Bill</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-right">Amount (KD)</th>
                     <th className="px-4 py-3">Approval & Assignee</th>
                     <th className="px-4 py-3">Claim Status</th>
                     <th className="px-4 py-3 text-right">Action</th>
@@ -1647,7 +1684,124 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   </tr>
                 </thead>
                 <tbody className={isMultiLineView ? "" : "divide-y divide-outline-variant"}>
-                  {paginatedExpenses.map((exp: any, expIdx: number) => {
+                  {/* SKELETON / ROW LOADER UNTIL THE NEW EXPENSE IS VISIBLE IN UI */}
+                  {effectiveIsSyncing && (
+                    <React.Fragment key="syncing-expense-skeleton">
+                      <tr className="animate-pulse bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary transition-all">
+                        <td className="w-8 px-2 py-3 text-center">
+                          <div className="w-5 h-5 mx-auto rounded flex items-center justify-center bg-primary/20 text-primary">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-primary">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-primary">
+                              {effectiveSyncingInfo?.expense_id ? `Exp ${effectiveSyncingInfo.expense_id}` : 'New Exp'}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/25 text-primary font-bold animate-pulse">
+                              Syncing...
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-on-surface">
+                          {effectiveSyncingInfo?.category ? (
+                            <span>{effectiveSyncingInfo.category}</span>
+                          ) : (
+                            <div className="h-4 w-20 bg-slate-300/60 dark:bg-slate-700/60 rounded animate-pulse" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant max-w-[220px]">
+                          {effectiveSyncingInfo?.remarks ? (
+                            <div className="text-[11px] text-on-surface leading-relaxed line-clamp-2 font-normal">
+                              {effectiveSyncingInfo.remarks}
+                            </div>
+                          ) : (
+                            <div className="h-4 w-28 bg-slate-300/60 dark:bg-slate-700/60 rounded animate-pulse" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[10px] shrink-0">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            </div>
+                            <span className="font-medium text-on-surface truncate">
+                              {effectiveSyncingInfo?.worker_name || 'Technician'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {effectiveSyncingInfo?.ticket_no ? (
+                            <span className="font-mono font-medium text-primary text-[11px]">
+                              {effectiveSyncingInfo.ticket_no}
+                            </span>
+                          ) : (
+                            <div className="h-4 w-16 bg-slate-300/60 dark:bg-slate-700/60 rounded animate-pulse" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant font-medium">
+                          {effectiveSyncingInfo?.sub_department ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-container-high text-on-surface border border-outline-variant/60">
+                              {effectiveSyncingInfo.sub_department}
+                            </span>
+                          ) : (
+                            <div className="h-4 w-20 bg-slate-300/60 dark:bg-slate-700/60 rounded animate-pulse" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant">
+                          <span className="text-xs font-mono">{effectiveSyncingInfo?.expense_date || 'Today'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {effectiveSyncingInfo?.has_receipts ? (
+                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] font-semibold">
+                              <FileText className="w-3 h-3 text-primary" />
+                              <span>{effectiveSyncingInfo.receipts_count || 1} Receipt{(effectiveSyncingInfo.receipts_count || 1) > 1 ? 's' : ''}</span>
+                            </div>
+                          ) : (
+                            <span className="text-on-surface-variant/40 italic text-[11px]">None</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-primary">
+                          {effectiveSyncingInfo?.amount !== undefined && effectiveSyncingInfo?.amount !== null ? (
+                            `KD ${Number(effectiveSyncingInfo.amount).toFixed(3)}`
+                          ) : (
+                            <div className="h-4 w-16 bg-slate-300/60 dark:bg-slate-700/60 rounded ml-auto animate-pulse" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Creating...</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                            Unclaimed
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5 opacity-40 pointer-events-none">
+                            <div className="h-6 w-14 bg-slate-300/60 dark:bg-slate-700/60 rounded" />
+                          </div>
+                        </td>
+                        <td className="w-10 px-2 py-3 text-center">
+                          <div className="w-4 h-4 mx-auto rounded bg-slate-300/40 dark:bg-slate-700/40 animate-pulse" />
+                        </td>
+                      </tr>
+                      {isMultiLineView && (
+                        <tr className="border-b-2 border-outline-variant/80 bg-primary/5 dark:bg-primary/10">
+                          <td colSpan={14} className="px-4 py-2.5">
+                            <div className="flex items-center gap-2 p-2.5 rounded border border-outline-variant/60 bg-surface-container-low animate-pulse">
+                              <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                              <span className="text-xs text-on-surface-variant font-medium">Preparing approval workflow pipeline & uploading attachments...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )}
+                  {paginatedExpenses
+                    .filter((exp: any) => !effectiveIsSyncing || !effectiveSyncingInfo?.expense_id || String(exp.expense_id) !== String(effectiveSyncingInfo.expense_id))
+                    .map((exp: any, expIdx: number) => {
                     const isOdd = expIdx % 2 === 1;
                     const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' ? exp.expense_type?.expense_name : 'General');
                     const workerObj = exp.worker_detail || (typeof exp.worker === 'object' ? exp.worker : null);
@@ -1908,7 +2062,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                             )}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                            {parseFloat(exp.amount || '0').toFixed(2)}
+                            {parseFloat(exp.amount || '0').toFixed(3)}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-0.5">
@@ -2348,8 +2502,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                     <span className="text-on-surface font-medium">{storeName}</span>
                                   </div>
                                   <div>
-                                    <span className="text-[10px] text-on-surface-variant font-medium block">Amount</span>
-                                    <span className="text-emerald-600 font-bold">{parseFloat(exp.amount || '0').toFixed(2)}</span>
+                                    <span className="text-[10px] text-on-surface-variant font-medium block">Amount (KD)</span>
+                                    <span className="text-emerald-600 font-bold">{parseFloat(exp.amount || '0').toFixed(3)}</span>
                                   </div>
                                 </div>
 
@@ -2552,9 +2706,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               </label>
                               <input
                                 type="number"
-                                step="0.01"
-                                min="0.01"
-                                placeholder="0.00"
+                                step="0.001"
+                                min="0.001"
+                                placeholder="0.000"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
                                 className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline"
@@ -2918,7 +3072,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               <div className="flex justify-between py-1 border-b border-outline-variant/50">
                 <span className="text-on-surface-variant font-medium">Amount:</span>
                 <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
-                  {parseFloat(previewExpenseItem.amount || '0').toFixed(2)}
+                  {parseFloat(previewExpenseItem.amount || '0').toFixed(3)} KD
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-outline-variant/50">
@@ -3190,11 +3344,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   </label>
                   <input
                     type="number"
-                    step="0.01"
-                    min="0.01"
+                    step="0.001"
+                    min="0.001"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0.000"
                     className="w-full px-3.5 py-2.5 rounded border border-outline bg-surface-container-low text-xs text-on-surface focus:outline-none focus:border-primary font-semibold shadow-2xs"
                     required
                   />

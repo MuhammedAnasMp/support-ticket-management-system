@@ -22,7 +22,11 @@ def serialize_user_summary(user):
 
     role_name = None
     if getattr(user, 'role', None):
-        role_name = getattr(user.role, 'role_name', None)
+        role_name = getattr(user.role, 'role_name', None) or (user.role if isinstance(user.role, str) else None)
+    if not role_name and hasattr(user, 'groups'):
+        g = user.groups.first()
+        if g:
+            role_name = g.name
 
     sub_departments_data = []
     if hasattr(user, 'sub_departments'):
@@ -109,6 +113,52 @@ def serialize_approval_instance_summary(inst, user=None):
     }
 
 
+def serialize_ticket_summary(ticket):
+    if not ticket:
+        return None
+    sub_id = None
+    sub_name = None
+    dept_name = None
+    nature = getattr(ticket, 'nature', None)
+    if nature and getattr(nature, 'sub_department', None):
+        sub_dept = nature.sub_department
+        sub_id = sub_dept.sub_department_id
+        sub_name = sub_dept.sub_department_name
+        if getattr(sub_dept, 'department', None):
+            dept_name = sub_dept.department.department_name
+    elif getattr(ticket, 'department', None):
+        dept_name = ticket.department.department_name
+
+    status_obj = getattr(ticket, 'status', None)
+    status_name = status_obj.status_name if status_obj else None
+    status_short_code = getattr(status_obj, 'short_code', None) if status_obj else None
+    if not status_short_code and status_name:
+        STATUS_CODE_MAP = {
+            'rejected': 'REJ',
+            'open': 'OPN',
+            'blocked': 'BLK',
+            'in progress': 'PRG',
+            'location approval': 'LAP',
+            'completed': 'CMP',
+            'reconciled': 'REC',
+        }
+        status_short_code = STATUS_CODE_MAP.get(status_name.lower().strip())
+
+    store = getattr(ticket, 'store', None)
+    return {
+        'ticket_id': ticket.ticket_id,
+        'work_order_no': ticket.work_order_no,
+        'title': ticket.title,
+        'store_name': store.store_name if store else None,
+        'sub_department_id': sub_id,
+        'sub_department_name': sub_name,
+        'department_name': dept_name,
+        'status': status_name,
+        'status_name': status_name,
+        'status_short_code': status_short_code,
+    }
+
+
 class ExpenseTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenseType
@@ -166,6 +216,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
     reject_reason = serializers.SerializerMethodField()
     ticket_details = serializers.SerializerMethodField()
     worker_detail = serializers.SerializerMethodField()
+    added_by_detail = serializers.SerializerMethodField()
     expense_type_detail = serializers.SerializerMethodField()
     sub_department_id = serializers.SerializerMethodField()
     sub_department_name = serializers.SerializerMethodField()
@@ -211,30 +262,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return None
 
     def get_ticket_details(self, obj):
-        if obj.ticket:
-            sub_id = None
-            sub_name = None
-            dept_name = None
-            ticket = obj.ticket
-            if ticket.nature and ticket.nature.sub_department:
-                sub_dept = ticket.nature.sub_department
-                sub_id = sub_dept.sub_department_id
-                sub_name = sub_dept.sub_department_name
-                if sub_dept.department:
-                    dept_name = sub_dept.department.department_name
-            elif ticket.department:
-                dept_name = ticket.department.department_name
-
-            return {
-                'ticket_id': ticket.ticket_id,
-                'work_order_no': ticket.work_order_no,
-                'title': ticket.title,
-                'store_name': ticket.store.store_name if ticket.store else None,
-                'sub_department_id': sub_id,
-                'sub_department_name': sub_name,
-                'department_name': dept_name,
-            }
-        return None
+        return serialize_ticket_summary(obj.ticket)
 
     def get_sub_department_id(self, obj):
         if obj.ticket and obj.ticket.nature and obj.ticket.nature.sub_department:
@@ -248,6 +276,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def get_worker_detail(self, obj):
         return serialize_user_summary(obj.worker)
+
+    def get_added_by_detail(self, obj):
+        return serialize_user_summary(obj.added_by)
 
     def get_expense_type_detail(self, obj):
         if obj.expense_type:
@@ -315,21 +346,11 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
 
     def get_ticket_details(self, obj):
         if obj.ticket:
-            return {
-                'ticket_id': obj.ticket.ticket_id,
-                'work_order_no': obj.ticket.work_order_no,
-                'title': obj.ticket.title,
-                'status': obj.ticket.status.status_name if obj.ticket.status else None,
-            }
+            return serialize_ticket_summary(obj.ticket)
         # In-memory scan of prefetched expenses
         for exp in obj.expenses.all():
             if exp.ticket:
-                return {
-                    'ticket_id': exp.ticket.ticket_id,
-                    'work_order_no': exp.ticket.work_order_no,
-                    'title': exp.ticket.title,
-                    'status': exp.ticket.status.status_name if exp.ticket.status else None,
-                }
+                return serialize_ticket_summary(exp.ticket)
         return None
 
     def get_expenses(self, obj):
@@ -672,23 +693,19 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                 'expenses__receipts',
                 'expenses__expense_type',
                 'expenses__ticket',
+                'expenses__ticket__status',
                 'expenses__responsible_store',
-                'expenses__worker'
+                'expenses__worker',
+                'expenses__added_by'
             ).all()
 
             for bundle in ledger_bundles:
                 bundle_expenses = []
                 for exp in bundle.expenses.all():
-                    t_info = None
-                    if exp.ticket:
-                        t_info = {
-                            'ticket_id': exp.ticket.ticket_id,
-                            'work_order_no': exp.ticket.work_order_no,
-                            'title': exp.ticket.title,
-                        }
-                        if exp.ticket.ticket_id not in seen_tids:
-                            seen_tids.add(exp.ticket.ticket_id)
-                            tickets_list.append(t_info)
+                    t_info = serialize_ticket_summary(exp.ticket)
+                    if t_info and exp.ticket.ticket_id not in seen_tids:
+                        seen_tids.add(exp.ticket.ticket_id)
+                        tickets_list.append(t_info)
 
                     bundle_expenses.append({
                         'expense_id': exp.expense_id,
@@ -699,22 +716,18 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                         'remarks': exp.remarks or '',
                         'worker': exp.worker.full_name or exp.worker.username if exp.worker else 'N/A',
                         'worker_detail': serialize_user_summary(exp.worker),
+                        'added_by': exp.added_by.full_name or exp.added_by.username if exp.added_by else None,
+                        'added_by_detail': serialize_user_summary(exp.added_by),
                         'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                         'ticket': t_info,
                         'ticket_details': t_info,
                         'receipts': MediaSerializer(exp.receipts.all(), many=True).data if hasattr(exp, 'receipts') else []
                     })
 
-                b_ticket = None
-                if bundle.ticket:
-                    b_ticket = {
-                        'ticket_id': bundle.ticket.ticket_id,
-                        'work_order_no': bundle.ticket.work_order_no,
-                        'title': bundle.ticket.title,
-                    }
-                    if bundle.ticket.ticket_id not in seen_tids:
-                        seen_tids.add(bundle.ticket.ticket_id)
-                        tickets_list.append(b_ticket)
+                b_ticket = serialize_ticket_summary(bundle.ticket)
+                if b_ticket and bundle.ticket.ticket_id not in seen_tids:
+                    seen_tids.add(bundle.ticket.ticket_id)
+                    tickets_list.append(b_ticket)
 
                 bundles_list.append({
                     'claim_id': bundle.claim_id,
@@ -732,19 +745,13 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
             # Serialize direct ledger expenses (if any)
             ledger_expenses = obj.ledger.expenses.select_related(
-                'ticket', 'expense_type', 'responsible_store', 'worker').prefetch_related('receipts').all()
+                'ticket', 'ticket__status', 'expense_type', 'responsible_store', 'worker', 'added_by').prefetch_related('receipts').all()
             expenses_list = []
             for exp in ledger_expenses:
-                t_info = None
-                if exp.ticket:
-                    t_info = {
-                        'ticket_id': exp.ticket.ticket_id,
-                        'work_order_no': exp.ticket.work_order_no,
-                        'title': exp.ticket.title,
-                    }
-                    if exp.ticket.ticket_id not in seen_tids:
-                        seen_tids.add(exp.ticket.ticket_id)
-                        tickets_list.append(t_info)
+                t_info = serialize_ticket_summary(exp.ticket)
+                if t_info and exp.ticket.ticket_id not in seen_tids:
+                    seen_tids.add(exp.ticket.ticket_id)
+                    tickets_list.append(t_info)
 
                 expenses_list.append({
                     'expense_id': exp.expense_id,
@@ -755,6 +762,8 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'remarks': exp.remarks or '',
                     'worker': exp.worker.full_name or exp.worker.username if exp.worker else 'N/A',
                     'worker_detail': serialize_user_summary(exp.worker),
+                    'added_by': exp.added_by.full_name or exp.added_by.username if exp.added_by else None,
+                    'added_by_detail': serialize_user_summary(exp.added_by),
                     'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                     'ticket': t_info,
                     'ticket_details': t_info,

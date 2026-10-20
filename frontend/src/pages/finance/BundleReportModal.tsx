@@ -37,6 +37,7 @@ interface WorkerSummaryItem {
   totalAmount: number;
   expenses: any[];
   batchGroups: BatchGroupItem[];
+  hasUploadedBy?: boolean;
 }
 
 export const BundleReportModal: React.FC<BundleReportModalProps> = ({
@@ -75,9 +76,12 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
   const [fetchedBatches, setFetchedBatches] = useState<any[]>([]);
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
 
-  // If bundle.expenses is empty, fetch full details from API
+  // Fetch full claim details to ensure added_by_detail and complete batch relations are loaded
   useEffect(() => {
-    if ((!bundle.expenses || bundle.expenses.length === 0) && API_URL && token) {
+    const hasExpenses = Array.isArray(bundle.expenses) && bundle.expenses.length > 0;
+    const hasAddedByDetail = Boolean(hasExpenses && bundle.expenses?.some((e: any) => e.added_by_detail));
+
+    if ((!hasExpenses || !hasAddedByDetail) && API_URL && token && bundle.claim_id) {
       setIsLoadingExpenses(true);
       fetch(`${API_URL}/finance/claim/${bundle.claim_id}/`, {
         headers: { Authorization: `Token ${token}` }
@@ -88,7 +92,12 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
             setLoadedExpenses(data.expenses);
           }
         })
-        .catch(err => console.error('Failed to load bundle expenses for report:', err))
+        .catch(err => {
+          console.error('Failed to load bundle expenses for report:', err);
+          if (bundle.expenses) {
+            setLoadedExpenses(bundle.expenses);
+          }
+        })
         .finally(() => setIsLoadingExpenses(false));
     } else if (bundle.expenses) {
       setLoadedExpenses(bundle.expenses);
@@ -111,7 +120,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
   }, [API_URL, token]);
 
   // Aggregate expenses by worker, split by ledger batch, and sort so same stores are kept in contiguous order
-  const { workerList, grandTotals, allFlattenedExpenses } = useMemo(() => {
+  const { workerList, grandTotals, allFlattenedExpenses, hasAnyUploadedByOverall } = useMemo(() => {
     const workerMap = new Map<string, {
       workerId: number | string;
       workerName: string;
@@ -161,7 +170,35 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
       const wEmpNo = workerObj.employee_no || '';
 
       const tDetails = exp.ticket_details || (typeof exp.ticket === 'object' ? exp.ticket : null) || {};
-      const tNo = tDetails.work_order_no || (tDetails.ticket_id ? `${tDetails.ticket_id}` : (exp.ticket ? `${exp.ticket}` : 'N/A'));
+      const rawTicketNo = tDetails.work_order_no || (tDetails.ticket_id ? `${tDetails.ticket_id}` : (exp.ticket ? `${exp.ticket}` : 'N/A'));
+      
+      // 3-Letter Status Short Code (e.g. REC, CMP, OPN, PRG)
+      const STATUS_CODE_MAP: Record<string, string> = {
+        'rejected': 'REJ',
+        'open': 'OPN',
+        'blocked': 'BLK',
+        'in progress': 'PRG',
+        'location approval': 'LAP',
+        'completed': 'CMP',
+        'reconciled': 'REC',
+      };
+      const rawStatusStr = String(
+        tDetails.status_short_code ||
+        tDetails.short_code ||
+        (tDetails.status && typeof tDetails.status === 'object' ? (tDetails.status.short_code || tDetails.status.status_name) : '') ||
+        tDetails.status ||
+        tDetails.status_name ||
+        ''
+      ).trim();
+      const statusCode = (
+        tDetails.status_short_code ||
+        tDetails.short_code ||
+        (tDetails.status && typeof tDetails.status === 'object' && tDetails.status.short_code ? tDetails.status.short_code : '') ||
+        STATUS_CODE_MAP[rawStatusStr.toLowerCase()] ||
+        (rawStatusStr.length === 3 ? rawStatusStr.toUpperCase() : '')
+      ).trim();
+
+      const tNo = (statusCode && rawTicketNo !== 'N/A') ? `${rawTicketNo}(${statusCode})` : rawTicketNo;
       const tTitle = tDetails.title || '';
       const storeName = exp.responsible_store?.store_name || tDetails.store_name || 'N/A';
       const subDept = tDetails.sub_department_name || tDetails.department_name || 'Maintenance';
@@ -174,6 +211,46 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
       grandAmount += amt;
       if (storeName && storeName !== 'N/A') allLocations.add(storeName);
       if (tNo && tNo !== 'N/A') allTickets.add(tNo);
+
+      // Extract creator / uploader info (who uploaded the bill)
+      const addedByObj = exp.added_by_detail ||
+        (typeof exp.added_by === 'object' && exp.added_by ? exp.added_by : null) ||
+        exp.created_by_detail ||
+        (typeof exp.created_by === 'object' && exp.created_by ? exp.created_by : null) ||
+        {};
+
+      const addedById = addedByObj.id ?? addedByObj.user_id ?? (typeof exp.added_by === 'number' ? exp.added_by : null) ?? (typeof exp.created_by === 'number' ? exp.created_by : null);
+
+      const addedByName = String(
+        addedByObj.full_name ||
+        addedByObj.username ||
+        (typeof exp.added_by === 'string' ? exp.added_by : '') ||
+        (typeof exp.created_by === 'string' ? exp.created_by : '') ||
+        ''
+      ).trim();
+
+      const addedByRole = String(
+        addedByObj.role?.role_name ||
+        addedByObj.role ||
+        addedByObj.role_name ||
+        ''
+      ).trim();
+
+      // Check if uploaded by someone other than the current worker
+      const isSelfUploaded = !addedByName || (
+        (addedById != null && wId != null && String(addedById) === String(wId)) ||
+        (Boolean(wName) && addedByName.toLowerCase() === String(wName).toLowerCase())
+      );
+
+      // Only show name if current worker did not upload the bill
+      const creatorDisplayName = isSelfUploaded ? '' : addedByName;
+
+      // Highlight if the bill uploaded role is Office Administrator
+      const roleLower = addedByRole.toLowerCase();
+      const isOfficeAdmin = !isSelfUploaded && (
+        roleLower.includes('office') ||
+        roleLower === 'office administrator'
+      );
 
       const expItem = {
         sl: index + 1,
@@ -191,6 +268,12 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
         amount: amt,
         date: dateStr,
         remarks: remarksStr,
+        addedById,
+        addedByName,
+        addedByRole,
+        isSelfUploaded,
+        creatorDisplayName,
+        isOfficeAdmin,
       };
 
       flattened.push(expItem);
@@ -278,11 +361,15 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
         totalAmount: w.totalAmount,
         expenses: w.expenses,
         batchGroups,
+        hasUploadedBy: w.expenses.some(exp => Boolean(exp.creatorDisplayName)),
       };
     });
 
+    const hasAnyUploadedByOverall = flattened.some(exp => Boolean(exp.creatorDisplayName));
+
     return {
       workerList: workers,
+      hasAnyUploadedByOverall,
       grandTotals: {
         totalWorkers: workers.length,
         totalTickets: allTickets.size,
@@ -298,8 +385,13 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
   const handlePrintProfessionalReport = () => {
     setIsCapturing(true);
     try {
-      const getHeaderHtml = (subtitle: string) => `
+      const getHeaderHtml = (subtitle: string, showLogo: boolean = false) => `
         <div class="report-header">
+          ${showLogo ? `
+          <div class="report-header-logo">
+            <img src="${window.location.origin}/document_logo.png" onerror="this.onerror=null;this.src='/document_logo.png';" alt="Logo" />
+          </div>
+          ` : ''}
           <div>
             <h1 class="report-title">Worker-wise Bundle Verification</h1>
             <p class="report-subtitle">${subtitle}</p>
@@ -314,17 +406,18 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
       // Build Worker Wise Detailed Pages HTML (Each Worker page is paginated so signatures are ALWAYS pinned to bottom of the final page)
       let workerDetailedPagesHtml = '';
 
-      const tableTheadHtml = `
+      const getTableTheadHtml = (showUploadedBy: boolean) => `
         <thead>
           <tr style="background:#f3f4f6;border-bottom:1px solid #d1d5db;">
-            <th style="width:35px;text-align:center;border:1px solid #d1d5db;padding:5px 4px;font-size:9px;font-weight:700;color:#111827;">SL</th>
-            <th style="width:130px;text-align:left;border:1px solid #d1d5db;padding:5px 6px;font-size:9px;font-weight:700;color:#111827;">TICKET NO / WO#</th>
-            <th style="width:130px;text-align:left;border:1px solid #d1d5db;padding:5px 6px;font-size:9px;font-weight:700;color:#111827;">STORE / LOCATION</th>
-            <th style="width:90px;text-align:left;border:1px solid #d1d5db;padding:5px 6px;font-size:9px;font-weight:700;color:#111827;">SUB DEPT</th>
-            <th style="width:105px;text-align:left;border:1px solid #d1d5db;padding:5px 6px;font-size:9px;font-weight:700;color:#111827;">CATEGORY</th>
-            <th style="width:70px;text-align:center;border:1px solid #d1d5db;padding:5px 4px;font-size:9px;font-weight:700;color:#111827;">DATE</th>
-            <th style="text-align:left;border:1px solid #d1d5db;padding:5px 6px;font-size:9px;font-weight:700;color:#111827;">REMARKS</th>
-            <th style="width:85px;text-align:right;border:1px solid #d1d5db;padding:5px 6px;font-size:9.5px;font-weight:700;color:#111827;">AMOUNT</th>
+            <th style="width:28px;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">SL</th>
+            <th style="width:115px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">TICKET NO / WO#</th>
+            <th style="width:115px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">STORE / LOCATION</th>
+            <th style="width:80px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">SUB DEPT</th>
+            <th style="width:90px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">CATEGORY</th>
+            ${showUploadedBy ? `<th style="width:80px;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">UPLOADED BY</th>` : ''}
+            <th style="width:65px;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">DATE</th>
+            <th style="text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">REMARKS</th>
+            <th style="width:75px;text-align:right;border:1px solid #d1d5db;padding:4px 5px;font-size:9px;font-weight:700;color:#111827;">AMOUNT</th>
           </tr>
         </thead>
       `;
@@ -350,14 +443,17 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
         </div>
       `;
 
-      const pageHeight = isVerticalOrientation ? '268mm' : '180mm';
+      const pageHeight = isVerticalOrientation ? '274mm' : '185mm';
 
-      workerList.forEach((worker) => {
+      workerList.forEach((worker, workerIdx) => {
+        const isLastWorker = workerIdx === workerList.length - 1;
+        const showUploadedBy = Boolean(worker.hasUploadedBy);
         let sl = 1;
         interface RowItem {
           html: string;
           weight: number;
           isBatchHeader?: boolean;
+          isSubtotal?: boolean;
         }
         const rowItems: RowItem[] = [];
 
@@ -368,34 +464,41 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
             weight: 1.1,
             html: `
             <tr style="background:#f9fafb;border-top:1px solid #d1d5db;border-bottom:1px solid #d1d5db;page-break-inside:avoid;">
-              <td colspan="8" style="padding:5px 8px;font-size:9.5px;font-weight:700;color:#1e3a8a;border:1px solid #d1d5db;text-transform:uppercase;letter-spacing:0.3px;">
+              <td colspan="${showUploadedBy ? 9 : 8}" style="padding:3.5px 6px;font-size:9px;font-weight:700;color:#1e3a8a;border:1px solid #d1d5db;text-transform:uppercase;letter-spacing:0.3px;">
                 📂 ${batch.batchName}
-                <span style="font-weight:normal;color:#6b7280;font-size:9px;margin-left:8px;text-transform:none;">
-                  (${batch.expenses.length} item(s) • ${batch.locationCount} store(s) • Subtotal: KD ${batch.totalAmount.toFixed(2)})
+                <span style="font-weight:normal;color:#6b7280;font-size:8.5px;margin-left:8px;text-transform:none;">
+                  (${batch.expenses.length} item(s) • ${batch.locationCount} store(s) • Subtotal: KD ${batch.totalAmount.toFixed(3)})
                 </span>
               </td>
             </tr>
           `,
           });
 
-          // Expense Rows within this batch (clean light borders, no green background)
+          // Expense Rows within this batch (clean light borders, compact padding)
           for (const exp of batch.expenses) {
-            const isLong = Boolean(exp.ticketTitle && exp.ticketTitle.length > 25);
+            const hasTitle = Boolean(exp.ticketTitle && exp.ticketTitle.trim().length > 0);
+            const isLongRemarks = Boolean(exp.remarks && exp.remarks.length > 30);
+            const rowWeight = (hasTitle || isLongRemarks) ? 1.3 : 1.0;
             rowItems.push({
-              weight: isLong ? 1.35 : 1.0,
+              weight: rowWeight,
               html: `
               <tr style="border:1px solid #e5e7eb;">
-                <td style="text-align:center;padding:4px 5px;border:1px solid #e5e7eb;font-size:9px;color:#4b5563;">${sl++}</td>
-                <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:9px;font-weight:600;color:#1e40af;line-height:1.3;white-space:nowrap;">
+                <td style="text-align:center;padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;">${sl++}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;font-weight:600;color:#1e40af;line-height:1.2;white-space:nowrap;">
                   ${exp.ticketNo}
-                  ${exp.ticketTitle ? `<br/><span style="font-weight:normal;color:#6b7280;font-size:8.5px;">${exp.ticketTitle}</span>` : ''}
+                  ${exp.ticketTitle ? `<br/><span style="font-weight:normal;color:#6b7280;font-size:8px;">${exp.ticketTitle}</span>` : ''}
                 </td>
-                <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:9px;font-weight:700;color:#111827;">${exp.location}</td>
-                <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:9px;color:#4b5563;">${exp.subDepartment}</td>
-                <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:9px;color:#111827;">${exp.category}</td>
-                <td style="text-align:center;padding:4px 5px;border:1px solid #e5e7eb;font-size:9px;color:#4b5563;">${exp.date || '-'}</td>
-                <td style="padding:4px 6px;border:1px solid #e5e7eb;font-size:9px;color:#374151;">${exp.remarks || '-'}</td>
-                <td style="text-align:right;padding:4px 6px;border:1px solid #e5e7eb;font-size:9.5px;font-weight:700;color:#111827;">KD ${exp.amount.toFixed(2)}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;font-weight:700;color:#111827;">${exp.location}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;">${exp.subDepartment}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#111827;">${exp.category}</td>
+                ${showUploadedBy ? `
+                <td style="padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;text-align:center;${exp.isOfficeAdmin ? 'background:#fef3c7;color:#92400e;font-weight:700;' : 'color:#374151;'}">
+                  ${exp.creatorDisplayName ? `<span>${exp.creatorDisplayName}</span>` : '-'}
+                </td>
+                ` : ''}
+                <td style="text-align:center;padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;">${exp.date || '-'}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#374151;line-height:1.2;">${exp.remarks || '-'}</td>
+                <td style="text-align:right;padding:2.5px 5px;border:1px solid #e5e7eb;font-size:9px;font-weight:700;color:#111827;">KD ${exp.amount.toFixed(3)}</td>
               </tr>
             `,
             });
@@ -403,13 +506,14 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
           rowItems.push({
             weight: 1.0,
+            isSubtotal: true,
             html: `
             <tr style="background:#f9fafb;font-weight:700;border:1px solid #d1d5db;page-break-inside:avoid;">
-              <td colspan="7" style="text-align:right;padding:4px 8px;font-size:9px;color:#374151;border:1px solid #d1d5db;">
+              <td colspan="${showUploadedBy ? 8 : 7}" style="text-align:right;padding:3px 6px;font-size:8.5px;color:#374151;border:1px solid #d1d5db;">
                 Subtotal (${batch.batchName}):
               </td>
-              <td style="text-align:right;padding:4px 6px;font-size:9.5px;font-weight:700;color:#111827;border:1px solid #d1d5db;">
-                KD ${batch.totalAmount.toFixed(2)}
+              <td style="text-align:right;padding:3px 6px;font-size:9px;font-weight:700;color:#111827;border:1px solid #d1d5db;">
+                KD ${batch.totalAmount.toFixed(3)}
               </td>
             </tr>
           `,
@@ -418,25 +522,25 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
         const grandTotalRowHtml = `
           <tr style="background:#f3f4f6;font-weight:800;border-top:1.5px solid #111827;page-break-inside:avoid;">
-            <td colspan="7" style="text-align:right;padding:6px 8px;font-size:10px;color:#111827;border:1px solid #d1d5db;text-transform:uppercase;letter-spacing:0.3px;">
+            <td colspan="${showUploadedBy ? 8 : 7}" style="text-align:right;padding:4px 6px;font-size:9.5px;color:#111827;border:1px solid #d1d5db;text-transform:uppercase;letter-spacing:0.3px;">
               Grand Total (${worker.workerName}):
             </td>
-            <td style="text-align:right;padding:6px 8px;font-size:10.5px;font-weight:800;color:#111827;border:1px solid #d1d5db;">
-              KD ${worker.totalAmount.toFixed(2)}
+            <td style="text-align:right;padding:4px 6px;font-size:10px;font-weight:800;color:#111827;border:1px solid #d1d5db;">
+              KD ${worker.totalAmount.toFixed(3)}
             </td>
           </tr>
         `;
 
         const totalWeight = rowItems.reduce((acc, r) => acc + r.weight, 0);
-        const singlePageLimit = isVerticalOrientation ? 18 : 10;
+        const singlePageLimit = isVerticalOrientation ? 25.0 : 13.0;
 
         if (totalWeight <= singlePageLimit) {
           // Fits on 1 single page!
           workerDetailedPagesHtml += `
             <!-- WORKER DETAILED STATEMENT: ${worker.workerName} (Single Page) -->
-            <div class="print-page worker-page" style="page-break-after: always; break-after: page; padding-top: 6px; box-sizing: border-box; height: ${pageHeight}; min-height: ${pageHeight}; display: flex; flex-direction: column; justify-content: space-between;">
+            <div class="print-page worker-page worker-page-final" style="${isLastWorker ? 'page-break-after: avoid; break-after: avoid;' : 'page-break-after: always; break-after: page;'} padding-top: 4px; box-sizing: border-box; height: ${pageHeight}; min-height: ${pageHeight}; display: flex; flex-direction: column; justify-content: space-between; page-break-inside: avoid; break-inside: avoid;">
               <div>
-                ${getHeaderHtml(`${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''}`)}
+                ${getHeaderHtml(`${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''}`, workerIdx === 0)}
                 <div class="meta-grid" style="grid-template-columns: repeat(4, 1fr);">
                   <div class="meta-item">
                     <span>TECHNICIAN / WORKER</span>
@@ -452,12 +556,12 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                   </div>
                   <div class="meta-item">
                     <span>WORKER CLAIM AMOUNT</span>
-                    <strong>KD ${worker.totalAmount.toFixed(2)}</strong>
+                    <strong>KD ${worker.totalAmount.toFixed(3)}</strong>
                   </div>
                 </div>
 
                 <table style="width:100%;border-collapse:collapse;margin-top:10px;background:#ffffff;border:1px solid #d1d5db;">
-                  ${tableTheadHtml}
+                  ${getTableTheadHtml(showUploadedBy)}
                   <tbody>
                     ${rowItems.map(r => r.html).join('')}
                     ${grandTotalRowHtml}
@@ -469,10 +573,19 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
             </div>
           `;
         } else {
-          // Multiple Pages needed! Partition rows cleanly across pages
+          // Multiple Pages needed! Partition rows so Page 1 is fully filled without overflowing, and subsequent pages are balanced
           const pagesRows: RowItem[][] = [];
-          const p1Limit = isVerticalOrientation ? 22 : 12;
-          const pNextLimit = isVerticalOrientation ? 18 : 10;
+          const p1Limit = isVerticalOrientation ? 34.0 : 17.0;
+          const pNextLimit = isVerticalOrientation ? 36.0 : 18.0;
+          const pLastLimit = isVerticalOrientation ? 37.0 : 19.0;
+
+          const getRemainingWeight = (startIndex: number) => {
+            let sum = 0;
+            for (let k = startIndex; k < rowItems.length; k++) {
+              sum += rowItems[k].weight;
+            }
+            return sum;
+          };
 
           let curPage: RowItem[] = [];
           let curWeight = 0;
@@ -480,10 +593,17 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
           for (let i = 0; i < rowItems.length; i++) {
             const item = rowItems[i];
-            const maxLimit = isFirst ? p1Limit : pNextLimit;
-            const isOrphan = item.isBatchHeader && (maxLimit - curWeight < 2.5) && curPage.length > 0;
+            const remaining = getRemainingWeight(i);
 
-            if (curWeight + item.weight > maxLimit || isOrphan) {
+            // If remaining rows + current page weight can fit completely on the final page (with signatures):
+            const isRemainingFitOnLastPage = !isFirst && (curWeight + remaining <= pLastLimit);
+            const currentLimit = isFirst
+              ? p1Limit
+              : (isRemainingFitOnLastPage ? pLastLimit : pNextLimit);
+
+            const isOrphan = item.isBatchHeader && (currentLimit - curWeight < 2.0) && curPage.length > 0;
+
+            if ((curWeight + item.weight > currentLimit) || isOrphan) {
               pagesRows.push(curPage);
               curPage = [item];
               curWeight = item.weight;
@@ -497,6 +617,16 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
             pagesRows.push(curPage);
           }
 
+          // Balance check: if the last page has very few items (< 6) and previous page has plenty (> 12), pull rows to balance
+          if (pagesRows.length > 1 && pagesRows[pagesRows.length - 1].length < 6 && pagesRows[pagesRows.length - 2].length > 12) {
+            while (pagesRows[pagesRows.length - 1].length < 8 && pagesRows[pagesRows.length - 2].length > 12) {
+              pagesRows[pagesRows.length - 1].unshift(pagesRows[pagesRows.length - 2].pop()!);
+            }
+            if (pagesRows[pagesRows.length - 2].length > 0 && pagesRows[pagesRows.length - 2][pagesRows[pagesRows.length - 2].length - 1].isBatchHeader) {
+              pagesRows[pagesRows.length - 1].unshift(pagesRows[pagesRows.length - 2].pop()!);
+            }
+          }
+
           const totalPages = pagesRows.length;
 
           pagesRows.forEach((pageRows, pIdx) => {
@@ -505,11 +635,19 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
             workerDetailedPagesHtml += `
               <!-- WORKER DETAILED STATEMENT: ${worker.workerName} (Page ${pIdx + 1} of ${totalPages}) -->
-              <div class="print-page worker-page" style="page-break-after: always; break-after: page; padding-top: 6px; box-sizing: border-box; height: ${pageHeight}; min-height: ${pageHeight}; display: flex; flex-direction: column; justify-content: space-between;">
+              <div class="print-page worker-page ${isLastPage ? 'worker-page-final' : 'worker-page-intermediate'}" style="${isLastWorker && isLastPage ? 'page-break-after: avoid; break-after: avoid;' : 'page-break-after: always; break-after: page;'} padding-top: 4px; box-sizing: border-box; ${isLastPage ? `height: ${pageHeight}; min-height: ${pageHeight}; display: flex; flex-direction: column; justify-content: space-between;` : 'height: auto; min-height: auto; display: block;'} page-break-inside: avoid; break-inside: avoid;">
                 <div>
                   ${isFirstPage
-                ? getHeaderHtml(`${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''} - Page 1 of ${totalPages}`)
-                : getHeaderHtml(`${worker.workerName} - Continued (Page ${pIdx + 1} of ${totalPages})`)
+                ? (totalPages === 1
+                  ? getHeaderHtml(`${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''}`, workerIdx === 0)
+                  : getHeaderHtml(`${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''} - Page 1 of ${totalPages}`, workerIdx === 0)
+                )
+                : `
+                      <div class="sub-page-header" style="display:flex;justify-content:space-between;align-items:center;padding:3px 0 5px 0;margin-bottom:8px;border-bottom:1.5px solid #111827;font-size:10px;">
+                        <span style="font-weight:700;color:#111827;font-size:11px;">${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''} - Page ${pIdx + 1} of ${totalPages}</span>
+                        <span style="font-size:10px;color:#4b5563;font-weight:600;">Bundle ${bundle.claim_id}</span>
+                      </div>
+                    `
               }
 
                   ${isFirstPage ? `
@@ -528,13 +666,13 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                       </div>
                       <div class="meta-item">
                         <span>WORKER CLAIM AMOUNT</span>
-                        <strong>KD ${worker.totalAmount.toFixed(2)}</strong>
+                        <strong>KD ${worker.totalAmount.toFixed(3)}</strong>
                       </div>
                     </div>
                   ` : ''}
 
-                  <table style="width:100%;border-collapse:collapse;margin-top:10px;background:#ffffff;border:1px solid #d1d5db;">
-                    ${tableTheadHtml}
+                  <table style="width:100%;border-collapse:collapse;margin-top:${isFirstPage ? '10px' : '4px'};background:#ffffff;border:1px solid #d1d5db;">
+                    ${getTableTheadHtml(showUploadedBy)}
                     <tbody>
                       ${pageRows.map(r => r.html).join('')}
                       ${isLastPage ? grandTotalRowHtml : ''}
@@ -542,7 +680,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                   </table>
                 </div>
 
-                ${isLastPage ? getSignaturesHtml() : '<div style="height:1px;"></div>'}
+                ${isLastPage ? getSignaturesHtml() : ''}
               </div>
             `;
           });
@@ -556,10 +694,11 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
           <head>
             <title>Worker Wise Detailed Statement - Bundle ${bundle.claim_id}</title>
             <meta charset="utf-8" />
+            <base href="${window.location.origin}/" />
             <style>
               @page {
                 size: ${isVerticalOrientation ? 'portrait' : 'landscape'};
-                margin: ${isVerticalOrientation ? '8mm 6mm 8mm 6mm' : '10mm 8mm 10mm 8mm'};
+                margin: ${isVerticalOrientation ? '6mm 6mm 6mm 6mm' : '8mm 8mm 8mm 8mm'};
               }
               *, *:before, *:after {
                 box-sizing: border-box;
@@ -581,12 +720,31 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 padding: 4px 5px !important;
               }
               .report-header {
+                position: relative;
                 border-bottom: 1.5px solid #111827;
-                padding-bottom: 8px;
-                margin-bottom: 10px;
+                padding-bottom: 6px;
+                margin-bottom: 8px;
+                min-height: 64px;
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
+              }
+              .report-header-logo {
+                position: absolute;
+                left: 50%;
+                bottom: 2px;
+                transform: translateX(-50%);
+                pointer-events: none;
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
+              }
+              .report-header-logo img {
+                height: 64px;
+                width: auto;
+                max-width: 160px;
+                object-fit: contain;
+                display: block;
               }
               .report-title {
                 font-size: 16px;
@@ -626,36 +784,48 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 font-weight: 700;
               }
               thead {
-                display: table-header-group;
+                display: table-row-group !important;
               }
               tr {
-                page-break-inside: avoid;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
               }
               .worker-page {
                 box-sizing: border-box;
-                height: ${isVerticalOrientation ? '268mm' : '180mm'};
-                min-height: ${isVerticalOrientation ? '268mm' : '180mm'};
-                display: flex;
-                flex-direction: column;
-                justify-content: space-between;
+                page-break-inside: avoid;
+                break-inside: avoid;
+              }
+              .worker-page-intermediate {
+                height: auto;
+                min-height: auto;
                 page-break-after: always;
                 break-after: page;
               }
+              .worker-page-final {
+                box-sizing: border-box;
+                height: ${pageHeight};
+                min-height: ${pageHeight};
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+              }
               .worker-page:last-child {
-                page-break-after: auto;
-                break-after: auto;
+                page-break-after: avoid !important;
+                break-after: avoid !important;
               }
               .worker-page .signatures {
                 margin-top: auto;
-                padding-top: 16px;
+                padding-top: 14px;
                 page-break-inside: avoid;
+                break-inside: avoid;
               }
               .signatures {
                 display: flex;
                 justify-content: space-between;
                 gap: 12px;
                 page-break-inside: avoid;
-                padding-top: 15px;
+                break-inside: avoid;
+                padding-top: 14px;
                 width: 100%;
               }
               .sign-box {
@@ -686,22 +856,32 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 }
                 .worker-page {
                   box-sizing: border-box !important;
-                  height: ${isVerticalOrientation ? '268mm' : '180mm'} !important;
-                  min-height: ${isVerticalOrientation ? '268mm' : '180mm'} !important;
-                  display: flex !important;
-                  flex-direction: column !important;
-                  justify-content: space-between !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+                .worker-page-intermediate {
+                  height: auto !important;
+                  min-height: auto !important;
                   page-break-after: always !important;
                   break-after: page !important;
                 }
+                .worker-page-final {
+                  box-sizing: border-box !important;
+                  height: ${pageHeight} !important;
+                  min-height: ${pageHeight} !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: space-between !important;
+                }
                 .worker-page:last-child {
-                  page-break-after: auto !important;
-                  break-after: auto !important;
+                  page-break-after: avoid !important;
+                  break-after: avoid !important;
                 }
                 .worker-page .signatures {
                   margin-top: auto !important;
-                  padding-top: 16px !important;
+                  padding-top: 14px !important;
                   page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
               }
             </style>
@@ -776,18 +956,24 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
   const handleExportExcel = () => {
     try {
       const wb = XLSX.utils.book_new();
+      const headerRow = ['SL', 'Technician', 'Ticket / WO#', 'Store / Location', 'Sub Department', 'Ledger Batch', 'Category', 'Date', 'Remarks'];
+      if (hasAnyUploadedByOverall) {
+        headerRow.push('Uploaded By');
+      }
+      headerRow.push('Amount (KD)');
+
       const rows: any[][] = [
         [`Worker Bundle ${bundle.claim_id} - Verification`],
         [`Status: ${bundle.status} | Date: ${new Date().toLocaleDateString()}`],
         [],
-        ['SL', 'Technician', 'Ticket / WO#', 'Store / Location', 'Sub Department', 'Ledger Batch', 'Category', 'Date', 'Remarks', 'Amount (KD)']
+        headerRow
       ];
 
       let sl = 1;
       workerList.forEach(w => {
         w.batchGroups.forEach(b => {
           b.expenses.forEach(exp => {
-            rows.push([
+            const rowData: any[] = [
               sl++,
               w.workerName,
               exp.ticketNo,
@@ -796,22 +982,43 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
               b.batchName,
               exp.category,
               exp.date || '-',
-              exp.remarks || '-',
-              Number(exp.amount.toFixed(2))
-            ]);
+              exp.remarks || '-'
+            ];
+            if (hasAnyUploadedByOverall) {
+              const uploadedByCell = exp.creatorDisplayName
+                ? `${exp.creatorDisplayName}${exp.isOfficeAdmin ? ' (Office Administrator)' : ''}`
+                : '-';
+              rowData.push(uploadedByCell);
+            }
+            rowData.push(Number(exp.amount.toFixed(3)));
+            rows.push(rowData);
           });
-          rows.push(['', '', '', '', '', `Batch Subtotal (${b.batchName})`, '', '', '', Number(b.totalAmount.toFixed(2))]);
+          const batchSubRow: any[] = ['', '', '', '', '', `Batch Subtotal (${b.batchName})`, '', '', ''];
+          if (hasAnyUploadedByOverall) batchSubRow.push('');
+          batchSubRow.push(Number(b.totalAmount.toFixed(3)));
+          rows.push(batchSubRow);
         });
-        rows.push(['', '', '', '', '', `Worker Total (${w.workerName})`, '', '', '', Number(w.totalAmount.toFixed(2))]);
+        const workerTotalRow: any[] = ['', '', '', '', '', `Worker Total (${w.workerName})`, '', '', ''];
+        if (hasAnyUploadedByOverall) workerTotalRow.push('');
+        workerTotalRow.push(Number(w.totalAmount.toFixed(3)));
+        rows.push(workerTotalRow);
         rows.push([]);
       });
 
-      rows.push(['', '', '', '', '', 'BUNDLE GRAND TOTAL', '', '', '', Number(grandTotals.grandAmount.toFixed(2))]);
+      const grandTotalRow: any[] = ['', '', '', '', '', 'BUNDLE GRAND TOTAL', '', '', ''];
+      if (hasAnyUploadedByOverall) grandTotalRow.push('');
+      grandTotalRow.push(Number(grandTotals.grandAmount.toFixed(3)));
+      rows.push(grandTotalRow);
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = [
-        { wch: 6 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 26 }, { wch: 18 }, { wch: 14 }, { wch: 30 }, { wch: 14 }
+      const cols: { wch: number }[] = [
+        { wch: 6 }, { wch: 20 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 26 }, { wch: 18 }, { wch: 14 }, { wch: 30 }
       ];
+      if (hasAnyUploadedByOverall) {
+        cols.push({ wch: 20 });
+      }
+      cols.push({ wch: 14 });
+      ws['!cols'] = cols;
       XLSX.utils.book_append_sheet(wb, ws, 'Worker Statement');
       XLSX.writeFile(wb, `Bundle_${bundle.claim_id}_Worker_Statement_${new Date().toISOString().split('T')[0]}.xlsx`);
     } catch (err) {
@@ -939,7 +1146,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 <DollarSign className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                KD {grandTotals.grandAmount.toFixed(2)}
+                KD {grandTotals.grandAmount.toFixed(3)}
               </div>
               <span className="text-[10px] text-on-surface-variant mt-0.5 block font-medium">
                 {grandTotals.totalExpenses} itemized ticket entries
@@ -1045,7 +1252,9 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                       No worker statements match the search query "{searchTerm}".
                     </div>
                   ) : (
-                    filteredWorkerList.map((worker, wIdx) => (
+                    filteredWorkerList.map((worker, wIdx) => {
+                      const showUploadedBy = Boolean(worker.hasUploadedBy);
+                      return (
                       <div
                         key={worker.workerId || wIdx}
                         className="rounded border border-outline-variant bg-surface-container dark:bg-dark-surface-container overflow-hidden shadow-2xs space-y-3 p-4"
@@ -1076,7 +1285,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                           <div className="text-right">
                             <span className="text-[10px] uppercase tracking-wider text-on-surface-variant block font-medium">Worker Total Payout</span>
                             <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                              KD {worker.totalAmount.toFixed(2)}
+                              KD {worker.totalAmount.toFixed(3)}
                             </span>
                           </div>
                         </div>
@@ -1095,7 +1304,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                                   </span>
                                 </div>
                                 <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                  Batch Subtotal: KD {batch.totalAmount.toFixed(2)}
+                                  Batch Subtotal: KD {batch.totalAmount.toFixed(3)}
                                 </span>
                               </div>
 
@@ -1111,6 +1320,9 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                                       <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">CATEGORY</th>
                                       <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center">DATE</th>
                                       <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">REMARKS</th>
+                                      {showUploadedBy && (
+                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center min-w-[120px]">UPLOADED BY</th>
+                                      )}
                                       <th className="px-4 py-2.5 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold min-w-[90px]">
                                         AMOUNT
                                       </th>
@@ -1150,19 +1362,35 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                                         <td className="px-3 py-2 border-r border-outline-variant/60 text-on-surface-variant max-w-xs truncate" title={exp.remarks}>
                                           {exp.remarks || '-'}
                                         </td>
+                                        {showUploadedBy && (
+                                          <td
+                                            className={`px-3 py-2 border-r border-outline-variant/60 text-center ${exp.isOfficeAdmin
+                                              ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-bold'
+                                              : 'text-on-surface'
+                                              }`}
+                                          >
+                                            {exp.creatorDisplayName ? (
+                                              <div className="flex flex-col items-center gap-0.5">
+                                                <span className="truncate max-w-[130px] font-medium">{exp.creatorDisplayName}</span>
+                                              </div>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        )}
                                         <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                                          KD {exp.amount.toFixed(2)}
+                                          KD {exp.amount.toFixed(3)}
                                         </td>
                                       </tr>
                                     ))}
                                   </tbody>
                                   <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
                                     <tr>
-                                      <td colSpan={7} className="px-4 py-2.5 text-right uppercase tracking-wider text-on-surface text-[11px]">
+                                      <td colSpan={showUploadedBy ? 8 : 7} className="px-4 py-2.5 text-right uppercase tracking-wider text-on-surface text-[11px]">
                                         Batch Subtotal ({batch.batchName}):
                                       </td>
                                       <td className="px-4 py-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 font-black text-xs">
-                                        KD {batch.totalAmount.toFixed(2)}
+                                        KD {batch.totalAmount.toFixed(3)}
                                       </td>
                                     </tr>
                                   </tfoot>
@@ -1178,7 +1406,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                             Grand Total Payout ({worker.workerName}):
                           </span>
                           <span className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-3 py-1 rounded border border-emerald-500/20">
-                            KD {worker.totalAmount.toFixed(2)}
+                            KD {worker.totalAmount.toFixed(3)}
                           </span>
                         </div>
 
@@ -1236,7 +1464,8 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                           </div>
                         </div> */}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1266,6 +1495,9 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                           <th className="py-2.5 px-3 text-left">Category</th>
                           <th className="py-2.5 px-3 text-center">Date</th>
                           <th className="py-2.5 px-3 text-left">Remarks</th>
+                          {hasAnyUploadedByOverall && (
+                            <th className="py-2.5 px-3 text-center min-w-[120px]">Uploaded By</th>
+                          )}
                           <th className="py-2.5 px-4 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Amount</th>
                         </tr>
                       </thead>
@@ -1290,19 +1522,35 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                             <td className="py-2.5 px-3 font-medium text-on-surface">{exp.category}</td>
                             <td className="py-2.5 px-3 text-center font-mono text-on-surface-variant">{exp.date || '-'}</td>
                             <td className="py-2.5 px-3 text-on-surface-variant max-w-xs truncate" title={exp.remarks}>{exp.remarks || '-'}</td>
+                            {hasAnyUploadedByOverall && (
+                              <td
+                                className={`py-2.5 px-3 text-center ${exp.isOfficeAdmin
+                                  ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-bold'
+                                  : 'text-on-surface'
+                                  }`}
+                              >
+                                {exp.creatorDisplayName ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span className="truncate max-w-[130px] font-medium">{exp.creatorDisplayName}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-on-surface-variant/40">-</span>
+                                )}
+                              </td>
+                            )}
                             <td className="py-2.5 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                              KD {exp.amount.toFixed(2)}
+                              KD {exp.amount.toFixed(3)}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
                         <tr>
-                          <td colSpan={9} className="py-3 px-4 text-right uppercase tracking-wider text-on-surface">
+                          <td colSpan={hasAnyUploadedByOverall ? 10 : 9} className="py-3 px-4 text-right uppercase tracking-wider text-on-surface">
                             Grand Total:
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-sm font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/15">
-                            KD {grandTotals.grandAmount.toFixed(2)}
+                            KD {grandTotals.grandAmount.toFixed(3)}
                           </td>
                         </tr>
                       </tfoot>

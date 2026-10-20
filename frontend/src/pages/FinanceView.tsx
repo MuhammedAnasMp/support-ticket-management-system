@@ -118,6 +118,21 @@ export const FinanceView: React.FC = () => {
     amount?: number;
   } | null>(null);
 
+  // Syncing state for newly created expense row loader
+  const [isSyncingNewExpense, setIsSyncingNewExpense] = useState<boolean>(false);
+  const [syncingExpenseInfo, setSyncingExpenseInfo] = useState<{
+    expense_id?: number | string;
+    category?: string;
+    worker_name?: string;
+    ticket_no?: string;
+    sub_department?: string;
+    amount?: number;
+    expense_date?: string;
+    remarks?: string;
+    has_receipts?: boolean;
+    receipts_count?: number;
+  } | null>(null);
+
   // Bundle Detail View & Edit Modal States
   const [selectedBundleForView, setSelectedBundleForView] = useState<WorkerClaimItem | null>(null);
   const [selectedBundleForEdit, setSelectedBundleForEdit] = useState<WorkerClaimItem | null>(null);
@@ -1484,6 +1499,30 @@ export const FinanceView: React.FC = () => {
         await Promise.all(uploadPromises);
       }
 
+      // Activate the skeleton row loader immediately with the created expense's metadata
+      const newExpenseInfo = {
+        expense_id: data.expense_id,
+        category: (typeof data.expense_type_detail === 'object' ? data.expense_type_detail?.expense_name : '') || '',
+        worker_name: (typeof data.worker_detail === 'object' ? (data.worker_detail?.full_name || data.worker_detail?.username) : '') || '',
+        ticket_no: (typeof data.ticket_details === 'object' ? data.ticket_details?.work_order_no : '') || (data.ticket ? String(data.ticket) : ''),
+        sub_department: (typeof data.ticket_details === 'object' ? data.ticket_details?.sub_department_name : '') || '',
+        amount: data.amount ? Number(data.amount) : payload.amount,
+        expense_date: data.expense_date || payload.expense_date,
+        remarks: data.remarks || payload.remarks,
+        has_receipts: Boolean(files && files.length > 0),
+        receipts_count: (files || []).length
+      };
+      setSyncingExpenseInfo(newExpenseInfo);
+      setIsSyncingNewExpense(true);
+
+      // Optimistically append/insert to expenses list if not present
+      if (data && data.expense_id) {
+        setExpenses(prev => {
+          if (prev.some(e => e.expense_id === data.expense_id)) return prev;
+          return [data, ...prev];
+        });
+      }
+
       setSuccessMessage(`Expense ${data.expense_id} created successfully.`);
       fetchData(true);
     } catch (err: any) {
@@ -1491,6 +1530,10 @@ export const FinanceView: React.FC = () => {
       throw err;
     } finally {
       setSubmitting(false);
+      setTimeout(() => {
+        setIsSyncingNewExpense(false);
+        setSyncingExpenseInfo(null);
+      }, 800);
     }
   };
 
@@ -1794,6 +1837,8 @@ export const FinanceView: React.FC = () => {
           API_URL={API_URL}
           approvalsProps={approvalsProps}
           onRefresh={() => fetchData(true)}
+          isSyncingNewExpense={isSyncingNewExpense}
+          syncingExpenseInfo={syncingExpenseInfo}
         />
       )}
 

@@ -15,6 +15,8 @@ export interface ExpenseItem {
   is_claimed: boolean;
   worker: any;
   worker_detail?: { id: number; username: string; full_name?: string; employee_no?: string; profile_image?: string | null; sub_departments?: SubDepartmentDetailItem[] };
+  added_by?: any;
+  added_by_detail?: { id: number; username: string; full_name?: string; employee_no?: string; role?: string; profile_image?: string | null };
   ticket?: number;
   ticket_details?: {
     ticket_id: number;
@@ -24,6 +26,9 @@ export interface ExpenseItem {
     sub_department_id?: number;
     sub_department_name?: string;
     department_name?: string;
+    status?: string;
+    status_name?: string;
+    status_short_code?: string;
   };
   sub_department_id?: number;
   sub_department_name?: string;
@@ -171,6 +176,9 @@ export interface WorkerClaimItem {
     sub_department_id?: number;
     sub_department_name?: string;
     department_name?: string;
+    status?: string;
+    status_name?: string;
+    status_short_code?: string;
   };
   total_claimed_amount: string;
   status: 'Draft' | 'Submitted' | 'In Review' | 'Approved' | 'Rejected' | 'Rework' | 'Paid';

@@ -1141,7 +1141,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     <th className="px-4 py-3">Worker Name</th>
                     <th className="px-4 py-3">Claim Date</th>
                     <th className="px-4 py-3">Ledger Batch</th>
-                    <th className="px-4 py-3 text-right">Amount ($)</th>
+                    <th className="px-4 py-3 text-right">Amount (KD)</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -1183,7 +1183,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                           <div className="h-4 w-24 bg-slate-300/60 dark:bg-slate-700/60 rounded animate-pulse" />
                         </td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-primary">
-                          {syncingBundleInfo?.amount ? `KD ${syncingBundleInfo.amount.toFixed(2)}` : (
+                          {syncingBundleInfo?.amount ? `KD ${syncingBundleInfo.amount.toFixed(3)}` : (
                             <div className="h-4 w-16 bg-slate-300/60 dark:bg-slate-700/60 rounded ml-auto animate-pulse" />
                           )}
                         </td>
@@ -1325,7 +1325,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 <span className="text-[11px] text-on-surface-variant/60 italic">No Ledger</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-right font-semibold">{parseFloat(b.total_claimed_amount).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right font-semibold">{parseFloat(b.total_claimed_amount).toFixed(3)}</td>
                             <td className="px-4 py-3">
                               {renderStatusBadge(
                                 b.status,
@@ -1780,7 +1780,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                           <th className="px-3 py-2">Date</th>
                                           <th className="px-3 py-2">Responsible Store</th>
                                           <th className="px-3 py-2">Ticket / Work Order</th>
-                                          <th className="px-3 py-2 text-right">Amount ($)</th>
+                                          <th className="px-3 py-2 text-right">Amount (KD)</th>
                                           <th className="px-3 py-2 text-right">Action</th>
                                         </tr>
                                       </thead>
@@ -1819,7 +1819,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                                 )}
                                               </td>
                                               <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                {parseFloat(exp.amount || '0').toFixed(2)}
+                                                {parseFloat(exp.amount || '0').toFixed(3)}
                                               </td>
                                               <td className="px-3 py-2 text-right">
                                                 <div className="inline-flex items-center justify-end gap-1.5">
@@ -2125,7 +2125,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     {emp.unclaimed_count ?? 0} Expenses
                                   </span>
                                   <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                    {(emp.unclaimed_total ?? 0).toFixed(2)}
+                                    {(emp.unclaimed_total ?? 0).toFixed(3)} KD
                                   </span>
                                 </div>
                               </div>
@@ -2294,7 +2294,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     </span>
                                   )}
                                   <span className={`font-bold text-xs ${isExpApproved ? 'text-primary' : 'text-on-surface-variant'}`}>
-                                    {parseFloat(exp.amount).toFixed(2)}
+                                    {parseFloat(exp.amount).toFixed(3)}
                                   </span>
                                 </div>
                               </div>
@@ -2394,7 +2394,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     <strong className="text-on-surface font-bold text-xs">{selectedExpenseIds.length} expenses</strong>
                   </span>
                   <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                    Total: {selectedExpensesTotal.toFixed(2)}
+                    Total: {selectedExpensesTotal.toFixed(3)} KD
                   </span>
                 </div>
 
@@ -2412,7 +2412,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     disabled={submitting || selectedExpenseIds.length === 0 || !bundleRemarks.trim()}
                     className="px-5 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all shadow-md hover:shadow-primary/25 active:scale-[0.98] cursor-pointer flex items-center gap-2"
                   >
-                    {submitting ? 'Creating Bundle...' : `Create Bundle (${selectedExpensesTotal.toFixed(2)})`}
+                    {submitting ? 'Creating Bundle...' : `Create Bundle (${selectedExpensesTotal.toFixed(3)} KD)`}
                   </button>
                 </div>
               </div>
@@ -2485,7 +2485,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
               <div className="p-3 rounded bg-surface-container-low border border-outline-variant/80 shadow-2xs">
                 <span className="text-on-surface-variant block text-[10px]  tracking-wider font-semibold">Total Amount</span>
-                <span className="font-bold text-sm text-primary mt-0.5 block">${parseFloat(selectedBundleForView.total_claimed_amount).toFixed(2)}</span>
+                <span className="font-bold text-sm text-primary mt-0.5 block">KD {parseFloat(selectedBundleForView.total_claimed_amount).toFixed(3)}</span>
               </div>
               <div className="p-3 rounded bg-surface-container-low border border-outline-variant/80 shadow-2xs">
                 <span className="text-on-surface-variant block text-[10px]  tracking-wider font-semibold">Coverage Period</span>
@@ -2611,7 +2611,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               {statusText}
                             </span>
                             <span className="font-bold text-sm text-on-surface shrink-0">
-                              ${parseFloat(exp.amount).toFixed(2)}
+                              KD {parseFloat(exp.amount).toFixed(3)}
                             </span>
                             {selectedBundleForView?.status !== 'Paid' && !selectedBundleForView?.ledger_details && !(selectedBundleForView as any)?.ledger_id && handleRemoveExpenseFromBundle && (
                               <button
@@ -2632,7 +2632,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       ...selectedBundleForView,
                                       status: 'Draft',
                                       expenses: updatedExpenses,
-                                      total_claimed_amount: updatedTotal.toFixed(2)
+                                      total_claimed_amount: updatedTotal.toFixed(3)
                                     });
                                   }
                                 }}
@@ -2989,7 +2989,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 <div>
                   <span className="text-[10px] font-semibold text-on-surface-variant  tracking-wider block">Total Amount</span>
                   <span className="text-lg font-extrabold text-primary block mt-0.5">
-                    {parseFloat(previewExpense.amount || '0').toFixed(2)}
+                    KD {parseFloat(previewExpense.amount || '0').toFixed(3)}
                   </span>
                 </div>
                 <div>

@@ -82,6 +82,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   const [groupByLocation, setGroupByLocation] = useState(true);
   const [isVerticalOrientation, setIsVerticalOrientation] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showWorkerDetailsInSummary, setShowWorkerDetailsInSummary] = useState(false);
   const [fetchedExpenseTypes, setFetchedExpenseTypes] = useState<any[]>([]);
   const [fetchedBatches, setFetchedBatches] = useState<LedgerBatchItem[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -572,6 +573,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       rows: TicketExpenseRow[];
       ticketExpMap: Map<string, string[]>;
       ledgerBatches: string[];
+      subDepartments: string[];
       summary: string;
       amountsByType: Record<string, number>;
       total: number;
@@ -585,6 +587,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           rows: [],
           ticketExpMap: new Map<string, string[]>(),
           ledgerBatches: [],
+          subDepartments: [],
           summary: '',
           amountsByType: {},
           total: 0
@@ -610,6 +613,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       if (row.ledgerBatch && !entry.ledgerBatches.includes(row.ledgerBatch)) {
         entry.ledgerBatches.push(row.ledgerBatch);
       }
+      if (row.subDepartment && !entry.subDepartments.includes(row.subDepartment)) {
+        entry.subDepartments.push(row.subDepartment);
+      }
       entry.total += row.total;
       for (const col of cols) {
         entry.amountsByType[col] = (entry.amountsByType[col] || 0) + (row.amountsByType[col] || 0);
@@ -630,6 +636,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       return {
         ...entry,
         summary: summaryText,
+        subDeptStr: entry.subDepartments.join(', '),
         ticketLines,
         expNoStr: ticketLines.join(' '),
         ticketLinesPrint: ticketLines.join('<br />'),
@@ -833,6 +840,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       labourCharge: number;
       expense: number;
       total: number;
+      workers: Map<string, {
+        workerId: string | number;
+        workerName: string;
+        workerEmployeeNo?: string;
+        labourCharge: number;
+        expense: number;
+        total: number;
+      }>;
     }>();
 
     // Initialize all dynamic batches
@@ -841,7 +856,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         section: bName,
         labourCharge: 0,
         expense: 0,
-        total: 0
+        total: 0,
+        workers: new Map()
       });
     }
 
@@ -852,16 +868,38 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           section: bName,
           labourCharge: 0,
           expense: 0,
-          total: 0
+          total: 0,
+          workers: new Map()
         });
       }
       const entry = batchMap.get(bName)!;
-      entry.expense += (row.total - row.labourAmount);
+      const expAmt = row.total - row.labourAmount;
+      entry.expense += expAmt;
       entry.labourCharge += row.labourAmount;
       entry.total += row.total;
+
+      const wKey = String(row.workerId && row.workerId !== 'unknown' ? row.workerId : (row.workerName || 'unknown'));
+      if (!entry.workers.has(wKey)) {
+        entry.workers.set(wKey, {
+          workerId: row.workerId,
+          workerName: row.workerName,
+          workerEmployeeNo: row.workerEmployeeNo,
+          labourCharge: 0,
+          expense: 0,
+          total: 0
+        });
+      }
+      const wEntry = entry.workers.get(wKey)!;
+      wEntry.labourCharge += row.labourAmount;
+      wEntry.expense += expAmt;
+      wEntry.total += row.total;
     }
 
-    const list = Array.from(batchMap.values()).sort((a, b) => a.section.localeCompare(b.section));
+    const list = Array.from(batchMap.values()).map(b => ({
+      ...b,
+      workerList: Array.from(b.workers.values()).sort((a, b) => a.workerName.localeCompare(b.workerName))
+    })).sort((a, b) => a.section.localeCompare(b.section));
+
     const grandLabour = list.reduce((s, x) => s + x.labourCharge, 0);
     const grandExpense = list.reduce((s, x) => s + x.expense, 0);
     const grandTotal = list.reduce((s, x) => s + x.total, 0);
@@ -924,21 +962,43 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       let cSl = 1;
       for (const item of consolidatedBatchData.list) {
         consolidatedRowsHtml += `
-          <tr style="border:1px solid #d1d5db;">
-            <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:10.5px;color:#4b5563;">${cSl++}</td>
-            <td style="padding:7px 12px;border:1px solid #d1d5db;font-size:11px;font-weight:700;color:#111827;">${item.section}</td>
-            <td style="text-align:right;padding:7px 12px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(2)}` : '-'}</td>
-            <td style="text-align:right;padding:7px 12px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">KD ${item.expense.toFixed(2)}</td>
-            <td style="text-align:right;padding:7px 12px;border:1px solid #d1d5db;font-size:11.5px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${item.total.toFixed(2)}</td>
+          <tr style="border:1px solid #d1d5db;background:#f9fafb;">
+            <td style="text-align:center;padding:5px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#4b5563;">${cSl++}</td>
+            <td style="padding:5px 10px;border:1px solid #d1d5db;font-size:10.5px;font-weight:700;color:#111827;">${item.section}</td>
+            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10.5px;font-weight:700;color:#1f2937;">${item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-'}</td>
+            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10.5px;font-weight:700;color:#1f2937;">KD ${item.expense.toFixed(3)}</td>
+            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:11px;font-weight:800;color:#065f46;background:#ecfdf5;">KD ${item.total.toFixed(3)}</td>
           </tr>
         `;
+
+        if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
+          for (const w of item.workerList) {
+            consolidatedRowsHtml += `
+              <tr style="border:1px solid #e5e7eb;background:#ffffff;">
+                <td style="text-align:center;padding:3.5px 6px;border:1px solid #e5e7eb;font-size:9px;color:#9ca3af;">•</td>
+                <td style="padding:3.5px 10px 3.5px 24px;border:1px solid #e5e7eb;font-size:9.5px;color:#1e40af;font-weight:600;">
+                  👷 ${w.workerName} ${w.workerEmployeeNo ? `<span style="font-size:8.5px;color:#6b7280;font-weight:normal;">(${w.workerEmployeeNo})</span>` : ''}
+                </td>
+                <td style="text-align:right;padding:3.5px 10px;border:1px solid #e5e7eb;font-size:9.5px;color:#374151;">
+                  ${w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-'}
+                </td>
+                <td style="text-align:right;padding:3.5px 10px;border:1px solid #e5e7eb;font-size:9.5px;color:#374151;">
+                  ${w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-'}
+                </td>
+                <td style="text-align:right;padding:3.5px 10px;border:1px solid #e5e7eb;font-size:9.5px;font-weight:600;color:#065f46;">
+                  KD ${w.total.toFixed(3)}
+                </td>
+              </tr>
+            `;
+          }
+        }
       }
       consolidatedRowsHtml += `
         <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;">
-          <td colspan="2" style="text-align:right;padding:9px 12px;font-size:12px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
-          <td style="text-align:right;padding:9px 12px;border:1.5px solid #374151;font-size:12px;font-weight:800;color:#111827;">${consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(2)}` : '-'}</td>
-          <td style="text-align:right;padding:9px 12px;border:1.5px solid #374151;font-size:12px;font-weight:800;color:#111827;">KD ${consolidatedBatchData.grandExpense.toFixed(2)}</td>
-          <td style="text-align:right;padding:9px 12px;border:1.5px solid #374151;font-size:13px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedBatchData.grandTotal.toFixed(2)}</td>
+          <td colspan="2" style="text-align:right;padding:6px 10px;font-size:11px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
+          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11px;font-weight:800;color:#111827;">${consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-'}</td>
+          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11px;font-weight:800;color:#111827;">KD ${consolidatedBatchData.grandExpense.toFixed(3)}</td>
+          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedBatchData.grandTotal.toFixed(3)}</td>
         </tr>
       `;
 
@@ -957,7 +1017,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             </td>
             <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.ticketCount}</td>
             <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;font-size:11px;color:#1f2937;">${item.locationCount}</td>
-            <td style="text-align:right;padding:7px 14px;border:1px solid #d1d5db;font-size:11.5px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${item.totalAmount.toFixed(2)}</td>
+            <td style="text-align:right;padding:7px 14px;border:1px solid #d1d5db;font-size:11.5px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${item.totalAmount.toFixed(3)}</td>
             <td style="text-align:center;padding:7px 8px;border:1px solid #d1d5db;vertical-align:bottom;">
               <div style="border-bottom:1.5px solid #6b7280;width:80%;margin:0 auto 4px auto;height:16px;"></div>
             </td>
@@ -970,7 +1030,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${consolidatedUserData.totalBundles}</td>
           <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${consolidatedUserData.totalTickets}</td>
           <td style="text-align:center;padding:9px 8px;border:1.5px solid #374151;font-size:11.5px;font-weight:800;color:#111827;">${userwiseGrandTotals.uniqueLocationsCount}</td>
-          <td style="text-align:right;padding:9px 14px;border:1.5px solid #374151;font-size:13px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedUserData.grandTotal.toFixed(2)}</td>
+          <td style="text-align:right;padding:9px 14px;border:1.5px solid #374151;font-size:13px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedUserData.grandTotal.toFixed(3)}</td>
           <td style="border:1.5px solid #374151;background:#e5e7eb;"></td>
         </tr>
       `;
@@ -978,7 +1038,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // Build Userwise Rows HTML
       let userwiseRowsHtml = '';
       let globalSl = 1;
-      const userLeadingSpan = groupByLocation ? 4 : 7;
+      const userLeadingSpan = groupByLocation ? 5 : 7;
       const userTotalSpan = userLeadingSpan + allChildExpenseColumns.length + 1;
 
       for (const groupRow of workerGroupedRows) {
@@ -987,7 +1047,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             <td colspan="${userTotalSpan}" style="padding:6px 8px;font-size:11px;color:#1e3a8a;border:1px solid #9ca3af;">
               👷 ${groupRow.workerName} ${groupRow.workerEmployeeNo ? `(${groupRow.workerEmployeeNo})` : ''} 
               <span style="font-weight:normal;color:#4b5563;font-size:10px;margin-left:8px;">
-                — ${groupRow.rows.length} Tickets | ${groupRow.uniqueLocationsCount} Locations | Subtotal: KD ${groupRow.totalAmount.toFixed(2)}
+                — ${groupRow.rows.length} Tickets | ${groupRow.uniqueLocationsCount} Locations | Subtotal: KD ${groupRow.totalAmount.toFixed(3)}
               </span>
             </td>
           </tr>
@@ -998,7 +1058,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             let expCols = '';
             for (const c of allChildExpenseColumns) {
               const val = locRow.amountsByType[c] || 0;
-              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(3) : '-'}</td>`;
             }
 
             userwiseRowsHtml += `
@@ -1006,9 +1066,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${globalSl++}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;line-height:1.35;white-space:nowrap;">${locRow.ticketLines && locRow.ticketLines.length > 0 ? locRow.ticketLines.join('<br />') : (locRow.expNoStr || '-')}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:700;color:#111827;">${locRow.location}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${locRow.subDeptStr || '-'}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;">${locRow.summary}</td>
                 ${expCols}
-                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${locRow.total.toFixed(2)}</td>
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${locRow.total.toFixed(3)}</td>
               </tr>
             `;
           }
@@ -1017,7 +1078,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             let expCols = '';
             for (const c of allChildExpenseColumns) {
               const val = row.amountsByType[c] || 0;
-              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(3) : '-'}</td>`;
             }
 
             userwiseRowsHtml += `
@@ -1032,7 +1093,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${row.issueTitle}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.ledgerBatch}</td>
                 ${expCols}
-                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(2)}</td>
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(3)}</td>
               </tr>
             `;
           }
@@ -1041,7 +1102,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         let subtotalCols = '';
         for (const c of allChildExpenseColumns) {
           const sum = groupRow.subtotalByType[c] || 0;
-          subtotalCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #9ca3af;font-size:9.5px;font-weight:700;color:#1f2937;">${sum > 0 ? sum.toFixed(2) : '-'}</td>`;
+          subtotalCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #9ca3af;font-size:9.5px;font-weight:700;color:#1f2937;">${sum > 0 ? sum.toFixed(3) : '-'}</td>`;
         }
 
         userwiseRowsHtml += `
@@ -1050,7 +1111,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               Subtotal (${groupRow.workerName}):
             </td>
             ${subtotalCols}
-            <td style="text-align:right;padding:5px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">KD ${groupRow.totalAmount.toFixed(2)}</td>
+            <td style="text-align:right;padding:5px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">KD ${groupRow.totalAmount.toFixed(3)}</td>
           </tr>
         `;
       }
@@ -1058,7 +1119,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       let grandCols = '';
       for (const c of allChildExpenseColumns) {
         const sum = userwiseGrandTotals.colTotals[c] || 0;
-        grandCols += `<td style="text-align:right;padding:6px 5px;border:1.5px solid #374151;font-size:10px;font-weight:800;color:#111827;">${sum.toFixed(2)}</td>`;
+        grandCols += `<td style="text-align:right;padding:6px 5px;border:1.5px solid #374151;font-size:10px;font-weight:800;color:#111827;">${sum.toFixed(3)}</td>`;
       }
 
       userwiseRowsHtml += `
@@ -1067,7 +1128,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             GRAND TOTAL (${new Set(structuredRows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets / ${userwiseGrandTotals.uniqueLocationsCount} Locations):
           </td>
           ${grandCols}
-          <td style="text-align:right;padding:7px 6px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${userwiseGrandTotals.grandTotal.toFixed(2)}</td>
+          <td style="text-align:right;padding:7px 6px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${userwiseGrandTotals.grandTotal.toFixed(3)}</td>
         </tr>
       `;
 
@@ -1109,8 +1170,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         ? 'Worker-wise Settlement'
         : 'Expenses by Location';
 
-      const getHeaderHtml = (subtitle: string, customTitle?: string) => `
+      const getHeaderHtml = (subtitle: string, customTitle?: string, showLogo: boolean = false) => `
         <div class="report-header">
+          ${showLogo ? `
+          <div class="report-header-logo">
+            <img src="${window.location.origin}/document_logo.png" onerror="this.onerror=null;this.src='/document_logo.png';" alt="Logo" />
+          </div>
+          ` : ''}
           <div>
             <h1 class="report-title">${customTitle || reportTitle}</h1>
             <p class="report-subtitle">${subtitle}</p>
@@ -1126,7 +1192,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         <div class="meta-grid">
           <div class="meta-item">
             <span>TOTAL SETTLEMENT</span>
-            <strong style="color:#065f46;font-size:12px;">KD ${userwiseGrandTotals.grandTotal.toFixed(2)}</strong>
+            <strong style="color:#065f46;font-size:12px;">KD ${userwiseGrandTotals.grandTotal.toFixed(3)}</strong>
           </div>
           <div class="meta-item">
             <span>TOTAL TECHNICIANS</span>
@@ -1145,8 +1211,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       // Build Storewise Batch Pages HTML (Each Ledger Batch starts on a dedicated new page)
       let storewiseBatchPagesHtml = '';
-      const totalColSpan = (groupByLocation ? 4 : 7) + allChildExpenseColumns.length + 1;
-      const leadingColSpan = groupByLocation ? 4 : 7;
+      const totalColSpan = (groupByLocation ? 5 : 7) + allChildExpenseColumns.length + 1;
+      const leadingColSpan = groupByLocation ? 5 : 7;
 
       storewiseByBatch.forEach((batch, batchIndex) => {
         const isLastBatch = batchIndex === storewiseByBatch.length - 1;
@@ -1158,7 +1224,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             let expCols = '';
             for (const c of allChildExpenseColumns) {
               const val = locRow.amountsByType[c] || 0;
-              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(3) : '-'}</td>`;
             }
 
             batchRowsHtml += `
@@ -1166,9 +1232,10 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${sl++}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;line-height:1.35;white-space:nowrap;">${locRow.ticketLines && locRow.ticketLines.length > 0 ? locRow.ticketLines.join('<br />') : (locRow.expNoStr || '-')}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:700;color:#111827;">${locRow.location}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${locRow.subDeptStr || '-'}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;">${locRow.summary}</td>
                 ${expCols}
-                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${locRow.total.toFixed(2)}</td>
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${locRow.total.toFixed(3)}</td>
               </tr>
             `;
           }
@@ -1178,7 +1245,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             let expCols = '';
             for (const c of allChildExpenseColumns) {
               const val = row.amountsByType[c] || 0;
-              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(2) : '-'}</td>`;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(3) : '-'}</td>`;
             }
 
             batchRowsHtml += `
@@ -1191,7 +1258,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;">${row.issueTitle}</td>
                 <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.ledgerGroup}</td>
                 ${expCols}
-                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(2)}</td>
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(3)}</td>
               </tr>
             `;
           }
@@ -1200,7 +1267,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         let subtotalCols = '';
         for (const c of allChildExpenseColumns) {
           const sum = batch.subtotalByType[c] || 0;
-          subtotalCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #9ca3af;font-size:9.5px;font-weight:700;color:#1f2937;">${sum > 0 ? sum.toFixed(2) : '-'}</td>`;
+          subtotalCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #9ca3af;font-size:9.5px;font-weight:700;color:#1f2937;">${sum > 0 ? sum.toFixed(3) : '-'}</td>`;
         }
 
         const subtotalRowHtml = `
@@ -1209,7 +1276,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               Batch Subtotal (${batch.batchName}):
             </td>
             ${subtotalCols}
-            <td style="text-align:right;padding:5px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">KD ${batch.batchTotal.toFixed(2)}</td>
+            <td style="text-align:right;padding:5px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">KD ${batch.batchTotal.toFixed(3)}</td>
           </tr>
         `;
 
@@ -1219,21 +1286,22 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               GRAND TOTAL (ALL LEDGER BATCHES):
             </td>
             ${grandCols}
-            <td style="text-align:right;padding:7px 6px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${userwiseGrandTotals.grandTotal.toFixed(2)}</td>
+            <td style="text-align:right;padding:7px 6px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${userwiseGrandTotals.grandTotal.toFixed(3)}</td>
           </tr>
         ` : '';
 
         storewiseBatchPagesHtml += `
           <!-- LEDGER BATCH PAGE: ${batch.batchName} -->
           <div class="print-page batch-page" style="page-break-before: always; break-before: page; padding-top: 12px;">
-            ${getHeaderHtml(`Sub-Department Wise Detailed — ${batch.batchName}`)}
+            ${getHeaderHtml(`Sub-Department Wise Detailed — ${batch.batchName}`, undefined, false)}
             <table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #9ca3af;">
               <thead>
                 <tr style="background:#e5e7eb;border:1px solid #9ca3af;">
                   ${groupByLocation ? `
                     <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
                     <th rowspan="2" style="width:140px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
-                    <th rowspan="2" style="width:120px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:115px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:95px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
                     <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">SUMMARY</th>
                   ` : `
                     <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
@@ -1256,7 +1324,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   <td colspan="${totalColSpan}" style="padding:6px 8px;font-size:11px;color:#1e3a8a;border:1px solid #9ca3af;">
                     🔹 LEDGER BATCH: ${batch.batchName} 
                     <span style="font-weight:normal;color:#4b5563;font-size:10px;margin-left:8px;">
-                      — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(2)}
+                      — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}
                     </span>
                   </td>
                 </tr>
@@ -1274,9 +1342,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       if (isAllOrActiveTab === 'userwise') {
         mainBodyHtml = `
   
-          <div class="print-page first-page">
+          <div class="print-page first-page" style="page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '240mm' : '155mm'}; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-              ${getHeaderHtml('Worker Summary Report')}
+              ${getHeaderHtml('Worker Summary Report', undefined, true)}
               ${metaGridHtml}
               <div style="margin-top:16px;">
                 <table style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
@@ -1300,7 +1368,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           </div>
 
           <div class="print-page batch-page second-page">
-            ${getHeaderHtml('Worker Wise Detailed Statement')}
+            ${getHeaderHtml('Worker Wise Detailed Statement', undefined, false)}
             ${metaGridHtml}
             <table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #9ca3af;">
               <thead>
@@ -1308,7 +1376,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   ${groupByLocation ? `
                     <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
                     <th rowspan="2" style="width:140px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
-                    <th rowspan="2" style="width:120px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:115px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:95px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
                     <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">SUMMARY</th>
                   ` : `
                     <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
@@ -1338,19 +1407,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         // Each subsequent page is a dedicated Ledger Batch page (Store & Department Expense Statement)
         mainBodyHtml = `
           <!-- PAGE 1: Consolidated Financial Settlement Report -->
-          <div class="print-page first-page">
+          <div class="print-page first-page" style="page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '240mm' : '155mm'}; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-              ${getHeaderHtml('Sub-Department Wise Summery')}
+              ${getHeaderHtml('Sub-Department Wise Summery', undefined, true)}
               ${metaGridHtml}
-              <div style="margin-top:16px;">
+              <div style="margin-top:12px;">
                 <table style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
                   <thead>
                     <tr style="background:#e5e7eb;border:1.5px solid #374151;">
-                      <th style="width:50px;text-align:center;padding:8px 8px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">SL</th>
-                      <th style="text-align:left;padding:8px 12px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">SECTION (LEDGER BATCH)</th>
-                      <th style="text-align:right;padding:8px 12px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">LABOUR CHARGE</th>
-                      <th style="text-align:right;padding:8px 12px;border:1px solid #9ca3af;font-size:11px;font-weight:700;color:#111827;">EXPENSE</th>
-                      <th style="text-align:right;padding:8px 12px;border:1px solid #9ca3af;font-size:11px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
+                      <th style="width:50px;text-align:center;padding:6px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">SL</th>
+                      <th style="text-align:left;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">SECTION (LEDGER BATCH)</th>
+                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">LABOUR CHARGE</th>
+                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">EXPENSE</th>
+                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1373,6 +1442,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           <head>
             <title>${reportTitle} - ${currentGroupName}</title>
             <meta charset="utf-8" />
+            <base href="${window.location.origin}/" />
             <style>
               @page {
                 size: ${isVerticalOrientation ? 'portrait' : 'landscape'};
@@ -1399,12 +1469,30 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 }
               ` : ''}
               .report-header {
+                position: relative;
                 border-bottom: 2px solid #111827;
                 padding-bottom: 10px;
                 margin-bottom: 12px;
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
+              }
+              .report-header-logo {
+                position: absolute;
+                left: 50%;
+                bottom: 2px;
+                transform: translateX(-50%);
+                pointer-events: none;
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
+              }
+              .report-header-logo img {
+                height: 64px;
+                width: auto;
+                max-width: 160px;
+                object-fit: contain;
+                display: block;
               }
               .report-title {
                 font-size: 18px;
@@ -1457,18 +1545,21 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               }
               .first-page {
                 box-sizing: border-box;
-                height: ${isVerticalOrientation ? '265mm' : '178mm'};
-                min-height: ${isVerticalOrientation ? '265mm' : '178mm'};
+                height: auto;
+                min-height: ${isVerticalOrientation ? '240mm' : '155mm'};
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 page-break-after: always;
                 break-after: page;
+                page-break-inside: avoid;
+                break-inside: avoid;
               }
               .first-page .signatures {
                 margin-top: auto;
-                padding-top: 16px;
+                padding-top: 12px;
                 page-break-inside: avoid;
+                break-inside: avoid;
               }
               .batch-page {
                 box-sizing: border-box;
@@ -1479,13 +1570,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 flex: 1;
                 text-align: center;
                 border-top: 1.5px solid #374151;
-                padding-top: 6px;
-                font-size: 8.5px;
+                padding-top: 4px;
+                font-size: 8px;
                 color: #374151;
               }
               .sign-box strong {
                 display: block;
-                font-size: 9.5px;
+                font-size: 9px;
                 color: #111827;
                 font-weight: 700;
                 margin-bottom: 2px;
@@ -1493,7 +1584,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               }
               .sign-box span {
                 display: block;
-                font-size: 8px;
+                font-size: 7.5px;
                 color: #6b7280;
               }
               @media print {
@@ -1502,18 +1593,22 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   padding: 0;
                 }
                 .first-page {
-                  height: ${isVerticalOrientation ? '265mm' : '178mm'};
-                  min-height: ${isVerticalOrientation ? '265mm' : '178mm'};
-                  display: flex;
-                  flex-direction: column;
-                  justify-content: space-between;
-                  page-break-after: always;
-                  break-after: page;
+                  box-sizing: border-box !important;
+                  height: auto !important;
+                  min-height: ${isVerticalOrientation ? '240mm' : '155mm'} !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: space-between !important;
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
                 .first-page .signatures {
-                  margin-top: auto;
-                  padding-top: 16px;
-                  page-break-inside: avoid;
+                  margin-top: auto !important;
+                  padding-top: 12px !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
                 .second-page {
                   padding-top: 4px;
@@ -1628,7 +1723,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       doc.setFontSize(8.5);
       doc.setTextColor(17, 24, 39);
       doc.setFont('helvetica', 'bold');
-      doc.text(`Grand Total: KD ${userwiseGrandTotals.grandTotal.toFixed(2)}`, 18, 30.5);
+      doc.text(`Grand Total: KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, 18, 30.5);
       doc.setFont('helvetica', 'normal');
       if (isVerticalOrientation) {
         doc.setFontSize(7.5);
@@ -1646,16 +1741,28 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           body1.push([
             cSl++,
             item.section,
-            item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(2)}` : '-',
-            `KD ${item.expense.toFixed(2)}`,
-            `KD ${item.total.toFixed(2)}`
+            item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-',
+            `KD ${item.expense.toFixed(3)}`,
+            `KD ${item.total.toFixed(3)}`
           ]);
+
+          if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
+            for (const w of item.workerList) {
+              body1.push([
+                '•',
+                `   ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
+                w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-',
+                w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-',
+                `KD ${w.total.toFixed(3)}`
+              ]);
+            }
+          }
         }
         body1.push([
           { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-          { content: consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(2)}` : '-', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-          { content: `KD ${consolidatedBatchData.grandExpense.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-          { content: `KD ${consolidatedBatchData.grandTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
+          { content: consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+          { content: `KD ${consolidatedBatchData.grandExpense.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+          { content: `KD ${consolidatedBatchData.grandTotal.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
         ]);
 
         autoTable(doc, {
@@ -1719,6 +1826,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
           { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
           { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+          { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
           { content: 'SUMMARY', rowSpan: 2, styles: { valign: 'middle' } }
         ] : [
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
@@ -1777,8 +1885,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           if (groupByLocation) {
             batchBody.push([
               {
-                content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(2)}`,
-                colSpan: 4 + allChildExpenseColumns.length + 1,
+                content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
+                colSpan: 5 + allChildExpenseColumns.length + 1,
                 styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
               }
             ]);
@@ -1789,41 +1897,42 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 sl++,
                 locRow.ticketLinesText || locRow.expNoStr,
                 locRow.location,
+                locRow.subDeptStr || '-',
                 locRow.summary
               ];
               for (const c of allChildExpenseColumns) {
                 const val = locRow.amountsByType[c] || 0;
-                rowData.push(val > 0 ? val.toFixed(2) : '-');
+                rowData.push(val > 0 ? val.toFixed(3) : '-');
               }
-              rowData.push(`KD ${locRow.total.toFixed(2)}`);
+              rowData.push(`KD ${locRow.total.toFixed(3)}`);
               batchBody.push(rowData);
             }
 
             const subtotalRow: any[] = [
-              { content: `Batch Subtotal (${batch.batchName}):`, colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
+              { content: `Batch Subtotal (${batch.batchName}):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
             ];
             for (const c of allChildExpenseColumns) {
               const sum = batch.subtotalByType[c] || 0;
-              subtotalRow.push({ content: sum > 0 ? sum.toFixed(2) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+              subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
             }
-            subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+            subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
             batchBody.push(subtotalRow);
 
             if (isLastBatch) {
               const grandTotalRow: any[] = [
-                { content: `GRAND TOTAL (ALL LEDGER BATCHES):`, colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
+                { content: `GRAND TOTAL (ALL LEDGER BATCHES):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
               ];
               for (const c of allChildExpenseColumns) {
                 const sum = userwiseGrandTotals.colTotals[c] || 0;
-                grandTotalRow.push({ content: sum.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+                grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
               }
-              grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+              grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
               batchBody.push(grandTotalRow);
             }
           } else {
             batchBody.push([
               {
-                content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(2)}`,
+                content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
                 colSpan: 7 + allChildExpenseColumns.length + 1,
                 styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
               }
@@ -1842,9 +1951,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               ];
               for (const c of allChildExpenseColumns) {
                 const val = row.amountsByType[c] || 0;
-                rowData.push(val > 0 ? val.toFixed(2) : '-');
+                rowData.push(val > 0 ? val.toFixed(3) : '-');
               }
-              rowData.push(`KD ${row.total.toFixed(2)}`);
+              rowData.push(`KD ${row.total.toFixed(3)}`);
               batchBody.push(rowData);
             }
 
@@ -1853,9 +1962,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             ];
             for (const c of allChildExpenseColumns) {
               const sum = batch.subtotalByType[c] || 0;
-              subtotalRow.push({ content: sum > 0 ? sum.toFixed(2) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+              subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
             }
-            subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+            subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
             batchBody.push(subtotalRow);
 
             if (isLastBatch) {
@@ -1864,9 +1973,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               ];
               for (const c of allChildExpenseColumns) {
                 const sum = userwiseGrandTotals.colTotals[c] || 0;
-                grandTotalRow.push({ content: sum.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+                grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
               }
-              grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+              grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
               batchBody.push(grandTotalRow);
             }
           }
@@ -1893,7 +2002,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             item.bundleNumbersStr ? `${item.bundleCount} (${item.bundleNumbersStr})` : item.bundleCount,
             item.ticketCount,
             item.locationCount,
-            `KD ${item.totalAmount.toFixed(2)}`,
+            `KD ${item.totalAmount.toFixed(3)}`,
             '__________'
           ]);
         }
@@ -1902,7 +2011,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           { content: String(consolidatedUserData.totalBundles), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
           { content: String(consolidatedUserData.totalTickets), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
           { content: String(userwiseGrandTotals.uniqueLocationsCount), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
-          { content: `KD ${consolidatedUserData.grandTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } },
+          { content: `KD ${consolidatedUserData.grandTotal.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } },
           { content: '', styles: { fillColor: [229, 231, 235] } }
         ]);
 
@@ -1944,6 +2053,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
           { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
           { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+          { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
           { content: 'SUMMARY', rowSpan: 2, styles: { valign: 'middle' } }
         ] : [
           { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
@@ -1974,14 +2084,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         const head = [headerRow1, headerRow2];
         const body: any[] = [];
-        const leadingColSpan = groupByLocation ? 4 : 7;
+        const leadingColSpan = groupByLocation ? 5 : 7;
 
         let globalSl = 1;
         for (const workerGroup of workerGroupedRows) {
           const uniqueTkts = new Set(workerGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size;
           body.push([
             {
-              content: `Worker: ${workerGroup.workerName} (${uniqueTkts} Tickets, ${workerGroup.uniqueLocationsCount} Locations) - Subtotal: KD ${workerGroup.totalAmount.toFixed(2)}`,
+              content: `Worker: ${workerGroup.workerName} (${uniqueTkts} Tickets, ${workerGroup.uniqueLocationsCount} Locations) - Subtotal: KD ${workerGroup.totalAmount.toFixed(3)}`,
               colSpan: leadingColSpan + allChildExpenseColumns.length + 1,
               styles: { fillColor: [238, 242, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
             }
@@ -1993,13 +2103,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 globalSl++,
                 locRow.ticketLinesText || locRow.expNoStr,
                 locRow.location,
+                locRow.subDeptStr || '-',
                 locRow.summary
               ];
               for (const c of allChildExpenseColumns) {
                 const val = locRow.amountsByType[c] || 0;
-                rowData.push(val > 0 ? val.toFixed(2) : '-');
+                rowData.push(val > 0 ? val.toFixed(3) : '-');
               }
-              rowData.push(`KD ${locRow.total.toFixed(2)}`);
+              rowData.push(`KD ${locRow.total.toFixed(3)}`);
               body.push(rowData);
             }
           } else {
@@ -2018,9 +2129,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               ];
               for (const c of allChildExpenseColumns) {
                 const val = row.amountsByType[c] || 0;
-                rowData.push(val > 0 ? val.toFixed(2) : '-');
+                rowData.push(val > 0 ? val.toFixed(3) : '-');
               }
-              rowData.push(`KD ${row.total.toFixed(2)}`);
+              rowData.push(`KD ${row.total.toFixed(3)}`);
               body.push(rowData);
             }
           }
@@ -2031,9 +2142,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           ];
           for (const c of allChildExpenseColumns) {
             const sum = workerGroup.subtotalByType[c] || 0;
-            subtotalRow.push({ content: sum > 0 ? sum.toFixed(2) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+            subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
           }
-          subtotalRow.push({ content: `KD ${workerGroup.totalAmount.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+          subtotalRow.push({ content: `KD ${workerGroup.totalAmount.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
           body.push(subtotalRow);
         }
 
@@ -2043,9 +2154,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         ];
         for (const c of allChildExpenseColumns) {
           const sum = userwiseGrandTotals.colTotals[c] || 0;
-          grandTotalRow.push({ content: sum.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+          grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
         }
-        grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+        grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
         body.push(grandTotalRow);
 
         autoTable(doc, {
@@ -2094,17 +2205,28 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       for (const item of consolidatedBatchData.list) {
         s5Data.push([
           item.section,
-          Number(item.labourCharge.toFixed(2)),
-          Number(item.expense.toFixed(2)),
-          Number(item.total.toFixed(2))
+          Number(item.labourCharge.toFixed(3)),
+          Number(item.expense.toFixed(3)),
+          Number(item.total.toFixed(3))
         ]);
+
+        if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
+          for (const w of item.workerList) {
+            s5Data.push([
+              `    • ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
+              Number(w.labourCharge.toFixed(3)),
+              Number(w.expense.toFixed(3)),
+              Number(w.total.toFixed(3))
+            ]);
+          }
+        }
       }
 
       s5Data.push([
         'GRAND TOTAL',
-        Number(consolidatedBatchData.grandLabour.toFixed(2)),
-        Number(consolidatedBatchData.grandExpense.toFixed(2)),
-        Number(consolidatedBatchData.grandTotal.toFixed(2))
+        Number(consolidatedBatchData.grandLabour.toFixed(3)),
+        Number(consolidatedBatchData.grandExpense.toFixed(3)),
+        Number(consolidatedBatchData.grandTotal.toFixed(3))
       ]);
 
       // Signatures row for Consolidated Sheet
@@ -2133,7 +2255,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           item.bundleNumbersStr ? `${item.bundleCount} (${item.bundleNumbersStr})` : item.bundleCount,
           item.ticketCount,
           item.locationCount,
-          Number(item.totalAmount.toFixed(2)),
+          Number(item.totalAmount.toFixed(3)),
           ''
         ]);
       }
@@ -2142,7 +2264,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         consolidatedUserData.totalBundles,
         consolidatedUserData.totalTickets,
         userwiseGrandTotals.uniqueLocationsCount,
-        Number(consolidatedUserData.grandTotal.toFixed(2)),
+        Number(consolidatedUserData.grandTotal.toFixed(3)),
         ''
       ]);
 
@@ -2154,15 +2276,15 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // SHEET 3: Weekly Expance Payout Report userwise
       // ==========================================
       const s1HeaderRow1: any[] = groupByLocation
-        ? ['Worker', 'SL', 'TICKET -NO', 'LOCATION', 'SUMMARY']
+        ? ['Worker', 'SL', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'SUMMARY']
         : ['Worker', 'SLNo', 'BUNDLE ID', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'ISSUE TITLE', 'Ledger Group'];
       const s1HeaderRow2: any[] = groupByLocation
-        ? ['', '', '', '', '']
+        ? ['', '', '', '', '', '']
         : ['', '', '', '', '', '', '', ''];
-      const s1LeadingCols = groupByLocation ? 5 : 8;
+      const s1LeadingCols = groupByLocation ? 6 : 8;
 
       const s1Merges: XLSX.Range[] = [
-        { s: { r: 0, c: groupByLocation ? 3 : 6 }, e: { r: 0, c: (groupByLocation ? 3 : 6) + allChildExpenseColumns.length } },
+        { s: { r: 0, c: groupByLocation ? 4 : 6 }, e: { r: 0, c: (groupByLocation ? 4 : 6) + allChildExpenseColumns.length } },
         { s: { r: 2, c: 0 }, e: { r: 3, c: 0 } },
         { s: { r: 2, c: 1 }, e: { r: 3, c: 1 } },
         { s: { r: 2, c: 2 }, e: { r: 3, c: 2 } },
@@ -2170,7 +2292,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         { s: { r: 2, c: 4 }, e: { r: 3, c: 4 } },
       ];
 
-      if (!groupByLocation) {
+      if (groupByLocation) {
+        s1Merges.push({ s: { r: 2, c: 5 }, e: { r: 3, c: 5 } });
+      } else {
         s1Merges.push(
           { s: { r: 2, c: 5 }, e: { r: 3, c: 5 } },
           { s: { r: 2, c: 6 }, e: { r: 3, c: 6 } },
@@ -2218,14 +2342,15 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               globalSlNo++,
               loc.ticketLinesText || loc.expNoStr,
               loc.location,
+              loc.subDeptStr || '-',
               loc.summary
             ];
 
             for (const colName of allChildExpenseColumns) {
               const amt = loc.amountsByType[colName];
-              rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(2)) : '-');
+              rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(3)) : '-');
             }
-            rowData.push(Number(loc.total.toFixed(2)));
+            rowData.push(Number(loc.total.toFixed(3)));
             s1Data.push(rowData);
             currentSheet1Row++;
           });
@@ -2240,13 +2365,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             '',
             'Subtotal',
             `${wGroup.locationRows.length} Locations (${new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets)`,
+            '',
             ''
           ];
           for (const colName of allChildExpenseColumns) {
             const sAmt = wGroup.subtotalByType[colName] || 0;
-            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(2)) : '-');
+            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(3)) : '-');
           }
-          subtotalRow.push(Number(wGroup.totalAmount.toFixed(2)));
+          subtotalRow.push(Number(wGroup.totalAmount.toFixed(3)));
           s1Data.push(subtotalRow);
           currentSheet1Row++;
         } else {
@@ -2267,9 +2393,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
             for (const colName of allChildExpenseColumns) {
               const amt = row.amountsByType[colName];
-              rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(2)) : '-');
+              rowData.push(amt !== undefined && amt > 0 ? Number(amt.toFixed(3)) : '-');
             }
-            rowData.push(Number(row.total.toFixed(2)));
+            rowData.push(Number(row.total.toFixed(3)));
             s1Data.push(rowData);
             currentSheet1Row++;
           });
@@ -2291,9 +2417,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           ];
           for (const colName of allChildExpenseColumns) {
             const sAmt = wGroup.subtotalByType[colName] || 0;
-            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(2)) : '-');
+            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(3)) : '-');
           }
-          subtotalRow.push(Number(wGroup.totalAmount.toFixed(2)));
+          subtotalRow.push(Number(wGroup.totalAmount.toFixed(3)));
           s1Data.push(subtotalRow);
           currentSheet1Row++;
         }
@@ -2306,6 +2432,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           '',
           '',
           `${userwiseGrandTotals.uniqueLocationsCount} Locations (${structuredRows.length} Tickets)`,
+          '',
           ''
         ]
         : [
@@ -2320,9 +2447,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         ];
       for (const colName of allChildExpenseColumns) {
         const gAmt = userwiseGrandTotals.colTotals[colName] || 0;
-        grandTotalRow.push(gAmt > 0 ? Number(gAmt.toFixed(2)) : '-');
+        grandTotalRow.push(gAmt > 0 ? Number(gAmt.toFixed(3)) : '-');
       }
-      grandTotalRow.push(Number(userwiseGrandTotals.grandTotal.toFixed(2)));
+      grandTotalRow.push(Number(userwiseGrandTotals.grandTotal.toFixed(3)));
       s1Data.push(grandTotalRow);
 
       // Signatures row for Sheet 1
@@ -2335,7 +2462,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       ws1['!merges'] = s1Merges;
       ws1['!cols'] = groupByLocation
         ? [
-          { wch: 18 }, { wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 28 },
+          { wch: 18 }, { wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 20 }, { wch: 28 },
           ...allChildExpenseColumns.map(() => ({ wch: 14 })),
           { wch: 14 }
         ]
@@ -2414,18 +2541,18 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           for (const colName of allChildExpenseColumns) {
             const amt = row.amountsByType[colName] || 0;
             batchColTotals[colName] = (batchColTotals[colName] || 0) + amt;
-            rowData.push(amt > 0 ? Number(amt.toFixed(2)) : '-');
+            rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
           }
-          rowData.push(Number(row.total.toFixed(2)));
+          rowData.push(Number(row.total.toFixed(3)));
           sData.push(rowData);
         });
 
         const totalRow: any[] = ['', '', '', 'Total', '', '', ''];
         for (const colName of allChildExpenseColumns) {
           const cAmt = batchColTotals[colName] || 0;
-          totalRow.push(cAmt > 0 ? Number(cAmt.toFixed(2)) : '-');
+          totalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
         }
-        totalRow.push(Number(batchTotalAmt.toFixed(2)));
+        totalRow.push(Number(batchTotalAmt.toFixed(3)));
         sData.push(totalRow);
 
         const wsBatch = XLSX.utils.aoa_to_sheet(sData);
@@ -2440,7 +2567,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       });
 
       if (groupByLocation) {
-        const locHeaders = ['SL', 'TICKET -NO', 'LOCATION', 'SUMMARY', ...allChildExpenseColumns, 'TOTAL'];
+        const locHeaders = ['SL', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'SUMMARY', ...allChildExpenseColumns, 'TOTAL'];
         const locData: any[][] = [
           [],
           ['', '', 'Store & Department Expense Statement (Grouped by Location & Ledger Batches)'],
@@ -2450,8 +2577,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         storewiseByBatch.forEach(batch => {
           locData.push([
-            `LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(2)}`,
-            '', '', '',
+            `LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
+            '', '', '', '',
             ...allChildExpenseColumns.map(() => ''),
             ''
           ]);
@@ -2461,37 +2588,38 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               idx + 1,
               loc.ticketLinesText || loc.expNoStr,
               loc.location,
+              loc.subDeptStr || '-',
               loc.summary
             ];
             for (const c of allChildExpenseColumns) {
               const amt = loc.amountsByType[c] || 0;
-              rowData.push(amt > 0 ? Number(amt.toFixed(2)) : '-');
+              rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
             }
-            rowData.push(Number(loc.total.toFixed(2)));
+            rowData.push(Number(loc.total.toFixed(3)));
             locData.push(rowData);
           });
 
-          const subtotalRow: any[] = [`Batch Subtotal (${batch.batchName})`, '', '', ''];
+          const subtotalRow: any[] = [`Batch Subtotal (${batch.batchName})`, '', '', '', ''];
           for (const c of allChildExpenseColumns) {
             const sAmt = batch.subtotalByType[c] || 0;
-            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(2)) : '-');
+            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(3)) : '-');
           }
-          subtotalRow.push(Number(batch.batchTotal.toFixed(2)));
+          subtotalRow.push(Number(batch.batchTotal.toFixed(3)));
           locData.push(subtotalRow);
           locData.push([]);
         });
 
-        const locTotalRow: any[] = [`GRAND TOTAL (${userwiseGrandTotals.uniqueLocationsCount} Locations)`, '', '', ''];
+        const locTotalRow: any[] = [`GRAND TOTAL (${userwiseGrandTotals.uniqueLocationsCount} Locations)`, '', '', '', ''];
         for (const c of allChildExpenseColumns) {
           const cAmt = userwiseGrandTotals.colTotals[c] || 0;
-          locTotalRow.push(cAmt > 0 ? Number(cAmt.toFixed(2)) : '-');
+          locTotalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
         }
-        locTotalRow.push(Number(userwiseGrandTotals.grandTotal.toFixed(2)));
+        locTotalRow.push(Number(userwiseGrandTotals.grandTotal.toFixed(3)));
         locData.push(locTotalRow);
 
         const wsLoc = XLSX.utils.aoa_to_sheet(locData);
         wsLoc['!cols'] = [
-          { wch: 8 }, { wch: 28 }, { wch: 22 }, { wch: 30 },
+          { wch: 8 }, { wch: 28 }, { wch: 22 }, { wch: 20 }, { wch: 30 },
           ...allChildExpenseColumns.map(() => ({ wch: 14 })),
           { wch: 14 }
         ];
@@ -2616,6 +2744,17 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
 
 
+            <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-surface-container border border-outline text-xs font-semibold text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors select-none shadow-2xs">
+              <input
+                type="checkbox"
+                checked={showWorkerDetailsInSummary}
+                onChange={(e) => setShowWorkerDetailsInSummary(e.target.checked)}
+                className="w-3.5 h-3.5 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <UserCheck className="w-3.5 h-3.5 text-primary" />
+              <span>Worker Details in Summary</span>
+            </label>
+
             <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-surface-container border border-outline text-xs font-semibold text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors select-none shadow-2xs mr-1">
               <input
                 type="checkbox"
@@ -2685,7 +2824,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 <DollarSign className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                KD {userwiseGrandTotals.grandTotal.toFixed(2)}
+                KD {userwiseGrandTotals.grandTotal.toFixed(3)}
               </div>
               <span className="text-[10px] text-on-surface-variant mt-0.5 block font-medium">
                 {structuredRows.length} itemized ticket entries
@@ -2810,7 +2949,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   <div className="flex items-center gap-3">
 
                     <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(2)}
+                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(3)}
                     </span>
                   </div>
                 </div>
@@ -2862,7 +3001,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                             {item.locationCount}
                           </td>
                           <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 text-sm">
-                            KD {item.totalAmount.toFixed(2)}
+                            KD {item.totalAmount.toFixed(3)}
                           </td>
                           <td className="px-5 py-3 text-center">
                             <div className="w-24 mx-auto border-b-2 border-dashed border-outline-variant/80 h-5" title="Manually mark payment status"></div>
@@ -2885,7 +3024,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                           {userwiseGrandTotals.uniqueLocationsCount}
                         </td>
                         <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15 font-black">
-                          KD {consolidatedUserData.grandTotal.toFixed(2)}
+                          KD {consolidatedUserData.grandTotal.toFixed(3)}
                         </td>
                         <td className="px-5 py-3.5 text-center"></td>
                       </tr>
@@ -2936,6 +3075,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                               <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
                               <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
                               <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
                               <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY</th>
                             </>
                           ) : (
@@ -2985,7 +3125,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                       <tbody className="divide-y divide-outline-variant/60 text-xs">
                         {workerGroupedRows.length === 0 ? (
                           <tr>
-                            <td colSpan={(groupByLocation ? 5 : 8) + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
+                            <td colSpan={(groupByLocation ? 6 : 8) + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
                               No expenses found matching the current criteria.
                             </td>
                           </tr>
@@ -3028,6 +3168,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                         <span>{locRow.location}</span>
                                       </div>
                                     </td>
+                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                      {locRow.subDeptStr || '-'}
+                                    </td>
                                     <td className="px-4 py-2 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
                                       <span className="font-medium text-on-surface">{locRow.summary}</span>
                                     </td>
@@ -3040,7 +3183,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                           className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
                                         >
                                           {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(2)}</span>
+                                            <span className="font-semibold">{amt.toFixed(3)}</span>
                                           ) : (
                                             <span className="text-on-surface-variant/40">-</span>
                                           )}
@@ -3049,7 +3192,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     })}
 
                                     <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {locRow.total.toFixed(2)}
+                                      {locRow.total.toFixed(3)}
                                     </td>
                                   </tr>
                                 ))
@@ -3118,7 +3261,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                           className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
                                         >
                                           {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(2)}</span>
+                                            <span className="font-semibold">{amt.toFixed(3)}</span>
                                           ) : (
                                             <span className="text-on-surface-variant/40">-</span>
                                           )}
@@ -3127,7 +3270,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     })}
 
                                     <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {row.total.toFixed(2)}
+                                      {row.total.toFixed(3)}
                                     </td>
                                   </tr>
                                 ))
@@ -3143,14 +3286,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
                                       {wGroup.locationRows.length} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets)
                                     </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant"></td>
+                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant"></td>
                                   </>
                                 ) : (
                                   <>
                                     <td colSpan={4} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
                                       Subtotal
                                     </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
+                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
                                       {wGroup.uniqueLocationsCount} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets, {wGroup.rows.length} Expenses)
                                     </td>
                                     <td colSpan={3} className="px-3 py-2 border-r border-outline-variant"></td>
@@ -3164,13 +3307,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                       key={`subtotal_${colName}`}
                                       className="px-2.5 py-2 text-right border-r border-outline-variant font-bold font-mono text-on-surface"
                                     >
-                                      {sAmt > 0 ? sAmt.toFixed(2) : '-'}
+                                      {sAmt > 0 ? sAmt.toFixed(3) : '-'}
                                     </td>
                                   );
                                 })}
 
                                 <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                  {wGroup.totalAmount.toFixed(2)}
+                                  {wGroup.totalAmount.toFixed(3)}
                                 </td>
                               </tr>
                             </React.Fragment>
@@ -3189,7 +3332,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                               <td colSpan={2} className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
                                 {userwiseGrandTotals.uniqueLocationsCount} Locations ({structuredRows.length} Tickets)
                               </td>
-                              <td className="px-3 py-3 border-r border-outline-variant"></td>
+                              <td colSpan={2} className="px-3 py-3 border-r border-outline-variant"></td>
                             </>
                           ) : (
                             <>
@@ -3210,13 +3353,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                 key={`grand_${colName}`}
                                 className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
                               >
-                                {gAmt > 0 ? gAmt.toFixed(2) : '-'}
+                                {gAmt > 0 ? gAmt.toFixed(3) : '-'}
                               </td>
                             );
                           })}
 
                           <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
-                            KD {userwiseGrandTotals.grandTotal.toFixed(2)}
+                            KD {userwiseGrandTotals.grandTotal.toFixed(3)}
                           </td>
                         </tr>
                       </tfoot>
@@ -3244,7 +3387,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   <div className="flex items-center gap-3">
 
                     <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(2)}
+                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(3)}
                     </span>
                   </div>
                 </div>
@@ -3260,23 +3403,46 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-outline-variant/60">
                       {consolidatedBatchData.list.map((item) => (
-                        <tr key={item.section} className="hover:bg-surface-container-high/40 transition-colors">
-                          <td className="px-5 py-3 font-semibold text-on-surface">
-                            <div className="flex items-center gap-2">
-                              <Boxes className="w-4 h-4 text-primary shrink-0" />
-                              <span>{item.section}</span>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                            {item.labourCharge > 0 ? item.labourCharge.toFixed(2) : '-'}
-                          </td>
-                          <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                            {item.expense.toFixed(2)}
-                          </td>
-                          <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                            KD {item.total.toFixed(2)}
-                          </td>
-                        </tr>
+                        <React.Fragment key={item.section}>
+                          <tr className="hover:bg-surface-container-high/40 transition-colors">
+                            <td className="px-5 py-3 font-semibold text-on-surface">
+                              <div className="flex items-center gap-2">
+                                <Boxes className="w-4 h-4 text-primary shrink-0" />
+                                <span>{item.section}</span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                              {item.labourCharge > 0 ? item.labourCharge.toFixed(3) : '-'}
+                            </td>
+                            <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                              {item.expense.toFixed(3)}
+                            </td>
+                            <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                              KD {item.total.toFixed(3)}
+                            </td>
+                          </tr>
+                          {showWorkerDetailsInSummary && item.workerList && item.workerList.map((w) => (
+                            <tr key={`${item.section}_${w.workerId || w.workerName}`} className="bg-surface-container-lowest/50 hover:bg-surface-container-high/30 transition-colors text-[11px]">
+                              <td className="px-5 py-2 pl-11 text-on-surface flex items-center gap-2">
+                                <span className="text-primary font-bold">•</span>
+                                <User className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                                <span className="font-semibold text-on-surface">{w.workerName}</span>
+                                {w.workerEmployeeNo && (
+                                  <span className="text-[10px] text-on-surface-variant font-mono">({w.workerEmployeeNo})</span>
+                                )}
+                              </td>
+                              <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
+                                {w.labourCharge > 0 ? w.labourCharge.toFixed(3) : '-'}
+                              </td>
+                              <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
+                                {w.expense.toFixed(3)}
+                              </td>
+                              <td className="px-5 py-2 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                KD {w.total.toFixed(3)}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       ))}
                     </tbody>
                     <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
@@ -3285,13 +3451,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                           GRAND TOTAL
                         </td>
                         <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                          {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(2) : '-'}
+                          {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(3) : '-'}
                         </td>
                         <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                          {consolidatedBatchData.grandExpense.toFixed(2)}
+                          {consolidatedBatchData.grandExpense.toFixed(3)}
                         </td>
                         <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
-                          KD {consolidatedBatchData.grandTotal.toFixed(2)}
+                          KD {consolidatedBatchData.grandTotal.toFixed(3)}
                         </td>
                       </tr>
                     </tfoot>
@@ -3372,6 +3538,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                               <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
                               <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
                               <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
+                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
                               <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY</th>
                             </>
                           ) : (
@@ -3420,7 +3587,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                         {groupByLocation ? (
                           storewiseFilteredByBatch.length === 0 ? (
                             <tr>
-                              <td colSpan={5 + allChildExpenseColumns.length} className="p-8 text-center text-on-surface-variant">
+                              <td colSpan={5 + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
                                 No records found for the selected criteria.
                               </td>
                             </tr>
@@ -3430,7 +3597,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                 {/* BATCH HEADER ROW */}
                                 <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
                                   <td
-                                    colSpan={4 + allChildExpenseColumns.length + 1}
+                                    colSpan={5 + allChildExpenseColumns.length + 1}
                                     className="px-4 py-2.5 text-xs tracking-wide"
                                   >
                                     <div className="flex items-center justify-between">
@@ -3442,7 +3609,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                         </span>
                                       </div>
                                       <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                        Subtotal: KD {batch.batchTotal.toFixed(2)}
+                                        Subtotal: KD {batch.batchTotal.toFixed(3)}
                                       </span>
                                     </div>
                                   </td>
@@ -3471,6 +3638,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                         <span>{locRow.location}</span>
                                       </div>
                                     </td>
+                                    <td className="px-3 py-2.5 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                      {locRow.subDeptStr || '-'}
+                                    </td>
                                     <td className="px-4 py-2.5 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
                                       <span className="font-medium text-on-surface">{locRow.summary}</span>
                                     </td>
@@ -3483,7 +3653,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                           className="px-2.5 py-2.5 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
                                         >
                                           {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(2)}</span>
+                                            <span className="font-semibold">{amt.toFixed(3)}</span>
                                           ) : (
                                             <span className="text-on-surface-variant/40">-</span>
                                           )}
@@ -3492,14 +3662,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     })}
 
                                     <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {locRow.total.toFixed(2)}
+                                      {locRow.total.toFixed(3)}
                                     </td>
                                   </tr>
                                 ))}
 
                                 {/* BATCH SUBTOTAL ROW */}
                                 <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
-                                  <td colSpan={4} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
+                                  <td colSpan={5} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
                                     Batch Subtotal ({batch.batchName}):
                                   </td>
                                   {allChildExpenseColumns.map(colName => {
@@ -3510,7 +3680,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                         className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
                                       >
                                         {sum > 0 ? (
-                                          <span className="font-semibold">{sum.toFixed(2)}</span>
+                                          <span className="font-semibold">{sum.toFixed(3)}</span>
                                         ) : (
                                           <span className="text-on-surface-variant/40">-</span>
                                         )}
@@ -3518,7 +3688,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     );
                                   })}
                                   <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                    KD {batch.batchTotal.toFixed(2)}
+                                    KD {batch.batchTotal.toFixed(3)}
                                   </td>
                                 </tr>
                               </React.Fragment>
@@ -3549,7 +3719,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                         </span>
                                       </div>
                                       <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                        Subtotal: KD {batch.batchTotal.toFixed(2)}
+                                        Subtotal: KD {batch.batchTotal.toFixed(3)}
                                       </span>
                                     </div>
                                   </td>
@@ -3600,7 +3770,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                           className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
                                         >
                                           {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(2)}</span>
+                                            <span className="font-semibold">{amt.toFixed(3)}</span>
                                           ) : (
                                             <span className="text-on-surface-variant/40">-</span>
                                           )}
@@ -3609,7 +3779,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     })}
 
                                     <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {row.total.toFixed(2)}
+                                      {row.total.toFixed(3)}
                                     </td>
                                   </tr>
                                 ))}
@@ -3627,7 +3797,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                         className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
                                       >
                                         {sum > 0 ? (
-                                          <span className="font-semibold">{sum.toFixed(2)}</span>
+                                          <span className="font-semibold">{sum.toFixed(3)}</span>
                                         ) : (
                                           <span className="text-on-surface-variant/40">-</span>
                                         )}
@@ -3635,7 +3805,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                     );
                                   })}
                                   <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                    KD {batch.batchTotal.toFixed(2)}
+                                    KD {batch.batchTotal.toFixed(3)}
                                   </td>
                                 </tr>
                               </React.Fragment>
@@ -3646,7 +3816,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
                       <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
                         <tr>
-                          <td colSpan={groupByLocation ? 4 : 7} className="px-4 py-3 text-on-surface font-extrabold uppercase">
+                          <td colSpan={groupByLocation ? 5 : 7} className="px-4 py-3 text-on-surface font-extrabold uppercase">
                             {groupByLocation ? `Total (${locationGroupedRows.length} Locations)` : 'Total'}
                           </td>
 
@@ -3657,13 +3827,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                                 key={`store_total_${colName}`}
                                 className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
                               >
-                                {amt > 0 ? amt.toFixed(2) : '-'}
+                                {amt > 0 ? amt.toFixed(3) : '-'}
                               </td>
                             );
                           })}
 
                           <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
-                            KD {storewiseTotals.total.toFixed(2)}
+                            KD {storewiseTotals.total.toFixed(3)}
                           </td>
                         </tr>
                       </tfoot>

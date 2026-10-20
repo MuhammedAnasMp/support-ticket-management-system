@@ -91,7 +91,7 @@ class WorkerClaim(models.Model):
         'maintenance.Ticket', on_delete=models.CASCADE, null=True, blank=True, related_name='worker_claims')
     claim_date = models.DateTimeField(auto_now_add=True)
     total_claimed_amount = models.DecimalField(
-        decimal_places=2, max_digits=12, default=0)
+        decimal_places=3, max_digits=12, default=0)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='Draft')
     approved_by = models.ForeignKey(
@@ -201,18 +201,18 @@ class Reconciliation(models.Model):
         'maintenance.Ticket', on_delete=models.CASCADE, related_name='reconciliation')
     verified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='verifications')
-    labour_total = models.DecimalField(decimal_places=2, max_digits=12)
-    expense_total = models.DecimalField(decimal_places=2, max_digits=12)
-    material_total = models.DecimalField(decimal_places=2, max_digits=12)
-    grand_total = models.DecimalField(decimal_places=2, max_digits=12)
+    labour_total = models.DecimalField(decimal_places=3, max_digits=12)
+    expense_total = models.DecimalField(decimal_places=3, max_digits=12)
+    material_total = models.DecimalField(decimal_places=3, max_digits=12)
+    grand_total = models.DecimalField(decimal_places=3, max_digits=12)
     claimed_labour_total = models.DecimalField(
-        decimal_places=2, max_digits=12, default=0)
+        decimal_places=3, max_digits=12, default=0)
     claimed_expense_total = models.DecimalField(
-        decimal_places=2, max_digits=12, default=0)
+        decimal_places=3, max_digits=12, default=0)
     total_claimed_amount = models.DecimalField(
-        decimal_places=2, max_digits=12, default=0)
+        decimal_places=3, max_digits=12, default=0)
     net_payable_amount = models.DecimalField(
-        decimal_places=2, max_digits=12, default=0)
+        decimal_places=3, max_digits=12, default=0)
     remarks = models.TextField(blank=True, null=True)
     verified_date = models.DateTimeField(auto_now_add=True)
     completed = models.BooleanField(default=False)
@@ -270,7 +270,7 @@ class LedgerGroup(models.Model):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_ledger_groups')
     total_amount = models.DecimalField(
-        decimal_places=2, max_digits=14, default=0)
+        decimal_places=3, max_digits=14, default=0)
     remarks = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -321,7 +321,7 @@ class Ledger(models.Model):
     expenses = models.ManyToManyField(
         'finance.Expense', related_name='ledgers', blank=True)
     total_amount = models.DecimalField(
-        decimal_places=2, max_digits=14, default=0)
+        decimal_places=3, max_digits=14, default=0)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='Draft')
     remarks = models.TextField(blank=True, null=True)
@@ -465,7 +465,7 @@ class Payment(models.Model):
         Ledger, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
     expense = models.ForeignKey(
         Expense, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
-    amount_paid = models.DecimalField(decimal_places=2, max_digits=12)
+    amount_paid = models.DecimalField(decimal_places=3, max_digits=12)
     payment_method = models.CharField(
         max_length=30, choices=PAYMENT_METHOD_CHOICES, default='Cash')
     transaction_reference = models.CharField(

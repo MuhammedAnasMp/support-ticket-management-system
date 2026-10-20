@@ -147,7 +147,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
     return reworkDynamicGroups.map((g) => ({
       value: String(g.ledger_group_id),
       label: g.group_name,
-      sublabel: `Total: ${parseFloat(String(g.total_amount || 0)).toFixed(2)} KD`
+      sublabel: `Total: ${parseFloat(String(g.total_amount || 0)).toFixed(3)} KD`
     }));
   }, [reworkDynamicGroups]);
 
@@ -488,7 +488,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                     <th className="px-4 py-3">Assigned Role</th>
                     <th className="px-4 py-3">Worker / Requester</th>
                     <th className="px-4 py-3">Expense Bill</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-right">Amount (KD)</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Action</th>
                   </tr>
@@ -606,7 +606,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                             )}
                           </td>
                           <td className="px-4 py-3 text-right font-semibold">
-                            {target?.amount ? `${parseFloat(target.amount).toFixed(2)}` : '-'}
+                            {target?.amount ? `${parseFloat(target.amount).toFixed(3)}` : '-'}
                           </td>
                           <td className="px-4 py-3">{renderStatusBadge(app.status, app.status === 'Pending' && (isAdmin || app.can_action === true), app.step_name)}</td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
@@ -679,7 +679,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                     {target?.amount && (
                                       <div>
                                         <span className="text-[10px] text-on-surface-variant font-medium block">Amount</span>
-                                        <span className="text-emerald-600 font-bold">{parseFloat(target.amount).toFixed(2)}</span>
+                                        <span className="text-emerald-600 font-bold">{parseFloat(target.amount).toFixed(3)} KD</span>
                                       </div>
                                     )}
                                     {target?.worker && (
@@ -719,7 +719,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                     {target?.amount && (
                                       <div>
                                         <span className="text-[10px] text-on-surface-variant font-medium block">Total Bundle Amount</span>
-                                        <span className="text-emerald-600 font-bold">${parseFloat(target.amount).toFixed(2)}</span>
+                                        <span className="text-emerald-600 font-bold">KD {parseFloat(target.amount).toFixed(3)}</span>
                                       </div>
                                     )}
                                     {(target?.period_from || target?.period_to) && (
@@ -777,7 +777,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                                     <div>
                                       <span className="text-[10px] text-on-surface-variant font-medium block">Total Batch Amount</span>
-                                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">${target.amount ? parseFloat(target.amount).toFixed(2) : '0.00'}</span>
+                                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">KD {target.amount ? parseFloat(target.amount).toFixed(3) : '0.000'}</span>
                                     </div>
                                     <div>
                                       <span className="text-[10px] text-on-surface-variant font-medium block">Included Bundles</span>
@@ -869,7 +869,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                     {b.worker_detail?.full_name || b.worker_detail?.username || (typeof b.worker === 'object' ? (b.worker?.full_name || b.worker?.username) : b.worker) || 'N/A'}
                                                   </td>
                                                   <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                    {parseFloat(b.total_claimed_amount).toFixed(2)}
+                                                    {parseFloat(b.total_claimed_amount).toFixed(3)}
                                                   </td>
                                                   <td className="px-3 py-2">{renderStatusBadge(b.status)}</td>
                                                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -998,7 +998,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                                     <td className="px-3 py-1.5 text-on-surface-variant">{exp.expense_date || '-'}</td>
                                                                     <td className="px-3 py-1.5 text-on-surface-variant">{exp.remarks || '-'}</td>
                                                                     <td className="px-3 py-1.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                                      {parseFloat(exp.amount).toFixed(2)}
+                                                                      {parseFloat(exp.amount).toFixed(3)}
                                                                     </td>
                                                                     <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
                                                                       {exp.receipts && exp.receipts.length > 0 ? (
@@ -1070,7 +1070,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                       </span>
                                     </div>
                                     <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                      {target.type === 'Bundle' ? `Total Claimed Amount: $${target.amount ? parseFloat(target.amount).toFixed(2) : '0.00'}` : ''}
+                                      {target.type === 'Bundle' ? `Total Claimed Amount: KD ${target.amount ? parseFloat(target.amount).toFixed(3) : '0.000'}` : ''}
                                     </span>
                                   </div>
 
@@ -1084,7 +1084,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                           <th className="px-3 py-2">Ticket</th>
                                           <th className="px-3 py-2">Date</th>
                                           <th className="px-3 py-2">Remarks</th>
-                                          <th className="px-3 py-2 text-right">Amount ($)</th>
+                                          <th className="px-3 py-2 text-right">Amount (KD)</th>
                                           <th className="px-3 py-2">Expense Bill</th>
                                         </tr>
                                       </thead>
@@ -1126,7 +1126,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                             <td className="px-3 py-2 text-on-surface-variant">{exp.expense_date || '-'}</td>
                                             <td className="px-3 py-2 text-on-surface-variant">{exp.remarks || '-'}</td>
                                             <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                              {parseFloat(exp.amount).toFixed(2)}
+                                              {parseFloat(exp.amount).toFixed(3)}
                                             </td>
                                             <td className="px-3 py-2">
                                               {exp.receipts && exp.receipts.length > 0 ? (
@@ -1222,7 +1222,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-primary">{target.label || `${target.type} ${target.id}`}</span>
                       <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                        {target.amount ? parseFloat(target.amount).toFixed(2) : '0.00'} KD
+                        {target.amount ? parseFloat(target.amount).toFixed(3) : '0.000'} KD
                       </span>
                     </div>
 

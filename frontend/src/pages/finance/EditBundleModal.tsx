@@ -118,7 +118,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
               Add or Remove Tied Expenses ({combinedExpenses.length})
             </h4>
             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-              {updatedTotal.toFixed(2)}
+              {updatedTotal.toFixed(3)} KD
             </span>
           </div>
 
@@ -183,7 +183,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                             {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense ${exp.expense_id}`}
                           </p>
                           <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                            {parseFloat(exp.amount).toFixed(2)}
+                            {parseFloat(exp.amount).toFixed(3)} KD
                           </span>
 
                           {/* Status Badges */}
