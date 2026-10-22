@@ -73,10 +73,15 @@ class LedgerBatchAdminForm(forms.ModelForm):
 @admin.register(LedgerBatch)
 class LedgerBatchAdmin(admin.ModelAdmin):
     form = LedgerBatchAdminForm
-    list_display = ('batch_id', 'batch_name', 'active', 'created_at')
-    list_filter = ('active', 'created_at')
+    list_display = ('batch_id', 'batch_name', 'display_sub_departments', 'active', 'created_at')
+    list_filter = ('active', 'sub_departments', 'created_at')
     search_fields = ('batch_name', 'description')
     filter_horizontal = ('sub_departments',)
+
+    def display_sub_departments(self, obj):
+        names = [sd.sub_department_name for sd in obj.sub_departments.all()]
+        return ", ".join(names) if names else "-"
+    display_sub_departments.short_description = 'Sub Departments'
 
 
 @admin.register(LedgerGroup)

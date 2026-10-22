@@ -82,9 +82,30 @@ export const FinanceView: React.FC = () => {
     if (stored !== null && stored !== undefined) return stored;
     return getCurrentMonthRange().to;
   });
+  const [filterDateType, setFilterDateType] = useState<string>(() => {
+    return localStorage.getItem('finance_filter_date_type') || '';
+  });
+  const [ledgerBatches, setLedgerBatches] = useState<any[]>([]);
+  const [ledgerBatchFilter, setLedgerBatchFilter] = useState<string>(() => {
+    return localStorage.getItem('finance_filter_ledger_batch') || 'ALL';
+  });
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'IN_LEDGER' | 'NOT_IN_LEDGER'>('ALL');
   const [bundleFilter, setBundleFilter] = useState<'ALL' | 'IN_BUNDLE' | 'NOT_IN_BUNDLE'>('ALL');
+
+  // Fetch LedgerBatches for filtering and subpages
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, {
+      headers: { Authorization: `Token ${token}` }
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const rawBatches = Array.isArray(data) ? data : (data?.results || []);
+        setLedgerBatches(rawBatches);
+      })
+      .catch(err => console.error("Failed to fetch ledger batches", err));
+  }, [token, API_URL]);
 
   // Sync date filter changes with localStorage
   useEffect(() => {
@@ -102,6 +123,22 @@ export const FinanceView: React.FC = () => {
       localStorage.removeItem('finance_filter_date_to');
     }
   }, [filterDateTo]);
+
+  useEffect(() => {
+    if (filterDateType) {
+      localStorage.setItem('finance_filter_date_type', filterDateType);
+    } else {
+      localStorage.removeItem('finance_filter_date_type');
+    }
+  }, [filterDateType]);
+
+  useEffect(() => {
+    if (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') {
+      localStorage.setItem('finance_filter_ledger_batch', ledgerBatchFilter);
+    } else {
+      localStorage.removeItem('finance_filter_ledger_batch');
+    }
+  }, [ledgerBatchFilter]);
 
   // Modal States
   const [showCreateExpenseModal, setShowCreateExpenseModal] = useState(false);
@@ -146,6 +183,7 @@ export const FinanceView: React.FC = () => {
 
   // Create Bundle Modal Filters
   const [expenseSearchWorker, setExpenseSearchWorker] = useState('');
+  const [selectedWorkerId, setSelectedWorkerId] = useState<number | null>(null);
   const [expenseSearchText, setExpenseSearchText] = useState('');
   const [expenseFilterFrom, setExpenseFilterFrom] = useState('');
   const [expenseFilterTo, setExpenseFilterTo] = useState('');
@@ -561,8 +599,10 @@ export const FinanceView: React.FC = () => {
 
     try {
       if (subpage === 'expenses') {
+        const dateTypeQuery = filterDateType ? `&date_type=${encodeURIComponent(filterDateType)}` : '';
+        const batchQuery = (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') ? `&ledger_batch=${encodeURIComponent(ledgerBatchFilter)}` : '';
         const [resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/expense/?page_size=all${dateParams}`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?page_size=all${dateParams}${dateTypeQuery}${batchQuery}`, { headers, signal }),
           fetch(`${API_URL}/finance/approvals/?page_size=all${dateParams}`, { headers, signal })
         ]);
         if (signal.aborted) return;
@@ -571,7 +611,7 @@ export const FinanceView: React.FC = () => {
       } else if (subpage === 'bundles') {
         const [resClaims, resExp, resApp] = await Promise.all([
           fetch(`${API_URL}/finance/claim/?page_size=all${dateParams}`, { headers, signal }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=200`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal }),
           fetch(`${API_URL}/finance/approvals/?page_size=all${dateParams}`, { headers, signal })
         ]);
         if (signal.aborted) return;
@@ -582,8 +622,8 @@ export const FinanceView: React.FC = () => {
         const [resL, resG, resApprovedBundles, resExp, resApp] = await Promise.all([
           fetch(`${API_URL}/finance/ledgers/?page_size=all${dateParams}`, { headers, signal }),
           fetch(`${API_URL}/finance/ledger-groups/?page_size=all${dateParams}`, { headers, signal }),
-          fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=200`, { headers, signal }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=200`, { headers, signal }),
+          fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=all`, { headers, signal }),
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=all`, { headers, signal }),
           fetch(approvalsUrl, { headers, signal })
         ]);
         if (signal.aborted) return;
@@ -625,7 +665,7 @@ export const FinanceView: React.FC = () => {
         abortControllerRef.current.abort();
       }
     };
-  }, [subpage, token, roleFilterOnly, filterDateFrom, filterDateTo]);
+  }, [subpage, token, roleFilterOnly, filterDateFrom, filterDateTo, filterDateType, ledgerBatchFilter]);
 
   useEffect(() => {
     if (successMessage) {
@@ -941,6 +981,76 @@ export const FinanceView: React.FC = () => {
     });
   }, [payments, filterDateFrom, filterDateTo, searchQuery]);
 
+  const uniqueExpenseWorkers = useMemo(() => {
+    const map = new Map<number, {
+      id: number;
+      name: string;
+      username: string;
+      employee_no?: string;
+      profile_image?: string | null;
+      department_name?: string;
+      sub_departments?: { sub_department_id: number; sub_department_name: string }[];
+      unclaimed_count: number;
+      unclaimed_total: number;
+    }>();
+    unclaimedExpenses.forEach((exp) => {
+      if (exp.is_claimed || exp.claim) return;
+      if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return;
+      const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
+      if (workerId !== null) {
+        const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
+        const displayName = workerObj?.full_name || workerObj?.username || `Worker ${workerId}`;
+        const deptName = (exp.ticket_details as any)?.department_name || (exp.expense_type_detail as any)?.department_name || (exp.expense_type as any)?.department?.department_name || 'General Maintenance';
+        const amt = parseFloat(exp.amount || '0');
+        const profImg = workerObj?.profile_image || (typeof exp.worker === 'object' ? exp.worker?.profile_image : null) || exp.worker_detail?.profile_image || null;
+        const subDepts = (workerObj as any)?.sub_departments || (typeof exp.worker === 'object' ? (exp.worker as any)?.sub_departments : null) || (exp.worker_detail as any)?.sub_departments || [];
+        const isEligible = (exp.expense_type && (exp.expense_type as any).approve_required === false) ||
+          (exp.expense_type_detail && (exp.expense_type_detail as any).approve_required === false) ||
+          exp.approved === true || (exp.approved as any) === 'true' || (exp.approved as any) === 1 ||
+          exp.status_display === 'Approved';
+
+        const existing = map.get(workerId);
+        if (existing) {
+          if (isEligible) {
+            existing.unclaimed_count += 1;
+            existing.unclaimed_total += amt;
+          }
+          if (workerObj?.full_name && (!existing.name || existing.name.startsWith('Worker ') || existing.name === existing.username)) {
+            existing.name = workerObj.full_name;
+          }
+          if (!existing.employee_no && workerObj?.employee_no) {
+            existing.employee_no = workerObj.employee_no;
+          }
+          if (!existing.username && workerObj?.username) {
+            existing.username = workerObj.username;
+          }
+          if (!existing.department_name && deptName) {
+            existing.department_name = deptName;
+          }
+          if (!existing.profile_image && profImg) {
+            existing.profile_image = profImg;
+          }
+          if ((!existing.sub_departments || existing.sub_departments.length === 0) && subDepts.length > 0) {
+            existing.sub_departments = subDepts;
+          }
+        } else {
+          map.set(workerId, {
+            id: workerId,
+            name: displayName,
+            username: workerObj?.username || '',
+            employee_no: workerObj?.employee_no || '',
+            profile_image: profImg,
+            department_name: deptName,
+            sub_departments: subDepts,
+            unclaimed_count: isEligible ? 1 : 0,
+            unclaimed_total: isEligible ? amt : 0
+          });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [unclaimedExpenses, expenseFilterFrom, expenseFilterTo]);
+
   const filteredUnclaimedExpenses = useMemo(() => {
     const list = unclaimedExpenses.filter((exp) => {
       if (exp.is_claimed || exp.claim) return false;
@@ -948,11 +1058,39 @@ export const FinanceView: React.FC = () => {
 
       // Filter by Technician / Employee selection
       if (expenseSearchWorker.trim()) {
-        const query = expenseSearchWorker.toLowerCase();
+        const query = expenseSearchWorker.toLowerCase().trim();
         const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
         const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
-        const workerName = (workerObj?.full_name || workerObj?.username || `Worker ${workerId || ''}`).toLowerCase();
-        if (!workerName.includes(query)) return false;
+
+        const fullName = (workerObj?.full_name || '').toLowerCase();
+        const username = (workerObj?.username || '').toLowerCase();
+        const empNo = (workerObj?.employee_no || '').toLowerCase();
+        const workerIdStr = workerId !== null && workerId !== undefined ? String(workerId) : '';
+        const workerLabel = `worker ${workerIdStr}`;
+
+        const matchedWorker = uniqueExpenseWorkers.find(
+          w => w.name.toLowerCase() === query ||
+            (w.username && w.username.toLowerCase() === query) ||
+            (w.employee_no && w.employee_no.toLowerCase() === query) ||
+            String(w.id) === query
+        );
+
+        let isMatch = false;
+        if (matchedWorker && workerId !== null) {
+          isMatch = (workerId === matchedWorker.id) ||
+            (Boolean(matchedWorker.username) && (username === matchedWorker.username?.toLowerCase())) ||
+            (Boolean(matchedWorker.employee_no) && (empNo === matchedWorker.employee_no?.toLowerCase()));
+        }
+
+        if (!isMatch) {
+          isMatch = fullName.includes(query) ||
+            username.includes(query) ||
+            empNo.includes(query) ||
+            workerIdStr === query ||
+            workerLabel.includes(query);
+        }
+
+        if (!isMatch) return false;
       }
 
       // Search by Expense Details (Ticket #, Expense Type/Name, Remarks, Store, Expense ID, Amount)
@@ -981,8 +1119,8 @@ export const FinanceView: React.FC = () => {
 
     // Sort: Approved expenses first (top), unapproved expenses at the bottom
     return list.sort((a, b) => {
-      const aApproved = a.approved === true || ((a.expense_type as any)?.approve_required === false);
-      const bApproved = b.approved === true || ((b.expense_type as any)?.approve_required === false);
+      const aApproved = a.approved === true || (a.approved as any) === 'true' || (a.approved as any) === 1 || ((a.expense_type as any)?.approve_required === false) || ((a.expense_type_detail as any)?.approve_required === false) || a.status_display === 'Approved';
+      const bApproved = b.approved === true || (b.approved as any) === 'true' || (b.approved as any) === 1 || ((b.expense_type as any)?.approve_required === false) || ((b.expense_type_detail as any)?.approve_required === false) || b.status_display === 'Approved';
 
       if (aApproved && !bApproved) return -1;
       if (!aApproved && bApproved) return 1;
@@ -993,67 +1131,13 @@ export const FinanceView: React.FC = () => {
       if (dateB !== dateA) return dateB - dateA;
       return b.expense_id - a.expense_id;
     });
-  }, [unclaimedExpenses, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo]);
+  }, [unclaimedExpenses, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo, uniqueExpenseWorkers]);
 
   const selectedExpensesTotal = useMemo(() => {
     return unclaimedExpenses
       .filter((exp) => selectedExpenseIds.includes(exp.expense_id))
       .reduce((sum, exp) => sum + parseFloat(exp.amount || '0'), 0);
   }, [unclaimedExpenses, selectedExpenseIds]);
-
-  const uniqueExpenseWorkers = useMemo(() => {
-    const map = new Map<number, {
-      id: number;
-      name: string;
-      username: string;
-      employee_no?: string;
-      profile_image?: string | null;
-      department_name?: string;
-      sub_departments?: { sub_department_id: number; sub_department_name: string }[];
-      unclaimed_count: number;
-      unclaimed_total: number;
-    }>();
-    unclaimedExpenses.forEach((exp) => {
-      if (exp.is_claimed || exp.claim) return;
-      if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return;
-      const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
-      if (workerId !== null) {
-        const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
-        const displayName = workerObj?.full_name || workerObj?.username || `Worker ${workerId}`;
-        const deptName = (exp.ticket_details as any)?.department_name || (exp.expense_type_detail as any)?.department_name || (exp.expense_type as any)?.department?.department_name || 'General Maintenance';
-        const amt = parseFloat(exp.amount || '0');
-        const profImg = workerObj?.profile_image || (typeof exp.worker === 'object' ? exp.worker?.profile_image : null) || exp.worker_detail?.profile_image || null;
-        const subDepts = (workerObj as any)?.sub_departments || (typeof exp.worker === 'object' ? (exp.worker as any)?.sub_departments : null) || (exp.worker_detail as any)?.sub_departments || [];
-        const existing = map.get(workerId);
-        if (existing) {
-          existing.unclaimed_count += 1;
-          existing.unclaimed_total += amt;
-          if (!existing.department_name && deptName) {
-            existing.department_name = deptName;
-          }
-          if (!existing.profile_image && profImg) {
-            existing.profile_image = profImg;
-          }
-          if ((!existing.sub_departments || existing.sub_departments.length === 0) && subDepts.length > 0) {
-            existing.sub_departments = subDepts;
-          }
-        } else {
-          map.set(workerId, {
-            id: workerId,
-            name: displayName,
-            username: workerObj?.username || '',
-            employee_no: workerObj?.employee_no || '',
-            profile_image: profImg,
-            department_name: deptName,
-            sub_departments: subDepts,
-            unclaimed_count: 1,
-            unclaimed_total: amt
-          });
-        }
-      }
-    });
-    return Array.from(map.values());
-  }, [unclaimedExpenses, expenseFilterFrom, expenseFilterTo]);
 
   // Actions
   const handleCreateBundle = async () => {
@@ -1070,8 +1154,8 @@ export const FinanceView: React.FC = () => {
 
     const firstSelected = unclaimedExpenses.find(e => selectedExpenseIds.includes(e.expense_id));
     const firstWorkerObj = firstSelected ? (typeof firstSelected.worker === 'object' ? firstSelected.worker : firstSelected.worker_detail) : null;
-    const targetWorkerId = firstWorkerObj ? firstWorkerObj.id : undefined;
-    const workerName = firstWorkerObj?.full_name || firstWorkerObj?.username || 'Worker';
+    const targetWorkerId = selectedWorkerId ?? (getUserId(firstSelected?.worker) ?? getUserId(firstSelected?.worker_detail) ?? getUserId((firstSelected as any)?.added_by));
+    const workerName = firstWorkerObj?.full_name || firstWorkerObj?.username || expenseSearchWorker || 'Worker';
 
     try {
       const res = await fetch(`${API_URL}/finance/claim/create-bundle/`, {
@@ -1106,6 +1190,8 @@ export const FinanceView: React.FC = () => {
       setSuccessMessage(`Bundle ${data.claim_id} created successfully.`);
       setShowCreateBundleModal(false);
       setSelectedExpenseIds([]);
+      setSelectedWorkerId(null);
+      setExpenseSearchWorker('');
       setBundleRemarks('');
 
       // Optimistically append/insert to bundles list if not present
@@ -1539,8 +1625,10 @@ export const FinanceView: React.FC = () => {
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
-      if (filterDateFrom && e.expense_date && e.expense_date < filterDateFrom) return false;
-      if (filterDateTo && e.expense_date && e.expense_date > filterDateTo) return false;
+      if (!filterDateType) {
+        if (filterDateFrom && e.expense_date && e.expense_date < filterDateFrom) return false;
+        if (filterDateTo && e.expense_date && e.expense_date > filterDateTo) return false;
+      }
 
       if (statusFilter !== 'ALL') {
         const isPaid = Boolean(e.is_paid || e.status_display === 'Paid' || (e.claim && ((e.claim as any).status === 'Paid' || (e as any).claim_status === 'Paid')));
@@ -1550,6 +1638,43 @@ export const FinanceView: React.FC = () => {
 
       if (bundleFilter === 'IN_BUNDLE' && !e.is_claimed && !e.claim) return false;
       if (bundleFilter === 'NOT_IN_BUNDLE' && (e.is_claimed || e.claim)) return false;
+
+      if (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') {
+        const batch = ledgerBatches.find(b => String(b.batch_id) === String(ledgerBatchFilter));
+        if (batch) {
+          const ids = new Set<number>();
+          const names = new Set<string>();
+          const addSd = (sd: any) => {
+            if (!sd) return;
+            if (typeof sd === 'object') {
+              const id = sd.sub_department_id || sd.id;
+              if (id != null && !isNaN(Number(id))) ids.add(Number(id));
+              if (sd.sub_department_name) names.add(String(sd.sub_department_name).toLowerCase().trim());
+            } else if (!isNaN(Number(sd))) {
+              ids.add(Number(sd));
+            }
+          };
+          if (Array.isArray(batch.sub_departments)) batch.sub_departments.forEach(addSd);
+          if (Array.isArray(batch.sub_departments_detail)) batch.sub_departments_detail.forEach(addSd);
+
+          const rawTicket: any = e.ticket_details || e.ticket;
+          const subDeptId = Number(
+            e.sub_department_id ||
+            e.ticket_details?.sub_department_id ||
+            (typeof rawTicket === 'object' ? rawTicket?.sub_department_id || rawTicket?.nature?.sub_department?.sub_department_id || rawTicket?.nature?.sub_department_id : null)
+          );
+          const subDeptName = String(
+            e.ticket_details?.sub_department_name ||
+            e.sub_department_name ||
+            (typeof rawTicket === 'object' ? rawTicket?.sub_department_name || rawTicket?.nature?.sub_department?.sub_department_name : '') ||
+            ''
+          ).toLowerCase().trim();
+
+          const matchId = !isNaN(subDeptId) && subDeptId > 0 && ids.has(subDeptId);
+          const matchName = subDeptName && names.has(subDeptName);
+          if (!matchId && !matchName) return false;
+        }
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -1587,7 +1712,7 @@ export const FinanceView: React.FC = () => {
 
       return true;
     });
-  }, [expenses, filterDateFrom, filterDateTo, statusFilter, bundleFilter, searchQuery]);
+  }, [expenses, filterDateFrom, filterDateTo, filterDateType, statusFilter, bundleFilter, ledgerBatchFilter, ledgerBatches, searchQuery]);
 
   // Subpage Navigation Tabs
   const navTabs = [
@@ -1731,14 +1856,22 @@ export const FinanceView: React.FC = () => {
           <DateRangePickerCard
             fromDate={filterDateFrom}
             toDate={filterDateTo}
-            onDateRangeChange={(from, to) => {
+            dateType={subpage === 'expenses' ? filterDateType : ''}
+            allowEmptyDateType={subpage === 'expenses'}
+            emptyDateTypeLabel="Select Option"
+            hideDateType={subpage !== 'expenses'}
+            onDateRangeChange={(from, to, type) => {
               setFilterDateFrom(from);
               setFilterDateTo(to);
+              if (subpage === 'expenses') {
+                setFilterDateType(type || '');
+              }
             }}
             onReset={() => {
               const currentMonth = getCurrentMonthRange();
               setFilterDateFrom(currentMonth.from);
               setFilterDateTo(currentMonth.to);
+              setFilterDateType('');
             }}
           />
 
@@ -1766,7 +1899,7 @@ export const FinanceView: React.FC = () => {
 
           {/* Bundle Attachment Filter (Applicable for Expenses subpage) */}
           {subpage === 'expenses' && (
-            <div className="w-60 shrink-0">
+            <div className="w-52 shrink-0">
               <SearchableSelect
                 value={bundleFilter}
                 onChange={(val) => setBundleFilter(val as any)}
@@ -1777,6 +1910,25 @@ export const FinanceView: React.FC = () => {
                   { value: 'NOT_IN_BUNDLE', label: 'Not in Bundle (Unclaimed)' },
                 ]}
                 placeholder="Bundle Filter"
+              />
+            </div>
+          )}
+
+          {/* Ledger Batch Filter (Applicable for Expenses subpage) */}
+          {subpage === 'expenses' && (
+            <div className="w-52 shrink-0">
+              <SearchableSelect
+                value={ledgerBatchFilter}
+                onChange={(val) => setLedgerBatchFilter(val)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={[
+                  { value: 'ALL', label: 'All Ledger Batches' },
+                  ...ledgerBatches.map((b: any) => ({
+                    value: String(b.batch_id),
+                    label: b.batch_name
+                  }))
+                ]}
+                placeholder="All Ledger Batches"
               />
             </div>
           )}
@@ -1824,6 +1976,7 @@ export const FinanceView: React.FC = () => {
         <ExpensesSubpage
           expenses={expenses}
           filteredExpenses={filteredExpenses}
+          ledgerBatches={ledgerBatches}
           loading={loading}
           submitting={submitting}
           renderStatusBadge={renderStatusBadge}
@@ -1896,6 +2049,8 @@ export const FinanceView: React.FC = () => {
           onRefresh={() => fetchData(true)}
           isSyncingNewBundle={isSyncingNewBundle}
           syncingBundleInfo={syncingBundleInfo}
+          selectedWorkerId={selectedWorkerId}
+          setSelectedWorkerId={setSelectedWorkerId}
         />
       )}
 

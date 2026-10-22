@@ -85,6 +85,8 @@ interface BundlesSubpageProps {
     worker_name?: string;
     amount?: number;
   } | null;
+  selectedWorkerId?: number | null;
+  setSelectedWorkerId?: (id: number | null) => void;
 }
 
 export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
@@ -143,7 +145,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   onPageChange: propOnPageChange,
   onItemsPerPageChange: propOnItemsPerPageChange,
   isSyncingNewBundle = false,
-  syncingBundleInfo = null
+  syncingBundleInfo = null,
+  selectedWorkerId,
+  setSelectedWorkerId
 }) => {
   // Inline Approval State
   const [reworkComments, setReworkComments] = useState<Record<number, string>>({});
@@ -606,7 +610,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             const isPrevCompleted = idx === 0 ? true : (isFinished || (stepOrderNum <= activePendingOrder));
 
             return (
-              <React.Fragment key={step.step_id || idx}>
+              <React.Fragment key={step.step_id ?? `step-${idx}`}>
                 {/* CONNECTOR LINE */}
                 <div className={`flex-1 h-0.5 mx-1 ${compact ? 'mt-3' : 'mt-3.5'} transition-colors ${isPrevCompleted && (isApproved || isPending) ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
 
@@ -757,9 +761,25 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     return cleanLines.join('\n').trim();
   };
 
+  const isExpenseEligibleForClaim = (exp: ExpenseItem | any): boolean => {
+    if (!exp) return false;
+    if (exp.expense_type && (exp.expense_type as any).approve_required === false) return true;
+    if (exp.expense_type_detail && (exp.expense_type_detail as any).approve_required === false) return true;
+    if (exp.approved === true || (exp.approved as any) === 'true' || (exp.approved as any) === 1) return true;
+    if (exp.status_display === 'Approved' || exp.status_display === 'APPROVED') return true;
+    return false;
+  };
+
   // Create Bundle Modal Pagination State
   const [modalPage, setModalPage] = useState(1);
-  const modalItemsPerPage = 5;
+  const modalItemsPerPage = 50;
+
+  // On-demand Technician & Expense Loading
+  const [unclaimedWorkersList, setUnclaimedWorkersList] = useState<any[]>([]);
+  const [isLoadingWorkers, setIsLoadingWorkers] = useState<boolean>(false);
+  const [workerExpenses, setWorkerExpenses] = useState<ExpenseItem[]>([]);
+  const [isLoadingWorkerExpenses, setIsLoadingWorkerExpenses] = useState<boolean>(false);
+  const [selectedWorkerObj, setSelectedWorkerObj] = useState<any | null>(null);
 
   // Employee List Pagination & Filter State inside Create Bundle Modal
   const [employeePage, setEmployeePage] = useState(1);
@@ -773,6 +793,105 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
   const [userSubDeptMap, setUserSubDeptMap] = useState<Record<number, number[]>>({});
   const employeeItemsPerPage = 10;
+
+  // Fetch Unclaimed Workers on demand when modal opens
+  useEffect(() => {
+    if (!showCreateBundleModal) {
+      setWorkerExpenses([]);
+      setSelectedWorkerObj(null);
+      return;
+    }
+
+    const fetchWorkers = async () => {
+      setIsLoadingWorkers(true);
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Token ${token}`;
+        const baseApi = API_URL || '';
+        let url = `${baseApi}/finance/claim/unclaimed-workers/?`;
+        if (expenseFilterFrom) url += `from_date=${expenseFilterFrom}&`;
+        if (expenseFilterTo) url += `to_date=${expenseFilterTo}&`;
+        if (selectedLedgerBatchId && selectedLedgerBatchId !== 'ALL') url += `ledger_batch=${selectedLedgerBatchId}&`;
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setUnclaimedWorkersList(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error('Error fetching unclaimed workers:', err);
+      } finally {
+        setIsLoadingWorkers(false);
+      }
+    };
+
+    fetchWorkers();
+  }, [showCreateBundleModal, token, API_URL, expenseFilterFrom, expenseFilterTo, selectedLedgerBatchId]);
+
+  const handleSelectWorker = async (emp: any) => {
+    setSelectedWorkerObj(emp);
+    if (setSelectedWorkerId) setSelectedWorkerId(emp.id || emp.user_id);
+    setExpenseSearchWorker(emp.name);
+    setSelectedExpenseIds([]);
+    setIsLoadingWorkerExpenses(true);
+    setModalPage(1);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Token ${token}`;
+      const baseApi = API_URL || '';
+      let url = `${baseApi}/finance/expense/?is_claimed=false&worker=${emp.id || emp.user_id}&page_size=all`;
+      if (expenseFilterFrom) url += `&from_date=${expenseFilterFrom}`;
+      if (expenseFilterTo) url += `&to_date=${expenseFilterTo}`;
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const list: ExpenseItem[] = Array.isArray(data) ? data : (data.results || []);
+        setWorkerExpenses(list);
+        const eligible = list.filter((e: any) => isExpenseEligibleForClaim(e)).map((e: any) => e.expense_id);
+        setSelectedExpenseIds(eligible);
+      }
+    } catch (err) {
+      console.error('Error fetching worker expenses:', err);
+    } finally {
+      setIsLoadingWorkerExpenses(false);
+    }
+  };
+
+  const handleClearWorker = () => {
+    setSelectedWorkerObj(null);
+    if (setSelectedWorkerId) setSelectedWorkerId(null);
+    setExpenseSearchWorker('');
+    setWorkerExpenses([]);
+    setSelectedExpenseIds([]);
+  };
+
+  const displayExpenses = useMemo(() => {
+    const list = selectedWorkerObj ? workerExpenses : filteredUnclaimedExpenses;
+    if (!expenseSearchText.trim()) return list;
+    const q = expenseSearchText.toLowerCase();
+    return list.filter(exp => {
+      const ticketNo = exp.ticket_details?.work_order_no?.toLowerCase() || '';
+      const expIdStr = String(exp.expense_id);
+      const remarksStr = (exp.remarks || '').toLowerCase();
+      const expTypeStr = (exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || '').toLowerCase();
+      const storeStr = (exp.responsible_store?.store_name || '').toLowerCase();
+      return ticketNo.includes(q) || expIdStr.includes(q) || remarksStr.includes(q) || expTypeStr.includes(q) || storeStr.includes(q);
+    });
+  }, [selectedWorkerObj, workerExpenses, filteredUnclaimedExpenses, expenseSearchText]);
+
+  const activeSelectedTotal = useMemo(() => {
+    const source = selectedWorkerObj ? workerExpenses : unclaimedExpenses;
+    return source
+      .filter(exp => selectedExpenseIds.includes(exp.expense_id) && isExpenseEligibleForClaim(exp))
+      .reduce((sum, exp) => sum + parseFloat(exp.amount || '0'), 0);
+  }, [selectedWorkerObj, workerExpenses, unclaimedExpenses, selectedExpenseIds]);
+
+  const eligibleExpenses = useMemo(() => {
+    return displayExpenses.filter(e => isExpenseEligibleForClaim(e));
+  }, [displayExpenses]);
+
+  const unapprovedExpenses = useMemo(() => {
+    return displayExpenses.filter(e => !isExpenseEligibleForClaim(e));
+  }, [displayExpenses]);
 
   // Fetch Ledger Batches and User Sub-departments map when Create Bundle Modal opens
   useEffect(() => {
@@ -900,14 +1019,14 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   }, [employeeSearchQuery, showCreateBundleModal, token, API_URL, uniqueExpenseWorkers, unclaimedExpenses]);
 
   const filteredEmployees = useMemo(() => {
-    let list = uniqueExpenseWorkers;
+    let list = unclaimedWorkersList.length > 0 ? unclaimedWorkersList : uniqueExpenseWorkers;
     if (employeeSearchQuery.trim()) {
       if (apiSearchedWorkers.length > 0) {
         list = apiSearchedWorkers;
       } else {
         const q = employeeSearchQuery.toLowerCase();
-        list = uniqueExpenseWorkers.filter(w => {
-          const nameMatch = w.name.toLowerCase().includes(q);
+        list = list.filter(w => {
+          const nameMatch = (w.name || '').toLowerCase().includes(q);
           const empNoMatch = (w.employee_no || '').toLowerCase().includes(q);
           const userMatch = (w.username || '').toLowerCase().includes(q);
           return nameMatch || empNoMatch || userMatch;
@@ -957,7 +1076,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     }
 
     return list;
-  }, [uniqueExpenseWorkers, employeeSearchQuery, apiSearchedWorkers, selectedLedgerBatchId, ledgerBatches, userSubDeptMap]);
+  }, [unclaimedWorkersList, uniqueExpenseWorkers, employeeSearchQuery, apiSearchedWorkers, selectedLedgerBatchId, ledgerBatches, userSubDeptMap]);
 
   const paginatedEmployees = useMemo(() => {
     const start = (employeePage - 1) * employeeItemsPerPage;
@@ -977,7 +1096,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
   useEffect(() => {
     setModalPage(1);
-  }, [filteredUnclaimedExpenses.length, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo]);
+  }, [displayExpenses.length, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo]);
 
   const paginatedBundles = useMemo(() => {
     if (isServerPaginated) return bundles;
@@ -987,10 +1106,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
   const paginatedModalExpenses = useMemo(() => {
     const start = (modalPage - 1) * modalItemsPerPage;
-    return filteredUnclaimedExpenses.slice(start, start + modalItemsPerPage);
-  }, [filteredUnclaimedExpenses, modalPage, modalItemsPerPage]);
+    return displayExpenses.slice(start, start + modalItemsPerPage);
+  }, [displayExpenses, modalPage, modalItemsPerPage]);
 
-  const totalModalPages = Math.ceil(filteredUnclaimedExpenses.length / modalItemsPerPage) || 1;
+  const totalModalPages = Math.ceil(displayExpenses.length / modalItemsPerPage) || 1;
 
 
 
@@ -1274,7 +1393,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       );
 
                       return (
-                        <React.Fragment key={b.claim_id}>
+                        <React.Fragment key={b.claim_id ?? `bundle-${idx}`}>
                           <tr
                             onClick={() => toggleExpandBundle(b.claim_id)}
                             className={`cursor-pointer transition-colors ${isExpanded
@@ -1785,13 +1904,13 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-outline-variant">
-                                        {bundleExpenses.map((exp: any) => {
+                                        {bundleExpenses.map((exp: any, expIdx: number) => {
                                           const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'N/A');
                                           const ticketNo = exp.ticket_details?.work_order_no || (typeof exp.ticket === 'object' && exp.ticket ? exp.ticket.work_order_no : (exp.ticket ? `${exp.ticket}` : 'N/A'));
                                           const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : 'General');
                                           const cleanRemarks = getCleanRemarks(exp.remarks);
                                           return (
-                                            <tr key={exp.expense_id} className="hover:bg-surface-container-high transition-colors">
+                                            <tr key={exp.expense_id ?? `exp-${expIdx}`} className="hover:bg-surface-container-high transition-colors">
                                               <td className="px-3 py-2 font-semibold text-primary">{exp.expense_id}</td>
                                               <td className="px-3 py-2 text-on-surface font-medium">{catName}</td>
                                               <td className="px-3 py-2 text-on-surface-variant max-w-[200px]" title={cleanRemarks || undefined}>
@@ -1932,6 +2051,21 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               )}
 
+              {/* Previous bundle finalizing alert */}
+              {isSyncingNewBundle && (
+                <div className="p-2.5 px-3 rounded bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs flex items-center justify-between shadow-2xs shrink-0 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Loader2 className="w-4 h-4 shrink-0 text-amber-500 animate-spin" />
+                    <span className="font-semibold truncate">
+                      {syncingBundleInfo?.claim_id
+                        ? `Previous bundle ${syncingBundleInfo.claim_id} (${syncingBundleInfo.worker_name || 'Technician'}) is currently being finalized...`
+                        : 'Previous bundle is currently being created...'}
+                    </span>
+                  </div>
+
+                </div>
+              )}
+
               {/* 1. SELECT EMPLOYEE / TECHNICIAN */}
               <div className="p-3 bg-surface-container-low border border-outline-variant/80 rounded space-y-2.5 shrink-0 shadow-2xs">
                 <div className="flex items-center justify-between">
@@ -2030,8 +2164,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                             <span>Loading batches...</span>
                           </div>
                         ) : (
-                          ledgerBatches.map((b) => {
-                            const bId = String(b.batch_id ?? b.id ?? b.ledger_batch_id);
+                          ledgerBatches.map((b, bIdx) => {
+                            const bId = String(b.batch_id ?? b.id ?? b.ledger_batch_id ?? `batch-${bIdx}`);
                             const isSelected = selectedLedgerBatchId === bId;
                             const subDeptCount = b.sub_departments?.length ?? b.sub_departments_detail?.length ?? 0;
                             return (
@@ -2067,22 +2201,24 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     </div>
 
                     {/* Paginated Employee Cards Grid */}
-                    {filteredEmployees.length === 0 ? (
+                    {isLoadingWorkers ? (
+                      <div className="p-8 text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-2 border border-outline-variant/80 rounded bg-surface-container">
+                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        <span>Loading technicians with unclaimed expenses...</span>
+                      </div>
+                    ) : filteredEmployees.length === 0 ? (
                       <div className="p-4 text-center text-xs text-on-surface-variant italic border border-outline-variant/80 rounded bg-surface-container">
                         No employees with unclaimed expenses match the search/date criteria.
                       </div>
                     ) : (
                       <div className="space-y-2">
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                          {paginatedEmployees.map((emp) => {
-                            const isSelected = expenseSearchWorker === emp.name;
+                          {paginatedEmployees.map((emp, empIdx) => {
+                            const isSelected = (selectedWorkerObj?.id || selectedWorkerObj?.user_id) === (emp.id || emp.user_id) || expenseSearchWorker === emp.name;
                             return (
                               <div
-                                key={emp.id}
-                                onClick={() => {
-                                  setExpenseSearchWorker(emp.name);
-                                  setSelectedExpenseIds([]);
-                                }}
+                                key={emp.id ?? emp.user_id ?? `emp-${empIdx}`}
+                                onClick={() => handleSelectWorker(emp)}
                                 className={`p-2.5 rounded border cursor-pointer transition-all flex items-center justify-between gap-2.5 ${isSelected
                                   ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/30'
                                   : 'bg-surface-container hover:bg-surface-container-high border-outline-variant/80 shadow-2xs'
@@ -2102,9 +2238,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     </h4>
                                     <div className="flex flex-wrap gap-1 mt-0.5">
                                       {emp.sub_departments && emp.sub_departments.length > 0 ? (
-                                        emp.sub_departments.map((sd: any) => (
+                                        emp.sub_departments.map((sd: any, sdIdx: number) => (
                                           <span
-                                            key={sd.sub_department_id || sd.id}
+                                            key={sd.sub_department_id ?? sd.id ?? `sd-${sdIdx}`}
                                             className="text-[9px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant/60 font-medium truncate max-w-[130px]"
                                             title={sd.sub_department_name}
                                           >
@@ -2122,7 +2258,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                                 <div className="text-right shrink-0">
                                   <span className="text-[10px] text-primary font-bold block">
-                                    {emp.unclaimed_count ?? 0} Expenses
+                                    {emp.unclaimed_count ?? 0} Eligible
                                   </span>
                                   <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                                     {(emp.unclaimed_total ?? 0).toFixed(3)} KD
@@ -2165,31 +2301,38 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 ) : (
                   /* Selected Worker Banner */
                   (() => {
-                    const selectedWorkerItem = uniqueExpenseWorkers.find(w => w.name === expenseSearchWorker) || apiSearchedWorkers.find(w => w.name === expenseSearchWorker);
+                    const selectedWorkerItem = uniqueExpenseWorkers.find(w => w.name === expenseSearchWorker || w.username === expenseSearchWorker || String(w.id) === expenseSearchWorker) || apiSearchedWorkers.find(w => w.name === expenseSearchWorker || w.username === expenseSearchWorker || String(w.id) === expenseSearchWorker) || selectedWorkerObj;
+                    const eligibleCount = eligibleExpenses.length;
+                    const eligibleTotal = eligibleExpenses.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
+
                     return (
                       <div className="p-2.5 px-3.5 rounded bg-primary/10 border border-primary/30 flex items-center justify-between gap-3 shadow-2xs">
                         <div className="flex items-center gap-3 min-w-0">
                           <AvatarCircle
                             user={selectedWorkerItem}
-                            name={expenseSearchWorker}
+                            name={selectedWorkerItem?.name || expenseSearchWorker}
                             image={selectedWorkerItem?.profile_image}
                             size="sm"
                           />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <h4 className="text-xs font-bold text-on-surface truncate">{expenseSearchWorker}</h4>
+                              <h4 className="text-xs font-bold text-on-surface truncate">{selectedWorkerItem?.name || expenseSearchWorker}</h4>
                             </div>
                             <p className="text-[10px] text-on-surface-variant truncate mt-0.5">
-                              {selectedWorkerItem?.unclaimed_count !== undefined ? ` • ${selectedWorkerItem.unclaimed_count} unclaimed expenses` : ''}
+                              {selectedWorkerItem?.employee_no ? `EMP: ${selectedWorkerItem.employee_no} • ` : ''}
+                              <strong className="text-primary font-semibold">{eligibleCount} approved expenses</strong>
+                              <span> • {eligibleTotal.toFixed(3)} KD</span>
+                              {unapprovedExpenses.length > 0 && (
+                                <span className="text-on-surface-variant/80 ml-1.5 italic">
+                                  ({unapprovedExpenses.length} unapproved shown below, excluded from total)
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setExpenseSearchWorker('');
-                            setSelectedExpenseIds([]);
-                          }}
+                          onClick={handleClearWorker}
                           className="p-1.5 rounded bg-surface-container border border-outline-variant hover:bg-error/10 hover:border-error/30 hover:text-error text-on-surface transition-colors cursor-pointer flex items-center justify-center shrink-0 shadow-2xs"
                           title="Clear worker selection to choose another worker or change date filter"
                         >
@@ -2205,16 +2348,19 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
               <div className="flex-1 min-h-0 flex flex-col space-y-1.5 overflow-hidden">
                 <div className="flex items-center justify-between text-xs px-1 shrink-0">
                   <span className="font-bold text-on-surface flex items-center gap-2">
-                    <span>Unclaimed Expenses - {filteredUnclaimedExpenses.length}</span>
-                    {filteredUnclaimedExpenses.some(e => !(e.approved === true || ((e.expense_type as any)?.approve_required === false))) && (
-                      <span className=" text-green-600 dark:text-green-400 font-semibold px-2 py-0.5 ">
-                        Eligible to claim {filteredUnclaimedExpenses.filter(e => e.approved === true || ((e.expense_type as any)?.approve_required === false)).length}
+                    <span>Unclaimed Expenses ({eligibleExpenses.length})</span>
+                    {unapprovedExpenses.length > 0 && (
+                      <span className="text-[11px] font-normal text-on-surface-variant bg-surface-container px-2 py-0.5 rounded border border-outline-variant/60">
+                        {unapprovedExpenses.length} unapproved (excluded from total)
                       </span>
                     )}
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold px-1 py-0.5">
+                      • {selectedExpenseIds.length} of {eligibleExpenses.length} selected
+                    </span>
                   </span>
 
                   <div className="flex items-center gap-3">
-                    {filteredUnclaimedExpenses.length > 0 && (
+                    {eligibleExpenses.length > 0 && (
                       <div className="space-x-3">
                         <button
                           type="button"
@@ -2226,14 +2372,12 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            const eligibleIds = filteredUnclaimedExpenses
-                              .filter(e => e.approved === true || ((e.expense_type as any)?.approve_required === false))
-                              .map(e => e.expense_id);
+                            const eligibleIds = eligibleExpenses.map(e => e.expense_id);
                             setSelectedExpenseIds(Array.from(new Set([...selectedExpenseIds, ...eligibleIds])));
                           }}
                           className="text-primary hover:underline font-bold text-xs cursor-pointer"
                         >
-                          Select All
+                          Select All ({eligibleExpenses.length})
                         </button>
                       </div>
                     )}
@@ -2244,26 +2388,30 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   <div className="p-6 text-center text-xs text-on-surface-variant border border-outline-variant/80 rounded bg-surface-container-low">
                     Select an employee above to view available unclaimed expenses.
                   </div>
-                ) : filteredUnclaimedExpenses.length === 0 ? (
+                ) : isLoadingWorkerExpenses ? (
+                  <div className="p-8 text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-2 border border-outline-variant/80 rounded bg-surface-container-low">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    <span>Loading expenses for {expenseSearchWorker}...</span>
+                  </div>
+                ) : displayExpenses.length === 0 ? (
                   <p className="text-xs text-on-surface-variant italic p-6 text-center border border-outline-variant/80 rounded bg-surface-container-low">
                     No unclaimed expenses match this employee and date filter.
                   </p>
                 ) : (
                   <div className="flex-1 min-h-0 border border-outline-variant/80 rounded overflow-hidden bg-surface-container-low flex flex-col shadow-2xs">
                     <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 p-2 divide-y divide-outline-variant/60">
-                      {paginatedModalExpenses.map((exp) => {
+                      {paginatedModalExpenses.map((exp, mExpIdx) => {
                         const isChecked = selectedExpenseIds.includes(exp.expense_id);
-
-                        const statusText = (exp.expense_type && (exp.expense_type as any).approve_required === false)
+                        const isExpApproved = isExpenseEligibleForClaim(exp);
+                        const statusText = isExpApproved
                           ? 'Approved'
-                          : (exp.status_display || (exp.approved ? 'Approved' : ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval')));
-                        const isExpApproved = statusText === 'Approved';
+                          : (exp.status_display || ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval'));
                         const isExpRejected = statusText === 'Rejected';
                         const isExpRework = statusText === 'Rework';
 
                         return (
                           <div
-                            key={exp.expense_id}
+                            key={exp.expense_id ?? `mexp-${mExpIdx}`}
                             onClick={() => setPreviewExpense(exp)}
                             className={`flex items-center gap-3 p-2.5 px-3 rounded cursor-pointer text-xs transition-colors border ${!isExpApproved
                               ? 'bg-surface-container-low/70 border-outline-variant/40 opacity-80 hover:bg-surface-container/70'
@@ -2282,19 +2430,20 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0 ml-2">
                                   {!isExpApproved && (
-                                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${isExpApproved
-                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                                      : isExpRejected
-                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                                        : isExpRework
-                                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isExpRejected
+                                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                      : isExpRework
+                                        ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
                                       }`}>
-                                      {statusText}
+                                      {statusText} (Excluded)
                                     </span>
                                   )}
-                                  <span className={`font-bold text-xs ${isExpApproved ? 'text-primary' : 'text-on-surface-variant'}`}>
-                                    {parseFloat(exp.amount).toFixed(3)}
+                                  <span
+                                    className={`font-bold text-xs ${isExpApproved ? 'text-primary' : 'text-on-surface-variant/60 line-through'}`}
+                                    title={!isExpApproved ? "Not approved - not included in total" : undefined}
+                                  >
+                                    {parseFloat(exp.amount).toFixed(3)} KD
                                   </span>
                                 </div>
                               </div>
@@ -2409,10 +2558,26 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   <button
                     type="button"
                     onClick={handleCreateBundle}
-                    disabled={submitting || selectedExpenseIds.length === 0 || !bundleRemarks.trim()}
+                    disabled={submitting || isSyncingNewBundle || selectedExpenseIds.length === 0 || !bundleRemarks.trim()}
                     className="px-5 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all shadow-md hover:shadow-primary/25 active:scale-[0.98] cursor-pointer flex items-center gap-2"
                   >
-                    {submitting ? 'Creating Bundle...' : `Create Bundle (${selectedExpensesTotal.toFixed(3)} KD)`}
+                    {isSyncingNewBundle ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>
+                          {syncingBundleInfo?.claim_id
+                            ? `Previous bundle ${syncingBundleInfo.claim_id} is creating...`
+                            : 'Previous bundle is creating...'}
+                        </span>
+                      </span>
+                    ) : submitting ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Creating Bundle...</span>
+                      </span>
+                    ) : (
+                      `Create Bundle (${selectedExpenseIds.length} Expenses • ${(activeSelectedTotal || selectedExpensesTotal).toFixed(3)} KD)`
+                    )}
                   </button>
                 </div>
               </div>
@@ -2550,7 +2715,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               ) : (
                 <div className="max-h-80 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
-                  {selectedBundleForView.expenses.map((exp) => {
+                  {selectedBundleForView.expenses.map((exp, vExpIdx) => {
                     const receiptsList: MediaFileItem[] = [];
                     if (exp.receipt) receiptsList.push(exp.receipt);
                     if (exp.receipts && Array.isArray(exp.receipts)) {
@@ -2569,7 +2734,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     const isExpRework = statusText === 'Rework';
 
                     return (
-                      <div key={exp.expense_id} className="p-3.5 rounded border border-outline-variant/80 bg-surface-container-low space-y-2.5 text-xs shadow-2xs">
+                      <div key={exp.expense_id ?? `view-exp-${vExpIdx}`} className="p-3.5 rounded border border-outline-variant/80 bg-surface-container-low space-y-2.5 text-xs shadow-2xs">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <span className="font-bold text-on-surface text-sm">
@@ -2651,9 +2816,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               <Paperclip className="w-3.5 h-3.5" /> Receipts / Media ({receiptsList.length})
                             </span>
                             <div className="flex flex-wrap gap-2">
-                              {receiptsList.map((m) => (
+                              {receiptsList.map((m, rIdx) => (
                                 <div
-                                  key={m.media_id}
+                                  key={m.media_id ?? `receipt-${rIdx}`}
                                   onClick={() => setPreviewMediaUrl({ url: m.file_url, title: m.file_name || `Receipt ${m.media_id}` })}
                                   className="group relative w-16 h-16 rounded border border-outline-variant overflow-hidden bg-black/10 cursor-pointer hover:border-primary transition-all shadow-2xs"
                                 >
@@ -2955,7 +3120,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-thin">
                         {receiptsList.map((m, idx) => (
                           <div
-                            key={m.media_id}
+                            key={m.media_id ?? `thumb-${idx}`}
                             onClick={() => setActiveReceiptIndex(idx)}
                             className={`relative w-20 h-20 rounded border-2 overflow-hidden cursor-pointer transition-all shrink-0 bg-black/20 ${idx === safeIndex ? 'border-primary ring-2 ring-primary/30 scale-105' : 'border-outline-variant opacity-70 hover:opacity-100'}`}
                           >

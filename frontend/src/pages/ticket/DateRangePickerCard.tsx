@@ -26,6 +26,9 @@ interface DateRangePickerCardProps {
     dateType?: string;
     onDateRangeChange: (from: string, to: string, dateType: string) => void;
     onReset: () => void;
+    allowEmptyDateType?: boolean;
+    emptyDateTypeLabel?: string;
+    hideDateType?: boolean;
 }
 
 const formatDateStr = (d: Date | null | undefined): string => {
@@ -53,13 +56,21 @@ const PANEL_WIDTH = 400;
 export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
     fromDate,
     toDate,
-    dateType = 'created',
+    dateType,
     onDateRangeChange,
     onReset,
+    allowEmptyDateType = false,
+    emptyDateTypeLabel = 'Select Option',
+    hideDateType = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+    const getResolvedDateType = useCallback((val?: string) => {
+        if (val !== undefined && val !== null) return val;
+        return allowEmptyDateType ? '' : 'created';
+    }, [allowEmptyDateType]);
 
     // Local draft — only committed to parent on "Apply"
     const [draft, setDraft] = useState([{
@@ -68,7 +79,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
         key: 'selection',
     }]);
 
-    const [draftDateType, setDraftDateType] = useState<string>(dateType || 'created');
+    const [draftDateType, setDraftDateType] = useState<string>(() => getResolvedDateType(dateType));
 
     // Re-sync draft when parent resets externally
     useEffect(() => {
@@ -77,8 +88,8 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
             endDate: parseDateStr(toDate),
             key: 'selection',
         }]);
-        setDraftDateType(dateType || 'created');
-    }, [fromDate, toDate, dateType]);
+        setDraftDateType(getResolvedDateType(dateType));
+    }, [fromDate, toDate, dateType, getResolvedDateType]);
 
     const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -143,14 +154,15 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
 
     const handleReset = () => {
         setDraft([{ startDate: new Date(), endDate: new Date(), key: 'selection' }]);
-        setDraftDateType('created');
+        setDraftDateType(allowEmptyDateType ? '' : 'created');
         onReset();
         setIsOpen(false);
     };
 
     const activeLabel = React.useMemo(() => {
         const selectedOpt = DATE_TYPE_OPTIONS.find(o => o.value === dateType);
-        const prefix = selectedOpt && dateType && dateType !== 'created'
+        const shouldShowPrefix = selectedOpt && dateType && (allowEmptyDateType || dateType !== 'created');
+        const prefix = shouldShowPrefix
             ? `${selectedOpt.label.replace(' Date', '')}: `
             : '';
 
@@ -160,12 +172,16 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
         }
         if (fromDate) return `${prefix}From: ${fromDate}`;
         if (toDate) return `${prefix}To: ${toDate}`;
-        return selectedOpt && dateType && dateType !== 'created'
+        return selectedOpt
             ? selectedOpt.label
             : 'Date Range';
-    }, [fromDate, toDate, dateType]);
+    }, [fromDate, toDate, dateType, allowEmptyDateType]);
 
-    const hasActive = Boolean(fromDate || toDate || (dateType && dateType !== 'created'));
+    const hasActive = Boolean(
+        fromDate ||
+        toDate ||
+        (dateType && (allowEmptyDateType ? true : dateType !== 'created'))
+    );
 
     const panel = isOpen ? (
         <>
@@ -211,23 +227,30 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                 </div>
 
                 {/* Date Type Selector Dropdown */}
-                <div className="px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between gap-2">
-                    <label htmlFor="date-type-select" className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant shrink-0">
-                        Filter Date By:
-                    </label>
-                    <select
-                        id="date-type-select"
-                        value={draftDateType}
-                        onChange={(e) => setDraftDateType(e.target.value)}
-                        className="w-full text-xs font-semibold bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant rounded px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors"
-                    >
-                        {DATE_TYPE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                {!hideDateType && (
+                    <div className="px-4 py-2.5 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between gap-2">
+                        <label htmlFor="date-type-select" className="text-xs font-medium text-on-surface-variant dark:text-dark-on-surface-variant shrink-0">
+                            Filter Date By:
+                        </label>
+                        <select
+                            id="date-type-select"
+                            value={draftDateType}
+                            onChange={(e) => setDraftDateType(e.target.value)}
+                            className="w-full text-xs font-semibold bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface border border-outline-variant dark:border-dark-outline-variant rounded px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors"
+                        >
+                            {allowEmptyDateType && (
+                                <option value="">
+                                    {emptyDateTypeLabel || 'Select Option'}
+                                </option>
+                            )}
+                            {DATE_TYPE_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
                 {/* Calendar — only updates draft, not parent */}
                 <div className="p-4 flex justify-center date-range-inner">

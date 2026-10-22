@@ -1,4 +1,4 @@
-from django.db.models import Q, Prefetch, Count
+from django.db.models import Q, Prefetch, Count, F
 from django.utils import timezone
 from rest_framework import viewsets, exceptions, status
 from rest_framework.decorators import action
@@ -144,12 +144,175 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(claim__status='Paid')
 
         from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
-        if from_date:
-            queryset = queryset.filter(expense_date__gte=from_date)
-
         to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to")
-        if to_date:
-            queryset = queryset.filter(expense_date__lte=to_date)
+        date_type = self.request.query_params.get("date_type")
+        if date_type:
+            date_type = date_type.lower().strip()
+
+        if date_type:
+            from apps.maintenance.models import Ticket
+
+            ticket_qs = Ticket.objects.all()
+            to_date_val = to_date
+            if to_date_val and len(to_date_val) == 10:
+                to_date_val = f"{to_date_val} 23:59:59"
+
+            if from_date or to_date_val:
+                if date_type in ('open', 'approved'):
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(approved_date__gte=from_date, approved_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
+                        )
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(
+                            Q(approved_date__gte=from_date) |
+                            Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__gt=F('created_date'))
+                        )
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(approved_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Open', history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
+                        )
+                elif date_type in ('rejected', 'relected'):
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(rejected_date__gte=from_date, rejected_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                        )
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(
+                            Q(rejected_date__gte=from_date) |
+                            Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_date)
+                        )
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(rejected_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Rejected', history__changed_date__lte=to_date_val)
+                        )
+                elif date_type == 'blocked':
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            history__status__status_name__iexact='Blocked',
+                            history__changed_date__gte=from_date,
+                            history__changed_date__lte=to_date_val
+                        )
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(
+                            history__status__status_name__iexact='Blocked',
+                            history__changed_date__gte=from_date
+                        )
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            history__status__status_name__iexact='Blocked',
+                            history__changed_date__lte=to_date_val
+                        )
+                elif date_type in ('in_progress', 'in progress'):
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            history__status__status_name__iexact='In Progress',
+                            history__changed_date__gte=from_date,
+                            history__changed_date__lte=to_date_val
+                        )
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(
+                            history__status__status_name__iexact='In Progress',
+                            history__changed_date__gte=from_date
+                        )
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            history__status__status_name__iexact='In Progress',
+                            history__changed_date__lte=to_date_val
+                        )
+                elif date_type in ('location_approval', 'location approval', 'location_approved'):
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(location_approved_date__gte=from_date, location_approved_date__lte=to_date_val) |
+                            Q(history__location_approved_date__gte=from_date, history__location_approved_date__lte=to_date_val)
+                        )
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(
+                            Q(location_approved_date__gte=from_date) |
+                            Q(history__location_approved_date__gte=from_date)
+                        )
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(location_approved_date__lte=to_date_val) |
+                            Q(history__location_approved_date__lte=to_date_val)
+                        )
+                elif date_type in ('closed', 'completed'):
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(closed_date__gte=from_date, closed_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                        )
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(
+                            Q(closed_date__gte=from_date) |
+                            Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_date) |
+                            Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_date)
+                        )
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(
+                            Q(closed_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Completed', history__changed_date__lte=to_date_val) |
+                            Q(history__status__status_name__iexact='Closed', history__changed_date__lte=to_date_val)
+                        )
+                else:
+                    # Default ticket date: created date (ticket.created_date)
+                    if from_date and to_date_val:
+                        ticket_qs = ticket_qs.filter(created_date__gte=from_date, created_date__lte=to_date_val)
+                    elif from_date:
+                        ticket_qs = ticket_qs.filter(created_date__gte=from_date)
+                    elif to_date_val:
+                        ticket_qs = ticket_qs.filter(created_date__lte=to_date_val)
+            else:
+                # When from_date and to_date are not specified, filter by date_type stage/status
+                if date_type in ('open', 'approved'):
+                    ticket_qs = ticket_qs.filter(
+                        Q(approved_date__isnull=False) | Q(status__status_name__iexact='Open')
+                    )
+                elif date_type in ('rejected', 'relected'):
+                    ticket_qs = ticket_qs.filter(
+                        Q(rejected_date__isnull=False) | Q(status__status_name__iexact='Rejected')
+                    )
+                elif date_type == 'blocked':
+                    ticket_qs = ticket_qs.filter(status__status_name__iexact='Blocked')
+                elif date_type in ('in_progress', 'in progress'):
+                    ticket_qs = ticket_qs.filter(status__status_name__iexact='In Progress')
+                elif date_type in ('location_approval', 'location approval', 'location_approved'):
+                    ticket_qs = ticket_qs.filter(
+                        Q(location_approved_date__isnull=False) | Q(status__status_name__iexact='Location Approval')
+                    )
+                elif date_type in ('closed', 'completed'):
+                    ticket_qs = ticket_qs.filter(
+                        Q(closed_date__isnull=False) | Q(status__status_name__in=['Closed', 'Completed'])
+                    )
+
+            queryset = queryset.filter(ticket_id__in=ticket_qs.values_list('ticket_id', flat=True))
+        else:
+            if from_date:
+                queryset = queryset.filter(expense_date__gte=from_date)
+            if to_date:
+                queryset = queryset.filter(expense_date__lte=to_date)
+
+        ledger_batch = self.request.query_params.get("ledger_batch") or self.request.query_params.get("batch")
+        if ledger_batch and ledger_batch.upper() != 'ALL':
+            try:
+                batch_obj = None
+                if str(ledger_batch).isdigit():
+                    batch_obj = LedgerBatch.objects.filter(batch_id=int(ledger_batch)).first()
+                if not batch_obj:
+                    batch_obj = LedgerBatch.objects.filter(batch_name__iexact=str(ledger_batch)).first()
+
+                if batch_obj:
+                    sub_dept_ids = list(batch_obj.sub_departments.values_list('sub_department_id', flat=True))
+                    queryset = queryset.filter(ticket__nature__sub_department_id__in=sub_dept_ids)
+                else:
+                    queryset = queryset.none()
+            except Exception:
+                pass
 
         search = self.request.query_params.get("search") or self.request.query_params.get("q")
         if search:
@@ -195,7 +358,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by'
-        ).order_by('-expense_date', '-expense_id')
+        ).order_by('-expense_date', '-expense_id').distinct()
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -513,6 +676,87 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             'approval_instances__step__assigned_users',
             'approval_instances__action_by'
         ).order_by('-claim_date', '-claim_id')
+
+    @action(detail=False, methods=['get'], url_path='unclaimed-workers')
+    def unclaimed_workers(self, request):
+        from django.db.models import Count, Sum
+        from apps.accounts.models import CustomUser
+
+        from_date = request.query_params.get('from_date') or request.query_params.get('date_from')
+        to_date = request.query_params.get('to_date') or request.query_params.get('date_to')
+        ledger_batch_id = request.query_params.get('ledger_batch') or request.query_params.get('batch_id')
+
+        qs = Expense.objects.filter(is_claimed=False, claim__isnull=True)
+        if from_date:
+            qs = qs.filter(expense_date__gte=from_date)
+        if to_date:
+            qs = qs.filter(expense_date__lte=to_date)
+
+        if ledger_batch_id and str(ledger_batch_id).upper() != 'ALL':
+            try:
+                batch = LedgerBatch.objects.filter(pk=int(ledger_batch_id)).first()
+                if batch:
+                    sub_dept_ids = list(batch.sub_departments.values_list('sub_department_id', flat=True))
+                    qs = qs.filter(ticket__nature__sub_department_id__in=sub_dept_ids)
+            except Exception:
+                pass
+
+        search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(worker__first_name__icontains=search) |
+                Q(worker__last_name__icontains=search) |
+                Q(worker__full_name__icontains=search) |
+                Q(worker__username__icontains=search) |
+                Q(worker__employee_no__icontains=search)
+            )
+
+        from django.db.models import Count, Sum, Value, DecimalField
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+
+        is_eligible_q = Q(approved=True) | Q(expense_type__approve_required=False)
+
+        aggregated = list(
+            qs.values(
+                'worker_id', 'worker__username', 'worker__full_name',
+                'worker__employee_no', 'worker__profile_image'
+            ).annotate(
+                unclaimed_count=Count('expense_id', filter=is_eligible_q),
+                unclaimed_total=Coalesce(Sum('amount', filter=is_eligible_q), Value(Decimal('0.000'), output_field=DecimalField()))
+            ).order_by('-unclaimed_count')
+        )
+
+        worker_ids = [item['worker_id'] for item in aggregated]
+        users = CustomUser.objects.filter(pk__in=worker_ids).prefetch_related('sub_departments')
+        user_sub_depts = {
+            u.pk: [
+                {'sub_department_id': sd.sub_department_id, 'sub_department_name': sd.sub_department_name}
+                for sd in u.sub_departments.all()
+            ]
+            for u in users
+        }
+
+        results = []
+        for item in aggregated:
+            w_id = item['worker_id']
+            prof_img = item['worker__profile_image']
+            if prof_img and not prof_img.startswith('http') and not prof_img.startswith('/'):
+                prof_img = f"/media/{prof_img}"
+
+            results.append({
+                'id': w_id,
+                'user_id': w_id,
+                'name': item['worker__full_name'] or item['worker__username'] or f"Worker {w_id}",
+                'username': item['worker__username'] or '',
+                'employee_no': item['worker__employee_no'] or '',
+                'profile_image': prof_img,
+                'sub_departments': user_sub_depts.get(w_id, []),
+                'unclaimed_count': item['unclaimed_count'],
+                'unclaimed_total': float(item['unclaimed_total'] or 0),
+            })
+
+        return Response(results, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='create-bundle')
     def create_bundle(self, request):
