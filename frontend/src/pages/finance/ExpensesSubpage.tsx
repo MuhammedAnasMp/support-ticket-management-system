@@ -39,6 +39,7 @@ interface ExpensesSubpageProps {
   itemsPerPage?: number;
   onPageChange?: (page: number) => void;
   onItemsPerPageChange?: (num: number) => void;
+  serverTotalAmount?: number;
   isSyncingNewExpense?: boolean;
   syncingExpenseInfo?: any;
 }
@@ -65,6 +66,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   itemsPerPage: propItemsPerPage,
   onPageChange: propOnPageChange,
   onItemsPerPageChange: propOnItemsPerPageChange,
+  serverTotalAmount: propServerTotalAmount,
   isSyncingNewExpense: propIsSyncingNewExpense = false,
   syncingExpenseInfo: propSyncingExpenseInfo = null
 }) => {
@@ -973,8 +975,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   };
 
   const totalAmount = useMemo(() => {
+    if (propServerTotalAmount !== undefined && propServerTotalAmount !== null) {
+      return propServerTotalAmount;
+    }
     return filteredExpenses.reduce((sum, e) => sum + (parseFloat(String(e.amount)) || 0), 0);
-  }, [filteredExpenses]);
+  }, [propServerTotalAmount, filteredExpenses]);
 
   const paginatedExpenses = useMemo(() => {
     if (isServerPaginated) return expenses;
@@ -2601,6 +2606,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               itemsPerPage={itemsPerPage}
               onPageChange={handlePageChange}
               onItemsPerPageChange={handleItemsPerPageChange}
+              itemsPerPageOptions={[25, 50, 100, 200]}
             />
           </>
         )}

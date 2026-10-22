@@ -93,6 +93,27 @@ export const FinanceView: React.FC = () => {
   const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'IN_LEDGER' | 'NOT_IN_LEDGER'>('ALL');
   const [bundleFilter, setBundleFilter] = useState<'ALL' | 'IN_BUNDLE' | 'NOT_IN_BUNDLE'>('ALL');
 
+  // Debounced search query for server-side expense search
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Expenses server-side pagination state
+  const [expensePage, setExpensePage] = useState<number>(1);
+  const [expensePageSize, setExpensePageSize] = useState<number>(50);
+  const [expenseTotalCount, setExpenseTotalCount] = useState<number>(0);
+  const [expenseTotalAmount, setExpenseTotalAmount] = useState<number | undefined>(undefined);
+
+  // Reset expensePage to 1 whenever search or filters change
+  useEffect(() => {
+    setExpensePage(1);
+  }, [debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, filterDateFrom, filterDateTo, filterDateType]);
+
   // Fetch LedgerBatches for filtering and subpages
   useEffect(() => {
     if (!token) return;
@@ -601,13 +622,40 @@ export const FinanceView: React.FC = () => {
       if (subpage === 'expenses') {
         const dateTypeQuery = filterDateType ? `&date_type=${encodeURIComponent(filterDateType)}` : '';
         const batchQuery = (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') ? `&ledger_batch=${encodeURIComponent(ledgerBatchFilter)}` : '';
-        const [resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/expense/?page_size=all${dateParams}${dateTypeQuery}${batchQuery}`, { headers, signal }),
-          fetch(`${API_URL}/finance/approvals/?page_size=all${dateParams}`, { headers, signal })
-        ]);
+        const statusQuery = (statusFilter && statusFilter !== 'ALL') ? `&status=${encodeURIComponent(statusFilter)}` : '';
+        const bundleQuery = (bundleFilter && bundleFilter !== 'ALL') ? `&bundle_filter=${encodeURIComponent(bundleFilter)}` : '';
+        const searchParam = debouncedSearchQuery ? `&search=${encodeURIComponent(debouncedSearchQuery)}` : '';
+        const paginationParams = `&page=${expensePage}&page_size=${expensePageSize}`;
+
+        const resExp = await fetch(`${API_URL}/finance/expense/?${paginationParams}${dateParams}${dateTypeQuery}${batchQuery}${statusQuery}${bundleQuery}${searchParam}`, { headers, signal });
         if (signal.aborted) return;
-        if (resExp.ok) setExpenses(parseList(await resExp.json()));
-        if (resApp.ok) setApprovals(parseList(await resApp.json()));
+        if (resExp.ok) {
+          const expData = await resExp.json();
+          if (expData && Array.isArray(expData.results)) {
+            setExpenses(expData.results);
+            setExpenseTotalCount(expData.count ?? expData.results.length);
+            if (expData.total_amount !== undefined) {
+              setExpenseTotalAmount(expData.total_amount);
+            } else {
+              setExpenseTotalAmount(undefined);
+            }
+          } else {
+            const list = parseList(expData);
+            setExpenses(list);
+            setExpenseTotalCount(list.length);
+            setExpenseTotalAmount(undefined);
+          }
+        }
+
+        // Only load approvals once on initial mount if not yet loaded
+        if (approvals.length === 0) {
+          fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && !signal.aborted) setApprovals(parseList(data));
+            })
+            .catch(() => {});
+        }
       } else if (subpage === 'bundles') {
         const [resClaims, resExp, resApp] = await Promise.all([
           fetch(`${API_URL}/finance/claim/?page_size=all${dateParams}`, { headers, signal }),
@@ -665,7 +713,20 @@ export const FinanceView: React.FC = () => {
         abortControllerRef.current.abort();
       }
     };
-  }, [subpage, token, roleFilterOnly, filterDateFrom, filterDateTo, filterDateType, ledgerBatchFilter]);
+  }, [
+    subpage,
+    token,
+    roleFilterOnly,
+    filterDateFrom,
+    filterDateTo,
+    filterDateType,
+    ledgerBatchFilter,
+    debouncedSearchQuery,
+    statusFilter,
+    bundleFilter,
+    expensePage,
+    expensePageSize
+  ]);
 
   useEffect(() => {
     if (successMessage) {
@@ -1624,6 +1685,9 @@ export const FinanceView: React.FC = () => {
   };
 
   const filteredExpenses = useMemo(() => {
+    if (subpage === 'expenses') {
+      return expenses;
+    }
     return expenses.filter(e => {
       if (!filterDateType) {
         if (filterDateFrom && e.expense_date && e.expense_date < filterDateFrom) return false;
@@ -1990,6 +2054,15 @@ export const FinanceView: React.FC = () => {
           API_URL={API_URL}
           approvalsProps={approvalsProps}
           onRefresh={() => fetchData(true)}
+          currentPage={expensePage}
+          totalItems={expenseTotalCount}
+          itemsPerPage={expensePageSize}
+          onPageChange={(page) => setExpensePage(page)}
+          onItemsPerPageChange={(size) => {
+            setExpensePageSize(size);
+            setExpensePage(1);
+          }}
+          serverTotalAmount={expenseTotalAmount}
           isSyncingNewExpense={isSyncingNewExpense}
           syncingExpenseInfo={syncingExpenseInfo}
         />

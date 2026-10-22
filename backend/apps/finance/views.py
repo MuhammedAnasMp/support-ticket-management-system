@@ -27,7 +27,7 @@ from .services import (
 
 
 class FinancePagination(PageNumberPagination):
-    page_size = 10
+    page_size = 50
     page_size_query_param = 'page_size'
     max_page_size = 1000
 
@@ -36,7 +36,29 @@ class FinancePagination(PageNumberPagination):
                 request.query_params.get('no_page') == 'true' or
                 request.query_params.get('page_size') == 'all'):
             return None
+        self.queryset = queryset
         return super().paginate_queryset(queryset, request, view)
+
+    def get_paginated_response(self, data):
+        total_amount = None
+        if hasattr(self, 'queryset') and hasattr(self.queryset.model, 'amount'):
+            try:
+                from django.db.models import Sum
+                agg = self.queryset.aggregate(total_sum=Sum('amount'))
+                if agg.get('total_sum') is not None:
+                    total_amount = float(agg['total_sum'])
+            except Exception:
+                pass
+
+        res = {
+            'count': self.page.paginator.count,
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'results': data
+        }
+        if total_amount is not None:
+            res['total_amount'] = total_amount
+        return Response(res)
 
 
 class ExpenseTypeViewSet(viewsets.ModelViewSet):
@@ -122,6 +144,13 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             elif is_claimed.lower() in ('true', '1', 'yes'):
                 queryset = queryset.filter(is_claimed=True)
 
+        bundle_filter = self.request.query_params.get("bundle_filter")
+        if bundle_filter and bundle_filter.upper() != 'ALL':
+            if bundle_filter.upper() == 'IN_BUNDLE':
+                queryset = queryset.filter(Q(is_claimed=True) | Q(claim__isnull=False))
+            elif bundle_filter.upper() == 'NOT_IN_BUNDLE':
+                queryset = queryset.filter(is_claimed=False, claim__isnull=True)
+
         approved = self.request.query_params.get("approved")
         if approved is not None:
             if approved.lower() in ('true', '1', 'yes'):
@@ -141,7 +170,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             elif status_lower == 'rework':
                 queryset = queryset.filter(approval_instances__status='Rework')
             elif status_lower == 'paid':
-                queryset = queryset.filter(claim__status='Paid')
+                queryset = queryset.filter(Q(is_paid=True) | Q(claim__status='Paid'))
 
         from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
         to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to")
