@@ -33,7 +33,7 @@ interface ExpensesSubpageProps {
   API_URL: string;
   approvalsProps?: ApprovalsSubpageProps;
   ledgerBatches?: any[];
-  onRefresh?: () => void;
+  onRefresh?: () => Promise<any> | void;
   currentPage?: number;
   totalItems?: number;
   itemsPerPage?: number;
@@ -180,7 +180,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   // Bulk Approval State
   const [selectedExpenseIdsForBulk, setSelectedExpenseIdsForBulk] = useState<number[]>([]);
   const [bulkApproving, setBulkApproving] = useState<boolean>(false);
-  const [bulkActionMsg, setBulkActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [bulkActionMsg, setBulkActionMsg] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; text: string } | null>(null);
 
   // Lightbox Media Preview State
   const [mediaPreviewState, setMediaPreviewState] = useState<{ items: any[]; index: number } | null>(null);
@@ -1184,7 +1184,12 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
           throw new Error(errData.detail || 'Failed to action expense');
         }
         if (onRefresh) {
-          onRefresh();
+          setIsRefreshing(true);
+          try {
+            await onRefresh();
+          } finally {
+            setIsRefreshing(false);
+          }
         }
       }
     } catch (err: any) {
@@ -1270,31 +1275,86 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     if (ids.length === 0) return;
     setBulkApproving(true);
     setBulkActionMsg(null);
-    try {
-      const res = await fetch(`${API_URL}/finance/expense/bulk-approve/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          expense_ids: ids,
-          comments: 'Bulk approved'
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Bulk approval failed');
 
-      const approvedCount = data.approved_count ?? ids.length;
-      setBulkActionMsg({
-        type: 'success',
-        text: `Successfully approved ${approvedCount} expense(s)!`
-      });
+    // Process in batches of 50 to prevent NGINX / Gunicorn 504 Gateway Timeouts
+    const BATCH_SIZE = 50;
+    const totalBatches = Math.ceil(ids.length / BATCH_SIZE);
+    let totalApproved = 0;
+    const allErrors: string[] = [];
+
+    try {
+      for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+        const chunk = ids.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+
+        if (totalBatches > 1) {
+          setBulkActionMsg({
+            type: 'info',
+            text: `Approving batch ${batchNum} of ${totalBatches} (${Math.min(i + BATCH_SIZE, ids.length)}/${ids.length} expenses)...`
+          });
+        }
+
+        const res = await fetch(`${API_URL}/finance/expense/bulk-approve/`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            expense_ids: chunk,
+            comments: 'Bulk approved'
+          })
+        });
+
+        const text = await res.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          allErrors.push(`Batch ${batchNum} failed: Server returned non-JSON response (${res.status} ${res.statusText})`);
+          continue;
+        }
+
+        if (!res.ok) {
+          const detail = data?.detail || (Array.isArray(data?.errors) ? data.errors.join(', ') : 'Approval failed');
+          allErrors.push(`Batch ${batchNum}: ${detail}`);
+          continue;
+        }
+
+        const approvedCount = data.approved_count ?? chunk.length;
+        totalApproved += approvedCount;
+        if (Array.isArray(data.errors) && data.errors.length > 0) {
+          allErrors.push(...data.errors);
+        }
+      }
+
+      if (totalApproved > 0 && allErrors.length === 0) {
+        setBulkActionMsg({
+          type: 'success',
+          text: `Successfully approved all ${totalApproved} expense(s)!`
+        });
+      } else if (totalApproved > 0 && allErrors.length > 0) {
+        setBulkActionMsg({
+          type: 'warning',
+          text: `Approved ${totalApproved} expense(s). Encountered ${allErrors.length} issue(s): ${allErrors.slice(0, 2).join('; ')}`
+        });
+      } else {
+        setBulkActionMsg({
+          type: 'error',
+          text: allErrors.slice(0, 4).join('; ') || 'Bulk approval failed.'
+        });
+      }
+
       setSelectedExpenseIdsForBulk([]);
       if (onRefresh) {
-        onRefresh();
+        setIsRefreshing(true);
+        try {
+          await onRefresh();
+        } finally {
+          setIsRefreshing(false);
+        }
       }
-      setTimeout(() => setBulkActionMsg(null), 4000);
+      setTimeout(() => setBulkActionMsg(null), 6000);
     } catch (err: any) {
       setBulkActionMsg({
         type: 'error',
@@ -1621,12 +1681,20 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         </div>
 
         {bulkActionMsg && (
-          <div className={`px-4 py-2 text-xs flex items-center justify-between border-b ${bulkActionMsg.type === 'success'
-            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
-            : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-900'
-            }`}>
+          <div className={`px-4 py-2 text-xs flex items-center justify-between border-b ${
+            bulkActionMsg.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
+              : bulkActionMsg.type === 'info'
+              ? 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900'
+              : bulkActionMsg.type === 'warning'
+              ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900'
+              : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-900'
+          }`}>
             <div className="flex items-center gap-2">
-              {bulkActionMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />}
+              {bulkActionMsg.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
+              {bulkActionMsg.type === 'info' && <Loader2 className="w-4 h-4 text-blue-600 shrink-0 animate-spin" />}
+              {bulkActionMsg.type === 'warning' && <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />}
+              {bulkActionMsg.type === 'error' && <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />}
               <span>{bulkActionMsg.text}</span>
             </div>
             <button onClick={() => setBulkActionMsg(null)} className="text-on-surface-variant hover:text-on-surface cursor-pointer ml-2">

@@ -472,14 +472,36 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         if not expense_ids or not isinstance(expense_ids, list):
             raise exceptions.ValidationError({'detail': 'expense_ids list is required.'})
 
+        # Cap batch size to avoid long synchronous transactions and web gateway (NGINX/Gunicorn) timeouts
+        if len(expense_ids) > 100:
+            raise exceptions.ValidationError({'detail': 'Maximum 100 expenses can be bulk-approved in a single request to prevent server timeout. Please chunk requests.'})
+
         success_count = 0
         errors = []
 
         from django.core.exceptions import ValidationError as DjangoValidationError
 
+        # Prefetch expenses and their active pending instances in a single query
+        expenses_qs = Expense.objects.filter(pk__in=expense_ids).prefetch_related(
+            Prefetch(
+                'approval_instances',
+                queryset=ApprovalInstance.objects.filter(status='Pending').select_related('step', 'step__workflow').order_by('created_at'),
+                to_attr='active_pending_instances'
+            )
+        )
+        expenses_by_id = {exp.pk: exp for exp in expenses_qs}
+
+        is_admin = user.is_superuser or (hasattr(user, 'role') and user.role and user.role.role_name.lower().strip() in ['administrator', 'admin'])
+
         for exp_id in expense_ids:
             try:
-                expense = Expense.objects.filter(pk=exp_id).first()
+                try:
+                    exp_id_int = int(exp_id)
+                except (ValueError, TypeError):
+                    errors.append(f"Invalid expense ID: {exp_id}")
+                    continue
+
+                expense = expenses_by_id.get(exp_id_int)
                 if not expense:
                     errors.append(f"Expense #{exp_id} not found.")
                     continue
@@ -487,8 +509,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 if expense.approved:
                     continue
 
-                # Check if there is an active approval instance
-                pending_instance = expense.approval_instances.filter(status='Pending').order_by('created_at').first()
+                # Check if there is an active pending approval instance
+                pending_instances = getattr(expense, 'active_pending_instances', [])
+                pending_instance = pending_instances[0] if pending_instances else None
+
                 if pending_instance:
                     ApprovalService.action_step(
                         instance_id=pending_instance.instance_id,
@@ -500,7 +524,6 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     success_count += 1
                 else:
                     # Direct approval if authorized
-                    is_admin = user.is_superuser or (hasattr(user, 'role') and user.role and user.role.role_name.lower().strip() == 'administrator')
                     if not is_admin and not user.has_perm('finance.approve_expense') and not user.has_perm('finance.approve_expense', expense):
                         errors.append(f"Expense #{exp_id}: You do not have permission to approve.")
                         continue
