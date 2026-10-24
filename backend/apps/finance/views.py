@@ -41,12 +41,38 @@ class FinancePagination(PageNumberPagination):
 
     def get_paginated_response(self, data):
         total_amount = None
-        if hasattr(self, 'queryset') and hasattr(self.queryset.model, 'amount'):
+        stats = {}
+        if hasattr(self, 'queryset'):
             try:
-                from django.db.models import Sum
-                agg = self.queryset.aggregate(total_sum=Sum('amount'))
-                if agg.get('total_sum') is not None:
-                    total_amount = float(agg['total_sum'])
+                from django.db.models import Sum, Count, Q
+                if hasattr(self.queryset.model, 'amount'):
+                    if hasattr(self.queryset.model, 'approved'):
+                        agg = self.queryset.aggregate(
+                            total_sum=Sum('amount'),
+                            approved_count=Count('pk', filter=Q(approved=True) | Q(expense_type__approve_required=False)),
+                            pending_count=Count('pk', filter=Q(approved=False) & (Q(expense_type__isnull=True) | Q(expense_type__approve_required=True))),
+                            unclaimed_count=Count('pk', filter=Q(is_claimed=False, claim__isnull=True))
+                        )
+                        stats['approved_count'] = agg.get('approved_count', 0)
+                        stats['pending_count'] = agg.get('pending_count', 0)
+                        stats['unclaimed_count'] = agg.get('unclaimed_count', 0)
+                    else:
+                        agg = self.queryset.aggregate(total_sum=Sum('amount'))
+
+                    if agg.get('total_sum') is not None:
+                        total_amount = float(agg['total_sum'])
+                elif self.queryset.model.__name__ == 'WorkerClaim':
+                    agg = self.queryset.aggregate(
+                        total_bundles=Count('pk'),
+                        pending_bundles=Count('pk', filter=Q(status__in=['Submitted', 'In Review'])),
+                        approved_bundles=Count('pk', filter=Q(status='Approved'))
+                    )
+                    from apps.finance.models import Expense
+                    unclaimed_count = Expense.objects.filter(is_claimed=False, claim__isnull=True).count()
+                    stats['total_bundles_count'] = agg.get('total_bundles', 0)
+                    stats['pending_bundles_count'] = agg.get('pending_bundles', 0)
+                    stats['approved_bundles_count'] = agg.get('approved_bundles', 0)
+                    stats['unclaimed_expenses_count'] = unclaimed_count
             except Exception:
                 pass
 
@@ -58,6 +84,7 @@ class FinancePagination(PageNumberPagination):
         }
         if total_amount is not None:
             res['total_amount'] = total_amount
+        res.update(stats)
         return Response(res)
 
 
@@ -587,7 +614,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
 
 class WorkerClaimViewSet(viewsets.ModelViewSet):
-    queryset = WorkerClaim.objects.all()
+    queryset = WorkerClaim.objects.all().order_by('-claim_id')
     serializer_class = WorkerClaimSerializer
     pagination_class = FinancePagination
 
@@ -833,7 +860,9 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                 created_by=request.user,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            return Response(WorkerClaimSerializer(bundle).data, status=status.HTTP_201_CREATED)
+            # Fetch with select_related & prefetch_related for fast serialization
+            optimized_bundle = self.get_queryset().filter(pk=bundle.pk).first() or bundle
+            return Response(WorkerClaimSerializer(optimized_bundle, context={'request': request}).data, status=status.HTTP_201_CREATED)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
@@ -856,7 +885,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            return Response(WorkerClaimSerializer(bundle).data, status=status.HTTP_200_OK)
+            optimized_bundle = self.get_queryset().filter(pk=bundle.pk).first() or bundle
+            return Response(WorkerClaimSerializer(optimized_bundle, context={'request': request}).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})

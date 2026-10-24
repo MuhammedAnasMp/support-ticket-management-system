@@ -354,7 +354,7 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         return None
 
     def get_expenses(self, obj):
-        return ExpenseSerializer(obj.expenses.all(), many=True).data
+        return ExpenseSerializer(obj.expenses.all(), many=True, context=self.context).data
 
     def get_approval_history(self, obj):
         request = self.context.get('request')

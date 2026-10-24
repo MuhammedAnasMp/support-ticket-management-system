@@ -87,6 +87,12 @@ interface BundlesSubpageProps {
   } | null;
   selectedWorkerId?: number | null;
   setSelectedWorkerId?: (id: number | null) => void;
+  serverBundleStats?: {
+    total_bundles?: number;
+    pending_bundles?: number;
+    approved_bundles?: number;
+    unclaimed_expenses?: number;
+  };
 }
 
 export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
@@ -147,7 +153,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   isSyncingNewBundle = false,
   syncingBundleInfo = null,
   selectedWorkerId,
-  setSelectedWorkerId
+  setSelectedWorkerId,
+  serverBundleStats
 }) => {
   // Inline Approval State
   const [reworkComments, setReworkComments] = useState<Record<number, string>>({});
@@ -1119,23 +1126,27 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Total Bundles</span>
-          <span className="text-2xl font-semibold text-on-surface mt-1 block">{filteredBundles.length}</span>
+          <span className="text-2xl font-semibold text-on-surface mt-1 block">
+            {serverBundleStats?.total_bundles ?? propTotalItems ?? filteredBundles.length}
+          </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Pending Approval</span>
           <span className="text-2xl font-semibold text-amber-500 mt-1 block">
-            {filteredBundles.filter(b => b.status === 'Submitted' || b.status === 'In Review').length}
+            {serverBundleStats?.pending_bundles ?? filteredBundles.filter(b => b.status === 'Submitted' || b.status === 'In Review').length}
           </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Approved & Ready</span>
           <span className="text-2xl font-semibold text-emerald-500 mt-1 block">
-            {filteredBundles.filter(b => b.status === 'Approved').length}
+            {serverBundleStats?.approved_bundles ?? filteredBundles.filter(b => b.status === 'Approved').length}
           </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Unclaimed Expenses</span>
-          <span className="text-2xl font-semibold text-blue-500 mt-1 block">{unclaimedExpenses.length}</span>
+          <span className="text-2xl font-semibold text-blue-500 mt-1 block">
+            {serverBundleStats?.unclaimed_expenses ?? unclaimedExpenses.length}
+          </span>
         </div>
       </div>
 
@@ -1144,7 +1155,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         <div className="p-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-on-surface">Worker Expense Claims & Bundles</span>
-            <span className="text-xs text-on-surface-variant font-medium">Showing {filteredBundles.length} of {bundles.length}</span>
+            <span className="text-xs text-on-surface-variant font-medium">Showing {filteredBundles.length} of {propTotalItems ?? bundles.length}</span>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">

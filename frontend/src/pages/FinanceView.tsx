@@ -108,11 +108,60 @@ export const FinanceView: React.FC = () => {
   const [expensePageSize, setExpensePageSize] = useState<number>(50);
   const [expenseTotalCount, setExpenseTotalCount] = useState<number>(0);
   const [expenseTotalAmount, setExpenseTotalAmount] = useState<number | undefined>(undefined);
+  const [expenseApprovedCount, setExpenseApprovedCount] = useState<number | undefined>(undefined);
+  const [expensePendingCount, setExpensePendingCount] = useState<number | undefined>(undefined);
+  const [expenseUnclaimedCount, setExpenseUnclaimedCount] = useState<number | undefined>(undefined);
 
-  // Reset expensePage to 1 whenever search or filters change
+  // Expenses in-memory temporary page cache (stores Page 1, Page 2, Page 3... for instant pagination switching)
+  const expensePagesCacheRef = useRef<Map<string, {
+    results: ExpenseItem[];
+    count: number;
+    total_amount?: number;
+    approved_count?: number;
+    pending_count?: number;
+    unclaimed_count?: number;
+  }>>(new Map());
+
+  const getExpenseFilterKey = () => {
+    return `${filterDateFrom}_${filterDateTo}_${filterDateType}_${ledgerBatchFilter}_${statusFilter}_${bundleFilter}_${debouncedSearchQuery}_${expensePageSize}`;
+  };
+
+  // Reset expensePage to 1 and clear temp cache whenever search or filters change
   useEffect(() => {
+    expensePagesCacheRef.current.clear();
     setExpensePage(1);
-  }, [debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, filterDateFrom, filterDateTo, filterDateType]);
+  }, [debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, filterDateFrom, filterDateTo, filterDateType, expensePageSize]);
+
+  // Bundles server-side pagination state
+  const [bundlePage, setBundlePage] = useState<number>(1);
+  const [bundlePageSize, setBundlePageSize] = useState<number>(50);
+  const [bundleTotalCount, setBundleTotalCount] = useState<number>(0);
+  const [bundleStats, setBundleStats] = useState<{
+    total_bundles?: number;
+    pending_bundles?: number;
+    approved_bundles?: number;
+    unclaimed_expenses?: number;
+  }>({});
+
+  // Bundles in-memory temporary page cache (stores Page 1, Page 2, Page 3... for instant pagination switching)
+  const bundlePagesCacheRef = useRef<Map<string, {
+    results: WorkerClaimItem[];
+    count: number;
+    total_bundles?: number;
+    pending_bundles?: number;
+    approved_bundles?: number;
+    unclaimed_expenses?: number;
+  }>>(new Map());
+
+  const getBundleFilterKey = () => {
+    return `${filterDateFrom}_${filterDateTo}_${statusFilter}_${ledgerFilter}_${debouncedSearchQuery}_${bundlePageSize}`;
+  };
+
+  // Reset bundlePage to 1 and clear temp cache whenever search or filters change
+  useEffect(() => {
+    bundlePagesCacheRef.current.clear();
+    setBundlePage(1);
+  }, [debouncedSearchQuery, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, bundlePageSize]);
 
   // Fetch LedgerBatches for filtering and subpages
   useEffect(() => {
@@ -314,7 +363,7 @@ export const FinanceView: React.FC = () => {
       setSuccessMessage(`Bundle ${selectedBundleForEdit.claim_id} updated successfully.`);
       setSelectedBundleForEdit(null);
       setSelectedBundleForView(null);
-      fetchData(true);
+      fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -345,7 +394,7 @@ export const FinanceView: React.FC = () => {
       if (!res.ok) throw new Error(data.detail || 'Failed to remove expense from bundle');
 
       setSuccessMessage(`Expense ${expenseId} removed from Bundle ${bundleId}. Bundle status reset to Draft.`);
-      fetchData(true);
+      fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -370,7 +419,7 @@ export const FinanceView: React.FC = () => {
       setSuccessMessage(`Bundle ${claimId} deleted. All tied expenses have been released back to unclaimed status.`);
       setSelectedBundleForView(null);
       setSelectedBundleForEdit(null);
-      fetchData(true);
+      fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -586,9 +635,22 @@ export const FinanceView: React.FC = () => {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fetch API data (with silent background mode and cancellation support)
-  const fetchData = async (isSilent = false) => {
+  // Fetch API data (with silent background mode, temporary page cache, and cancellation support)
+  const fetchData = async (isSilent = false, bypassCache = false) => {
     if (!token) return;
+
+    if (bypassCache) {
+      expensePagesCacheRef.current.clear();
+      bundlePagesCacheRef.current.clear();
+    }
+
+    const currentFilterKey = getExpenseFilterKey();
+    const cacheKey = `${currentFilterKey}_p${expensePage}`;
+    const isCachedExpensePage = !bypassCache && subpage === 'expenses' && expensePagesCacheRef.current.has(cacheKey);
+
+    const currentBundleFilterKey = getBundleFilterKey();
+    const bundleCacheKey = `${currentBundleFilterKey}_p${bundlePage}`;
+    const isCachedBundlePage = !bypassCache && subpage === 'bundles' && bundlePagesCacheRef.current.has(bundleCacheKey);
 
     // Cancel any previous in-flight fetch request
     if (abortControllerRef.current) {
@@ -598,7 +660,7 @@ export const FinanceView: React.FC = () => {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    if (!isSilent) setLoading(true);
+    if (!isSilent && !isCachedExpensePage && !isCachedBundlePage) setLoading(true);
     setErrorMessage(null);
 
     const headers = {
@@ -620,6 +682,29 @@ export const FinanceView: React.FC = () => {
 
     try {
       if (subpage === 'expenses') {
+        // Instant response from temporary in-memory page cache (stores page 1, 2, 3... for fast switching)
+        if (isCachedExpensePage) {
+          const cached = expensePagesCacheRef.current.get(cacheKey)!;
+          setExpenses(cached.results);
+          setExpenseTotalCount(cached.count);
+          setExpenseTotalAmount(cached.total_amount);
+          setExpenseApprovedCount(cached.approved_count);
+          setExpensePendingCount(cached.pending_count);
+          setExpenseUnclaimedCount(cached.unclaimed_count);
+          if (!isSilent) setLoading(false);
+
+          // Only load approvals once on initial mount if not yet loaded
+          if (approvals.length === 0) {
+            fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
+              .then(res => res.ok ? res.json() : null)
+              .then(data => {
+                if (data && !signal.aborted) setApprovals(parseList(data));
+              })
+              .catch(() => {});
+          }
+          return;
+        }
+
         const dateTypeQuery = filterDateType ? `&date_type=${encodeURIComponent(filterDateType)}` : '';
         const batchQuery = (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') ? `&ledger_batch=${encodeURIComponent(ledgerBatchFilter)}` : '';
         const statusQuery = (statusFilter && statusFilter !== 'ALL') ? `&status=${encodeURIComponent(statusFilter)}` : '';
@@ -632,18 +717,43 @@ export const FinanceView: React.FC = () => {
         if (resExp.ok) {
           const expData = await resExp.json();
           if (expData && Array.isArray(expData.results)) {
+            const count = expData.count ?? expData.results.length;
+            const totalAmount = expData.total_amount !== undefined ? expData.total_amount : undefined;
+            const approvedCount = expData.approved_count !== undefined ? expData.approved_count : undefined;
+            const pendingCount = expData.pending_count !== undefined ? expData.pending_count : undefined;
+            const unclaimedCount = expData.unclaimed_count !== undefined ? expData.unclaimed_count : undefined;
+
             setExpenses(expData.results);
-            setExpenseTotalCount(expData.count ?? expData.results.length);
-            if (expData.total_amount !== undefined) {
-              setExpenseTotalAmount(expData.total_amount);
-            } else {
-              setExpenseTotalAmount(undefined);
-            }
+            setExpenseTotalCount(count);
+            setExpenseTotalAmount(totalAmount);
+            setExpenseApprovedCount(approvedCount);
+            setExpensePendingCount(pendingCount);
+            setExpenseUnclaimedCount(unclaimedCount);
+
+            // Store loaded page in temp cache
+            expensePagesCacheRef.current.set(cacheKey, {
+              results: expData.results,
+              count,
+              total_amount: totalAmount,
+              approved_count: approvedCount,
+              pending_count: pendingCount,
+              unclaimed_count: unclaimedCount
+            });
           } else {
             const list = parseList(expData);
             setExpenses(list);
             setExpenseTotalCount(list.length);
             setExpenseTotalAmount(undefined);
+            setExpenseApprovedCount(undefined);
+            setExpensePendingCount(undefined);
+            setExpenseUnclaimedCount(undefined);
+
+            // Store in temp cache
+            expensePagesCacheRef.current.set(cacheKey, {
+              results: list,
+              count: list.length,
+              total_amount: undefined
+            });
           }
         }
 
@@ -657,15 +767,104 @@ export const FinanceView: React.FC = () => {
             .catch(() => {});
         }
       } else if (subpage === 'bundles') {
-        const [resClaims, resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/claim/?page_size=all${dateParams}`, { headers, signal }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/approvals/?page_size=all${dateParams}`, { headers, signal })
-        ]);
+        // Instant response from temporary in-memory page cache (stores page 1, 2, 3... for fast switching)
+        if (isCachedBundlePage) {
+          const cached = bundlePagesCacheRef.current.get(bundleCacheKey)!;
+          setBundles(cached.results);
+          setBundleTotalCount(cached.count);
+          setBundleStats({
+            total_bundles: cached.total_bundles,
+            pending_bundles: cached.pending_bundles,
+            approved_bundles: cached.approved_bundles,
+            unclaimed_expenses: cached.unclaimed_expenses
+          });
+          if (!isSilent) setLoading(false);
+
+          // Fetch unclaimed expenses in the background for Create Bundle modal without freezing UI
+          if (unclaimedExpenses.length === 0) {
+            fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal })
+              .then(res => res.ok ? res.json() : null)
+              .then(data => {
+                if (data && !signal.aborted) setUnclaimedExpenses(parseList(data));
+              })
+              .catch(() => {});
+          }
+
+          // Only load approvals once on initial mount if not yet loaded
+          if (approvals.length === 0) {
+            fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
+              .then(res => res.ok ? res.json() : null)
+              .then(data => {
+                if (data && !signal.aborted) setApprovals(parseList(data));
+              })
+              .catch(() => {});
+          }
+          return;
+        }
+
+        // 1. Fetch paginated claims/bundles
+        let claimsUrl = `${API_URL}/finance/claim/?page=${bundlePage}&page_size=${bundlePageSize}${dateParams}`;
+        if (statusFilter !== 'ALL') {
+          claimsUrl += `&status=${encodeURIComponent(statusFilter)}`;
+        }
+        if (ledgerFilter !== 'ALL') {
+          claimsUrl += `&ledger_filter=${encodeURIComponent(ledgerFilter)}`;
+        }
+        if (debouncedSearchQuery) {
+          claimsUrl += `&search=${encodeURIComponent(debouncedSearchQuery)}`;
+        }
+
+        const resClaims = await fetch(claimsUrl, { headers, signal });
         if (signal.aborted) return;
-        if (resClaims.ok) setBundles(parseList(await resClaims.json()));
-        if (resExp.ok) setUnclaimedExpenses(parseList(await resExp.json()));
-        if (resApp.ok) setApprovals(parseList(await resApp.json()));
+        if (resClaims.ok) {
+          const claimData = await resClaims.json();
+          if (claimData && Array.isArray(claimData.results)) {
+            const count = typeof claimData.count === 'number' ? claimData.count : claimData.results.length;
+            setBundles(claimData.results);
+            setBundleTotalCount(count);
+            const stats = {
+              total_bundles: claimData.total_bundles_count ?? count,
+              pending_bundles: claimData.pending_bundles_count,
+              approved_bundles: claimData.approved_bundles_count,
+              unclaimed_expenses: claimData.unclaimed_expenses_count
+            };
+            setBundleStats(stats);
+            bundlePagesCacheRef.current.set(bundleCacheKey, {
+              results: claimData.results,
+              count,
+              ...stats
+            });
+          } else {
+            const list = parseList(claimData);
+            setBundles(list);
+            setBundleTotalCount(list.length);
+            bundlePagesCacheRef.current.set(bundleCacheKey, {
+              results: list,
+              count: list.length
+            });
+          }
+        }
+        if (!isSilent) setLoading(false);
+
+        // 2. Fetch unclaimed expenses in the background for Create Bundle modal without freezing UI
+        if (unclaimedExpenses.length === 0) {
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && !signal.aborted) setUnclaimedExpenses(parseList(data));
+            })
+            .catch(() => {});
+        }
+
+        // 3. Only fetch approvals once if empty
+        if (approvals.length === 0) {
+          fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && !signal.aborted) setApprovals(parseList(data));
+            })
+            .catch(() => {});
+        }
       } else if (subpage === 'ledgers') {
         const [resL, resG, resApprovedBundles, resExp, resApp] = await Promise.all([
           fetch(`${API_URL}/finance/ledgers/?page_size=all${dateParams}`, { headers, signal }),
@@ -724,8 +923,11 @@ export const FinanceView: React.FC = () => {
     debouncedSearchQuery,
     statusFilter,
     bundleFilter,
+    ledgerFilter,
     expensePage,
-    expensePageSize
+    expensePageSize,
+    bundlePage,
+    bundlePageSize
   ]);
 
   useEffect(() => {
@@ -844,6 +1046,9 @@ export const FinanceView: React.FC = () => {
 
   // Filtered lists for main tables
   const filteredBundles = useMemo(() => {
+    if (subpage === 'bundles') {
+      return bundles;
+    }
     return bundles.filter((b) => {
       if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
       if (ledgerFilter === 'IN_LEDGER' && !b.ledger_details) return false;
@@ -860,7 +1065,7 @@ export const FinanceView: React.FC = () => {
       }
       return true;
     });
-  }, [bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
+  }, [subpage, bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
 
   const filteredLedgers = useMemo(() => {
     // Group ledgers by group ID to determine each Ledger Group's unified status
@@ -1263,7 +1468,7 @@ export const FinanceView: React.FC = () => {
         });
       }
 
-      await fetchData(true);
+      await fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -1295,7 +1500,7 @@ export const FinanceView: React.FC = () => {
       // Optimistically update status so UI reflects submission immediately
       setBundles(prev => prev.map(b => b.claim_id === claimId ? { ...b, status: 'Submitted' } : b));
 
-      await fetchData(true);
+      await fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     }
@@ -1536,8 +1741,8 @@ export const FinanceView: React.FC = () => {
         }));
       }
 
-      // 5. Silent background sync without table spinner
-      fetchData(true);
+      // 5. Silent background sync without table spinner (bypass cache to fetch fresh data)
+      fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -1671,7 +1876,7 @@ export const FinanceView: React.FC = () => {
       }
 
       setSuccessMessage(`Expense ${data.expense_id} created successfully.`);
-      fetchData(true);
+      fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
       throw err;
@@ -2053,7 +2258,7 @@ export const FinanceView: React.FC = () => {
           currentUser={currentUser}
           API_URL={API_URL}
           approvalsProps={approvalsProps}
-          onRefresh={() => fetchData(true)}
+          onRefresh={() => fetchData(true, true)}
           currentPage={expensePage}
           totalItems={expenseTotalCount}
           itemsPerPage={expensePageSize}
@@ -2063,6 +2268,9 @@ export const FinanceView: React.FC = () => {
             setExpensePage(1);
           }}
           serverTotalAmount={expenseTotalAmount}
+          serverApprovedCount={expenseApprovedCount}
+          serverPendingCount={expensePendingCount}
+          serverUnclaimedCount={expenseUnclaimedCount}
           isSyncingNewExpense={isSyncingNewExpense}
           syncingExpenseInfo={syncingExpenseInfo}
         />
@@ -2119,11 +2327,20 @@ export const FinanceView: React.FC = () => {
           errorMessage={errorMessage}
           setErrorMessage={setErrorMessage}
           setSelectedTicketForModal={setSelectedTicketForModal}
-          onRefresh={() => fetchData(true)}
+          onRefresh={() => fetchData(true, true)}
           isSyncingNewBundle={isSyncingNewBundle}
           syncingBundleInfo={syncingBundleInfo}
           selectedWorkerId={selectedWorkerId}
           setSelectedWorkerId={setSelectedWorkerId}
+          currentPage={bundlePage}
+          totalItems={bundleTotalCount}
+          itemsPerPage={bundlePageSize}
+          onPageChange={(page) => setBundlePage(page)}
+          onItemsPerPageChange={(size) => {
+            setBundlePageSize(size);
+            setBundlePage(1);
+          }}
+          serverBundleStats={bundleStats}
         />
       )}
 

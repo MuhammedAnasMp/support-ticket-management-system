@@ -40,6 +40,9 @@ interface ExpensesSubpageProps {
   onPageChange?: (page: number) => void;
   onItemsPerPageChange?: (num: number) => void;
   serverTotalAmount?: number;
+  serverApprovedCount?: number;
+  serverPendingCount?: number;
+  serverUnclaimedCount?: number;
   isSyncingNewExpense?: boolean;
   syncingExpenseInfo?: any;
 }
@@ -67,6 +70,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   onPageChange: propOnPageChange,
   onItemsPerPageChange: propOnItemsPerPageChange,
   serverTotalAmount: propServerTotalAmount,
+  serverApprovedCount,
+  serverPendingCount,
+  serverUnclaimedCount,
   isSyncingNewExpense: propIsSyncingNewExpense = false,
   syncingExpenseInfo: propSyncingExpenseInfo = null
 }) => {
@@ -1566,25 +1572,33 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Total Expenses Recorded</span>
-          <span className="text-2xl font-semibold text-on-surface mt-1 block">{filteredExpenses.length}</span>
+          <span className="text-2xl font-semibold text-on-surface mt-1 block">
+            {propTotalItems !== undefined ? propTotalItems : filteredExpenses.length}
+          </span>
           <span className="text-xs text-on-surface-variant mt-1 block">{totalAmount.toFixed(3)} KD total</span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Approved Expenses</span>
           <span className="text-2xl font-semibold text-emerald-500 mt-1 block">
-            {filteredExpenses.filter(e => e.approved || (e.expense_type as any)?.approve_required === false).length}
+            {serverApprovedCount !== undefined
+              ? serverApprovedCount
+              : filteredExpenses.filter(e => e.approved || (e.expense_type as any)?.approve_required === false).length}
           </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Pending Approval</span>
           <span className="text-2xl font-semibold text-amber-500 mt-1 block">
-            {filteredExpenses.filter(e => !e.approved && (e.expense_type as any)?.approve_required !== false).length}
+            {serverPendingCount !== undefined
+              ? serverPendingCount
+              : filteredExpenses.filter(e => !e.approved && (e.expense_type as any)?.approve_required !== false).length}
           </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Unclaimed (Available)</span>
           <span className="text-2xl font-semibold text-blue-500 mt-1 block">
-            {filteredExpenses.filter(e => !e.is_claimed && !e.claim).length}
+            {serverUnclaimedCount !== undefined
+              ? serverUnclaimedCount
+              : filteredExpenses.filter(e => !e.is_claimed && !e.claim).length}
           </span>
         </div>
       </div>
@@ -1595,7 +1609,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
           <div className="flex items-center gap-3">
             {/* <span className="text-xs font-semibold text-on-surface">Expense Line Items</span> */}
             <span className="text-xs text-on-surface-variant font-medium">
-              Showing {filteredExpenses.length} of {expenses.length}
+              Showing {filteredExpenses.length} of {propTotalItems !== undefined ? propTotalItems : expenses.length}
             </span>
           </div>
 
