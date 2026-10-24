@@ -1356,19 +1356,26 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                       const isBundleApproved = b.status === 'Approved' || b.status === 'Paid';
 
-                      const isCurrentlyRework = !isBundleApproved && !activePendingInstance && (
+                      // Check if bundle or any of its approval steps is in Rework
+                      const isRework = !isBundleApproved && (
                         b.status === 'Rework' ||
+                        (b.status as string) === 'Rework Needed' ||
+                        (b as any).status_display === 'Rework' ||
+                        (b as any).status_display === 'Rework Needed' ||
+                        Boolean(reworkInstance) ||
                         (approvalData?.app?.status === 'Rework') ||
-                        (latestInstance?.status === 'Rework')
+                        (latestInstance?.status === 'Rework') ||
+                        (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.some((inst: any) => inst.status === 'Rework'))
                       );
 
-                      const isCurrentlyRejected = !isBundleApproved && !activePendingInstance && !isCurrentlyRework && (
+                      const isCurrentlyRejected = !isBundleApproved && !isRework && (
                         b.status === 'Rejected' ||
+                        Boolean(rejectedInstance) ||
                         (approvalData?.app?.status === 'Rejected') ||
-                        (latestInstance?.status === 'Rejected')
+                        (latestInstance?.status === 'Rejected') ||
+                        (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.some((inst: any) => inst.status === 'Rejected'))
                       );
 
-                      const isRework = isCurrentlyRework;
                       const isRejected = isCurrentlyRejected;
                       const isRejectedOrRework = isRework || isRejected;
 
@@ -1376,7 +1383,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         b.status === 'Submitted' || b.status === 'In Review' || !!activePendingInstance
                       );
 
-                      const activeApp: any = activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app || {
+                      const activeApp: any = isRework 
+                        ? (reworkInstance || approvalData?.app)
+                        : (activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app) || {
                         instance_id: b.claim_id,
                         step_name: 'Bundle Approval',
                         step_order: 1,
@@ -1388,13 +1397,13 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         claim_id: b.claim_id
                       };
 
-                      const currentStepInfo = activeApp.workflow_steps?.find(
+                      const currentStepInfo = activeApp?.workflow_steps?.find(
                         (s: any) => s.step_id === activeApp.step_id || s.step_name === activeApp.step_name || s.step_order === activeApp.step_order
                       );
 
-                      const canActionBundle = b.status !== 'Draft' && checkCanUserActionStep(activeApp, currentStepInfo);
+                      const canActionBundle = b.status !== 'Draft' && !isBundleApproved && !isRejectedOrRework && checkCanUserActionStep(activeApp, currentStepInfo);
 
-                      const hasCurrentUserApproved = (b.status === 'In Review' || b.status === 'Submitted') && Boolean(
+                      const hasCurrentUserApproved = !isRejectedOrRework && (b.status === 'In Review' || b.status === 'Submitted') && Boolean(
                         (approvalData?.group?.items || (b as any).approval_history || []).some(
                           (inst: any) => inst.status === 'Approved' && (
                             (inst.action_by_username && currentUsername && inst.action_by_username.toLowerCase() === currentUsername.toLowerCase()) ||
@@ -1458,7 +1467,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                             <td className="px-4 py-3 text-right font-semibold">{parseFloat(b.total_claimed_amount).toFixed(3)}</td>
                             <td className="px-4 py-3">
                               {renderStatusBadge(
-                                b.status,
+                                isRework ? 'Rework' : isRejected ? 'Rejected' : b.status,
                                 (b.status === 'Submitted' || b.status === 'In Review') && canActionBundle,
                                 (activePendingInstance || activeApp)?.step_name,
                                 hasCurrentUserApproved
@@ -1467,8 +1476,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                             <td className="px-4 py-3 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
                               {isRejectedOrRework ? (
                                 <div className="inline-flex items-center gap-1.5">
-                                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                  <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                     <button
+                                      type="button"
                                       onClick={() => openEditBundleModal(b)}
                                       className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
                                       title="Edit Bundle & Modify Tied Expenses"
@@ -1477,11 +1487,13 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       <span>Edit</span>
                                     </button>
                                   </Can>
-                                  <Can permission="finance.edit_bundle">
+                                  <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim", "finance.add_workerclaim"] as any}>
                                     <button
+                                      type="button"
                                       onClick={() => onHandleSubmitBundle(b.claim_id)}
                                       disabled={Boolean(submittingBundleIds[b.claim_id])}
                                       className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
+                                      title="Submit / Resubmit Bundle for Approval"
                                     >
                                       {submittingBundleIds[b.claim_id] ? (
                                         <>
@@ -1489,7 +1501,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                           <span>Submitting...</span>
                                         </>
                                       ) : (
-                                        <span>Resubmit</span>
+                                        <>
+                                          <RotateCcw className="w-3.5 h-3.5" />
+                                          <span>Submit</span>
+                                        </>
                                       )}
                                     </button>
                                   </Can>
@@ -1677,19 +1692,22 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                           </div>
                                         )}
                                       </>
-                                    ) : (b.status === 'Draft' || b.status === 'Rework' || b.status === 'Rejected') ? (
+                                    ) : (isRejectedOrRework || b.status === 'Draft') ? (
                                       <div className="flex items-center gap-1.5">
-                                        <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                        <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                           <button
+                                            type="button"
                                             onClick={() => openEditBundleModal(b)}
                                             className="px-2.5 py-1.5 rounded border border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                            title="Edit Bundle & Modify Tied Expenses"
                                           >
                                             <PlusCircle className="w-3.5 h-3.5" />
                                             <span>Edit</span>
                                           </button>
                                         </Can>
-                                        <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
+                                        <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim", "finance.add_workerclaim", "finance.submit_bundle", "finance.submit_workerclaim"] as any}>
                                           <button
+                                            type="button"
                                             onClick={() => onHandleSubmitBundle(b.claim_id)}
                                             disabled={Boolean(submittingBundleIds[b.claim_id])}
                                             className="px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
@@ -1767,39 +1785,41 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       </p>
                                     </div>
 
-                                    {/* <div className="flex items-center gap-2">
-                                    <Can permission="finance.edit_bundle">
-                                      <button
-                                        type="button"
-                                        onClick={() => openEditBundleModal(b)}
-                                        className="px-3.5 py-1.5 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                                      >
-                                        <PlusCircle className="w-3.5 h-3.5 text-primary" />
-                                        <span>Edit Bundle</span>
-                                      </button>
-                                    </Can>
-                                    <Can permission="finance.edit_bundle">
-                                      <button
-                                        type="button"
-                                        disabled={submittingBundleId === b.claim_id || submitting}
-                                        onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                        className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
-                                          }`}
-                                      >
-                                        {submittingBundleId === b.claim_id ? (
-                                          <>
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            <span>Resubmitting...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <RotateCcw className="w-3.5 h-3.5" />
-                                            <span>Resubmit Bundle</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    </Can>
-                                  </div> */}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                        <button
+                                          type="button"
+                                          onClick={() => openEditBundleModal(b)}
+                                          className="px-3.5 py-1.5 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                          title="Edit Bundle & Modify Tied Expenses"
+                                        >
+                                          <PlusCircle className="w-3.5 h-3.5 text-primary" />
+                                          <span>Edit Bundle</span>
+                                        </button>
+                                      </Can>
+                                      <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim", "finance.add_workerclaim"] as any}>
+                                        <button
+                                          type="button"
+                                          disabled={Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                          onClick={() => onHandleSubmitBundle(b.claim_id)}
+                                          className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
+                                            }`}
+                                          title="Submit / Resubmit Bundle for Approval"
+                                        >
+                                          {submittingBundleIds[b.claim_id] ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              <span>Submitting...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <RotateCcw className="w-3.5 h-3.5" />
+                                              <span>Submit Bundle</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </Can>
+                                    </div>
                                   </div>
                                 )}
 
