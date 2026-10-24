@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Sidebar } from './Sidebar';
+import { useLocation, Navigate } from 'react-router-dom';
+import { Sidebar, getNextPermittedPath } from './Sidebar';
 import { Header } from './Header';
+import { usePermission } from '../hooks/usePermission';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -12,6 +13,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     return typeof window !== 'undefined' && window.innerWidth >= 768;
   });
   const location = useLocation();
+  const { hasPermission } = usePermission();
+
+  // If user lacks permission for the current path, redirect to next permitted menu item
+  const nextPermittedPath = getNextPermittedPath(location.pathname, hasPermission);
+  if (nextPermittedPath && nextPermittedPath !== location.pathname) {
+    return <Navigate to={nextPermittedPath} replace />;
+  }
 
   // Auto-request fullscreen mode on initial load / user interaction (unless opted out within 1 week)
   useEffect(() => {

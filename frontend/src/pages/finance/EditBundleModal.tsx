@@ -1,17 +1,18 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  X, 
-  Layers, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock, 
-  Search, 
-  PlusCircle, 
-  Trash2, 
-  Check, 
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import {
+  X,
+  Layers,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Search,
+  PlusCircle,
+  Trash2,
+  Check,
   Lock,
   Plus,
-  Minus
+  Minus,
+  GripHorizontal
 } from 'lucide-react';
 import type { WorkerClaimItem, ExpenseItem } from './types';
 import { getUserId } from './types';
@@ -41,6 +42,48 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'added' | 'unadded'>('all');
+
+  // Draggable slider state between added and unadded panels
+  const [splitPercent, setSplitPercent] = useState<number>(50);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const newPercent = (relativeY / rect.height) * 100;
+      const clamped = Math.min(80, Math.max(20, newPercent));
+      setSplitPercent(clamped);
+    };
+
+    const handlePointerUp = () => {
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDragging]);
 
   const currentExpenses = selectedBundleForEdit?.expenses || [];
   const targetWorkerId = selectedBundleForEdit
@@ -189,36 +232,23 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
     return (
       <div
         key={exp.expense_id}
-        onClick={() => handleToggleExpense(exp)}
-        className={`flex items-center justify-between p-2.5 sm:p-3 text-xs transition-all border-b border-outline-variant/40 last:border-b-0 ${
-          !isSelectable
-            ? 'bg-surface-container-low/50 opacity-65 cursor-not-allowed border-l-4 border-l-amber-500/40'
-            : isAdded
-              ? 'bg-emerald-500/5 hover:bg-emerald-500/10 border-l-4 border-l-emerald-500 cursor-pointer'
-              : 'hover:bg-surface-container/60 border-l-4 border-l-transparent cursor-pointer'
-        }`}
+        className={`flex items-center justify-between p-2.5 sm:p-3 text-xs transition-all border-b border-outline-variant/40 last:border-b-0 ${!isSelectable
+          ? 'bg-surface-container-low/50 opacity-65 border-l-4 border-l-amber-500/40'
+          : isAdded
+            ? 'bg-emerald-500/5 border-l-4 border-l-emerald-500'
+            : 'border-l-4 border-l-transparent'
+          }`}
       >
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 pr-2">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            disabled={!isSelectable}
-            onChange={() => handleToggleExpense(exp)}
-            onClick={(e) => e.stopPropagation()}
-            className={`rounded w-4 h-4 text-primary focus:ring-primary shrink-0 ${
-              !isSelectable ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
-            }`}
-            title={!isSelectable ? (isLockedInLedger ? 'Locked in ledger batch' : 'Needs approval before adding') : (isSelected ? 'Remove from bundle' : 'Add to bundle')}
-          />
+        <div className="flex items-center min-w-0 flex-1 pr-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-on-surface truncate">
                 {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense #${exp.expense_id}`}
               </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant font-mono font-bold">
-                #{exp.expense_id}
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant  font-bold">
+                {exp.expense_id}
               </span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-auto sm:ml-0 font-mono">
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-auto sm:ml-0 ">
                 {parseFloat(exp.amount).toFixed(3)} KD
               </span>
 
@@ -248,7 +278,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             <div className="flex items-center gap-2 text-[10px] text-on-surface-variant truncate mt-0.5">
               <span>{exp.expense_date}</span>
               {exp.ticket_details?.work_order_no && (
-                <span>• WO: <strong className="text-on-surface font-mono">{exp.ticket_details.work_order_no}</strong></span>
+                <span>• WO: <strong className="text-on-surface ">{exp.ticket_details.work_order_no}</strong></span>
               )}
               {cleanRemarks && (
                 <span className="truncate" title={cleanRemarks}>• {cleanRemarks}</span>
@@ -258,7 +288,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
         </div>
 
         {/* Right Action Button */}
-        <div className="shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+        <div className="shrink-0 ml-2">
           {!isSelectable ? (
             <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium italic">
               {isLockedInLedger ? 'Locked in Ledger' : 'Unapproved'}
@@ -293,12 +323,12 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
-      <div className="bg-surface-container rounded-xl border border-outline-variant/80 max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl text-on-surface relative overflow-hidden transition-all">
-        
+      <div className="bg-surface-container rounded border border-outline-variant/80 max-w-3xl w-full h-[88vh] max-h-[92vh] flex flex-col shadow-2xl text-on-surface relative overflow-hidden transition-all">
+
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/80 px-4 py-3 shrink-0 bg-surface-container-high/40">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shadow-xs shrink-0">
+            <div className="w-9 h-9 rounded bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shadow-xs shrink-0">
               <Layers className="w-5 h-5" />
             </div>
             <div>
@@ -307,7 +337,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                   Edit Bundle #{selectedBundleForEdit.claim_id}
                 </h3>
                 {isConnectedToLedger && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold border border-purple-500/20 inline-flex items-center gap-1">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold border border-purple-500/20 inline-flex items-center gap-1">
                     <Lock className="w-2.5 h-2.5" /> Ledger Linked
                   </span>
                 )}
@@ -320,7 +350,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
           <button
             type="button"
             onClick={() => setSelectedBundleForEdit(null)}
-            className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+            className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -328,11 +358,11 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
-          
+        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin flex flex-col min-h-0">
+
           {/* Modal Error Banner */}
           {errorMessage && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs animate-in fade-in">
+            <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs animate-in fade-in shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
                 <span className="font-semibold">{errorMessage}</span>
@@ -351,21 +381,21 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
           )}
 
           {/* Remarks input */}
-          <div>
+          <div className="shrink-0">
             <label className="block font-semibold text-on-surface mb-1 text-xs">Remarks / Bundle Notes:</label>
             <textarea
               rows={2}
               value={editBundleForm.remarks}
               onChange={(e) => setEditBundleForm({ ...editBundleForm, remarks: e.target.value })}
               placeholder="Optional remarks or description for this bundle..."
-              className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded-lg p-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline resize-none"
+              className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline resize-none"
             />
           </div>
 
           {/* Search bar & View Filter Tabs */}
-          <div className="pt-2 border-t border-outline-variant/70 space-y-2">
+          <div className="pt-2 border-t border-outline-variant/70 space-y-2 shrink-0">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
-              
+
               {/* Search input */}
               <div className="relative flex-1">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/70" />
@@ -374,7 +404,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by ID, Category, WO#, Remarks, Amount..."
-                  className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline placeholder:text-on-surface-variant/50"
+                  className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded pl-8 pr-8 py-2 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline placeholder:text-on-surface-variant/50"
                 />
                 {searchQuery && (
                   <button
@@ -389,47 +419,42 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
               </div>
 
               {/* View filter toggles */}
-              <div className="flex items-center gap-1 bg-surface-container-low border border-outline-variant p-0.5 rounded-lg shrink-0 text-xs font-semibold self-start sm:self-auto">
+              <div className="flex items-center gap-1 bg-surface-container-low border border-outline-variant p-0.5 rounded shrink-0 text-xs font-semibold self-start sm:self-auto">
                 <button
                   type="button"
                   onClick={() => setActiveFilterTab('all')}
-                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                    activeFilterTab === 'all'
-                      ? 'bg-primary text-on-primary shadow-xs'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer ${activeFilterTab === 'all'
+                    ? 'bg-primary text-on-primary shadow-xs'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
                 >
                   All ({combinedExpenses.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveFilterTab('added')}
-                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                    activeFilterTab === 'added'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'added'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
                 >
                   <span>Added</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    activeFilterTab === 'added' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  }`}>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'added' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    }`}>
                     {addedExpenses.length}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveFilterTab('unadded')}
-                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                    activeFilterTab === 'unadded'
-                      ? 'bg-primary text-on-primary shadow-xs'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'unadded'
+                    ? 'bg-primary text-on-primary shadow-xs'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
                 >
                   <span>Available</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    activeFilterTab === 'unadded' ? 'bg-white/20 text-white' : 'bg-surface-container-high text-on-surface-variant'
-                  }`}>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'unadded' ? 'bg-white/20 text-white' : 'bg-surface-container-high text-on-surface-variant'
+                    }`}>
                     {unaddedExpenses.length}
                   </span>
                 </button>
@@ -448,93 +473,132 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             )}
           </div>
 
-          {/* SECTION 1: ADDED TIED EXPENSES */}
-          {(activeFilterTab === 'all' || activeFilterTab === 'added') && (
-            <div className="border border-emerald-500/30 rounded-xl overflow-hidden bg-surface-container-low shadow-xs">
-              
-              {/* Added Section Header */}
-              <div className="bg-emerald-500/10 px-3.5 py-2.5 border-b border-emerald-500/20 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                    <Check className="w-3 h-3 stroke-[3]" />
-                  </span>
-                  <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 tracking-wide uppercase">
-                    Added to Bundle ({addedExpenses.length})
-                  </h4>
-                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 font-mono">
-                    • {addedTotal.toFixed(3)} KD
-                  </span>
+          {/* SECTIONS WRAPPER WITH DRAGGABLE SPLIT */}
+          <div ref={splitContainerRef} className={`flex-1 flex flex-col min-h-0 relative ${isDragging ? 'select-none' : ''}`}>
+
+            {/* SECTION 1: ADDED TIED EXPENSES */}
+            {(activeFilterTab === 'all' || activeFilterTab === 'added') && (
+              <div
+                style={activeFilterTab === 'all' ? { flex: `${splitPercent} 1 0%` } : undefined}
+                className={`border border-emerald-500/30 rounded overflow-hidden bg-surface-container-low shadow-xs flex flex-col ${activeFilterTab === 'added' ? 'flex-1 min-h-0' : 'min-h-[140px]'
+                  }`}
+              >
+
+                {/* Added Section Header */}
+                <div className="bg-emerald-500/10 px-3.5 py-2.5 border-b border-emerald-500/20 flex items-center justify-between flex-wrap gap-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </span>
+                    <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 tracking-wide uppercase">
+                      Added to Bundle ({addedExpenses.length})
+                    </h4>
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 ">
+                      • {addedTotal.toFixed(3)} KD
+                    </span>
+                  </div>
+
+                  {filteredAdded.length > 0 && !isConnectedToLedger && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAllAdded}
+                      className="text-[10px] text-rose-600 dark:text-rose-400 hover:text-rose-700 font-semibold cursor-pointer transition-colors hover:underline"
+                    >
+                      Remove All ({filteredAdded.length})
+                    </button>
+                  )}
                 </div>
 
-                {filteredAdded.length > 0 && !isConnectedToLedger && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveAllAdded}
-                    className="text-[10px] text-rose-600 dark:text-rose-400 hover:text-rose-700 font-semibold cursor-pointer transition-colors hover:underline"
-                  >
-                    Remove All ({filteredAdded.length})
-                  </button>
-                )}
+                {/* Added Expenses List */}
+                <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-outline-variant/40 scrollbar-thin">
+                  {filteredAdded.length === 0 ? (
+                    <div className="p-5 text-center text-xs text-on-surface-variant italic">
+                      {searchQuery
+                        ? 'No added expenses match your search.'
+                        : 'No expenses added to this bundle yet. Select from the available expenses below.'}
+                    </div>
+                  ) : (
+                    filteredAdded.map(exp => renderExpenseCard(exp, true))
+                  )}
+                </div>
               </div>
+            )}
 
-              {/* Added Expenses List */}
-              <div className={`${activeFilterTab === 'added' ? 'max-h-96' : 'max-h-56'} overflow-y-auto divide-y divide-outline-variant/40 scrollbar-thin`}>
-                {filteredAdded.length === 0 ? (
-                  <div className="p-5 text-center text-xs text-on-surface-variant italic">
-                    {searchQuery 
-                      ? 'No added expenses match your search.'
-                      : 'No expenses added to this bundle yet. Select from the available expenses below.'}
+            {/* DRAGGABLE RESIZER SLIDER (Active only on 'all' tab when both sections are shown) */}
+            {activeFilterTab === 'all' && (
+              <div
+                onPointerDown={handlePointerDown}
+                className={`group py-1.5 cursor-row-resize select-none touch-none shrink-0 flex items-center justify-center relative my-0.5 transition-colors ${isDragging ? 'opacity-100' : 'opacity-85 hover:opacity-100'
+                  }`}
+                title="Drag up or down to resize panels"
+              >
+                <div
+                  className={`w-full h-1 rounded-full transition-colors ${isDragging ? 'bg-primary' : 'bg-outline-variant/60 group-hover:bg-primary/50'
+                    }`}
+                />
+                <div
+                  className={`absolute px-2.5 py-0.5 rounded-full border text-[10px] flex items-center gap-1 shadow-xs transition-all pointer-events-none ${isDragging
+                      ? 'bg-primary text-on-primary border-primary scale-110 shadow-md'
+                      : 'bg-surface-container-high text-on-surface-variant border-outline-variant group-hover:border-primary/50 group-hover:text-primary'
+                    }`}
+                >
+                  <GripHorizontal className="w-3.5 h-3.5" />
+                  {/* <span className="text-[9px] font-semibold hidden sm:inline">
+                    {Math.round(splitPercent)}% / {Math.round(100 - splitPercent)}%
+                  </span> */}
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 2: UNADDED / AVAILABLE EXPENSES */}
+            {(activeFilterTab === 'all' || activeFilterTab === 'unadded') && (
+              <div
+                style={activeFilterTab === 'all' ? { flex: `${100 - splitPercent} 1 0%` } : undefined}
+                className={`border border-outline-variant rounded overflow-hidden bg-surface-container-low shadow-xs flex flex-col ${activeFilterTab === 'unadded' ? 'flex-1 min-h-0' : 'min-h-[140px]'
+                  }`}
+              >
+
+                {/* Unadded Section Header */}
+                <div className="bg-surface-container-high/60 px-3.5 py-2.5 border-b border-outline-variant flex items-center justify-between flex-wrap gap-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded bg-primary/10 text-primary flex items-center justify-center">
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                    </span>
+                    <h4 className="text-xs font-bold text-on-surface tracking-wide uppercase">
+                      Available Unadded Expenses ({unaddedExpenses.length})
+                    </h4>
+                    <span className="text-xs font-bold text-on-surface-variant ">
+                      • {unaddedTotal.toFixed(3)} KD
+                    </span>
                   </div>
-                ) : (
-                  filteredAdded.map(exp => renderExpenseCard(exp, true))
-                )}
-              </div>
-            </div>
-          )}
 
-          {/* SECTION 2: UNADDED / AVAILABLE EXPENSES */}
-          {(activeFilterTab === 'all' || activeFilterTab === 'unadded') && (
-            <div className="border border-outline-variant rounded-xl overflow-hidden bg-surface-container-low shadow-xs">
-              
-              {/* Unadded Section Header */}
-              <div className="bg-surface-container-high/60 px-3.5 py-2.5 border-b border-outline-variant flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                    <Plus className="w-3 h-3 stroke-[3]" />
-                  </span>
-                  <h4 className="text-xs font-bold text-on-surface tracking-wide uppercase">
-                    Available Unadded Expenses ({unaddedExpenses.length})
-                  </h4>
-                  <span className="text-xs font-bold text-on-surface-variant font-mono">
-                    • {unaddedTotal.toFixed(3)} KD
-                  </span>
+                  {filteredUnadded.some(e => e.approved || (e.expense_type as any)?.approve_required === false) && (
+                    <button
+                      type="button"
+                      onClick={handleAddAllEligible}
+                      className="text-[10px] text-primary hover:text-primary/80 font-semibold cursor-pointer transition-colors hover:underline"
+                    >
+                      + Add All Eligible
+                    </button>
+                  )}
                 </div>
 
-                {filteredUnadded.some(e => e.approved || (e.expense_type as any)?.approve_required === false) && (
-                  <button
-                    type="button"
-                    onClick={handleAddAllEligible}
-                    className="text-[10px] text-primary hover:text-primary/80 font-semibold cursor-pointer transition-colors hover:underline"
-                  >
-                    + Add All Eligible
-                  </button>
-                )}
+                {/* Unadded Expenses List */}
+                <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-outline-variant/40 scrollbar-thin">
+                  {filteredUnadded.length === 0 ? (
+                    <div className="p-5 text-center text-xs text-on-surface-variant italic">
+                      {searchQuery
+                        ? 'No available expenses match your search.'
+                        : 'No unclaimed expenses available for this technician.'}
+                    </div>
+                  ) : (
+                    filteredUnadded.map(exp => renderExpenseCard(exp, false))
+                  )}
+                </div>
               </div>
+            )}
 
-              {/* Unadded Expenses List */}
-              <div className={`${activeFilterTab === 'unadded' ? 'max-h-96' : 'max-h-56'} overflow-y-auto divide-y divide-outline-variant/40 scrollbar-thin`}>
-                {filteredUnadded.length === 0 ? (
-                  <div className="p-5 text-center text-xs text-on-surface-variant italic">
-                    {searchQuery 
-                      ? 'No available expenses match your search.'
-                      : 'No unclaimed expenses available for this technician.'}
-                  </div>
-                ) : (
-                  filteredUnadded.map(exp => renderExpenseCard(exp, false))
-                )}
-              </div>
-            </div>
-          )}
+          </div>
 
         </div>
 
@@ -544,7 +608,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             <span className="text-xs text-on-surface-variant">
               Bundle Total:
             </span>
-            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 ">
               {addedTotal.toFixed(3)} KD
             </span>
             <span className="text-xs text-on-surface-variant hidden sm:inline">
@@ -556,7 +620,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             <button
               type="button"
               onClick={() => setSelectedBundleForEdit(null)}
-              className="px-3.5 py-1.5 rounded-lg border border-outline-variant text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded border border-outline-variant text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -564,7 +628,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
               type="button"
               onClick={handleSaveUpdateBundle}
               disabled={submitting || editBundleForm.selectedExpenseIds.length === 0}
-              className="px-4 py-2 rounded-lg bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98]"
+              className="px-4 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98]"
             >
               {submitting ? 'Saving Changes...' : 'Save Bundle Changes'}
             </button>

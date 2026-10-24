@@ -11,19 +11,167 @@ import { usePermission } from '../hooks/usePermission';
 import type { PermissionKey } from '@/hooks/Can';
 import Can from '@/hooks/Can';
 
-interface SubItem {
+export interface SubItem {
   title: string;
   path: string;
-  permission?: PermissionKey;
+  permission?: PermissionKey | (string & {});
 }
 
-interface MenuItem {
+export interface MenuItem {
   title: string;
   icon: React.ReactNode;
   path?: string;
   subItems?: SubItem[];
-  permission?: PermissionKey;
+  permission?: PermissionKey | (string & {});
 }
+
+export interface FlatMenuItem {
+  title: string;
+  path: string;
+  permission?: PermissionKey | (string & {});
+}
+
+// Define sidebar menu structure
+export const menuItems: MenuItem[] = [
+  {
+    title: 'Dashboard',
+    icon: <Home className="w-4 h-4" />,
+    path: '/',
+    permission: "accounts.add_2_customuser"
+  },
+  {
+    title: 'Tickets',
+    icon: <Ticket className="w-4 h-4" />,
+    path: '/tickets/all'
+  },
+  {
+    title: 'Locations',
+    icon: <Store className="w-4 h-4" />,
+    subItems: [
+      { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
+      { title: 'Managers', path: '/stores/managers', permission: 'stores.view_store' },
+    ],
+  },
+  {
+    title: 'Department',
+    icon: <Wrench className="w-4 h-4" />,
+    subItems: [
+      { title: 'Sub Departments', path: '/maintenance/sub-departments', permission: 'stores.view_subdepartment' },
+      { title: 'Sub Departments Nature', path: '/maintenance/natures', permission: 'maintenance.view_worknature' },
+      { title: 'Skilled Workers', path: '/maintenance/worker-assignments', permission: 'maintenance.view_natureworker' },
+    ],
+  },
+  {
+    title: 'Workforce',
+    icon: <Users className="w-4 h-4" />,
+    subItems: [
+      { title: 'Employees', path: '/workforce/employees', permission: 'accounts.view_customuser' },
+      { title: 'Employee Rates', path: '/workforce/rates', permission: 'finance.view_employeerate' },
+    ],
+  },
+  {
+    title: 'Finance System',
+    icon: <Receipt className="w-4 h-4" />,
+    subItems: [
+      { title: 'Expenses', path: '/finance/expenses', permission: 'reports.can_generate_report' },
+      { title: 'Worker Claims', path: '/finance/bundles', permission: 'reports.can_generate_report' },
+      { title: 'Ledger Batches', path: '/finance/ledgers', permission: 'reports.can_generate_report' },
+      { title: 'Disbursements & Audit', path: '/finance/payments', permission: 'reports.can_generate_report' },
+    ],
+  },
+  {
+    title: 'Reports',
+    icon: <FileBarChart2 className="w-4 h-4" />,
+    subItems: [
+      { title: 'All Reports', path: '/reports/all', permission: 'reports.can_generate_report' },
+      // { title: 'Audit Logs', path: '/reports/history', permission: 'reports.can_generate_report' },
+    ],
+  }
+];
+
+export const getFlatMenuItems = (items: MenuItem[] = menuItems): FlatMenuItem[] => {
+  const flat: FlatMenuItem[] = [];
+  for (const item of items) {
+    if (item.subItems && item.subItems.length > 0) {
+      for (const sub of item.subItems) {
+        flat.push({
+          title: sub.title,
+          path: sub.path,
+          permission: sub.permission,
+        });
+      }
+    } else if (item.path) {
+      flat.push({
+        title: item.title,
+        path: item.path,
+        permission: item.permission,
+      });
+    }
+  }
+  return flat;
+};
+
+/**
+ * Returns the next accessible menu path if the current path requires a permission
+ * that the user does not possess.
+ */
+export const getNextPermittedPath = (
+  currentPath: string,
+  hasPermission: (perm?: string) => boolean
+): string | null => {
+  const flatItems = getFlatMenuItems();
+  const allowedItems = flatItems.filter((item) => hasPermission(item.permission as string));
+
+  // If no items are allowed at all, avoid redirection loops
+  if (allowedItems.length === 0) {
+    return null;
+  }
+
+  const normalize = (p: string) => p.replace(/\/+$/, '') || '/';
+  const normalizedCurrent = normalize(currentPath);
+
+  // 1. Exact match check
+  let matchedIndex = flatItems.findIndex((item) => normalize(item.path) === normalizedCurrent);
+
+  // 2. Section prefix match check (e.g. /stores/... or /finance/...)
+  if (matchedIndex === -1 && normalizedCurrent !== '/') {
+    const segments = normalizedCurrent.split('/').filter(Boolean);
+    const sectionPrefix = segments.length > 0 ? `/${segments[0]}` : '';
+
+    if (sectionPrefix) {
+      const sectionItems = flatItems.filter((item) => item.path.startsWith(sectionPrefix));
+      // If there are menu items in this section and NONE are permitted, mark section as forbidden
+      if (sectionItems.length > 0) {
+        const anyPermitted = sectionItems.some((item) => hasPermission(item.permission as string));
+        if (!anyPermitted) {
+          // Use the last item of the forbidden section as reference index
+          matchedIndex = flatItems.indexOf(sectionItems[sectionItems.length - 1]);
+        }
+      }
+    }
+  }
+
+  // If the path corresponds to a menu item or restricted section
+  if (matchedIndex !== -1) {
+    const matchedItem = flatItems[matchedIndex];
+    const isAllowed = hasPermission(matchedItem.permission as string);
+
+    // If not allowed, redirect to next permitted item in sequence
+    if (!isAllowed) {
+      const nextAllowed = flatItems
+        .slice(matchedIndex + 1)
+        .find((item) => hasPermission(item.permission as string));
+
+      if (nextAllowed) {
+        return nextAllowed.path;
+      }
+      // Wrap around to first allowed item
+      return allowedItems[0].path;
+    }
+  }
+
+  return null;
+};
 
 interface SidebarProps {
   isOpen: boolean;
@@ -44,64 +192,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       [title]: !prev[title],
     }));
   };
-
-  // Define sidebar menu structure
-  const menuItems: MenuItem[] = [
-    {
-      title: 'Dashboard',
-      icon: <Home className="w-4 h-4" />,
-      path: '/',
-      permission: "accounts.add_customuser"
-    },
-    {
-      title: 'Tickets',
-      icon: <Ticket className="w-4 h-4" />,
-      path: '/tickets/all'
-    },
-    {
-      title: 'Locations',
-      icon: <Store className="w-4 h-4" />,
-      subItems: [
-        { title: 'Stores', path: '/stores/all', permission: 'stores.view_store' },
-        { title: 'Managers', path: '/stores/managers', permission: 'stores.view_store' },
-      ],
-    },
-    {
-      title: 'Department',
-      icon: <Wrench className="w-4 h-4" />,
-      subItems: [
-        { title: 'Sub Departments', path: '/maintenance/sub-departments', permission: 'stores.view_subdepartment' },
-        { title: 'Sub Departments Nature', path: '/maintenance/natures', permission: 'maintenance.view_worknature' },
-        { title: 'Skilled Workers', path: '/maintenance/worker-assignments', permission: 'maintenance.view_natureworker' },
-      ],
-    },
-    {
-      title: 'Workforce',
-      icon: <Users className="w-4 h-4" />,
-      subItems: [
-        { title: 'Employees', path: '/workforce/employees', permission: 'accounts.view_customuser' },
-        { title: 'Employee Rates', path: '/workforce/rates', permission: 'finance.view_employeerate' },
-      ],
-    },
-    {
-      title: 'Finance System',
-      icon: <Receipt className="w-4 h-4" />,
-      subItems: [
-        { title: 'Expenses', path: '/finance/expenses', permission: 'reports.can_generate_report' },
-        { title: 'Worker Claims', path: '/finance/bundles', permission: 'reports.can_generate_report' },
-        { title: 'Ledger Batches', path: '/finance/ledgers', permission: 'reports.can_generate_report' },
-        { title: 'Disbursements & Audit', path: '/finance/payments', permission: 'reports.can_generate_report' },
-      ],
-    },
-    {
-      title: 'Reports',
-      icon: <FileBarChart2 className="w-4 h-4" />,
-      subItems: [
-        { title: 'All Reports', path: '/reports/all', permission: 'reports.can_generate_report' },
-        // { title: 'Audit Logs', path: '/reports/history', permission: 'reports.can_generate_report' },
-      ],
-    }
-  ];
 
   // Check if a path or any subitem path matches the current location
   const isPathActive = (path?: string, subItems?: SubItem[]) => {
