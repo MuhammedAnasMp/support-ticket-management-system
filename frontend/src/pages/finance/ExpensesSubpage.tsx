@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus
+  Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import type { ExpenseItem, ApprovalInstanceItem, ApprovalStepInfo } from './types';
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
@@ -45,6 +45,9 @@ interface ExpensesSubpageProps {
   serverUnclaimedCount?: number;
   isSyncingNewExpense?: boolean;
   syncingExpenseInfo?: any;
+  sortField?: string;
+  sortDirection?: 'asc' | 'desc';
+  onSortChange?: (field: string, direction: 'asc' | 'desc') => void;
 }
 
 export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
@@ -74,7 +77,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   serverPendingCount,
   serverUnclaimedCount,
   isSyncingNewExpense: propIsSyncingNewExpense = false,
-  syncingExpenseInfo: propSyncingExpenseInfo = null
+  syncingExpenseInfo: propSyncingExpenseInfo = null,
+  sortField: propSortField,
+  sortDirection: propSortDirection,
+  onSortChange: propOnSortChange
 }) => {
   // Skeleton loader syncing state for instant feedback on new expense creation
   const [localIsSyncing, setLocalIsSyncing] = useState<boolean>(false);
@@ -993,6 +999,105 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     return filteredExpenses.slice(start, start + itemsPerPage);
   }, [isServerPaginated, expenses, filteredExpenses, currentPage, itemsPerPage]);
 
+  // Sorting state
+  const [localSortField, setLocalSortField] = useState<string>('expense_date');
+  const [localSortDirection, setLocalSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const currentSortField = propSortField !== undefined ? propSortField : localSortField;
+  const currentSortDirection = propSortDirection !== undefined ? propSortDirection : localSortDirection;
+
+  const handleSort = (field: string) => {
+    let nextDirection: 'asc' | 'desc' = 'asc';
+    if (currentSortField === field) {
+      nextDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      nextDirection = (field === 'amount' || field === 'expense_id' || field === 'expense_date') ? 'desc' : 'asc';
+    }
+    if (propOnSortChange) {
+      propOnSortChange(field, nextDirection);
+    } else {
+      setLocalSortField(field);
+      setLocalSortDirection(nextDirection);
+    }
+  };
+
+  const sortedExpenses = useMemo(() => {
+    const list = [...paginatedExpenses];
+    if (!currentSortField) return list;
+    return list.sort((a: any, b: any) => {
+      let valA: any = '';
+      let valB: any = '';
+
+      if (currentSortField === 'expense_id') {
+        valA = Number(a.expense_id || 0);
+        valB = Number(b.expense_id || 0);
+        return currentSortDirection === 'asc' ? valA - valB : valB - valA;
+      } else if (currentSortField === 'amount') {
+        valA = parseFloat(String(a.amount || 0));
+        valB = parseFloat(String(b.amount || 0));
+        return currentSortDirection === 'asc' ? valA - valB : valB - valA;
+      } else if (currentSortField === 'expense_date') {
+        valA = new Date(a.expense_date || 0).getTime();
+        valB = new Date(b.expense_date || 0).getTime();
+        return currentSortDirection === 'asc' ? valA - valB : valB - valA;
+      } else if (currentSortField === 'category') {
+        valA = (a.expense_type_detail?.expense_name || (typeof a.expense_type === 'object' ? a.expense_type?.expense_name : '') || '').toLowerCase();
+        valB = (b.expense_type_detail?.expense_name || (typeof b.expense_type === 'object' ? b.expense_type?.expense_name : '') || '').toLowerCase();
+      } else if (currentSortField === 'remarks') {
+        valA = (a.remarks || '').toLowerCase();
+        valB = (b.remarks || '').toLowerCase();
+      } else if (currentSortField === 'worker') {
+        const workerA = a.worker_detail || (typeof a.worker === 'object' ? a.worker : null);
+        const workerB = b.worker_detail || (typeof b.worker === 'object' ? b.worker : null);
+        valA = (workerA?.full_name || workerA?.username || '').toLowerCase();
+        valB = (workerB?.full_name || workerB?.username || '').toLowerCase();
+      } else if (currentSortField === 'ticket') {
+        const rawTicketA = a.ticket_details || a.ticket;
+        const rawTicketB = b.ticket_details || b.ticket;
+        valA = (typeof rawTicketA === 'object' && rawTicketA ? (rawTicketA.work_order_no || `${rawTicketA.ticket_id || ''}`) : `${rawTicketA || ''}`).toLowerCase();
+        valB = (typeof rawTicketB === 'object' && rawTicketB ? (rawTicketB.work_order_no || `${rawTicketB.ticket_id || ''}`) : `${rawTicketB || ''}`).toLowerCase();
+      } else if (currentSortField === 'sub_department') {
+        valA = (a.ticket_details?.sub_department_name || a.sub_department_name || (typeof a.ticket === 'object' && a.ticket?.nature?.sub_department?.sub_department_name) || '').toLowerCase();
+        valB = (b.ticket_details?.sub_department_name || b.sub_department_name || (typeof b.ticket === 'object' && b.ticket?.nature?.sub_department?.sub_department_name) || '').toLowerCase();
+      }
+
+      if (valA < valB) return currentSortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return currentSortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [paginatedExpenses, currentSortField, currentSortDirection]);
+
+  const renderSortHeader = (field: string, label: string, className = "px-4 py-3", alignRight = false) => {
+    const isActive = currentSortField === field;
+    return (
+      <th className={`${className} select-none`}>
+        <button
+          type="button"
+          onClick={() => handleSort(field)}
+          className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer group hover:text-primary ${
+            isActive ? 'text-primary dark:text-primary font-extrabold' : 'text-on-surface-variant'
+          } ${alignRight ? 'ml-auto justify-end' : ''}`}
+          title={`Sort by ${label} (${isActive ? (currentSortDirection === 'asc' ? 'Ascending' : 'Descending') : 'Click to sort'})`}
+        >
+          <span>{label}</span>
+          <span className={`inline-flex items-center justify-center shrink-0 transition-all ${
+            isActive ? 'text-primary' : 'text-on-surface-variant/40 group-hover:text-primary'
+          }`}>
+            {isActive ? (
+              currentSortDirection === 'asc' ? (
+                <ArrowUp className="w-3 h-3 stroke-[2.5]" />
+              ) : (
+                <ArrowDown className="w-3 h-3 stroke-[2.5]" />
+              )
+            ) : (
+              <ArrowUpDown className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+            )}
+          </span>
+        </button>
+      </th>
+    );
+  };
+
   const pendingApprovalsCount = useMemo(() => {
     if (!approvalsProps?.displayedApprovals) return 0;
     return approvalsProps.displayedApprovals.filter(a => {
@@ -1746,15 +1851,15 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                 <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[10px] tracking-wider border-b border-outline-variant">
                   <tr>
                     <th className="w-8 px-2 py-3"></th>
-                    <th className="px-4 py-3">Exp</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3 min-w-[150px]">Remarks</th>
-                    <th className="px-4 py-3">Worker</th>
-                    <th className="px-4 py-3">Linked Ticket</th>
-                    <th className="px-4 py-3">Sub Department</th>
-                    <th className="px-4 py-3">Date</th>
+                    {renderSortHeader('expense_id', 'Exp')}
+                    {renderSortHeader('category', 'Category')}
+                    {renderSortHeader('remarks', 'Remarks', 'px-4 py-3 min-w-[150px]')}
+                    {renderSortHeader('worker', 'Worker')}
+                    {renderSortHeader('ticket', 'Linked Ticket')}
+                    {renderSortHeader('sub_department', 'Sub Department')}
+                    {renderSortHeader('expense_date', 'Date')}
                     <th className="px-4 py-3">Expense Bill</th>
-                    <th className="px-4 py-3 text-right">Amount (KD)</th>
+                    {renderSortHeader('amount', 'Amount (KD)', 'px-4 py-3 text-right', true)}
                     <th className="px-4 py-3">Approval & Assignee</th>
                     <th className="px-4 py-3">Claim Status</th>
                     <th className="px-4 py-3 text-right">Action</th>
@@ -1886,7 +1991,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                       )}
                     </React.Fragment>
                   )}
-                  {paginatedExpenses
+                  {sortedExpenses
                     .filter((exp: any) => !effectiveIsSyncing || !effectiveSyncingInfo?.expense_id || String(exp.expense_id) !== String(effectiveSyncingInfo.expense_id))
                     .map((exp: any, expIdx: number) => {
                     const isOdd = expIdx % 2 === 1;

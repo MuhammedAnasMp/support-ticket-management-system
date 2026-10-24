@@ -396,6 +396,37 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         if worker:
             queryset = queryset.filter(worker_id=worker)
 
+        ordering = self.request.query_params.get("ordering")
+        order_by_fields = []
+        if ordering:
+            ordering_tokens = [t.strip() for t in ordering.split(",") if t.strip()]
+            for token in ordering_tokens:
+                desc = token.startswith('-')
+                field_name = token.lstrip('-').lower()
+                prefix = '-' if desc else ''
+                if field_name in ('expense_id', 'id', 'exp'):
+                    order_by_fields.append(f'{prefix}expense_id')
+                elif field_name in ('category', 'expense_type'):
+                    order_by_fields.append(f'{prefix}expense_type__expense_name')
+                elif field_name == 'remarks':
+                    order_by_fields.append(f'{prefix}remarks')
+                elif field_name == 'worker':
+                    order_by_fields.append(f'{prefix}worker__first_name')
+                    order_by_fields.append(f'{prefix}worker__last_name')
+                elif field_name in ('ticket', 'linked_ticket'):
+                    order_by_fields.append(f'{prefix}ticket__work_order_no')
+                elif field_name in ('sub_department', 'sub_dept'):
+                    order_by_fields.append(f'{prefix}ticket__nature__sub_department__sub_department_name')
+                elif field_name in ('expense_date', 'date'):
+                    order_by_fields.append(f'{prefix}expense_date')
+                elif field_name == 'amount':
+                    order_by_fields.append(f'{prefix}amount')
+
+        if not order_by_fields:
+            order_by_fields = ['-expense_date', '-expense_id']
+        elif '-expense_id' not in order_by_fields and 'expense_id' not in order_by_fields:
+            order_by_fields.append('-expense_id')
+
         return queryset.select_related(
             'worker',
             'worker__role',
@@ -414,7 +445,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by'
-        ).order_by('-expense_date', '-expense_id').distinct()
+        ).order_by(*order_by_fields).distinct()
 
     def perform_create(self, serializer):
         user = self.request.user
