@@ -7,7 +7,6 @@ import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, App
 import { getUserId } from './types';
 import { Pagination } from './Pagination';
 import { DateRangePickerCard } from '../ticket/DateRangePickerCard';
-import { EditBundleModal } from './EditBundleModal';
 import type { ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { AvatarCircle, getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 import Can from '../../hooks/Can';
@@ -57,11 +56,6 @@ interface BundlesSubpageProps {
   setBundlePeriodTo: (v: string) => void;
   bundleRemarks: string;
   setBundleRemarks: (v: string) => void;
-  selectedBundleForEdit: WorkerClaimItem | null;
-  setSelectedBundleForEdit: (b: WorkerClaimItem | null) => void;
-  editBundleForm: { period_from: string; period_to: string; remarks: string; selectedExpenseIds: number[] };
-  setEditBundleForm: React.Dispatch<React.SetStateAction<{ period_from: string; period_to: string; remarks: string; selectedExpenseIds: number[] }>>;
-  handleSaveUpdateBundle: () => void;
   handleRemoveExpenseFromBundle?: (bundleId: number, expenseId: number) => Promise<void>;
   previewMediaUrl: { url: string; title: string } | null;
   setPreviewMediaUrl: (media: { url: string; title: string } | null) => void;
@@ -129,11 +123,6 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   setBundlePeriodTo,
   bundleRemarks,
   setBundleRemarks,
-  selectedBundleForEdit,
-  setSelectedBundleForEdit,
-  editBundleForm,
-  setEditBundleForm,
-  handleSaveUpdateBundle,
   handleRemoveExpenseFromBundle,
   previewMediaUrl,
   setPreviewMediaUrl,
@@ -2996,17 +2985,6 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           </div>
         </div>
       )}
-
-      {/* POPUP MODAL 2: EDIT BUNDLE & MANAGE TIED EXPENSES */}
-      <EditBundleModal
-        selectedBundleForEdit={selectedBundleForEdit}
-        setSelectedBundleForEdit={setSelectedBundleForEdit}
-        editBundleForm={editBundleForm}
-        setEditBundleForm={setEditBundleForm}
-        unclaimedExpenses={unclaimedExpenses}
-        submitting={submitting}
-        handleSaveUpdateBundle={handleSaveUpdateBundle}
-      />
 
       {/* POPUP MODAL: EXPENSE MAIN PREVIEW & DETAILS */}
       {previewExpense && (() => {

@@ -51,6 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       title: 'Dashboard',
       icon: <Home className="w-4 h-4" />,
       path: '/',
+      permission: "accounts.add_customuser"
     },
     {
       title: 'Tickets',

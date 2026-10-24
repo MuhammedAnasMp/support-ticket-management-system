@@ -2322,12 +2322,7 @@ export const FinanceView: React.FC = () => {
           handleSubmitBundle={handleSubmitBundle}
           selectedBundleForView={selectedBundleForView}
           setSelectedBundleForView={setSelectedBundleForView}
-          selectedBundleForEdit={selectedBundleForEdit}
-          setSelectedBundleForEdit={setSelectedBundleForEdit}
-          editBundleForm={editBundleForm}
-          setEditBundleForm={setEditBundleForm}
           openEditBundleModal={openEditBundleModal}
-          handleSaveUpdateBundle={handleSaveUpdateBundle}
           handleRemoveExpenseFromBundle={handleRemoveExpenseFromBundle}
           handleDeleteBundle={handleDeleteBundle}
           previewMediaUrl={previewMediaUrl}
