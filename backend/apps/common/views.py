@@ -123,9 +123,11 @@ def rotate_video_file(file_path, angle):
     return False
 
 
-def add_image_watermark(file_path, firstname, date_str, location, ticket_no=""):
+def add_image_watermark(file_path, firstname, date_str, location, ticket_no="", capture_date_str=""):
     """
-    Stamps proof text (Ticket , First Name, Date/Time, Location) onto the bottom-right corner of an image file.
+    Stamps dual proof text onto an image file:
+    - LEFT (bottom-left): Capture date/time (recorded when taken)
+    - RIGHT (bottom-right): Ticket WO, Uploaded by, Upload date/time, Location
     """
     if not os.path.exists(file_path):
         return False
@@ -146,54 +148,94 @@ def add_image_watermark(file_path, firstname, date_str, location, ticket_no=""):
             except Exception:
                 font = ImageFont.load_default()
 
-            lines = []
+            right_lines = []
             if ticket_no:
-                lines.append(ticket_no)
-            lines.extend([
+                right_lines.append(ticket_no)
+            right_lines.extend([
                 f"Uploaded by: {firstname}",
-                f"Date: {date_str}",
+                f"Uploaded: {date_str}",
                 f"Location: {location}"
             ])
 
             draw = ImageDraw.Draw(img)
-            line_heights = []
-            line_widths = []
-            for line in lines:
+            right_line_heights = []
+            right_line_widths = []
+            for line in right_lines:
                 bbox = draw.textbbox((0, 0), line, font=font)
                 w = bbox[2] - bbox[0]
                 h = bbox[3] - bbox[1]
-                line_widths.append(w)
-                line_heights.append(h + int(font_size * 0.2))
+                right_line_widths.append(w)
+                right_line_heights.append(h + int(font_size * 0.2))
 
-            max_w = max(line_widths)
-            total_h = sum(line_heights)
+            right_max_w = max(right_line_widths)
+            right_total_h = sum(right_line_heights)
 
             padding = max(4, font_size // 3)
             margin_right = max(6, W // 120)
             margin_bottom = max(6, H // 120)
+            margin_left = max(6, W // 120)
 
             box_x2 = W - margin_right
             box_y2 = H - margin_bottom
-            box_x1 = max(0, box_x2 - max_w - (padding * 2))
-            box_y1 = max(0, box_y2 - total_h - (padding * 2))
+            box_x1 = max(0, box_x2 - right_max_w - (padding * 2))
+            box_y1 = max(0, box_y2 - right_total_h - (padding * 2))
 
             overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
             overlay_draw = ImageDraw.Draw(overlay)
             overlay_draw.rectangle(
                 [box_x1, box_y1, box_x2, box_y2], fill=(0, 0, 0, 160))
 
+            left_lines = []
+            left_box_coords = None
+            left_line_heights = []
+            if capture_date_str:
+                left_lines = [
+                    "Captured:",
+                    capture_date_str
+                ]
+                left_line_widths = []
+                for line in left_lines:
+                    bbox = draw.textbbox((0, 0), line, font=font)
+                    w = bbox[2] - bbox[0]
+                    h = bbox[3] - bbox[1]
+                    left_line_widths.append(w)
+                    left_line_heights.append(h + int(font_size * 0.2))
+
+                left_max_w = max(left_line_widths)
+                left_total_h = sum(left_line_heights)
+
+                left_x1 = margin_left
+                left_y2 = H - margin_bottom
+                left_x2 = min(box_x1 - 10, left_x1 + left_max_w + (padding * 2))
+                left_y1 = max(0, left_y2 - left_total_h - (padding * 2))
+                left_box_coords = (left_x1, left_y1, left_x2, left_y2)
+                overlay_draw.rectangle(
+                    [left_x1, left_y1, left_x2, left_y2], fill=(0, 0, 0, 160))
+
             img = Image.alpha_composite(
                 img.convert('RGBA'), overlay).convert('RGB')
             draw = ImageDraw.Draw(img)
 
+            # Draw right watermark text
             curr_y = box_y1 + padding
-            for i, line in enumerate(lines):
+            for i, line in enumerate(right_lines):
                 x = box_x1 + padding
                 draw.text((x + 1, curr_y + 1), line,
                           font=font, fill=(0, 0, 0, 220))
                 draw.text((x, curr_y), line, font=font,
                           fill=(255, 255, 255, 255))
-                curr_y += line_heights[i]
+                curr_y += right_line_heights[i]
+
+            # Draw left watermark text
+            if left_box_coords and left_lines:
+                curr_left_y = left_box_coords[1] + padding
+                for i, line in enumerate(left_lines):
+                    x = left_box_coords[0] + padding
+                    draw.text((x + 1, curr_left_y + 1), line,
+                              font=font, fill=(0, 0, 0, 220))
+                    draw.text((x, curr_left_y), line, font=font,
+                              fill=(255, 255, 255, 255))
+                    curr_left_y += left_line_heights[i]
 
             img.save(file_path, format='JPEG', quality=95)
             return True
@@ -202,10 +244,11 @@ def add_image_watermark(file_path, firstname, date_str, location, ticket_no=""):
         return False
 
 
-def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticket_no=""):
+def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticket_no="", capture_date_str=""):
     """
-    Stamps proof text (Ticket, First Name, Date/Time, Location) onto the bottom-right corner of a video file using FFmpeg,
-    applying physical frame rotation FIRST if angle is non-zero so watermark is stamped on the upright video.
+    Stamps dual proof text onto a video file using FFmpeg:
+    - LEFT (bottom-left): Capture date/time (recorded when taken)
+    - RIGHT (bottom-right): Ticket WO, Uploaded by, Upload date/time, Location
     """
     if not os.path.exists(file_path):
         return False
@@ -225,12 +268,12 @@ def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticke
         text_lines.append(ticket_no)
     text_lines.extend([
         f"Uploaded by: {firstname}",
-        f"Date: {date_str}",
+        f"Uploaded: {date_str}",
         f"Location: {location}"
     ])
     full_text = clean_text("\n".join(text_lines))
 
-    watermark_draw = (
+    watermark_draw_right = (
         f"drawtext=fontfile='{font_path}':text='{full_text}':fontcolor=white:fontsize=h/30:"
         f"line_spacing=5:box=1:boxcolor=black@0.65:boxborderw=5:x=w-tw-12:y=h-th-12"
     )
@@ -241,7 +284,16 @@ def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticke
         rad = f"{angle}*PI/180"
         filters.append(f"rotate={rad}:ow=rotw({rad}):oh=roth({rad})")
 
-    filters.append(watermark_draw)
+    filters.append(watermark_draw_right)
+
+    if capture_date_str:
+        left_text = clean_text(f"Captured:\n{capture_date_str}")
+        watermark_draw_left = (
+            f"drawtext=fontfile='{font_path}':text='{left_text}':fontcolor=white:fontsize=h/30:"
+            f"line_spacing=5:box=1:boxcolor=black@0.65:boxborderw=5:x=12:y=h-th-12"
+        )
+        filters.append(watermark_draw_left)
+
     vf = ",".join(filters)
 
     try:
@@ -285,7 +337,7 @@ def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticke
 
 def watermark_media_instance(media, extra_angle=0):
     """
-    Helper to extract metadata and stamp proof text onto a Media file.
+    Helper to extract metadata and stamp dual proof text onto a Media file.
     """
     if not media or not media.file_url:
         return False
@@ -310,6 +362,13 @@ def watermark_media_instance(media, extra_angle=0):
         dt = timezone.localtime(dt)
     date_str = dt.strftime("%d/%m/%Y %I:%M %p")
 
+    capture_date_str = ""
+    if getattr(media, 'captured_date', None):
+        cdt = media.captured_date
+        if timezone.is_aware(cdt):
+            cdt = timezone.localtime(cdt)
+        capture_date_str = cdt.strftime("%d/%m/%Y %I:%M %p")
+
     location = ""
     if media.ticket and media.ticket.store:
         location = media.ticket.store.store_name
@@ -323,7 +382,7 @@ def watermark_media_instance(media, extra_angle=0):
     if ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v']:
         rot_angle = (getattr(media, 'rotation', 0) or 0) + (extra_angle or 0)
         success = add_video_watermark(
-            file_path, firstname, date_str, location, angle=rot_angle, ticket_no=ticket_no)
+            file_path, firstname, date_str, location, angle=rot_angle, ticket_no=ticket_no, capture_date_str=capture_date_str)
         if success and rot_angle % 360 != 0:
             media.rotation = 0
             try:
@@ -332,7 +391,7 @@ def watermark_media_instance(media, extra_angle=0):
                 pass
         return success
     elif ext in ['.jpg', '.jpeg', '.png', '.webp']:
-        return add_image_watermark(file_path, firstname, date_str, location, ticket_no=ticket_no)
+        return add_image_watermark(file_path, firstname, date_str, location, ticket_no=ticket_no, capture_date_str=capture_date_str)
     return False
 
 

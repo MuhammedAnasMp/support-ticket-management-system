@@ -1,10 +1,22 @@
 import {
     precacheAndRoute,
+    createHandlerBoundToURL
 } from 'workbox-precaching'
+import { NavigationRoute, registerRoute } from 'workbox-routing'
 
 declare const self: any
 
 precacheAndRoute(self.__WB_MANIFEST)
+
+try {
+    const handler = createHandlerBoundToURL('index.html')
+    const navigationRoute = new NavigationRoute(handler, {
+        denylist: [/^\/api\//, /^\/media\//, /^\/admin\//]
+    })
+    registerRoute(navigationRoute)
+} catch (e) {
+    console.warn('Navigation fallback registration error:', e)
+}
 
 self.addEventListener('install', () => {
     self.skipWaiting()

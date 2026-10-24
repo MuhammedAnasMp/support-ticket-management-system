@@ -9,7 +9,7 @@ import { Pagination } from './Pagination';
 import { DateRangePickerCard } from '../ticket/DateRangePickerCard';
 import { EditBundleModal } from './EditBundleModal';
 import type { ApprovalsSubpageProps } from './ApprovalsSubpage';
-import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
+import { AvatarCircle, getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 import Can from '../../hooks/Can';
 import { BundleReportModal } from './BundleReportModal';
 
@@ -2830,11 +2830,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               {receiptsList.map((m, rIdx) => (
                                 <div
                                   key={m.media_id ?? `receipt-${rIdx}`}
-                                  onClick={() => setPreviewMediaUrl({ url: m.file_url, title: m.file_name || `Receipt ${m.media_id}` })}
+                                  onClick={() => setPreviewMediaUrl({ url: getMediaUrl(m.file_url), title: m.file_name || `Receipt ${m.media_id}` })}
                                   className="group relative w-16 h-16 rounded border border-outline-variant overflow-hidden bg-black/10 cursor-pointer hover:border-primary transition-all shadow-2xs"
                                 >
                                   <img
-                                    src={m.file_url.startsWith('http') ? m.file_url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${m.file_url}`}
+                                    src={getMediaUrl(m.file_url)}
                                     alt={m.file_name}
                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                     onError={(e) => {
@@ -3105,11 +3105,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   <div className="space-y-2.5">
                     {/* Main Showcase Image Display Box */}
                     <div
-                      onClick={() => currentReceipt && setPreviewMediaUrl({ url: currentReceipt.file_url, title: currentReceipt.file_name || `Expense ${previewExpense.expense_id} Receipt` })}
+                      onClick={() => currentReceipt && setPreviewMediaUrl({ url: getMediaUrl(currentReceipt.file_url), title: currentReceipt.file_name || `Expense ${previewExpense.expense_id} Receipt` })}
                       className="group relative w-full h-72 sm:h-80 rounded border border-outline-variant bg-black/60 overflow-hidden cursor-pointer flex items-center justify-center transition-all shadow-inner"
                     >
                       <img
-                        src={currentReceipt.file_url.startsWith('http') ? currentReceipt.file_url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${currentReceipt.file_url}`}
+                        src={getMediaUrl(currentReceipt.file_url)}
                         alt={currentReceipt.file_name || 'Expense Receipt Preview'}
                         className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300"
                         onError={(e) => {
@@ -3136,7 +3136,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                             className={`relative w-20 h-20 rounded border-2 overflow-hidden cursor-pointer transition-all shrink-0 bg-black/20 ${idx === safeIndex ? 'border-primary ring-2 ring-primary/30 scale-105' : 'border-outline-variant opacity-70 hover:opacity-100'}`}
                           >
                             <img
-                              src={m.file_url.startsWith('http') ? m.file_url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${m.file_url}`}
+                              src={getMediaUrl(m.file_url)}
                               alt={m.file_name || 'Thumbnail'}
                               className="w-full h-full object-cover"
                             />
@@ -3302,7 +3302,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
               </button>
             </div>
             <img
-              src={previewMediaUrl.url.startsWith('http') ? previewMediaUrl.url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${previewMediaUrl.url}`}
+              src={getMediaUrl(previewMediaUrl.url)}
               alt={previewMediaUrl.title}
               className="max-h-[75vh] w-auto mx-auto object-contain rounded"
             />

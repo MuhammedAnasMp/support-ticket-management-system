@@ -6,7 +6,7 @@ import { rotateImageFile } from '../pages/ticket/TicketsTypesAndComponents';
 interface LiveCameraModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onCapture: (file: File) => void;
+    onCapture: (file: File, capturedAt?: string) => void;
     initialMode?: 'photo' | 'video';
 }
 
@@ -24,9 +24,10 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
     // Video Recording state
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
+    const videoCaptureTimeRef = useRef<string | null>(null);
 
     // Captured Media Preview State
-    const [capturedPreview, setCapturedPreview] = useState<{ url: string; file: File; type: 'photo' | 'video' } | null>(null);
+    const [capturedPreview, setCapturedPreview] = useState<{ url: string; file: File; type: 'photo' | 'video'; capturedAt: string } | null>(null);
     const [photoRotation, setPhotoRotation] = useState<number>(0);
 
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -140,11 +141,12 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
 
         canvas.toBlob((blob) => {
             if (!blob) return;
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const captureIso = new Date().toISOString();
+            const timestamp = captureIso.replace(/[:.]/g, '-');
             const file = new File([blob], `photo_${timestamp}.jpg`, { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
             setPhotoRotation(0);
-            setCapturedPreview({ url, file, type: 'photo' });
+            setCapturedPreview({ url, file, type: 'photo', capturedAt: captureIso });
             stopStream();
         }, 'image/jpeg', 0.92);
     };
@@ -154,6 +156,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
         if (!streamRef.current) return;
 
         recordedChunksRef.current = [];
+        videoCaptureTimeRef.current = new Date().toISOString();
         let mimeType = 'video/webm;codecs=vp9,opus';
         if (!MediaRecorder.isTypeSupported(mimeType)) {
             mimeType = 'video/webm';
@@ -177,11 +180,12 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
 
             recorder.onstop = () => {
                 const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'video/webm' });
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const captureIso = videoCaptureTimeRef.current || new Date().toISOString();
+                const timestamp = captureIso.replace(/[:.]/g, '-');
                 const ext = (recorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
                 const file = new File([blob], `video_${timestamp}.${ext}`, { type: blob.type });
                 const url = URL.createObjectURL(blob);
-                setCapturedPreview({ url, file, type: 'video' });
+                setCapturedPreview({ url, file, type: 'video', capturedAt: captureIso });
             };
 
             mediaRecorderRef.current = recorder;
@@ -217,7 +221,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
             if (capturedPreview.type === 'photo' && photoRotation % 360 !== 0) {
                 fileToUpload = await rotateImageFile(capturedPreview.file, photoRotation);
             }
-            onCapture(fileToUpload);
+            onCapture(fileToUpload, capturedPreview.capturedAt);
             onClose();
         }
     };

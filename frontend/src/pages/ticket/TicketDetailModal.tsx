@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search, Receipt
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search, Receipt, WifiOff
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
@@ -20,8 +20,71 @@ import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
 import { SearchableSelect, type SelectOption } from '@/components/SearchableSelect';
 import { confirmPopup } from '@/components/tailgrids/core/ConfirmationPopup';
+import {
+    enqueueOfflineMedia,
+    getOfflineMediaQueue,
+    removeOfflineMediaQueueItem,
+    getOfflineCachedTicket,
+    saveTicketsToOfflineCache,
+    getOfflineCachedMetadata,
+    saveMetadataToOfflineCache,
+    type QueuedMediaItem
+} from '@/services/offlineStorage';
 
 const EMPTY_LIST: any[] = [];
+
+const QueuedMediaCard: React.FC<{ item: QueuedMediaItem; onDelete?: (id: string) => void }> = ({ item, onDelete }) => {
+    const [blobUrl, setBlobUrl] = useState<string>('');
+
+    useEffect(() => {
+        let url = '';
+        if (item.fileBlob) {
+            url = URL.createObjectURL(item.fileBlob);
+            setBlobUrl(url);
+        }
+        return () => {
+            if (url) URL.revokeObjectURL(url);
+        };
+    }, [item.fileBlob]);
+
+    const isVid = (item.fileType || '').startsWith('video/') || (item.fileName || '').toLowerCase().endsWith('.mp4') || (item.fileName || '').toLowerCase().endsWith('.webm');
+
+    return (
+        <div className="relative aspect-video bg-surface dark:bg-dark-surface rounded-lg overflow-hidden border border-amber-500/50 group shadow-xs">
+            {blobUrl ? (
+                isVid ? (
+                    <video src={blobUrl} className="w-full h-full object-cover" muted />
+                ) : (
+                    <img src={blobUrl} alt={item.fileName} style={{ transform: `rotate(${item.rotation || 0}deg)` }} className="w-full h-full object-cover" />
+                )
+            ) : (
+                <div className="w-full h-full flex items-center justify-center text-[10px] text-outline">Loading...</div>
+            )}
+            <div className="absolute top-1 left-1 z-10 px-1.5 py-0.5 rounded bg-amber-500/90 text-white font-bold text-[9px] flex items-center gap-1 shadow-xs pointer-events-none">
+                <Clock className="w-2.5 h-2.5" />
+                <span>Queued</span>
+            </div>
+            {onDelete && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(item.id);
+                    }}
+                    className="absolute top-1 right-1 z-10 p-1 rounded bg-black/60 hover:bg-red-600 text-white transition-colors cursor-pointer"
+                    title="Remove from upload queue"
+                >
+                    <Trash2 className="w-3 h-3" />
+                </button>
+            )}
+            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-1 pointer-events-none">
+                <p className="text-[9px] text-white/90 truncate font-mono">
+                    {item.capturedAt ? new Date(item.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                </p>
+            </div>
+        </div>
+    );
+};
 
 interface TicketDetailModalProps {
     selectedTicket: Ticket | null;
@@ -68,6 +131,43 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [fetchedLedgerBatches, setFetchedLedgerBatches] = useState<any[]>([]);
     const [hasFetchedLedgerBatches, setHasFetchedLedgerBatches] = useState<boolean>(false);
     const [departmentNatures, setDepartmentNatures] = useState<any[]>([]);
+    const [offlineQueuedItems, setOfflineQueuedItems] = useState<QueuedMediaItem[]>([]);
+
+    const loadOfflineQueuedItems = useCallback(async () => {
+        if (!selectedTicket?.ticket_id) return;
+        const items = await getOfflineMediaQueue(selectedTicket.ticket_id);
+        setOfflineQueuedItems(items);
+    }, [selectedTicket?.ticket_id]);
+
+    const handleDeleteQueuedItem = async (id: string) => {
+        try {
+            await removeOfflineMediaQueueItem(id);
+            await loadOfflineQueuedItems();
+        } catch (err) {
+            console.error('Failed to remove queued item:', err);
+        }
+    };
+
+    useEffect(() => {
+        loadOfflineQueuedItems();
+        const handleQueueChange = () => {
+            loadOfflineQueuedItems();
+        };
+        const handleSynced = (e: any) => {
+            if (e.detail?.ticketId === selectedTicket?.ticket_id) {
+                loadOfflineQueuedItems();
+                if (typeof refreshTicketData === 'function') {
+                    refreshTicketData();
+                }
+            }
+        };
+        window.addEventListener('offline-media-queue-changed', handleQueueChange);
+        window.addEventListener('ticket-media-synced', handleSynced);
+        return () => {
+            window.removeEventListener('offline-media-queue-changed', handleQueueChange);
+            window.removeEventListener('ticket-media-synced', handleSynced);
+        };
+    }, [loadOfflineQueuedItems, selectedTicket?.ticket_id]);
 
     const safeList = (data: any) => Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
 
@@ -536,9 +636,10 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         categoryName: string;
         workerId?: number;
         expenseId?: number;
+        capturedAt?: string;
     }[] | null>(null);
 
-    const queueFilesForReview = (files: File[], categoryName: string, workerId?: number, expenseId?: number) => {
+    const queueFilesForReview = (files: File[], categoryName: string, workerId?: number, expenseId?: number, capturedAt?: string) => {
         if (!files || files.length === 0) return;
 
         const queueItems = files.map((file, idx) => ({
@@ -548,7 +649,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             previewUrl: URL.createObjectURL(file),
             categoryName,
             workerId,
-            expenseId
+            expenseId,
+            capturedAt: capturedAt || (
+                (file.lastModified && Math.abs(Date.now() - file.lastModified) < 86400000 * 30)
+                    ? new Date(file.lastModified).toISOString()
+                    : new Date().toISOString()
+            )
         }));
         setPendingUploadQueue(queueItems);
     };
@@ -565,7 +671,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     fileToUpload = await rotateImageFile(item.file, item.rotation);
                     rotToSave = 0;
                 }
-                await uploadMedia(fileToUpload, item.categoryName, item.workerId, item.expenseId, true, rotToSave);
+                await uploadMedia(fileToUpload, item.categoryName, item.workerId, item.expenseId, true, rotToSave, item.capturedAt);
             }
             setPendingUploadQueue(null);
             setTimeout(() => {
@@ -574,6 +680,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 });
             }, 500);
             await refreshTicketData();
+            await loadOfflineQueuedItems();
         } finally {
             setActionLoading(false);
         }
@@ -928,6 +1035,29 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const fetchTicketDetails = async (t: Ticket) => {
         setModalLoading(true);
+        if (!navigator.onLine) {
+            try {
+                const cached = await getOfflineCachedTicket(t.ticket_id);
+                if (cached) {
+                    setTicketDetails(cached);
+                    setEditedTitle(cached.title);
+                    setEditedDescription(cached.description);
+                    if (cached.attachments) setMediaList(safeList(cached.attachments));
+                } else {
+                    setTicketDetails(t);
+                    setEditedTitle(t.title);
+                    setEditedDescription(t.description);
+                }
+                const cachedCats = await getOfflineCachedMetadata<MediaCategory[]>('mediacategories');
+                if (cachedCats) setMediaCategories(cachedCats);
+            } catch (cErr) {
+                console.warn('Error reading offline cached ticket:', cErr);
+            } finally {
+                setModalLoading(false);
+            }
+            return;
+        }
+
         try {
             const headers = { Authorization: `Token ${token}` };
             const natureId = typeof t.nature === 'object' ? t.nature?.nature_id : t.nature;
@@ -946,18 +1076,32 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 setTicketDetails(fresh);
                 setEditedTitle(fresh.title);
                 setEditedDescription(fresh.description);
+                saveTicketsToOfflineCache([fresh]);
             }
             if (resAlloc.ok) setAllocations(safeList(await resAlloc.json()));
             if (resLog.ok) setWorkLogs(safeList(await resLog.json()));
             if (resExp.ok) setExpenses(safeList(await resExp.json()));
             if (resMed.ok) setMediaList(safeList(await resMed.json()));
-            if (resMediaCat.ok) setMediaCategories(safeList(await resMediaCat.json()));
+            if (resMediaCat.ok) {
+                const cats = safeList(await resMediaCat.json());
+                setMediaCategories(cats);
+                saveMetadataToOfflineCache('mediacategories', cats);
+            }
             if (resNatureWorker && resNatureWorker.ok) {
                 const rawNW = safeList(await resNatureWorker.json());
                 setNatureWorkers(rawNW.filter((nw: any) => nw.worker));
             }
         } catch (err) {
             console.error('Failed to load ticket details', err);
+            const cached = await getOfflineCachedTicket(t.ticket_id);
+            if (cached) {
+                setTicketDetails(cached);
+                setEditedTitle(cached.title);
+                setEditedDescription(cached.description);
+                if (cached.attachments) setMediaList(safeList(cached.attachments));
+            }
+            const cachedCats = await getOfflineCachedMetadata<MediaCategory[]>('mediacategories');
+            if (cachedCats) setMediaCategories(cachedCats);
         } finally {
             setModalLoading(false);
         }
@@ -1540,20 +1684,58 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         }
     };
 
-    const uploadMedia = async (file: File, categoryName: string, workerId?: number, expenseId?: number, skipRefresh = false, rotation = 0): Promise<Media | null> => {
+    const uploadMedia = async (file: File, categoryName: string, workerId?: number, expenseId?: number, skipRefresh = false, rotation = 0, capturedAt?: string): Promise<Media | null> => {
         if (!user) return null;
         if (!skipRefresh) setActionLoading(true);
         const signal = uploadAbortRef.current?.signal;
-        try {
-            const ticketDeptId = Number(ticketDetails.department?.department_id ?? ticketDetails.department);
-            const cat = mediaCategories.find(c => {
-                const isMatchName = c.category_name.toLowerCase() === categoryName.toLowerCase() ||
-                    (categoryName.toLowerCase() === 'bills' && (c.category_name.toLowerCase() === 'bills' || c.category_name.toLowerCase() === 'bill' || c.category_name.toLowerCase() === 'receipt'));
-                if (!isMatchName) return false;
-                const cDeptId = Number(c.department?.department_id ?? c.department);
-                return !cDeptId || cDeptId === ticketDeptId;
-            }) || mediaCategories.find(c => c.category_name.toLowerCase() === categoryName.toLowerCase());
 
+        const ticketDeptId = Number(ticketDetails?.department?.department_id ?? ticketDetails?.department);
+        const cat = mediaCategories.find(c => {
+            const isMatchName = c.category_name.toLowerCase() === categoryName.toLowerCase() ||
+                (categoryName.toLowerCase() === 'bills' && (c.category_name.toLowerCase() === 'bills' || c.category_name.toLowerCase() === 'bill' || c.category_name.toLowerCase() === 'receipt'));
+            if (!isMatchName) return false;
+            const cDeptId = Number(c.department?.department_id ?? c.department);
+            return !cDeptId || cDeptId === ticketDeptId;
+        }) || mediaCategories.find(c => c.category_name.toLowerCase() === categoryName.toLowerCase());
+
+        const finalCaptureTime = capturedAt || (
+            (file.lastModified && Math.abs(Date.now() - file.lastModified) < 86400000 * 30)
+                ? new Date(file.lastModified).toISOString()
+                : new Date().toISOString()
+        );
+
+        // If currently offline: Save directly to IndexedDB queue
+        if (!navigator.onLine) {
+            try {
+                await enqueueOfflineMedia({
+                    id: `offline-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    ticketId: ticketDetails.ticket_id,
+                    categoryName,
+                    categoryId: cat?.category_id,
+                    fileBlob: file,
+                    fileName: file.name,
+                    fileType: file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
+                    capturedAt: finalCaptureTime,
+                    rotation,
+                    workerId: workerId || user.user_id,
+                    expenseId,
+                    ticketWorkOrderNo: ticketDetails.work_order_no,
+                    ticketStoreName: ticketDetails.store?.store_name,
+                    status: 'pending',
+                    retryCount: 0,
+                    createdAt: Date.now()
+                });
+                await loadOfflineQueuedItems();
+            } catch (qErr) {
+                console.error("Failed to enqueue offline media:", qErr);
+                showError("Could not store media locally. Check browser storage.");
+            } finally {
+                if (!skipRefresh) setActionLoading(false);
+            }
+            return null;
+        }
+
+        try {
             const formData = new FormData();
             formData.append('ticket', ticketDetails.ticket_id.toString());
             formData.append('file_url', file);
@@ -1562,6 +1744,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             if (cat) formData.append('category', cat.category_id.toString());
             if (expenseId) formData.append('expense', expenseId.toString());
             if (rotation) formData.append('rotation', rotation.toString());
+            if (finalCaptureTime) formData.append('captured_date', finalCaptureTime);
 
             const response = await fetch(`${API_URL}/common/media/`, {
                 method: 'POST',
@@ -1586,7 +1769,33 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 showError(errText);
             }
         } catch (err: any) {
-            if (err?.name !== 'AbortError') console.error(err);
+            if (err?.name !== 'AbortError') {
+                console.error("Upload error encountered; queueing media offline:", err);
+                // Save to offline queue if network connection failed
+                try {
+                    await enqueueOfflineMedia({
+                        id: `offline-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                        ticketId: ticketDetails.ticket_id,
+                        categoryName,
+                        categoryId: cat?.category_id,
+                        fileBlob: file,
+                        fileName: file.name,
+                        fileType: file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
+                        capturedAt: finalCaptureTime,
+                        rotation,
+                        workerId: workerId || user.user_id,
+                        expenseId,
+                        ticketWorkOrderNo: ticketDetails.work_order_no,
+                        ticketStoreName: ticketDetails.store?.store_name,
+                        status: 'pending',
+                        retryCount: 0,
+                        createdAt: Date.now()
+                    });
+                    await loadOfflineQueuedItems();
+                } catch (fallbackErr) {
+                    console.error("Failed to enqueue offline fallback:", fallbackErr);
+                }
+            }
         } finally {
             if (!skipRefresh) setActionLoading(false);
         }
@@ -1605,7 +1814,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleUploadCompletedMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
         if (files.length > 0) {
-            queueFilesForReview(files, 'After Repair');
+            const firstFile = files[0];
+            const capturedAt = (firstFile?.lastModified && Math.abs(Date.now() - firstFile.lastModified) < 86400000 * 30)
+                ? new Date(firstFile.lastModified).toISOString()
+                : new Date().toISOString();
+            queueFilesForReview(files, 'After Repair', undefined, undefined, capturedAt);
         }
         e.target.value = '';
     };
@@ -2806,6 +3019,25 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 </Can>
                                             )}
                                         </div>
+
+                                        {/* Offline Queued Media Indicator */}
+                                        {offlineQueuedItems.filter(item => item.categoryName === 'After Repair').length > 0 && (
+                                            <div className="mb-3 p-3 bg-amber-500/10 border border-amber-500/25 rounded flex flex-col gap-2">
+                                                <div className="flex items-center justify-between text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <Clock className="w-4 h-4 animate-pulse" />
+                                                        {offlineQueuedItems.filter(item => item.categoryName === 'After Repair').length} After Repair file(s) queued offline
+                                                    </span>
+                                                    <span className="text-[11px] opacity-80">Syncs automatically when online</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                    {offlineQueuedItems.filter(item => item.categoryName === 'After Repair').map(item => (
+                                                        <QueuedMediaCard key={item.id} item={item} onDelete={handleDeleteQueuedItem} />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <MediaGrid
                                             items={completedMedia}
                                             emptyLabel="No completion media uploaded yet"
@@ -4626,6 +4858,22 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 </div>
                                 <div className="space-y-4">
                                     <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
+                                    {offlineQueuedItems.filter(item => item.categoryName === 'After Repair').length > 0 && (
+                                        <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded flex flex-col gap-2">
+                                            <div className="flex items-center justify-between text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                                <span className="flex items-center gap-1.5">
+                                                    <Clock className="w-4 h-4 animate-pulse" />
+                                                    {offlineQueuedItems.filter(item => item.categoryName === 'After Repair').length} After Repair file(s) queued offline
+                                                </span>
+                                                <span className="text-[11px] opacity-80">Syncs automatically when online</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {offlineQueuedItems.filter(item => item.categoryName === 'After Repair').map(item => (
+                                                    <QueuedMediaCard key={item.id} item={item} onDelete={handleDeleteQueuedItem} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="pt-2 border-t border-outline-variant dark:border-dark-outline-variant space-y-3">
                                         {/* Action Toolbar for Live Capture */}
                                         <div className="grid grid-cols-3 gap-2">
@@ -5457,8 +5705,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 isOpen={isLiveCameraOpen}
                 initialMode={liveCameraMode}
                 onClose={() => setIsLiveCameraOpen(false)}
-                onCapture={(capturedFile) => {
-                    queueFilesForReview([capturedFile], liveCameraCategory);
+                onCapture={(capturedFile, capturedAt) => {
+                    queueFilesForReview([capturedFile], liveCameraCategory, undefined, undefined, capturedAt);
                 }}
             />
         </div>

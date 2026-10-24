@@ -5,8 +5,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Plus, AlertTriangle, FileText,
     ChevronLeft, ChevronRight, RefreshCw, Download, Filter,
-    MoreVertical, X, LayoutList, LayoutGrid, MapPin, Building2, Clock, User, Smartphone, Monitor
+    MoreVertical, X, LayoutList, LayoutGrid, MapPin, Building2, Clock, User, Smartphone, Monitor, WifiOff
 } from 'lucide-react';
+import {
+    saveTicketsToOfflineCache,
+    getOfflineCachedTickets,
+    saveMetadataToOfflineCache,
+    getOfflineCachedMetadata
+} from '@/services/offlineStorage';
+import { useOfflineSync } from '@/services/OfflineSyncManager';
 
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
@@ -90,6 +97,7 @@ export const TicketsView: React.FC = () => {
     const location = useLocation();
     const { token, user } = useSelector((state: RootState) => state.auth);
     const { hasPermission } = usePermission();
+    const { isOnline, isSyncing, queuedCount, syncNow } = useOfflineSync();
 
     const overflowRef = useRef<HTMLDivElement>(null);
     const [overflowOpen, setOverflowOpen] = useState(false);
@@ -452,6 +460,25 @@ export const TicketsView: React.FC = () => {
 
     const fetchMetadata = async () => {
         try {
+            if (!navigator.onLine) {
+                const [cStores, cDepts, cSubDepts, cStat, cNat, cPrio, cExp] = await Promise.all([
+                    getOfflineCachedMetadata<any[]>('stores'),
+                    getOfflineCachedMetadata<any[]>('departments'),
+                    getOfflineCachedMetadata<any[]>('subdepartments'),
+                    getOfflineCachedMetadata<any[]>('statuses'),
+                    getOfflineCachedMetadata<any[]>('natures'),
+                    getOfflineCachedMetadata<any[]>('priorities'),
+                    getOfflineCachedMetadata<any[]>('expensetypes'),
+                ]);
+                if (cStores) setStores(cStores);
+                if (cDepts) setDepartments(cDepts);
+                if (cSubDepts) setSubDepartments(cSubDepts);
+                if (cStat) setStatuses(cStat);
+                if (cNat) setNatures(cNat);
+                if (cPrio) setPriorities(cPrio);
+                if (cExp) setExpenseTypes(cExp);
+                return;
+            }
             const headers = { Authorization: `Token ${token}` };
             const [resStores, resDepts, resSubDepts, resStat, resNat, resExp, resPrio] = await Promise.all([
                 fetch(`${API_URL}/stores/store/`, { headers }),
@@ -464,22 +491,60 @@ export const TicketsView: React.FC = () => {
             ]);
             if (resStores.ok) {
                 const sData = await resStores.json();
-                setStores(Array.isArray(sData) ? sData.filter((s: any) => s.active !== false) : sData);
+                const filtered = Array.isArray(sData) ? sData.filter((s: any) => s.active !== false) : sData;
+                setStores(filtered);
+                saveMetadataToOfflineCache('stores', filtered);
             }
-            if (resDepts.ok) setDepartments(await resDepts.json());
-            if (resSubDepts.ok) setSubDepartments(await resSubDepts.json());
-            if (resStat.ok) setStatuses(await resStat.json());
+            if (resDepts.ok) {
+                const dData = await resDepts.json();
+                setDepartments(dData);
+                saveMetadataToOfflineCache('departments', dData);
+            }
+            if (resSubDepts.ok) {
+                const sdData = await resSubDepts.json();
+                setSubDepartments(sdData);
+                saveMetadataToOfflineCache('subdepartments', sdData);
+            }
+            if (resStat.ok) {
+                const stData = await resStat.json();
+                setStatuses(stData);
+                saveMetadataToOfflineCache('statuses', stData);
+            }
             if (resNat.ok) {
                 const nData = await resNat.json();
-                setNatures(Array.isArray(nData) ? nData.filter((n: any) => n.active !== false) : nData);
+                const filtered = Array.isArray(nData) ? nData.filter((n: any) => n.active !== false) : nData;
+                setNatures(filtered);
+                saveMetadataToOfflineCache('natures', filtered);
             }
-            if (resPrio.ok) setPriorities(await resPrio.json());
+            if (resPrio.ok) {
+                const pData = await resPrio.json();
+                setPriorities(pData);
+                saveMetadataToOfflineCache('priorities', pData);
+            }
             if (resExp.ok) {
                 const eData = await resExp.json();
-                setExpenseTypes(Array.isArray(eData) ? eData : (Array.isArray(eData?.results) ? eData.results : []));
+                const eList = Array.isArray(eData) ? eData : (Array.isArray(eData?.results) ? eData.results : []);
+                setExpenseTypes(eList);
+                saveMetadataToOfflineCache('expensetypes', eList);
             }
         } catch (err) {
             console.error('Failed to load metadata', err);
+            const [cStores, cDepts, cSubDepts, cStat, cNat, cPrio, cExp] = await Promise.all([
+                getOfflineCachedMetadata<any[]>('stores'),
+                getOfflineCachedMetadata<any[]>('departments'),
+                getOfflineCachedMetadata<any[]>('subdepartments'),
+                getOfflineCachedMetadata<any[]>('statuses'),
+                getOfflineCachedMetadata<any[]>('natures'),
+                getOfflineCachedMetadata<any[]>('priorities'),
+                getOfflineCachedMetadata<any[]>('expensetypes'),
+            ]);
+            if (cStores) setStores(cStores);
+            if (cDepts) setDepartments(cDepts);
+            if (cSubDepts) setSubDepartments(cSubDepts);
+            if (cStat) setStatuses(cStat);
+            if (cNat) setNatures(cNat);
+            if (cPrio) setPriorities(cPrio);
+            if (cExp) setExpenseTypes(cExp);
         }
     };
 
@@ -487,6 +552,14 @@ export const TicketsView: React.FC = () => {
         if (!token) return;
         if (!silent) setLoading(true);
         try {
+            if (!navigator.onLine) {
+                const cached = await getOfflineCachedTickets();
+                if (cached && cached.length > 0) {
+                    setTickets(cached);
+                    setTotalCount(cached.length);
+                }
+                return;
+            }
             const query = new URLSearchParams();
             query.set('page', String(page));
             query.set('page_size', String(pageSize));
@@ -508,16 +581,33 @@ export const TicketsView: React.FC = () => {
             });
             if (response.ok) {
                 const data = await response.json();
+                let ticketList: any[] = [];
                 if (Array.isArray(data)) {
+                    ticketList = data;
                     setTickets(data);
                     setTotalCount(data.length);
                 } else if (data && Array.isArray(data.results)) {
+                    ticketList = data.results;
                     setTickets(data.results);
                     setTotalCount(data.count ?? data.results.length);
+                }
+                if (ticketList.length > 0) {
+                    saveTicketsToOfflineCache(ticketList);
+                }
+            } else {
+                const cached = await getOfflineCachedTickets();
+                if (cached && cached.length > 0) {
+                    setTickets(cached);
+                    setTotalCount(cached.length);
                 }
             }
         } catch (err) {
             console.error('Failed to load tickets', err);
+            const cached = await getOfflineCachedTickets();
+            if (cached && cached.length > 0) {
+                setTickets(cached);
+                setTotalCount(cached.length);
+            }
         } finally {
             if (!silent) setLoading(false);
         }
@@ -1345,6 +1435,29 @@ export const TicketsView: React.FC = () => {
                             )}
                         </div>
 
+                        {/* Mobile Offline & Queued Indicator */}
+                        {(!isOnline || queuedCount > 0) && (
+                            <div className="flex sm:hidden items-center gap-1.5 shrink-0">
+                                {!isOnline && (
+                                    <span className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30" title="Offline Mode">
+                                        <WifiOff className="w-3 h-3" />
+                                        <span>Offline</span>
+                                    </span>
+                                )}
+                                {queuedCount > 0 && (
+                                    <button
+                                        onClick={syncNow}
+                                        disabled={isSyncing || !isOnline}
+                                        className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded bg-primary/10 text-primary border border-primary/30 cursor-pointer disabled:opacity-50"
+                                        title={isOnline ? 'Tap to sync pending uploads' : 'Connect to internet to sync'}
+                                    >
+                                        <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                                        <span>{isSyncing ? 'Syncing...' : `${queuedCount} Q`}</span>
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
                         {/* Filter Dropdowns — visible inline only on 2xl+ */}
                         <div className="hidden 2xl:flex items-center flex-wrap gap-1.5 flex-1 min-w-0">
                             <div className="min-w-[220px] max-w-[240px]">
@@ -1442,6 +1555,25 @@ export const TicketsView: React.FC = () => {
 
                         {/* Actions — always visible on sm+ */}
                         <div className="hidden sm:flex items-center gap-1.5 shrink-0 ml-auto">
+                            {!isOnline && (
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30" title="Offline Mode - Using locally cached tickets">
+                                    <WifiOff className="w-3.5 h-3.5" />
+                                    <span>Offline</span>
+                                </span>
+                            )}
+
+                            {queuedCount > 0 && (
+                                <button
+                                    onClick={syncNow}
+                                    disabled={isSyncing || !isOnline}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 cursor-pointer disabled:opacity-50 transition-colors"
+                                    title={isOnline ? 'Click to sync pending offline uploads now' : 'Connect to internet to sync queued media'}
+                                >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    <span>{isSyncing ? 'Syncing...' : `${queuedCount} Queued`}</span>
+                                </button>
+                            )}
+
                             <button onClick={() => fetchTickets()} disabled={loading}
                                 className="border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium p-2 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
                                 title="Refresh data">

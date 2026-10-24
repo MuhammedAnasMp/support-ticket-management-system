@@ -122,15 +122,20 @@ export const FinanceView: React.FC = () => {
     unclaimed_count?: number;
   }>>(new Map());
 
+  // Expenses server-side sorting state
+  const [expenseSortField, setExpenseSortField] = useState<string>('expense_date');
+  const [expenseSortDirection, setExpenseSortDirection] = useState<'asc' | 'desc'>('desc');
+  const expenseOrdering = expenseSortField ? `${expenseSortDirection === 'desc' ? '-' : ''}${expenseSortField}` : '-expense_date';
+
   const getExpenseFilterKey = () => {
-    return `${filterDateFrom}_${filterDateTo}_${filterDateType}_${ledgerBatchFilter}_${statusFilter}_${bundleFilter}_${debouncedSearchQuery}_${expensePageSize}`;
+    return `${filterDateFrom}_${filterDateTo}_${filterDateType}_${ledgerBatchFilter}_${statusFilter}_${bundleFilter}_${debouncedSearchQuery}_${expensePageSize}_${expenseOrdering}`;
   };
 
-  // Reset expensePage to 1 and clear temp cache whenever search or filters change
+  // Reset expensePage to 1 and clear temp cache whenever search, filters, or sorting change
   useEffect(() => {
     expensePagesCacheRef.current.clear();
     setExpensePage(1);
-  }, [debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, filterDateFrom, filterDateTo, filterDateType, expensePageSize]);
+  }, [debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, filterDateFrom, filterDateTo, filterDateType, expensePageSize, expenseOrdering]);
 
   // Bundles server-side pagination state
   const [bundlePage, setBundlePage] = useState<number>(1);
@@ -711,8 +716,9 @@ export const FinanceView: React.FC = () => {
         const bundleQuery = (bundleFilter && bundleFilter !== 'ALL') ? `&bundle_filter=${encodeURIComponent(bundleFilter)}` : '';
         const searchParam = debouncedSearchQuery ? `&search=${encodeURIComponent(debouncedSearchQuery)}` : '';
         const paginationParams = `&page=${expensePage}&page_size=${expensePageSize}`;
+        const orderingParam = expenseOrdering ? `&ordering=${encodeURIComponent(expenseOrdering)}` : '';
 
-        const resExp = await fetch(`${API_URL}/finance/expense/?${paginationParams}${dateParams}${dateTypeQuery}${batchQuery}${statusQuery}${bundleQuery}${searchParam}`, { headers, signal });
+        const resExp = await fetch(`${API_URL}/finance/expense/?${paginationParams}${dateParams}${dateTypeQuery}${batchQuery}${statusQuery}${bundleQuery}${searchParam}${orderingParam}`, { headers, signal });
         if (signal.aborted) return;
         if (resExp.ok) {
           const expData = await resExp.json();
@@ -926,6 +932,7 @@ export const FinanceView: React.FC = () => {
     ledgerFilter,
     expensePage,
     expensePageSize,
+    expenseOrdering,
     bundlePage,
     bundlePageSize
   ]);
@@ -2273,6 +2280,12 @@ export const FinanceView: React.FC = () => {
           serverUnclaimedCount={expenseUnclaimedCount}
           isSyncingNewExpense={isSyncingNewExpense}
           syncingExpenseInfo={syncingExpenseInfo}
+          sortField={expenseSortField}
+          sortDirection={expenseSortDirection}
+          onSortChange={(field, direction) => {
+            setExpenseSortField(field);
+            setExpenseSortDirection(direction);
+          }}
         />
       )}
 

@@ -50,6 +50,7 @@ class Media(models.Model):
     file_url = models.FileField(upload_to=get_media_upload_path)
     rotation = models.IntegerField(default=0)
     uploaded_date = models.DateTimeField(auto_now_add=True)
+    captured_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         permissions = [
