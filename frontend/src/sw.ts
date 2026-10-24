@@ -2,7 +2,7 @@ import {
     precacheAndRoute,
     createHandlerBoundToURL
 } from 'workbox-precaching'
-import { NavigationRoute, registerRoute } from 'workbox-routing'
+import { NavigationRoute, registerRoute, setCatchHandler } from 'workbox-routing'
 
 declare const self: any
 
@@ -17,6 +17,16 @@ try {
 } catch (e) {
     console.warn('Navigation fallback registration error:', e)
 }
+
+setCatchHandler(async ({ request }) => {
+    if (request.destination === 'document' || request.mode === 'navigate') {
+        return (await caches.match('index.html')) ||
+               (await caches.match('/static/index.html')) ||
+               (await caches.match('/index.html')) ||
+               Response.error();
+    }
+    return Response.error();
+});
 
 self.addEventListener('install', () => {
     self.skipWaiting()

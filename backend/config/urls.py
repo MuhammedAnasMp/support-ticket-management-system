@@ -57,18 +57,32 @@ else:
     urlpatterns += static(settings.STATIC_URL,
                           document_root=settings.STATIC_ROOT)
 
+def serve_service_worker(request):
+    from django.http import FileResponse, Http404
+    static_root = settings.STATIC_ROOT if (hasattr(settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
+    file_path = static_root / 'sw.js'
+    if not file_path.exists():
+        file_path = settings.BASE_DIR / 'static' / 'sw.js'
+    if not file_path.exists():
+        raise Http404("Service worker not found")
+    response = FileResponse(open(file_path, 'rb'), content_type='application/javascript')
+    response['Service-Worker-Allowed'] = '/'
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
 # Serve root PWA static files directly if requested without /static/ prefix
 ROOT_STATIC_FILES = [
-    # 'manifest.webmanifest',
-    # 'sw.js',
+    'manifest.webmanifest',
     'icon-192x192.png',
-    # 'icon-512x512.png',
-    # 'favicon.svg',
-    # 'favicon.ico',
-    # 'ic_stat_notify.png',
+    'icon-512x512.png',
+    'favicon.svg',
+    'favicon.ico',
+    'ic_stat_notify.png',
 ]
 static_doc_root = settings.STATIC_ROOT if (hasattr(
     settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
+
+urlpatterns.append(path('sw.js', serve_service_worker))
 
 for static_file in ROOT_STATIC_FILES:
     urlpatterns.append(
@@ -79,11 +93,13 @@ for static_file in ROOT_STATIC_FILES:
         )
     )
 
+ALL_ROOT_FILES = ROOT_STATIC_FILES + ['sw.js']
+
 # SPA routing fallback: serve React SPA index.html for all other paths
 urlpatterns += [
     re_path(
         r'^(?!static/|media/|api/|admin/|' +
-        '|'.join(ROOT_STATIC_FILES) + r').*$',
+        '|'.join(ALL_ROOT_FILES) + r').*$',
         TemplateView.as_view(template_name='index.html'),
     )
 ]
