@@ -42,16 +42,19 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'added' | 'unadded'>('all');
 
-  if (!selectedBundleForEdit) return null;
-
-  const currentExpenses = selectedBundleForEdit.expenses || [];
-  const targetWorkerId = getUserId((selectedBundleForEdit as any).worker) ?? getUserId(selectedBundleForEdit.worker_detail);
+  const currentExpenses = selectedBundleForEdit?.expenses || [];
+  const targetWorkerId = selectedBundleForEdit
+    ? (getUserId((selectedBundleForEdit as any).worker) ?? getUserId(selectedBundleForEdit.worker_detail))
+    : null;
 
   // Combine current expenses in bundle with unclaimed expenses of this worker
-  const availableForWorker = unclaimedExpenses.filter(e => {
-    const expWorkerId = getUserId(e.worker) ?? getUserId(e.worker_detail);
-    return targetWorkerId !== null && expWorkerId !== null && targetWorkerId === expWorkerId;
-  });
+  const availableForWorker = useMemo(() => {
+    if (!targetWorkerId) return [];
+    return unclaimedExpenses.filter(e => {
+      const expWorkerId = getUserId(e.worker) ?? getUserId(e.worker_detail);
+      return targetWorkerId !== null && expWorkerId !== null && targetWorkerId === expWorkerId;
+    });
+  }, [unclaimedExpenses, targetWorkerId]);
 
   const combinedExpenses = useMemo(() => {
     return Array.from(
@@ -59,7 +62,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
     );
   }, [currentExpenses, availableForWorker]);
 
-  const isConnectedToLedger = Boolean(selectedBundleForEdit.ledger_details || (selectedBundleForEdit as any).ledger_id);
+  const isConnectedToLedger = Boolean(selectedBundleForEdit?.ledger_details || (selectedBundleForEdit as any)?.ledger_id);
 
   // Separate expenses into added vs unadded
   const addedExpenses = useMemo(() => {
@@ -285,6 +288,8 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
       </div>
     );
   };
+
+  if (!selectedBundleForEdit) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
