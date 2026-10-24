@@ -13,6 +13,7 @@ export default defineConfig(({ command }) => {
     tailwindcss(),
 
     VitePWA({
+      scope: '/',
       strategies: 'injectManifest',
 
       srcDir: 'src',

@@ -82,7 +82,8 @@ ROOT_STATIC_FILES = [
 static_doc_root = settings.STATIC_ROOT if (hasattr(
     settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
 
-urlpatterns.append(path('sw.js', serve_service_worker))
+urlpatterns.insert(0, path('sw.js', serve_service_worker))
+urlpatterns.insert(0, path('static/sw.js', serve_service_worker))
 
 for static_file in ROOT_STATIC_FILES:
     urlpatterns.append(

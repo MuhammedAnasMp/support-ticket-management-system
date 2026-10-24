@@ -95,7 +95,7 @@ async function getSWRegistration(): Promise<ServiceWorkerRegistration> {
     try {
         const baseUrl = (import.meta.env.BASE_URL || '/static/').replace(/\/+$/, '/')
         const swUrl = baseUrl + 'sw.js'
-        const reg = await navigator.serviceWorker.register(swUrl)
+        const reg = await navigator.serviceWorker.register(swUrl, { scope: '/' })
         return await waitActive(reg)
     } catch (err: any) {
         throw new Error(
