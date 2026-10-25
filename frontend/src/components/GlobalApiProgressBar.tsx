@@ -13,9 +13,9 @@ export const GlobalApiProgressBar: React.FC = () => {
   const [visible, setVisible] = useState<boolean>(false);
   const [opacity, setOpacity] = useState<number>(0);
 
-  const trickleTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const completeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const trickleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Clear any pending completion/reset timers when active requests change

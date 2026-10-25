@@ -2,153 +2,32 @@
 setlocal
 
 REM ==========================================
-REM Project directory
+REM Remote Server Configuration (Referenced from backend/pull_db.bat)
 REM ==========================================
-cd /d C:\inetpub\wwwroot\support-ticket-management-system
+set "SERVER=Administrator@104.237.6.167"
+set "REMOTE_PATH=C:\inetpub\wwwroot\support-ticket-management-system"
 
-REM ==========================================
-REM Pull latest code from Git
-REM ==========================================
 echo.
 echo ==========================================
-echo Pulling latest code from Git
+echo Connecting to %SERVER% via SSH
+echo Running refresh2.0.bat on remote server...
 echo ==========================================
-
-git pull
-
-if errorlevel 1 (
-    echo ERROR: git pull failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Backend - Update Python packages
-REM ==========================================
 echo.
-echo ==========================================
-echo Updating Python packages
-echo ==========================================
 
-cd /d C:\inetpub\wwwroot\support-ticket-management-system\backend
-
-venv\Scripts\python.exe -m pip install -r requirements.txt
+ssh -t %SERVER% "cd /d %REMOTE_PATH% && call refresh2.0.bat"
 
 if errorlevel 1 (
-    echo ERROR: pip install failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Django - Make migrations
-REM ==========================================
-echo.
-echo ==========================================
-echo Creating Django migrations
-echo ==========================================
-
-venv\Scripts\python.exe manage.py makemigrations
-
-if errorlevel 1 (
-    echo ERROR: makemigrations failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Django - Apply migrations
-REM ==========================================
-echo.
-echo ==========================================
-echo Applying Django migrations
-echo ==========================================
-
-venv\Scripts\python.exe manage.py migrate
-
-if errorlevel 1 (
-    echo ERROR: migrate failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Generate permissions JSON
-REM ==========================================
-echo.
-echo ==========================================
-echo Generating default_permissions.json
-echo ==========================================
-
-venv\Scripts\python.exe manage.py permissions
-
-if errorlevel 1 (
-    echo ERROR: Permissions generation failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Build frontend
-REM ==========================================
-echo.
-echo ==========================================
-echo Installing frontend packages & building
-echo ==========================================
-
-cd /d C:\inetpub\wwwroot\support-ticket-management-system\frontend
-
-call npm install
-
-if errorlevel 1 (
-    echo ERROR: npm install failed.
-    exit /b 1
-)
-
-call npm run build
-
-if errorlevel 1 (
-    echo ERROR: npm build failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Django collectstatic
-REM ==========================================
-echo.
-echo ==========================================
-echo Collecting Django static files
-echo ==========================================
-
-cd /d C:\inetpub\wwwroot\support-ticket-management-system\backend
-
-venv\Scripts\python.exe manage.py collectstatic --noinput
-
-if errorlevel 1 (
-    echo ERROR: Django collectstatic failed.
-    exit /b 1
-)
-
-REM ==========================================
-REM Restart mtracker
-REM ==========================================
-echo.
-echo ==========================================
-echo Restarting mtracker service
-echo ==========================================
-
-powershell -NoProfile -Command "sc stop mtracker"
-
-if errorlevel 1 (
-    echo ERROR: Failed to stop mtracker service.
-    exit /b 1
-)
-
-powershell -NoProfile -Command "sc start mtracker"
-
-if errorlevel 1 (
-    echo ERROR: Failed to start mtracker service.
+    echo.
+    echo ==========================================
+    echo ERROR: Remote deployment script failed.
+    echo ==========================================
+    pause
     exit /b 1
 )
 
 echo.
 echo ==========================================
-echo Deployment completed successfully!
+echo Remote deployment completed successfully!
 echo ==========================================
-
 pause
+exit /b 0
