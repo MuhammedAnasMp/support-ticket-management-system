@@ -2957,14 +2957,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                   }`}
                                 required
                               />
-                              {expenseDate && (
-                                <div className="flex items-center justify-between mt-1 text-[11px] text-on-surface-variant">
-                                  <span>Selected: <strong className="font-semibold text-on-surface">{formatToDdMmYyyy(expenseDate)}</strong></span>
-                                  {ticketCreatedDateFormatted && (
-                                    <span>Ticket: {ticketCreatedDateFormatted}</span>
-                                  )}
-                                </div>
-                              )}
+
                               {ticketCreatedDateIso && expenseDate && expenseDate < ticketCreatedDateIso && (
                                 <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
                                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />

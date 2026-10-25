@@ -11,6 +11,7 @@ import type { ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { AvatarCircle, getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 import Can from '../../hooks/Can';
 import { BundleReportModal } from './BundleReportModal';
+import { CreateWorkerBundleModal } from './CreateWorkerBundleModal';
 
 interface BundlesSubpageProps {
   filteredBundles?: WorkerClaimItem[];
@@ -277,6 +278,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     ];
 
     const matchingApp = allApprovals.find(a =>
+      (a.claim === bundle.claim_id ||
+       a.claim_id === bundle.claim_id ||
+       (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)) &&
+      a.status === 'Pending'
+    ) || allApprovals.find(a =>
       a.claim === bundle.claim_id ||
       a.claim_id === bundle.claim_id ||
       (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)
@@ -497,7 +503,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       }
 
       setReworkComments(prev => ({ ...prev, [bundle.claim_id]: '' }));
-      if (onRefresh) {
+      if (onRefresh && !actionDone) {
         await onRefresh();
       }
     } catch (err: any) {
@@ -778,6 +784,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [workerExpenses, setWorkerExpenses] = useState<ExpenseItem[]>([]);
   const [isLoadingWorkerExpenses, setIsLoadingWorkerExpenses] = useState<boolean>(false);
   const [selectedWorkerObj, setSelectedWorkerObj] = useState<any | null>(null);
+  const [showWorkerBundleBuilder, setShowWorkerBundleBuilder] = useState<boolean>(false);
 
   // Employee List Pagination & Filter State inside Create Bundle Modal
   const [employeePage, setEmployeePage] = useState(1);
@@ -790,7 +797,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [selectedLedgerBatchId, setSelectedLedgerBatchId] = useState<string>('ALL');
   const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
   const [userSubDeptMap, setUserSubDeptMap] = useState<Record<number, number[]>>({});
-  const employeeItemsPerPage = 10;
+  const employeeItemsPerPage = 12;
 
   // Fetch Unclaimed Workers on demand when modal opens
   useEffect(() => {
@@ -832,6 +839,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     setSelectedExpenseIds([]);
     setIsLoadingWorkerExpenses(true);
     setModalPage(1);
+    setShowWorkerBundleBuilder(true);
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Token ${token}`;
@@ -860,6 +868,17 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     setExpenseSearchWorker('');
     setWorkerExpenses([]);
     setSelectedExpenseIds([]);
+    setShowWorkerBundleBuilder(false);
+  };
+
+  const handleCloseWorkerBundleBuilder = () => {
+    setShowWorkerBundleBuilder(false);
+    setSelectedWorkerObj(null);
+    if (setSelectedWorkerId) setSelectedWorkerId(null);
+    setExpenseSearchWorker('');
+    setWorkerExpenses([]);
+    setSelectedExpenseIds([]);
+    setBundleRemarks('');
   };
 
   const displayExpenses = useMemo(() => {
@@ -1340,31 +1359,29 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       const bundleExpenses = Array.isArray(b.expenses) ? b.expenses : [];
                       const approvalData = getBundleApprovalGroup(b);
 
-                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
+                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending') ||
+                        (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.find((i: any) => i.status === 'Pending'));
                       const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
                       const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
-                      const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
+                      const latestInstance = activePendingInstance || approvalData?.app || approvalData?.group?.items?.[0];
 
                       const isBundleApproved = b.status === 'Approved' || b.status === 'Paid';
 
-                      // Check if bundle or any of its approval steps is in Rework
-                      const isRework = !isBundleApproved && (
+                      // A bundle is ONLY in Rework if its backend status is Rework or latest step is Rework AND it is not actively In Review / Pending
+                      const isRework = !isBundleApproved && !activePendingInstance && b.status !== 'In Review' && b.status !== 'Submitted' && (
                         b.status === 'Rework' ||
                         (b.status as string) === 'Rework Needed' ||
                         (b as any).status_display === 'Rework' ||
                         (b as any).status_display === 'Rework Needed' ||
-                        Boolean(reworkInstance) ||
-                        (approvalData?.app?.status === 'Rework') ||
                         (latestInstance?.status === 'Rework') ||
-                        (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.some((inst: any) => inst.status === 'Rework'))
+                        (approvalData?.app?.status === 'Rework')
                       );
 
-                      const isCurrentlyRejected = !isBundleApproved && !isRework && (
+                      const isCurrentlyRejected = !isBundleApproved && !isRework && !activePendingInstance && b.status !== 'In Review' && b.status !== 'Submitted' && (
                         b.status === 'Rejected' ||
-                        Boolean(rejectedInstance) ||
-                        (approvalData?.app?.status === 'Rejected') ||
+                        (b as any).status_display === 'Rejected' ||
                         (latestInstance?.status === 'Rejected') ||
-                        (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.some((inst: any) => inst.status === 'Rejected'))
+                        (approvalData?.app?.status === 'Rejected')
                       );
 
                       const isRejected = isCurrentlyRejected;
@@ -1394,8 +1411,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                       const canActionBundle = b.status !== 'Draft' && !isBundleApproved && !isRejectedOrRework && checkCanUserActionStep(activeApp, currentStepInfo);
 
+                      const bundleHistoryList = (b as any).approval_instances || (b as any).approval_history || [];
                       const hasCurrentUserApproved = !isRejectedOrRework && (b.status === 'In Review' || b.status === 'Submitted') && Boolean(
-                        (approvalData?.group?.items || (b as any).approval_history || []).some(
+                        [...(approvalData?.group?.items || []), ...bundleHistoryList].some(
                           (inst: any) => inst.status === 'Approved' && (
                             (inst.action_by_username && currentUsername && inst.action_by_username.toLowerCase() === currentUsername.toLowerCase()) ||
                             (inst.action_by && currentUserId && (String(inst.action_by) === String(currentUserId) || String(inst.action_by?.id) === String(currentUserId)))
@@ -1556,17 +1574,6 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : (b.status === 'Submitted' || b.status === 'In Review') ? (
                                 <div className="inline-flex items-center gap-1.5">
-                                  {b.status === 'In Review' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedBundleForReport(b)}
-                                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                      title="Open bundle settlement report & print statement"
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      <span>Report</span>
-                                    </button>
-                                  )}
                                   {canActionBundle ? (
                                     <button
                                       type="button"
@@ -1578,28 +1585,15 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       <span>Review / Action</span>
                                     </button>
                                   ) : (
-                                    b.status !== 'In Review' && (
-                                      <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">In Review</span>
-                                    )
+                                    <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">
+                                      In Review
+                                    </span>
                                   )}
                                 </div>
                               ) : isBundleApproved ? (
-                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> Approved
-                                </span>
+                                null
                               ) : null}
-                              {
-                                isAdmin &&
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedBundleForReport(b)}
-                                  className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                  title="Open bundle settlement report & print statement"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                  <span>Report</span>
-                                </button>
-                              }
+
                             </td>
                           </tr>
 
@@ -2133,525 +2127,264 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               )}
 
-              {/* 1. SELECT EMPLOYEE / TECHNICIAN */}
-              <div className="p-3 bg-surface-container-low border border-outline-variant/80 rounded space-y-2.5 shrink-0 shadow-2xs">
-                <div className="flex items-center justify-between">
+              {/* 1. SELECT EMPLOYEE / TECHNICIAN GRID */}
+              <div className="flex-1 min-h-0 flex flex-col p-3.5 bg-surface-container-low border border-outline-variant/80 rounded space-y-3 overflow-hidden shadow-2xs">
+                <div className="flex items-center justify-between shrink-0">
                   <span className="font-bold text-on-surface text-xs block tracking-wider text-primary">
                     Select Technician
                   </span>
                   <span className="text-[11px] text-on-surface-variant font-medium">
-                    Workers with unclaimed expenses
+                    {filteredEmployees.length} Technicians
                   </span>
                 </div>
 
-                {!expenseSearchWorker ? (
-                  <>
-                    {/* Search & Date Filter Header */}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                      {/* Search Employee Name */}
-                      <div className="relative flex-1">
-                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-on-surface-variant" />
-                        <input
-                          type="text"
-                          placeholder="Search technician by name, username, employee ID... (API Search)"
-                          value={employeeSearchQuery}
-                          onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                          className="w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded pl-9 pr-8 py-2 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline"
-                        />
-                        {isSearchingWorkers ? (
-                          <Loader2 className="w-4 h-4 absolute right-2.5 top-2.5 text-primary animate-spin" />
-                        ) : employeeSearchQuery ? (
-                          <button
-                            type="button"
-                            onClick={() => setEmployeeSearchQuery('')}
-                            className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer"
-                            title="Clear search"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        ) : null}
-                      </div>
+                {/* Search & Date Filter Header */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
+                  {/* Search Employee Name */}
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-on-surface-variant" />
+                    <input
+                      type="text"
+                      placeholder="Search technician by name, username, employee ID... (API Search)"
+                      value={employeeSearchQuery}
+                      onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                      className="w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded pl-9 pr-8 py-2 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline"
+                    />
+                    {isSearchingWorkers ? (
+                      <Loader2 className="w-4 h-4 absolute right-2.5 top-2.5 text-primary animate-spin" />
+                    ) : employeeSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeSearchQuery('')}
+                        className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer"
+                        title="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
 
-                      {/* Date Filter */}
-                      <div className="shrink-0 flex justify-end">
-                        <DateRangePickerCard
-                          fromDate={expenseFilterFrom}
-                          toDate={expenseFilterTo}
-                          onDateRangeChange={(from, to) => {
-                            setExpenseFilterFrom(from);
-                            setExpenseFilterTo(to);
-                          }}
-                          onReset={() => {
-                            setExpenseFilterFrom('');
-                            setExpenseFilterTo('');
-                          }}
-                        />
-                      </div>
+                  {/* Date Filter */}
+                  <div className="shrink-0 flex justify-end">
+                    <DateRangePickerCard
+                      fromDate={expenseFilterFrom}
+                      toDate={expenseFilterTo}
+                      onDateRangeChange={(from, to) => {
+                        setExpenseFilterFrom(from);
+                        setExpenseFilterTo(to);
+                      }}
+                      onReset={() => {
+                        setExpenseFilterFrom('');
+                        setExpenseFilterTo('');
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Ledger Batch Filtration Bar */}
+                <div className="p-2.5 bg-surface-container rounded border border-outline-variant/60 shadow-2xs space-y-1.5 shrink-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                      <Layers className="w-3.5 h-3.5 text-primary" />
+                      <span>Filter by Ledger Batch:</span>
                     </div>
+                    {selectedLedgerBatchId !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLedgerBatchId('ALL');
+                          setEmployeePage(1);
+                        }}
+                        className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
+                      >
+                        Reset to All Batches
+                      </button>
+                    )}
+                  </div>
 
-                    {/* Ledger Batch Filtration Bar */}
-                    <div className="p-2.5 bg-surface-container rounded border border-outline-variant/60 shadow-2xs space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
-                          <Layers className="w-3.5 h-3.5 text-primary" />
-                          <span>Filter by Ledger Batch:</span>
-                        </div>
-                        {selectedLedgerBatchId !== 'ALL' && (
+                  <div className="flex flex-wrap items-center gap-1.5 max-h-24 overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedLedgerBatchId('ALL');
+                        setEmployeePage(1);
+                      }}
+                      className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${selectedLedgerBatchId === 'ALL'
+                        ? 'bg-primary text-on-primary shadow-xs ring-1 ring-primary/30'
+                        : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant border border-outline-variant/70'
+                        }`}
+                    >
+                      All Batches
+                    </button>
+
+                    {isLoadingBatches && ledgerBatches.length === 0 ? (
+                      <div className="flex items-center gap-1.5 text-xs text-on-surface-variant py-1 px-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                        <span>Loading batches...</span>
+                      </div>
+                    ) : (
+                      ledgerBatches.map((b, bIdx) => {
+                        const bId = String(b.batch_id ?? b.id ?? b.ledger_batch_id ?? `batch-${bIdx}`);
+                        const isSelected = selectedLedgerBatchId === bId;
+                        const subDeptCount = b.sub_departments?.length ?? b.sub_departments_detail?.length ?? 0;
+                        return (
                           <button
+                            key={bId}
                             type="button"
                             onClick={() => {
-                              setSelectedLedgerBatchId('ALL');
+                              setSelectedLedgerBatchId(isSelected ? 'ALL' : bId);
                               setEmployeePage(1);
                             }}
-                            className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
-                          >
-                            Reset to All Batches
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedLedgerBatchId('ALL');
-                            setEmployeePage(1);
-                          }}
-                          className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${selectedLedgerBatchId === 'ALL'
-                            ? 'bg-primary text-on-primary shadow-xs ring-1 ring-primary/30'
-                            : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant border border-outline-variant/70'
-                            }`}
-                        >
-                          All Batches
-                        </button>
-
-                        {isLoadingBatches && ledgerBatches.length === 0 ? (
-                          <div className="flex items-center gap-1.5 text-xs text-on-surface-variant py-1 px-2">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                            <span>Loading batches...</span>
-                          </div>
-                        ) : (
-                          ledgerBatches.map((b, bIdx) => {
-                            const bId = String(b.batch_id ?? b.id ?? b.ledger_batch_id ?? `batch-${bIdx}`);
-                            const isSelected = selectedLedgerBatchId === bId;
-                            const subDeptCount = b.sub_departments?.length ?? b.sub_departments_detail?.length ?? 0;
-                            return (
-                              <button
-                                key={bId}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedLedgerBatchId(isSelected ? 'ALL' : bId);
-                                  setEmployeePage(1);
-                                }}
-                                title={b.description || b.batch_name}
-                                className={`px-2.5 py-1 rounded text-xs transition-all cursor-pointer flex items-center gap-1.5 ${isSelected
-                                  ? 'bg-primary text-on-primary font-bold shadow-xs ring-1 ring-primary/40'
-                                  : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/70 font-medium'
-                                  }`}
-                              >
-                                <span className="truncate max-w-[220px]">{b.batch_name}</span>
-                                {subDeptCount > 0 && (
-                                  <span
-                                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isSelected
-                                      ? 'bg-on-primary/20 text-on-primary'
-                                      : 'bg-surface-container-highest text-on-surface-variant'
-                                      }`}
-                                  >
-                                    {subDeptCount}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Paginated Employee Cards Grid */}
-                    {isLoadingWorkers ? (
-                      <div className="p-8 text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-2 border border-outline-variant/80 rounded bg-surface-container">
-                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                        <span>Loading technicians with unclaimed expenses...</span>
-                      </div>
-                    ) : filteredEmployees.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-on-surface-variant italic border border-outline-variant/80 rounded bg-surface-container">
-                        No employees with unclaimed expenses match the search/date criteria.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                          {paginatedEmployees.map((emp, empIdx) => {
-                            const isSelected = (selectedWorkerObj?.id || selectedWorkerObj?.user_id) === (emp.id || emp.user_id) || expenseSearchWorker === emp.name;
-                            return (
-                              <div
-                                key={emp.id ?? emp.user_id ?? `emp-${empIdx}`}
-                                onClick={() => handleSelectWorker(emp)}
-                                className={`p-2.5 rounded border cursor-pointer transition-all flex items-center justify-between gap-2.5 ${isSelected
-                                  ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/30'
-                                  : 'bg-surface-container hover:bg-surface-container-high border-outline-variant/80 shadow-2xs'
-                                  }`}
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <AvatarCircle
-                                    user={emp}
-                                    name={emp.name}
-                                    image={emp.profile_image}
-                                    size="sm"
-                                  />
-                                  <div className="min-w-0">
-                                    <h4 className="text-xs font-bold text-on-surface truncate flex items-center gap-1">
-                                      <span>{emp.name}</span>
-                                      {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                                    </h4>
-                                    <div className="flex flex-wrap gap-1 mt-0.5">
-                                      {emp.sub_departments && emp.sub_departments.length > 0 ? (
-                                        emp.sub_departments.map((sd: any, sdIdx: number) => (
-                                          <span
-                                            key={sd.sub_department_id ?? sd.id ?? `sd-${sdIdx}`}
-                                            className="text-[9px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant/60 font-medium truncate max-w-[130px]"
-                                            title={sd.sub_department_name}
-                                          >
-                                            {sd.sub_department_name}
-                                          </span>
-                                        ))
-                                      ) : (
-                                        <span className="text-[10px] text-on-surface-variant truncate">
-                                          {(emp as any).department_name || 'General Maintenance'}
-                                          {emp.employee_no ? ` • EMP: ${emp.employee_no}` : ''}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span className="text-[10px] text-primary font-bold block">
-                                    {emp.unclaimed_count ?? 0} Eligible
-                                  </span>
-                                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                    {(emp.unclaimed_total ?? 0).toFixed(3)} KD
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Employee List Pagination Bar */}
-                        {totalEmployeePages > 1 && (
-                          <div className="px-3 py-1.5 bg-surface-container rounded border border-outline-variant/80 flex items-center justify-between text-xs">
-                            <span className="text-on-surface-variant text-[10px]">
-                              Page <strong className="text-on-surface">{employeePage}</strong> of <strong>{totalEmployeePages}</strong> ({filteredEmployees.length} workers)
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                disabled={employeePage === 1}
-                                onClick={() => setEmployeePage(p => Math.max(1, p - 1))}
-                                className="px-2.5 py-1 rounded-lg border border-outline-variant text-[10px] font-semibold text-on-surface hover:bg-surface-container-high disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                              >
-                                Prev
-                              </button>
-                              <button
-                                type="button"
-                                disabled={employeePage >= totalEmployeePages}
-                                onClick={() => setEmployeePage(p => Math.min(totalEmployeePages, p + 1))}
-                                className="px-2.5 py-1 rounded-lg border border-outline-variant text-[10px] font-semibold text-on-surface hover:bg-surface-container-high disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                              >
-                                Next
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  /* Selected Worker Banner */
-                  (() => {
-                    const selectedWorkerItem = uniqueExpenseWorkers.find(w => w.name === expenseSearchWorker || w.username === expenseSearchWorker || String(w.id) === expenseSearchWorker) || apiSearchedWorkers.find(w => w.name === expenseSearchWorker || w.username === expenseSearchWorker || String(w.id) === expenseSearchWorker) || selectedWorkerObj;
-                    const eligibleCount = eligibleExpenses.length;
-                    const eligibleTotal = eligibleExpenses.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
-
-                    return (
-                      <div className="p-2.5 px-3.5 rounded bg-primary/10 border border-primary/30 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <AvatarCircle
-                            user={selectedWorkerItem}
-                            name={selectedWorkerItem?.name || expenseSearchWorker}
-                            image={selectedWorkerItem?.profile_image}
-                            size="sm"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-xs font-bold text-on-surface truncate">{selectedWorkerItem?.name || expenseSearchWorker}</h4>
-                            </div>
-                            <p className="text-[10px] text-on-surface-variant truncate mt-0.5">
-                              {selectedWorkerItem?.employee_no ? `EMP: ${selectedWorkerItem.employee_no} • ` : ''}
-                              <strong className="text-primary font-semibold">{eligibleCount} approved expenses</strong>
-                              <span> • {eligibleTotal.toFixed(3)} KD</span>
-                              {unapprovedExpenses.length > 0 && (
-                                <span className="text-on-surface-variant/80 ml-1.5 italic">
-                                  ({unapprovedExpenses.length} unapproved shown below, excluded from total)
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleClearWorker}
-                          className="p-1.5 rounded bg-surface-container border border-outline-variant hover:bg-error/10 hover:border-error/30 hover:text-error text-on-surface transition-colors cursor-pointer flex items-center justify-center shrink-0 shadow-2xs"
-                          title="Clear worker selection to choose another worker or change date filter"
-                        >
-                          <X className="w-4 h-4 text-error" />
-                        </button>
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-
-              {/* 2. UNCLAIMED EXPENSES LIST FOR SELECTED EMPLOYEE */}
-              <div className="flex-1 min-h-0 flex flex-col space-y-1.5 overflow-hidden">
-                <div className="flex items-center justify-between text-xs px-1 shrink-0">
-                  <span className="font-bold text-on-surface flex items-center gap-2">
-                    <span>Unclaimed Expenses ({eligibleExpenses.length})</span>
-                    {unapprovedExpenses.length > 0 && (
-                      <span className="text-[11px] font-normal text-on-surface-variant bg-surface-container px-2 py-0.5 rounded border border-outline-variant/60">
-                        {unapprovedExpenses.length} unapproved (excluded from total)
-                      </span>
-                    )}
-                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold px-1 py-0.5">
-                      • {selectedExpenseIds.length} of {eligibleExpenses.length} selected
-                    </span>
-                  </span>
-
-                  <div className="flex items-center gap-3">
-                    {eligibleExpenses.length > 0 && (
-                      <div className="space-x-3">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedExpenseIds([])}
-                          className="text-on-surface-variant hover:underline font-medium text-xs cursor-pointer"
-                        >
-                          Deselect All
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const eligibleIds = eligibleExpenses.map(e => e.expense_id);
-                            setSelectedExpenseIds(Array.from(new Set([...selectedExpenseIds, ...eligibleIds])));
-                          }}
-                          className="text-primary hover:underline font-bold text-xs cursor-pointer"
-                        >
-                          Select All ({eligibleExpenses.length})
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {!expenseSearchWorker ? (
-                  <div className="p-6 text-center text-xs text-on-surface-variant border border-outline-variant/80 rounded bg-surface-container-low">
-                    Select an employee above to view available unclaimed expenses.
-                  </div>
-                ) : isLoadingWorkerExpenses ? (
-                  <div className="p-8 text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-2 border border-outline-variant/80 rounded bg-surface-container-low">
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                    <span>Loading expenses for {expenseSearchWorker}...</span>
-                  </div>
-                ) : displayExpenses.length === 0 ? (
-                  <p className="text-xs text-on-surface-variant italic p-6 text-center border border-outline-variant/80 rounded bg-surface-container-low">
-                    No unclaimed expenses match this employee and date filter.
-                  </p>
-                ) : (
-                  <div className="flex-1 min-h-0 border border-outline-variant/80 rounded overflow-hidden bg-surface-container-low flex flex-col shadow-2xs">
-                    <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 p-2 divide-y divide-outline-variant/60">
-                      {paginatedModalExpenses.map((exp, mExpIdx) => {
-                        const isChecked = selectedExpenseIds.includes(exp.expense_id);
-                        const isExpApproved = isExpenseEligibleForClaim(exp);
-                        const statusText = isExpApproved
-                          ? 'Approved'
-                          : (exp.status_display || ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval'));
-                        const isExpRejected = statusText === 'Rejected';
-                        const isExpRework = statusText === 'Rework';
-
-                        return (
-                          <div
-                            key={exp.expense_id ?? `mexp-${mExpIdx}`}
-                            onClick={() => setPreviewExpense(exp)}
-                            className={`flex items-center gap-3 p-2.5 px-3 rounded cursor-pointer text-xs transition-colors border ${!isExpApproved
-                              ? 'bg-surface-container-low/70 border-outline-variant/40 opacity-80 hover:bg-surface-container/70'
-                              : isChecked
-                                ? 'bg-primary/10 border-primary/40 font-medium'
-                                : 'hover:bg-surface-container border-transparent'
+                            title={b.description || b.batch_name}
+                            className={`px-2.5 py-1 rounded text-xs transition-all cursor-pointer flex items-center gap-1.5 ${isSelected
+                              ? 'bg-primary text-on-primary font-bold shadow-xs ring-1 ring-primary/40'
+                              : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/70 font-medium'
                               }`}
                           >
+                            <span className="truncate max-w-[220px]">{b.batch_name}</span>
+                            {subDeptCount > 0 && (
+                              <span
+                                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isSelected
+                                  ? 'bg-on-primary/20 text-on-primary'
+                                  : 'bg-surface-container-highest text-on-surface-variant'
+                                  }`}
+                              >
+                                {subDeptCount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
 
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className={`font-semibold truncate transition-colors ${!isExpApproved ? 'text-on-surface-variant' : 'text-on-surface hover:text-primary'}`}>
-                                    {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense ${exp.expense_id}`}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0 ml-2">
-                                  {!isExpApproved && (
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isExpRejected
-                                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                                      : isExpRework
-                                        ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
-                                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                                      }`}>
-                                      {statusText} (Excluded)
-                                    </span>
-                                  )}
-                                  <span
-                                    className={`font-bold text-xs ${isExpApproved ? 'text-primary' : 'text-on-surface-variant/60 line-through'}`}
-                                    title={!isExpApproved ? "Not approved - not included in total" : undefined}
-                                  >
-                                    {parseFloat(exp.amount).toFixed(3)} KD
-                                  </span>
+                {/* Paginated Employee Cards Grid */}
+                {isLoadingWorkers ? (
+                  <div className="flex-1 p-8 text-center text-xs text-on-surface-variant flex flex-col items-center justify-center gap-2 border border-outline-variant/80 rounded bg-surface-container">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    <span>Loading technicians...</span>
+                  </div>
+                ) : filteredEmployees.length === 0 ? (
+                  <div className="flex-1 p-6 text-center text-xs text-on-surface-variant italic border border-outline-variant/80 rounded bg-surface-container flex items-center justify-center">
+                    No technicians match the search/date criteria.
+                  </div>
+                ) : (
+                  <div className="flex-1 min-h-0 flex flex-col space-y-2 overflow-hidden">
+                    <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                        {filteredEmployees.map((emp, empIdx) => {
+                          const isSelected = (selectedWorkerObj?.id || selectedWorkerObj?.user_id) === (emp.id || emp.user_id);
+                          const eligibleCount = emp.unclaimed_count ?? 0;
+                          const totalCount = emp.total_unclaimed_count ?? 0;
+                          const eligibleTotal = emp.unclaimed_total ?? 0;
+                          const totalAmt = emp.total_unclaimed_amount ?? 0;
+
+                          return (
+                            <div
+                              key={emp.id ?? emp.user_id ?? `emp-${empIdx}`}
+                              onClick={() => handleSelectWorker(emp)}
+                              className={`p-2.5 rounded border cursor-pointer transition-all flex items-center justify-between gap-2.5 ${isSelected
+                                ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/30'
+                                : 'bg-surface-container hover:bg-surface-container-high border-outline-variant/80 shadow-2xs hover:border-primary/50'
+                                }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <AvatarCircle
+                                  user={emp}
+                                  name={emp.name}
+                                  image={emp.profile_image}
+                                  size="sm"
+                                />
+                                <div className="min-w-0">
+                                  <h4 className="text-xs font-bold text-on-surface truncate flex items-center gap-1">
+                                    <span>{emp.name}</span>
+                                    {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                  </h4>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {emp.sub_departments && emp.sub_departments.length > 0 ? (
+                                      emp.sub_departments.map((sd: any, sdIdx: number) => (
+                                        <span
+                                          key={sd.sub_department_id ?? sd.id ?? `sd-${sdIdx}`}
+                                          className="text-[9px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant/60 font-medium truncate max-w-[130px]"
+                                          title={sd.sub_department_name}
+                                        >
+                                          {sd.sub_department_name}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-on-surface-variant truncate">
+                                        {(emp as any).department_name || 'General Maintenance'}
+                                        {emp.employee_no ? ` • EMP: ${emp.employee_no}` : ''}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                              <div className="flex items-center justify-between text-[10px] text-on-surface-variant mt-1">
-                                <span className="flex items-center gap-1.5 min-w-0 truncate">
-                                  <span>Exp {exp.expense_id}</span>
-                                  {(() => {
-                                    const wo = exp.ticket_details?.work_order_no || (typeof exp.ticket === 'object' && exp.ticket !== null ? (exp.ticket as any).work_order_no : '');
-                                    if (!wo) return null;
-                                    return (
-                                      <span className="px-2 py-0.5 rounded-md bg-surface-container-high text-primary text-[10px] font-semibold">
-                                        {wo}
-                                      </span>
-                                    );
-                                  })()}
-                                  {getCleanRemarks(exp.remarks) && (
-                                    <span className="italic truncate max-w-[260px] text-on-surface-variant font-normal" title={getCleanRemarks(exp.remarks)}>
-                                      • Remarks: {getCleanRemarks(exp.remarks)}
-                                    </span>
-                                  )}
+                              <div className="text-right shrink-0">
+                                <span className="text-[10px] text-primary font-bold block">
+                                  {eligibleCount > 0
+                                    ? `${eligibleCount} Eligible`
+                                    : totalCount > 0
+                                      ? `${totalCount} Unapproved`
+                                      : '0 Expenses'}
                                 </span>
-                                <span className="shrink-0">{exp.expense_date}</span>
+                                <span className={`text-[11px] font-bold ${eligibleTotal > 0
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : totalAmt > 0
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-on-surface-variant/70'
+                                  }`}>
+                                  {(eligibleTotal > 0 ? eligibleTotal : totalAmt).toFixed(3)} KD
+                                </span>
                               </div>
                             </div>
-                            {isExpApproved && (
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                disabled={!isExpApproved}
-                                title={!isExpApproved ? "Unapproved expenses cannot be added to a claim bundle" : undefined}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => {
-                                  if (!isExpApproved) return;
-                                  if (e.target.checked) setSelectedExpenseIds([...selectedExpenseIds, exp.expense_id]);
-                                  else setSelectedExpenseIds(selectedExpenseIds.filter(id => id !== exp.expense_id));
-                                }}
-                                className={`rounded w-4 h-4 shrink-0 ${!isExpApproved
-                                  ? 'opacity-40 cursor-not-allowed accent-gray-400'
-                                  : 'text-primary focus:ring-primary cursor-pointer'
-                                  }`}
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Modal List Pagination Bar */}
-                    {totalModalPages > 1 && (
-                      <div className="shrink-0 px-3 py-1.5 bg-surface-container flex items-center justify-between border-t border-outline-variant/80 text-xs">
-                        <span className="text-on-surface-variant text-[10px]">
-                          Page <strong className="text-on-surface">{modalPage}</strong> of <strong>{totalModalPages}</strong>
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={modalPage === 1}
-                            onClick={() => setModalPage(p => Math.max(1, p - 1))}
-                            className="px-2.5 py-1 rounded-lg border border-outline-variant text-[10px] font-semibold text-on-surface hover:bg-surface-container-high disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                          >
-                            Prev
-                          </button>
-                          <button
-                            type="button"
-                            disabled={modalPage >= totalModalPages}
-                            onClick={() => setModalPage(p => Math.min(totalModalPages, p + 1))}
-                            className="px-2.5 py-1 rounded-lg border border-outline-variant text-[10px] font-semibold text-on-surface hover:bg-surface-container-high disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                          >
-                            Next
-                          </button>
-                        </div>
+                          );
+                        })}
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* 3. BUNDLE REMARKS / NOTES */}
-              <div className="p-3 bg-surface-container-low border border-outline-variant/80 rounded space-y-1.5 shrink-0 shadow-2xs">
-                <label className="block text-xs font-semibold text-on-surface">
-                  Bundle Remarks <span className="text-red-500 font-bold">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  value={bundleRemarks}
-                  onChange={(e) => setBundleRemarks(e.target.value)}
-                  placeholder="Notes or description for this worker claim bundle (Required)..."
-                  className="w-full bg-surface-container border border-outline-variant text-on-surface text-xs rounded p-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all resize-none shadow-2xs hover:border-outline"
-                />
-              </div>
-
-              {/* 4. SELECTION SUMMARY & ACTION FOOTER */}
-              <div className="shrink-0 pt-2 border-t border-outline-variant/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-on-surface-variant font-medium text-[11px]">
-                    <strong className="text-on-surface font-bold text-xs">{selectedExpenseIds.length} expenses</strong>
-                  </span>
-                  <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                    Total: {selectedExpensesTotal.toFixed(3)} KD
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-end gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateBundleModal(false)}
-                    className="px-4 py-2 rounded border border-outline-variant text-xs text-on-surface hover:bg-surface-container-high transition-colors font-semibold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateBundle}
-                    disabled={submitting || isSyncingNewBundle || selectedExpenseIds.length === 0 || !bundleRemarks.trim()}
-                    className="px-5 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all shadow-md hover:shadow-primary/25 active:scale-[0.98] cursor-pointer flex items-center gap-2"
-                  >
-                    {isSyncingNewBundle ? (
-                      <span className="flex items-center gap-1.5">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>
-                          {syncingBundleInfo?.claim_id
-                            ? `Previous bundle ${syncingBundleInfo.claim_id} is creating...`
-                            : 'Previous bundle is creating...'}
-                        </span>
-                      </span>
-                    ) : submitting ? (
-                      <span className="flex items-center gap-1.5">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Creating Bundle...</span>
-                      </span>
-                    ) : (
-                      `Create Bundle (${selectedExpenseIds.length} Expenses • ${(activeSelectedTotal || selectedExpensesTotal).toFixed(3)} KD)`
-                    )}
-                  </button>
-                </div>
+              {/* ACTION FOOTER */}
+              <div className="shrink-0 pt-2 border-t border-outline-variant/80 flex items-center justify-between gap-3">
+                <span className="text-xs text-on-surface-variant">
+                  Click any technician card above to build their expense claim bundle.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateBundleModal(false)}
+                  className="px-4 py-2 rounded border border-outline-variant text-xs text-on-surface hover:bg-surface-container-high transition-colors font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* POPUP MODAL ON TOP OF CREATE BUNDLE: EDIT BUNDLE STYLE BUILDER */}
+      <CreateWorkerBundleModal
+        isOpen={showWorkerBundleBuilder && !!selectedWorkerObj}
+        onClose={handleCloseWorkerBundleBuilder}
+        worker={selectedWorkerObj}
+        workerExpenses={workerExpenses}
+        isLoadingExpenses={isLoadingWorkerExpenses}
+        selectedExpenseIds={selectedExpenseIds}
+        setSelectedExpenseIds={setSelectedExpenseIds}
+        bundleRemarks={bundleRemarks}
+        setBundleRemarks={setBundleRemarks}
+        handleCreateBundle={() => {
+          handleCreateBundle();
+          setShowWorkerBundleBuilder(false);
+        }}
+        submitting={submitting}
+        isSyncingNewBundle={isSyncingNewBundle}
+        errorMessage={errorMessage}
+        setErrorMessage={setErrorMessage}
+      />
 
       {/* POPUP MODAL 1: VIEW BUNDLE BILLS & MEDIA */}
       {selectedBundleForView && (
@@ -2697,7 +2430,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {selectedBundleForView.status === 'In Review' && (
+                {(selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted' || selectedBundleForView.status === 'Approved' || selectedBundleForView.status === 'Paid') && (
                   <button
                     type="button"
                     onClick={() => setSelectedBundleForReport(selectedBundleForView)}

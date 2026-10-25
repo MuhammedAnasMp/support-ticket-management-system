@@ -418,6 +418,9 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         }
     };
 
+    const MAX_WORDS = 8;
+    const MAX_CHARS = 50;
+
     return (
         <>
             <AnimatePresence>
@@ -644,16 +647,35 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
                                         {/* Issue Title */}
                                         <div>
                                             <label className="block text-xs font-medium text-on-surface mb-1.5">
-                                                Issue Title <span className="text-error">*</span>
+                                                Issue Title  <span>{'('}</span><>
+                                                    <span className={`text-xs text-${(createForm.title.trim().split(/\s+/).length === MAX_WORDS || createForm.title.length === MAX_CHARS) ? "red" : 'gray'}-500`}>
+                                                        {createForm.title.trim() === ""
+                                                            ? 0
+                                                            : createForm.title.trim().split(/\s+/).length}/{MAX_WORDS} words or {createForm.title.length}/{MAX_CHARS} letters
+                                                    </span>
+                                                    <span>{')'}</span>  </>
                                             </label>
+
                                             <input
                                                 required
                                                 type="text"
                                                 placeholder="Briefly describe the issue..."
                                                 value={createForm.title}
-                                                onChange={e => setCreateForm({ ...createForm, title: e.target.value })}
+                                                maxLength={MAX_CHARS}
+                                                onChange={(e) => {
+                                                    const value = e.target.value.slice(0, MAX_CHARS);
+
+                                                    if (value.trim().split(/\s+/).length <= MAX_WORDS || value.trim() === "") {
+                                                        setCreateForm({
+                                                            ...createForm,
+                                                            title: value,
+                                                        });
+                                                    }
+                                                }}
                                                 className={inputCls}
                                             />
+
+
                                         </div>
 
                                         {/* Description */}

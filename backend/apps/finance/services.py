@@ -320,8 +320,8 @@ class ApprovalService:
                     ip_address=ip_address
                 )
 
-                instance.refresh_from_db()
-                return instance
+            instance.refresh_from_db()
+            return instance
 
 
 class BundleService:

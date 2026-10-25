@@ -789,82 +789,121 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='unclaimed-workers')
     def unclaimed_workers(self, request):
-        from django.db.models import Count, Sum
+        from django.db.models import Count, Sum, Value, DecimalField, Q
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
         from apps.accounts.models import CustomUser
 
         from_date = request.query_params.get('from_date') or request.query_params.get('date_from')
         to_date = request.query_params.get('to_date') or request.query_params.get('date_to')
         ledger_batch_id = request.query_params.get('ledger_batch') or request.query_params.get('batch_id')
+        search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
 
-        qs = Expense.objects.filter(is_claimed=False, claim__isnull=True)
+        # Scope by the requesting user's department
+        user = request.user
+        user_dept_ids = []
+        if user and not user.is_anonymous:
+            user_dept_ids = list(user.sub_departments.filter(department__isnull=False).values_list('department_id', flat=True).distinct())
+            if not user_dept_ids and hasattr(user, 'department') and user.department:
+                user_dept_ids = [user.department.pk]
+            elif not user_dept_ids and hasattr(user, 'department_id') and user.department_id:
+                user_dept_ids = [user.department_id]
+
+        dept_param = request.query_params.get('department') or request.query_params.get('department_id')
+
+        # Query all unclaimed expenses for count/total aggregation
+        exp_qs = Expense.objects.filter(is_claimed=False, claim__isnull=True)
         if from_date:
-            qs = qs.filter(expense_date__gte=from_date)
+            exp_qs = exp_qs.filter(expense_date__gte=from_date)
         if to_date:
-            qs = qs.filter(expense_date__lte=to_date)
+            exp_qs = exp_qs.filter(expense_date__lte=to_date)
+
+        if user_dept_ids:
+            exp_qs = exp_qs.filter(worker__sub_departments__department_id__in=user_dept_ids)
+        elif dept_param and str(dept_param).upper() != 'ALL':
+            exp_qs = exp_qs.filter(worker__sub_departments__department_id=dept_param)
+        elif user and not user.is_anonymous and not getattr(user, 'is_superuser', False):
+            exp_qs = exp_qs.filter(worker=user)
+
+        is_eligible_q = Q(approved=True) | Q(expense_type__approve_required=False)
+
+        aggregated = list(
+            exp_qs.values('worker_id').annotate(
+                eligible_count=Count('expense_id', filter=is_eligible_q),
+                eligible_total=Coalesce(Sum('amount', filter=is_eligible_q), Value(Decimal('0.000'), output_field=DecimalField())),
+                total_count=Count('expense_id'),
+                total_amount=Coalesce(Sum('amount'), Value(Decimal('0.000'), output_field=DecimalField()))
+            )
+        )
+        agg_map = {item['worker_id']: item for item in aggregated}
+        worker_ids_with_expenses = list(agg_map.keys())
+
+        # Base query for all technicians (role contains technician/worker OR anyone who has expenses)
+        tech_filter = Q(role__role_name__icontains='technician') | Q(role__role_name__icontains='worker')
+        if worker_ids_with_expenses:
+            tech_filter |= Q(pk__in=worker_ids_with_expenses)
+
+        tech_users = CustomUser.objects.filter(tech_filter).distinct().prefetch_related('sub_departments')
+
+        # Strictly restrict to requesting user's department
+        if user_dept_ids:
+            tech_users = tech_users.filter(sub_departments__department_id__in=user_dept_ids)
+        elif dept_param and str(dept_param).upper() != 'ALL':
+            tech_users = tech_users.filter(sub_departments__department_id=dept_param)
+        elif user and not user.is_anonymous and not getattr(user, 'is_superuser', False):
+            tech_users = tech_users.filter(pk=user.pk)
+
+        if search:
+            tech_users = tech_users.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(full_name__icontains=search) |
+                Q(username__icontains=search) |
+                Q(employee_no__icontains=search)
+            )
 
         if ledger_batch_id and str(ledger_batch_id).upper() != 'ALL':
             try:
                 batch = LedgerBatch.objects.filter(pk=int(ledger_batch_id)).first()
                 if batch:
                     sub_dept_ids = list(batch.sub_departments.values_list('sub_department_id', flat=True))
-                    qs = qs.filter(ticket__nature__sub_department_id__in=sub_dept_ids)
+                    tech_users = tech_users.filter(sub_departments__sub_department_id__in=sub_dept_ids)
             except Exception:
                 pass
 
-        search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
-        if search:
-            qs = qs.filter(
-                Q(worker__first_name__icontains=search) |
-                Q(worker__last_name__icontains=search) |
-                Q(worker__full_name__icontains=search) |
-                Q(worker__username__icontains=search) |
-                Q(worker__employee_no__icontains=search)
-            )
+        results = []
+        for u in tech_users:
+            w_id = u.pk
+            agg_item = agg_map.get(w_id, {})
+            prof_img = u.profile_image.name if u.profile_image else None
+            if prof_img and not prof_img.startswith('http') and not prof_img.startswith('/'):
+                prof_img = f"/media/{prof_img}"
 
-        from django.db.models import Count, Sum, Value, DecimalField
-        from django.db.models.functions import Coalesce
-        from decimal import Decimal
-
-        is_eligible_q = Q(approved=True) | Q(expense_type__approve_required=False)
-
-        aggregated = list(
-            qs.values(
-                'worker_id', 'worker__username', 'worker__full_name',
-                'worker__employee_no', 'worker__profile_image'
-            ).annotate(
-                unclaimed_count=Count('expense_id', filter=is_eligible_q),
-                unclaimed_total=Coalesce(Sum('amount', filter=is_eligible_q), Value(Decimal('0.000'), output_field=DecimalField()))
-            ).order_by('-unclaimed_count')
-        )
-
-        worker_ids = [item['worker_id'] for item in aggregated]
-        users = CustomUser.objects.filter(pk__in=worker_ids).prefetch_related('sub_departments')
-        user_sub_depts = {
-            u.pk: [
+            user_sub_depts = [
                 {'sub_department_id': sd.sub_department_id, 'sub_department_name': sd.sub_department_name}
                 for sd in u.sub_departments.all()
             ]
-            for u in users
-        }
-
-        results = []
-        for item in aggregated:
-            w_id = item['worker_id']
-            prof_img = item['worker__profile_image']
-            if prof_img and not prof_img.startswith('http') and not prof_img.startswith('/'):
-                prof_img = f"/media/{prof_img}"
 
             results.append({
                 'id': w_id,
                 'user_id': w_id,
-                'name': item['worker__full_name'] or item['worker__username'] or f"Worker {w_id}",
-                'username': item['worker__username'] or '',
-                'employee_no': item['worker__employee_no'] or '',
+                'name': u.full_name or u.username or f"Worker {w_id}",
+                'username': u.username or '',
+                'employee_no': u.employee_no or '',
                 'profile_image': prof_img,
-                'sub_departments': user_sub_depts.get(w_id, []),
-                'unclaimed_count': item['unclaimed_count'],
-                'unclaimed_total': float(item['unclaimed_total'] or 0),
+                'sub_departments': user_sub_depts,
+                'unclaimed_count': agg_item.get('eligible_count', 0),
+                'unclaimed_total': float(agg_item.get('eligible_total') or 0),
+                'total_unclaimed_count': agg_item.get('total_count', 0),
+                'total_unclaimed_amount': float(agg_item.get('total_amount') or 0),
             })
+
+        # Sort: technicians with unclaimed expenses first, then alphabetically by name
+        results.sort(key=lambda x: (
+            -x['unclaimed_count'],
+            -x.get('total_unclaimed_count', 0),
+            x['name'].lower()
+        ))
 
         return Response(results, status=status.HTTP_200_OK)
 
@@ -1663,7 +1702,53 @@ class ApprovalInstanceViewSet(viewsets.ReadOnlyModelViewSet):
                 new_group_name=new_group_name,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            return Response(ApprovalInstanceSerializer(instance).data, status=status.HTTP_200_OK)
+            act_inst = instance or target_instance
+            if act_inst:
+                try:
+                    act_inst.refresh_from_db()
+                except Exception:
+                    pass
+
+            claim_id = getattr(act_inst, 'claim_id', None)
+            ledger_id = getattr(act_inst, 'ledger_id', None)
+            expense_id = getattr(act_inst, 'expense_id', None)
+
+            is_bundle = claim_id is not None
+            is_ledger = ledger_id is not None
+            is_expense = expense_id is not None
+
+            bundle_data = None
+            ledger_data = None
+            expense_data = None
+            all_completed = False
+
+            if is_bundle and act_inst and act_inst.claim:
+                act_inst.claim.refresh_from_db()
+                all_completed = act_inst.claim.status == 'Approved'
+                bundle_data = WorkerClaimSerializer(act_inst.claim, context={'request': request}).data
+            elif is_ledger and act_inst and act_inst.ledger:
+                act_inst.ledger.refresh_from_db()
+                all_completed = act_inst.ledger.status == 'Approved'
+                ledger_data = LedgerSerializer(act_inst.ledger, context={'request': request}).data
+            elif is_expense and act_inst and act_inst.expense:
+                act_inst.expense.refresh_from_db()
+                all_completed = act_inst.expense.approved
+                expense_data = ExpenseSerializer(act_inst.expense, context={'request': request}).data
+
+            status_val = 'Approved' if all_completed else 'In Review'
+            if is_bundle and act_inst and act_inst.claim:
+                status_val = act_inst.claim.status
+            elif is_ledger and act_inst and act_inst.ledger:
+                status_val = act_inst.ledger.status
+
+            return Response({
+                'instance': ApprovalInstanceSerializer(act_inst).data if act_inst else None,
+                'bundle': bundle_data,
+                'ledger': ledger_data,
+                'expense': expense_data,
+                'all_completed': all_completed,
+                'status': status_val
+            }, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})

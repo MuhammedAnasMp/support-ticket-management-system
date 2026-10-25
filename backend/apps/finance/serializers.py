@@ -159,6 +159,28 @@ def serialize_ticket_summary(ticket):
     }
 
 
+def serialize_receipt_summary(r):
+    if not r:
+        return None
+    url = ''
+    if getattr(r, 'file_url', None):
+        try:
+            url = r.file_url.url
+            if getattr(r, 'uploaded_date', None):
+                ts = int(r.uploaded_date.timestamp())
+                url = f"{url}?v={ts}"
+        except Exception:
+            url = ''
+    return {
+        'media_id': r.media_id,
+        'file_name': getattr(r, 'file_name', None) or getattr(r, 'original_file_name', None) or '',
+        'file_url': url,
+        'file_type': getattr(r, 'file_type', None),
+        'media_type': getattr(r, 'media_type', None),
+        'title': getattr(r, 'title', '') or '',
+    }
+
+
 class ExpenseTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenseType
@@ -325,6 +347,41 @@ class ExpenseWriteSerializer(serializers.ModelSerializer):
         return data
 
 
+def serialize_claim_expense_summary(exp):
+    receipts_list = []
+    for r in exp.receipts.all():
+        receipts_list.append({
+            'media_id': r.media_id,
+            'file_name': r.file_name,
+            'file_url': r.file_url.url if r.file_url else '',
+            'file_type': getattr(r, 'file_type', None)
+        })
+    store = exp.responsible_store
+    exp_type = exp.expense_type
+    return {
+        'expense_id': exp.expense_id,
+        'amount': str(exp.amount),
+        'expense_date': exp.expense_date.isoformat() if exp.expense_date else None,
+        'remarks': exp.remarks or '',
+        'receipts': receipts_list,
+        'ticket': exp.ticket_id,
+        'ticket_details': serialize_ticket_summary(exp.ticket),
+        'worker': exp.worker_id,
+        'worker_detail': serialize_user_summary(exp.worker),
+        'responsible_store': {
+            'store_id': store.store_id,
+            'store_name': store.store_name
+        } if store else None,
+        'expense_type': exp_type.expense_type_id if exp_type else None,
+        'expense_type_detail': {
+            'expense_type_id': exp_type.expense_type_id,
+            'expense_name': exp_type.expense_name
+        } if exp_type else None,
+        'is_claimed': exp.is_claimed,
+        'approved': exp.approved
+    }
+
+
 class WorkerClaimSerializer(serializers.ModelSerializer):
     worker_detail = serializers.SerializerMethodField()
     approved_by_detail = serializers.SerializerMethodField()
@@ -354,7 +411,7 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         return None
 
     def get_expenses(self, obj):
-        return ExpenseSerializer(obj.expenses.all(), many=True, context=self.context).data
+        return [serialize_claim_expense_summary(exp) for exp in obj.expenses.all()]
 
     def get_approval_history(self, obj):
         request = self.context.get('request')
@@ -662,7 +719,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'remarks': exp.remarks or '',
                     'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                     'ticket': t_info,
-                    'receipts': MediaSerializer(exp.receipts.all(), many=True).data if hasattr(exp, 'receipts') else []
+                    'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []
                 })
 
             return {
@@ -680,8 +737,6 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                 'expenses': expenses_list,
             }
         elif obj.ledger:
-            from apps.common.serializers import MediaSerializer
-
             tickets_list = []
             seen_tids = set()
 
@@ -721,7 +776,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                         'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                         'ticket': t_info,
                         'ticket_details': t_info,
-                        'receipts': MediaSerializer(exp.receipts.all(), many=True).data if hasattr(exp, 'receipts') else []
+                        'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []
                     })
 
                 b_ticket = serialize_ticket_summary(bundle.ticket)
@@ -767,7 +822,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
                     'ticket': t_info,
                     'ticket_details': t_info,
-                    'receipts': MediaSerializer(exp.receipts.all(), many=True).data if hasattr(exp, 'receipts') else []
+                    'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []
                 })
 
             return {
@@ -795,15 +850,11 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
             receipts_data = []
             if hasattr(exp, 'receipts'):
-                from apps.common.serializers import MediaSerializer
-                receipts_data = MediaSerializer(
-                    exp.receipts.all(), many=True).data
+                receipts_data = [serialize_receipt_summary(r) for r in exp.receipts.all()]
 
             ticket_attachments = []
             if exp.ticket and hasattr(exp.ticket, 'attachments'):
-                from apps.common.serializers import MediaSerializer
-                ticket_attachments = MediaSerializer(
-                    exp.ticket.attachments.all(), many=True).data
+                ticket_attachments = [serialize_receipt_summary(a) for a in exp.ticket.attachments.all()]
 
             return {
                 'type': 'Expense',

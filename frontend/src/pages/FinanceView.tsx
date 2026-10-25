@@ -806,16 +806,6 @@ export const FinanceView: React.FC = () => {
               })
               .catch(() => {});
           }
-
-          // Only load approvals once on initial mount if not yet loaded
-          if (approvals.length === 0) {
-            fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
-              .then(res => res.ok ? res.json() : null)
-              .then(data => {
-                if (data && !signal.aborted) setApprovals(parseList(data));
-              })
-              .catch(() => {});
-          }
           return;
         }
 
@@ -869,16 +859,6 @@ export const FinanceView: React.FC = () => {
             .then(res => res.ok ? res.json() : null)
             .then(data => {
               if (data && !signal.aborted) setUnclaimedExpenses(parseList(data));
-            })
-            .catch(() => {});
-        }
-
-        // 3. Only fetch approvals once if empty
-        if (approvals.length === 0) {
-          fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-              if (data && !signal.aborted) setApprovals(parseList(data));
             })
             .catch(() => {});
         }
@@ -969,7 +949,7 @@ export const FinanceView: React.FC = () => {
       case 'In Review':
         if (hasCurrentUserApproved) {
           return (
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 italic">
               In Review
             </span>
           );
@@ -994,7 +974,7 @@ export const FinanceView: React.FC = () => {
       case 'Pending':
         if (hasCurrentUserApproved) {
           return (
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 italic">
               In Review
             </span>
           );
@@ -1515,12 +1495,22 @@ export const FinanceView: React.FC = () => {
       if (!res.ok) throw new Error(data.detail || 'Submission failed');
       setSuccessMessage(`Bundle ${claimId} submitted into multi-step approval workflow.`);
 
-      // Optimistically update status so UI reflects submission immediately
-      setBundles(prev => prev.map(b => b.claim_id === claimId ? { ...b, status: 'Submitted' } : b));
+      // Instantly update bundle in memory with backend response so Report and In Review show immediately
+      setBundles(prev => prev.map(b => b.claim_id === claimId ? { ...b, ...data, status: data.status || 'In Review' } : b));
+      bundlePagesCacheRef.current.clear();
+
+      if (data && data.approval_instances && Array.isArray(data.approval_instances)) {
+        setApprovals(prev => [
+          ...data.approval_instances,
+          ...prev.filter(a => a.claim !== claimId && a.claim_id !== claimId)
+        ]);
+      }
 
       await fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
+      // Re-sync with backend to ensure the UI updates if there was a status mismatch
+      await fetchData(true, true);
     }
   };
 
@@ -1683,11 +1673,11 @@ export const FinanceView: React.FC = () => {
       setApprovals(prev => prev.map(a => {
         if (a.instance_id === targetApp.instance_id) {
           if (updatedInstance && typeof updatedInstance === 'object') {
-            return { ...a, ...updatedInstance };
+            return { ...a, ...updatedInstance, status: updatedInstance.status || (actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected') };
           }
           return {
             ...a,
-            status: actionToPerform === 'APPROVED' ? (data.all_completed ? 'Approved' : a.status) : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected'
+            status: actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected'
           };
         }
         return a;
@@ -1732,10 +1722,14 @@ export const FinanceView: React.FC = () => {
                 : (data.all_completed || data.status === 'Approved')
                   ? 'Approved'
                   : b.status;
-            return { ...b, status: nextStatus };
+            const updatedApprovalInstances = Array.isArray(b.approval_instances)
+              ? b.approval_instances.map(inst => inst.instance_id === targetApp.instance_id ? { ...inst, status: actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected' } : inst)
+              : b.approval_instances;
+            return { ...b, status: nextStatus, approval_instances: updatedApprovalInstances };
           }
           return b;
         }));
+        bundlePagesCacheRef.current.clear();
       }
 
       // 4. Update Expenses state directly if applicable

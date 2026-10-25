@@ -189,6 +189,7 @@ export interface WorkerClaimItem {
   remarks?: string;
   expenses?: ExpenseItem[];
   approval_history?: ApprovalInstanceItem[];
+  approval_instances?: ApprovalInstanceItem[];
   ledger_details?: {
     ledger_id: number;
     group_name: string;
