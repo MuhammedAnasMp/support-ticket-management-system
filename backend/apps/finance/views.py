@@ -51,7 +51,7 @@ class FinancePagination(PageNumberPagination):
                             total_sum=Sum('amount'),
                             approved_count=Count('pk', filter=Q(approved=True) | Q(expense_type__approve_required=False)),
                             pending_count=Count('pk', filter=Q(approved=False) & (Q(expense_type__isnull=True) | Q(expense_type__approve_required=True))),
-                            unclaimed_count=Count('pk', filter=Q(is_claimed=False, claim__isnull=True))
+                            unclaimed_count=Count('pk', filter=Q(is_claimed=False, claim__isnull=True) & (Q(approved=True) | Q(expense_type__approve_required=False)))
                         )
                         stats['approved_count'] = agg.get('approved_count', 0)
                         stats['pending_count'] = agg.get('pending_count', 0)
@@ -68,11 +68,33 @@ class FinancePagination(PageNumberPagination):
                         approved_bundles=Count('pk', filter=Q(status='Approved'))
                     )
                     from apps.finance.models import Expense
-                    unclaimed_count = Expense.objects.filter(is_claimed=False, claim__isnull=True).count()
+                    eligible_qs = Expense.objects.filter(
+                        is_claimed=False,
+                        claim__isnull=True
+                    ).filter(
+                        Q(approved=True) | Q(expense_type__approve_required=False)
+                    )
+                    req = getattr(self, 'request', None)
+                    if req:
+                        from_date = req.query_params.get('from_date') or req.query_params.get('date_from')
+                        to_date = req.query_params.get('to_date') or req.query_params.get('date_to')
+                        if from_date:
+                            eligible_qs = eligible_qs.filter(expense_date__gte=from_date)
+                        if to_date:
+                            eligible_qs = eligible_qs.filter(expense_date__lte=to_date)
+
+                        user = getattr(req, 'user', None)
+                        if user and not user.is_anonymous and not getattr(user, 'is_superuser', False):
+                            user_dept_ids = list(user.sub_departments.filter(department__isnull=False).values_list('department_id', flat=True).distinct())
+                            if not user_dept_ids and hasattr(user, 'department') and user.department:
+                                user_dept_ids = [user.department.pk]
+                            if user_dept_ids:
+                                eligible_qs = eligible_qs.filter(worker__sub_departments__department_id__in=user_dept_ids)
+
                     stats['total_bundles_count'] = agg.get('total_bundles', 0)
                     stats['pending_bundles_count'] = agg.get('pending_bundles', 0)
                     stats['approved_bundles_count'] = agg.get('approved_bundles', 0)
-                    stats['unclaimed_expenses_count'] = unclaimed_count
+                    stats['unclaimed_expenses_count'] = eligible_qs.count()
             except Exception:
                 pass
 
@@ -501,6 +523,19 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             updated_expense.approved = True
             updated_expense.approved_by = user
             updated_expense.save(update_fields=['approved', 'approved_by'])
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        instance.refresh_from_db()
+        return Response(ExpenseSerializer(instance, context=self.get_serializer_context()).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
     @action(detail=True, methods=['post'], url_path='action')
     def action_expense(self, request, pk=None):

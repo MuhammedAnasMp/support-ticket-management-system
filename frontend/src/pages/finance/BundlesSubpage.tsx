@@ -89,6 +89,8 @@ interface BundlesSubpageProps {
     approved_bundles?: number;
     unclaimed_expenses?: number;
   };
+  filterDateFrom?: string;
+  filterDateTo?: string;
 }
 
 export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
@@ -146,7 +148,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   updatingBundleId = null,
   selectedWorkerId,
   setSelectedWorkerId,
-  serverBundleStats
+  serverBundleStats,
+  filterDateFrom,
+  filterDateTo
 }) => {
   // Inline Approval State
   const [reworkComments, setReworkComments] = useState<Record<number, string>>({});
@@ -279,8 +283,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
     const matchingApp = allApprovals.find(a =>
       (a.claim === bundle.claim_id ||
-       a.claim_id === bundle.claim_id ||
-       (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)) &&
+        a.claim_id === bundle.claim_id ||
+        (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)) &&
       a.status === 'Pending'
     ) || allApprovals.find(a =>
       a.claim === bundle.claim_id ||
@@ -767,12 +771,33 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
   const isExpenseEligibleForClaim = (exp: ExpenseItem | any): boolean => {
     if (!exp) return false;
+    if (exp.is_claimed || exp.claim) return false;
     if (exp.expense_type && (exp.expense_type as any).approve_required === false) return true;
     if (exp.expense_type_detail && (exp.expense_type_detail as any).approve_required === false) return true;
     if (exp.approved === true || (exp.approved as any) === 'true' || (exp.approved as any) === 1) return true;
     if (exp.status_display === 'Approved' || exp.status_display === 'APPROVED') return true;
     return false;
   };
+
+  const isWithinDateRange = (targetDateStr?: string, fromDateStr?: string, toDateStr?: string) => {
+    if (!fromDateStr && !toDateStr) return true;
+    if (!targetDateStr) return false;
+    const target = targetDateStr.slice(0, 10);
+    if (fromDateStr && target < fromDateStr) return false;
+    if (toDateStr && target > toDateStr) return false;
+    return true;
+  };
+
+  const eligibleExpensesFallbackCount = useMemo(() => {
+    const effectiveFrom = expenseFilterFrom || filterDateFrom;
+    const effectiveTo = expenseFilterTo || filterDateTo;
+    return unclaimedExpenses.filter(e =>
+      !e.is_claimed &&
+      !e.claim &&
+      isExpenseEligibleForClaim(e) &&
+      isWithinDateRange(e.expense_date, effectiveFrom, effectiveTo)
+    ).length;
+  }, [unclaimedExpenses, expenseFilterFrom, expenseFilterTo, filterDateFrom, filterDateTo]);
 
   // Create Bundle Modal Pagination State
   const [modalPage, setModalPage] = useState(1);
@@ -814,8 +839,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         if (token) headers['Authorization'] = `Token ${token}`;
         const baseApi = API_URL || '';
         let url = `${baseApi}/finance/claim/unclaimed-workers/?`;
-        if (expenseFilterFrom) url += `from_date=${expenseFilterFrom}&`;
-        if (expenseFilterTo) url += `to_date=${expenseFilterTo}&`;
+        const effectiveFrom = expenseFilterFrom || filterDateFrom;
+        const effectiveTo = expenseFilterTo || filterDateTo;
+        if (effectiveFrom) url += `from_date=${effectiveFrom}&`;
+        if (effectiveTo) url += `to_date=${effectiveTo}&`;
         if (selectedLedgerBatchId && selectedLedgerBatchId !== 'ALL') url += `ledger_batch=${selectedLedgerBatchId}&`;
         const res = await fetch(url, { headers });
         if (res.ok) {
@@ -830,7 +857,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     };
 
     fetchWorkers();
-  }, [showCreateBundleModal, token, API_URL, expenseFilterFrom, expenseFilterTo, selectedLedgerBatchId]);
+  }, [showCreateBundleModal, token, API_URL, expenseFilterFrom, expenseFilterTo, filterDateFrom, filterDateTo, selectedLedgerBatchId]);
 
   const handleSelectWorker = async (emp: any) => {
     setSelectedWorkerObj(emp);
@@ -845,15 +872,17 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       if (token) headers['Authorization'] = `Token ${token}`;
       const baseApi = API_URL || '';
       let url = `${baseApi}/finance/expense/?is_claimed=false&worker=${emp.id || emp.user_id}&page_size=all`;
-      if (expenseFilterFrom) url += `&from_date=${expenseFilterFrom}`;
-      if (expenseFilterTo) url += `&to_date=${expenseFilterTo}`;
+      const effectiveFrom = expenseFilterFrom || filterDateFrom;
+      const effectiveTo = expenseFilterTo || filterDateTo;
+      if (effectiveFrom) url += `&from_date=${effectiveFrom}`;
+      if (effectiveTo) url += `&to_date=${effectiveTo}`;
       const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         const list: ExpenseItem[] = Array.isArray(data) ? data : (data.results || []);
         setWorkerExpenses(list);
-        const eligible = list.filter((e: any) => isExpenseEligibleForClaim(e)).map((e: any) => e.expense_id);
-        setSelectedExpenseIds(eligible);
+        // Do not automatically add expenses; user must choose them explicitly
+        setSelectedExpenseIds([]);
       }
     } catch (err) {
       console.error('Error fetching worker expenses:', err);
@@ -996,19 +1025,26 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             const uid = u.user_id || u.id;
             const uName = u.full_name || u.username || `Worker ${uid}`;
 
-            const existing = uniqueExpenseWorkers.find(w => w.id === uid || w.name.toLowerCase() === uName.toLowerCase());
+            const existing = unclaimedWorkersList.find(w => w.id === uid || w.user_id === uid)
+              || uniqueExpenseWorkers.find(w => w.id === uid || w.name.toLowerCase() === uName.toLowerCase());
             if (existing) {
               return existing;
             }
 
+            const effectiveFrom = expenseFilterFrom || filterDateFrom;
+            const effectiveTo = expenseFilterTo || filterDateTo;
             const workerExps = unclaimedExpenses.filter(exp => {
               if (exp.is_claimed || exp.claim) return false;
+              if (!isWithinDateRange(exp.expense_date, effectiveFrom, effectiveTo)) return false;
               const expWid = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
               return expWid === uid || (exp.worker as any)?.username === u.username;
             });
 
-            const count = workerExps.length;
-            const total = workerExps.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
+            const eligibleWorkerExps = workerExps.filter(exp => isExpenseEligibleForClaim(exp));
+            const eligibleCount = eligibleWorkerExps.length;
+            const eligibleTotal = eligibleWorkerExps.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
+            const totalCount = workerExps.length;
+            const totalAmt = workerExps.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
 
             return {
               id: uid,
@@ -1018,8 +1054,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
               profile_image: u.profile_image || null,
               department_name: u.sub_departments?.[0]?.sub_department_name || u.role?.role_name || '',
               sub_departments: u.sub_departments || [],
-              unclaimed_count: count,
-              unclaimed_total: total
+              unclaimed_count: eligibleCount,
+              unclaimed_total: eligibleTotal,
+              total_unclaimed_count: totalCount,
+              total_unclaimed_amount: totalAmt
             };
           });
 
@@ -1033,7 +1071,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [employeeSearchQuery, showCreateBundleModal, token, API_URL, uniqueExpenseWorkers, unclaimedExpenses]);
+  }, [employeeSearchQuery, showCreateBundleModal, token, API_URL, uniqueExpenseWorkers, unclaimedExpenses, expenseFilterFrom, expenseFilterTo, filterDateFrom, filterDateTo]);
 
   const filteredEmployees = useMemo(() => {
     let list = unclaimedWorkersList.length > 0 ? unclaimedWorkersList : uniqueExpenseWorkers;
@@ -1153,9 +1191,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
-          <span className="text-xs font-medium text-on-surface-variant block">Unclaimed Expenses</span>
+          <span className="text-xs font-medium text-on-surface-variant block">Eligible Expenses</span>
           <span className="text-2xl font-semibold text-blue-500 mt-1 block">
-            {serverBundleStats?.unclaimed_expenses ?? unclaimedExpenses.length}
+            {serverBundleStats?.unclaimed_expenses ?? eligibleExpensesFallbackCount}
           </span>
         </div>
       </div>
@@ -1235,7 +1273,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             <Can permission={["finance.create_bundle", "finance.create_workerclaim", "finance.add_workerclaim"] as any}>
               <button
                 type="button"
-                onClick={() => setShowCreateBundleModal(true)}
+                onClick={() => {
+                  if (filterDateFrom && !expenseFilterFrom) setExpenseFilterFrom(filterDateFrom);
+                  if (filterDateTo && !expenseFilterTo) setExpenseFilterTo(filterDateTo);
+                  setShowCreateBundleModal(true);
+                }}
                 className="bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -2167,8 +2209,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   {/* Date Filter */}
                   <div className="shrink-0 flex justify-end">
                     <DateRangePickerCard
-                      fromDate={expenseFilterFrom}
-                      toDate={expenseFilterTo}
+                      fromDate={expenseFilterFrom || filterDateFrom || ''}
+                      toDate={expenseFilterTo || filterDateTo || ''}
+                      hideDateType={true}
+                      allowEmptyDateType={true}
                       onDateRangeChange={(from, to) => {
                         setExpenseFilterFrom(from);
                         setExpenseFilterTo(to);
@@ -2301,24 +2345,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     <span>{emp.name}</span>
                                     {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                                   </h4>
-                                  <div className="flex flex-wrap gap-1 mt-0.5">
-                                    {emp.sub_departments && emp.sub_departments.length > 0 ? (
-                                      emp.sub_departments.map((sd: any, sdIdx: number) => (
-                                        <span
-                                          key={sd.sub_department_id ?? sd.id ?? `sd-${sdIdx}`}
-                                          className="text-[9px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant/60 font-medium truncate max-w-[130px]"
-                                          title={sd.sub_department_name}
-                                        >
-                                          {sd.sub_department_name}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[10px] text-on-surface-variant truncate">
-                                        {(emp as any).department_name || 'General Maintenance'}
-                                        {emp.employee_no ? ` • EMP: ${emp.employee_no}` : ''}
-                                      </span>
-                                    )}
-                                  </div>
+
                                 </div>
                               </div>
                               <div className="text-right shrink-0">
@@ -2331,11 +2358,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </span>
                                 <span className={`text-[11px] font-bold ${eligibleTotal > 0
                                   ? 'text-emerald-600 dark:text-emerald-400'
-                                  : totalAmt > 0
-                                    ? 'text-amber-600 dark:text-amber-400'
-                                    : 'text-on-surface-variant/70'
+                                  : 'text-on-surface-variant/70'
                                   }`}>
-                                  {(eligibleTotal > 0 ? eligibleTotal : totalAmt).toFixed(3)} KD
+                                  {eligibleTotal.toFixed(3)} KD
                                 </span>
                               </div>
                             </div>
@@ -2384,6 +2409,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         isSyncingNewBundle={isSyncingNewBundle}
         errorMessage={errorMessage}
         setErrorMessage={setErrorMessage}
+        fromDate={expenseFilterFrom || filterDateFrom}
+        toDate={expenseFilterTo || filterDateTo}
       />
 
       {/* POPUP MODAL 1: VIEW BUNDLE BILLS & MEDIA */}

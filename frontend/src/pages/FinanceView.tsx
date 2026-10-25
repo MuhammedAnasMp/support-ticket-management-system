@@ -774,8 +774,8 @@ export const FinanceView: React.FC = () => {
           }
         }
 
-        // Only load approvals once on initial mount if not yet loaded
-        if (approvals.length === 0) {
+        // Only load approvals once on initial mount if not yet loaded or on cache bypass (refresh)
+        if (approvals.length === 0 || bypassCache) {
           fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
             .then(res => res.ok ? res.json() : null)
             .then(data => {
@@ -798,7 +798,7 @@ export const FinanceView: React.FC = () => {
           if (!isSilent) setLoading(false);
 
           // Fetch unclaimed expenses in the background for Create Bundle modal without freezing UI
-          if (unclaimedExpenses.length === 0) {
+          if (unclaimedExpenses.length === 0 || bypassCache) {
             fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal })
               .then(res => res.ok ? res.json() : null)
               .then(data => {
@@ -854,7 +854,7 @@ export const FinanceView: React.FC = () => {
         if (!isSilent) setLoading(false);
 
         // 2. Fetch unclaimed expenses in the background for Create Bundle modal without freezing UI
-        if (unclaimedExpenses.length === 0) {
+        if (unclaimedExpenses.length === 0 || bypassCache) {
           fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal })
             .then(res => res.ok ? res.json() : null)
             .then(data => {
@@ -2319,6 +2319,8 @@ export const FinanceView: React.FC = () => {
           setExpenseFilterFrom={setExpenseFilterFrom}
           expenseFilterTo={expenseFilterTo}
           setExpenseFilterTo={setExpenseFilterTo}
+          filterDateFrom={filterDateFrom}
+          filterDateTo={filterDateTo}
           uniqueExpenseWorkers={uniqueExpenseWorkers}
           filteredUnclaimedExpenses={filteredUnclaimedExpenses}
           selectedExpenseIds={selectedExpenseIds}

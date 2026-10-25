@@ -1144,20 +1144,39 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       ...(approvalsProps?.roleFilteredApprovals || [])
     ];
 
-    const matchingApp = allApprovals.find(a =>
+    const directPending = expDirectInstances.find(a => a.status === 'Pending');
+    const globalPending = allApprovals.find(a =>
+      (a.expense === exp.expense_id ||
+      a.expense_id === exp.expense_id ||
+      (a.target_summary?.type === 'Expense' && a.target_summary?.id === exp.expense_id)) &&
+      a.status === 'Pending'
+    );
+    const activePending = directPending || globalPending;
+
+    const matchingApp = activePending || expDirectInstances[0] || allApprovals.find(a =>
       a.expense === exp.expense_id ||
       a.expense_id === exp.expense_id ||
       (a.target_summary?.type === 'Expense' && a.target_summary?.id === exp.expense_id)
-    ) || (expDirectInstances.length > 0 ? expDirectInstances.find(a => a.status === 'Pending') || expDirectInstances[0] : null);
+    ) || null;
 
-    // Combine history items
-    let historyItems: ApprovalInstanceItem[] = [];
-    if (matchingApp?.approval_history && matchingApp.approval_history.length > 0) {
-      historyItems = matchingApp.approval_history as any;
-    } else if (expDirectInstances.length > 0) {
-      historyItems = expDirectInstances;
-    } else if (matchingApp) {
-      historyItems = [matchingApp];
+    // Combine history items without duplicates, keeping latest order
+    const rawHistory: ApprovalInstanceItem[] = [
+      ...expDirectInstances,
+      ...((matchingApp?.approval_history as ApprovalInstanceItem[]) || []),
+      ...(matchingApp ? [matchingApp] : [])
+    ];
+    const seenInstanceIds = new Set<number | string>();
+    const historyItems: ApprovalInstanceItem[] = [];
+    for (const item of rawHistory) {
+      const id = item.instance_id || (item as any).id;
+      if (id) {
+        if (!seenInstanceIds.has(id)) {
+          seenInstanceIds.add(id);
+          historyItems.push(item);
+        }
+      } else {
+        historyItems.push(item);
+      }
     }
 
     // Try to find full workflow steps (e.g. all 4 levels)
@@ -1185,6 +1204,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         historyItems[0] = { ...historyItems[0], workflow_steps: workflowSteps };
       }
 
+      const hasPendingApproval = historyItems.some(i => i.status === 'Pending');
+
       return {
         app: matchingApp,
         group: {
@@ -1192,7 +1213,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
           type: 'Expense' as const,
           id: exp.expense_id,
           items: historyItems,
-          isApproved: exp.approved,
+          isApproved: exp.approved && !hasPendingApproval,
           remarks: typeof exp.remarks === 'string' ? exp.remarks : ''
         }
       };
@@ -1542,11 +1563,15 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       });
     }
 
-    // Is the overall pipeline completely finished/approved?
-    const isFinished = group.isApproved || (steps.length > 0 && group.items.some(i => i.status === 'Approved' && ((i as any).is_final_step || i.step_order === steps.length))) || (group.items.length > 0 && group.items.every(i => i.status === 'Approved'));
-
     // Find the current active step index if pending
     const activePendingItem = group.items.find(i => i.status === 'Pending');
+
+    // Is the overall pipeline completely finished/approved?
+    const isFinished = !activePendingItem && (
+      group.isApproved ||
+      (steps.length > 0 && group.items.some(i => i.status === 'Approved' && ((i as any).is_final_step || i.step_order === steps.length))) ||
+      (group.items.length > 0 && group.items.every(i => i.status === 'Approved'))
+    );
     const activePendingOrder: number = (activePendingItem && typeof activePendingItem.step_order === 'number') ? activePendingItem.step_order : (isFinished ? steps.length + 1 : 1);
 
     return (
@@ -1725,11 +1750,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
           </span>
         </div>
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
-          <span className="text-xs font-medium text-on-surface-variant block">Unclaimed (Available)</span>
+          <span className="text-xs font-medium text-on-surface-variant block">Eligible (Unclaimed)</span>
           <span className="text-2xl font-semibold text-blue-500 mt-1 block">
             {serverUnclaimedCount !== undefined
               ? serverUnclaimedCount
-              : filteredExpenses.filter(e => !e.is_claimed && !e.claim).length}
+              : filteredExpenses.filter(e => !e.is_claimed && !e.claim && (e.approved || (e.expense_type as any)?.approve_required === false)).length}
           </span>
         </div>
       </div>
@@ -2040,7 +2065,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         ...(exp.receipt && !exp.receipts?.some((r: any) => r.media_id === exp.receipt?.media_id) ? [exp.receipt] : [])
                       ];
 
-                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
+                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending') ||
+                        ((exp as any).approval_instances || []).find((i: any) => i.status === 'Pending') ||
+                        (approvalData?.app?.status === 'Pending' ? approvalData?.app : undefined);
                       const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
                       const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
                       const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
@@ -2050,7 +2077,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         rawStatus === 'Paid' ||
                         (exp.claim && (exp.claim.status === 'Paid' || exp.claim_status === 'Paid'))
                       );
-                      const isExpenseApproved = !isExpensePaid && (exp.approved === true || rawStatus === 'Approved');
+                      const isExpenseApproved = !isExpensePaid && !activePendingInstance && (exp.approved === true || rawStatus === 'Approved');
 
                       // An expense is actively in Rework ONLY if it has not yet been resubmitted to Pending
                       const isCurrentlyRework = !isExpensePaid && !isExpenseApproved && !activePendingInstance && (

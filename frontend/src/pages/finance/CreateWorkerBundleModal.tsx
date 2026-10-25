@@ -31,6 +31,8 @@ interface CreateWorkerBundleModalProps {
   isSyncingNewBundle?: boolean;
   errorMessage?: string | null;
   setErrorMessage?: (msg: string | null) => void;
+  fromDate?: string;
+  toDate?: string;
 }
 
 export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = ({
@@ -47,53 +49,23 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
   submitting,
   isSyncingNewBundle = false,
   errorMessage,
-  setErrorMessage
+  setErrorMessage,
+  fromDate,
+  toDate
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'added' | 'unadded'>('all');
-
-  // Draggable slider state between added and unadded panels
-  const [splitPercent, setSplitPercent] = useState<number>(50);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const splitContainerRef = useRef<HTMLDivElement>(null);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  const [activeFilterTab, setActiveFilterTab] = useState<'added' | 'unadded'>('unadded');
 
   useEffect(() => {
-    if (!isDragging) return;
-
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!splitContainerRef.current) return;
-      const rect = splitContainerRef.current.getBoundingClientRect();
-      const relativeY = e.clientY - rect.top;
-      const newPercent = (relativeY / rect.height) * 100;
-      const clamped = Math.min(80, Math.max(20, newPercent));
-      setSplitPercent(clamped);
-    };
-
-    const handlePointerUp = () => {
-      setIsDragging(false);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [isDragging]);
+    if (isOpen) {
+      setActiveFilterTab('unadded');
+      setSearchQuery('');
+    }
+  }, [isOpen, worker]);
 
   const isExpenseEligible = (exp: ExpenseItem | any): boolean => {
     if (!exp) return false;
+    if (exp.is_claimed || exp.claim) return false;
     if (exp.expense_type && (exp.expense_type as any).approve_required === false) return true;
     if (exp.expense_type_detail && (exp.expense_type_detail as any).approve_required === false) return true;
     if (exp.approved === true || (exp.approved as any) === 'true' || (exp.approved as any) === 1) return true;
@@ -148,9 +120,12 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     return unaddedExpenses.filter(matchesSearch);
   }, [unaddedExpenses, searchQuery]);
 
-  // Totals calculation
+  // Totals calculation (only counting approved / eligible expenses for totals, never unapproved)
   const addedTotal = addedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
-  const unaddedTotal = unaddedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
+  const unaddedEligibleExpenses = useMemo(() => unaddedExpenses.filter(isExpenseEligible), [unaddedExpenses]);
+  const unaddedEligibleTotal = unaddedEligibleExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
+  const totalApprovedExpenses = useMemo(() => workerExpenses.filter(isExpenseEligible), [workerExpenses]);
+  const totalApprovedAmount = totalApprovedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
 
   // Actions
   const handleToggleExpense = (exp: ExpenseItem) => {
@@ -310,10 +285,18 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                   New Bundle
                 </span>
               </div>
-              <div className="text-xs text-on-surface-variant font-normal truncate">
-                Technician: <strong className="text-on-surface font-semibold">{workerName}</strong>
+              <div className="text-xs text-on-surface-variant font-normal truncate flex items-center flex-wrap gap-1">
+                <span>Technician: <strong className="text-on-surface font-semibold">{workerName}</strong></span>
                 {worker?.employee_no && (
-                  <span className="ml-1.5 text-on-surface-variant/80">• EMP: {worker.employee_no}</span>
+                  <span className="text-on-surface-variant/80">• EMP: {worker.employee_no}</span>
+                )}
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  • Approved Total: {totalApprovedAmount.toFixed(3)} KD
+                </span>
+                {(fromDate || toDate) && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant font-medium border border-outline-variant/60 ml-0.5">
+                    Filter: {fromDate || 'Any'} → {toDate || 'Present'}
+                  </span>
                 )}
               </div>
             </div>
@@ -392,37 +375,13 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                 )}
               </div>
 
-              {/* View filter toggles */}
+              {/* View filter toggles: Added & Unadded */}
               <div className="flex items-center gap-1 bg-surface-container-low border border-outline-variant p-0.5 rounded shrink-0 text-xs font-semibold self-start sm:self-auto">
                 <button
                   type="button"
-                  onClick={() => setActiveFilterTab('all')}
-                  className={`px-2.5 py-1 rounded transition-all cursor-pointer ${activeFilterTab === 'all'
-                    ? 'bg-primary text-on-primary shadow-xs'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
-                >
-                  All ({workerExpenses.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterTab('added')}
-                  className={`px-2.5 py-1 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'added'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
-                >
-                  <span>Added</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'added' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                    }`}>
-                    {addedExpenses.length}
-                  </span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setActiveFilterTab('unadded')}
-                  className={`px-2.5 py-1 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'unadded'
-                    ? 'bg-amber-600 text-white shadow-xs'
+                  className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'unadded'
+                    ? 'bg-amber-600 text-white shadow-xs font-bold'
                     : 'text-on-surface-variant hover:text-on-surface'
                     }`}
                 >
@@ -432,16 +391,27 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                     {unaddedExpenses.length}
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveFilterTab('added')}
+                  className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'added'
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                >
+                  <span>Added</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'added' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    }`}>
+                    {addedExpenses.length}
+                  </span>
+                </button>
               </div>
 
             </div>
           </div>
 
-          {/* Draggable Panels Container */}
-          <div
-            ref={splitContainerRef}
-            className="flex-1 min-h-[300px] flex flex-col relative rounded border border-outline-variant/80 bg-surface-container-lowest overflow-hidden select-none"
-          >
+          {/* Main List Container (No Divider, Single Tab View) */}
+          <div className="flex-1 min-h-[320px] flex flex-col relative rounded border border-outline-variant/80 bg-surface-container-lowest overflow-hidden">
             {isLoadingExpenses ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-on-surface-variant text-xs">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -451,92 +421,6 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
               <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-on-surface-variant">
                 No unclaimed expenses found for this technician.
               </div>
-            ) : activeFilterTab === 'all' ? (
-              <>
-                {/* 1. TOP PANEL: ADDED EXPENSES */}
-                <div
-                  style={{ height: `${splitPercent}%` }}
-                  className="flex flex-col min-h-0 overflow-hidden bg-surface-container/30"
-                >
-                  <div className="flex items-center justify-between px-3 py-2 bg-surface-container-high/60 border-b border-outline-variant/60 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-on-surface">Added Expenses</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                        {addedExpenses.length} ({addedTotal.toFixed(3)} KD)
-                      </span>
-                    </div>
-
-                    {filteredAdded.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleRemoveAllAdded}
-                        className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
-                      >
-                        Remove All
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
-                    {filteredAdded.length === 0 ? (
-                      <div className="h-full flex items-center justify-center p-4 text-center text-xs text-on-surface-variant/70 italic">
-                        {searchQuery
-                          ? 'No added expenses match your search.'
-                          : 'No expenses added yet. Click (+) on items below to add.'}
-                      </div>
-                    ) : (
-                      filteredAdded.map(exp => renderExpenseCard(exp, true))
-                    )}
-                  </div>
-                </div>
-
-                {/* DRAGGABLE RESIZER HANDLE */}
-                <div
-                  onPointerDown={handlePointerDown}
-                  className={`h-2.5 bg-outline-variant/50 hover:bg-primary/40 cursor-row-resize flex items-center justify-center shrink-0 transition-colors group relative ${isDragging ? 'bg-primary/50' : ''
-                    }`}
-                  title="Drag up or down to resize panels"
-                >
-                  <GripHorizontal className="w-4 h-4 text-on-surface-variant/60 group-hover:text-primary transition-colors" />
-                </div>
-
-                {/* 2. BOTTOM PANEL: UNADDED EXPENSES */}
-                <div
-                  style={{ height: `${100 - splitPercent}%` }}
-                  className="flex flex-col min-h-0 overflow-hidden bg-surface-container-low/40"
-                >
-                  <div className="flex items-center justify-between px-3 py-2 bg-surface-container-high/60 border-b border-outline-variant/60 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-on-surface">Available / Unadded Expenses</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant/60">
-                        {unaddedExpenses.length} ({unaddedTotal.toFixed(3)} KD)
-                      </span>
-                    </div>
-
-                    {filteredUnadded.some(isExpenseEligible) && (
-                      <button
-                        type="button"
-                        onClick={handleAddAllEligible}
-                        className="text-[11px] text-primary hover:underline font-bold cursor-pointer"
-                      >
-                        Add All Eligible
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
-                    {filteredUnadded.length === 0 ? (
-                      <div className="h-full flex items-center justify-center p-4 text-center text-xs text-on-surface-variant/70 italic">
-                        {searchQuery
-                          ? 'No available expenses match your search.'
-                          : 'All available expenses have been added to the bundle.'}
-                      </div>
-                    ) : (
-                      filteredUnadded.map(exp => renderExpenseCard(exp, false))
-                    )}
-                  </div>
-                </div>
-              </>
             ) : activeFilterTab === 'added' ? (
               /* ONLY ADDED TAB VIEW */
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -559,10 +443,10 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                 </div>
                 <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
                   {filteredAdded.length === 0 ? (
-                    <div className="h-full flex items-center justify-center p-4 text-center text-xs text-on-surface-variant/70 italic">
+                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70 italic">
                       {searchQuery
                         ? 'No added expenses match your search.'
-                        : 'No expenses added yet.'}
+                        : 'No expenses added yet. Switch to "Unadded" tab to choose and add expenses.'}
                     </div>
                   ) : (
                     filteredAdded.map(exp => renderExpenseCard(exp, true))
@@ -576,8 +460,13 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-on-surface">Available / Unadded Expenses</span>
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant/60">
-                      {unaddedExpenses.length} ({unaddedTotal.toFixed(3)} KD)
+                      {unaddedEligibleExpenses.length} Eligible ({unaddedEligibleTotal.toFixed(3)} KD)
                     </span>
+                    {unaddedExpenses.length > unaddedEligibleExpenses.length && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        • {unaddedExpenses.length - unaddedEligibleExpenses.length} unapproved
+                      </span>
+                    )}
                   </div>
                   {filteredUnadded.some(isExpenseEligible) && (
                     <button
@@ -591,10 +480,10 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                 </div>
                 <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
                   {filteredUnadded.length === 0 ? (
-                    <div className="h-full flex items-center justify-center p-4 text-center text-xs text-on-surface-variant/70 italic">
+                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70 italic">
                       {searchQuery
                         ? 'No available expenses match your search.'
-                        : 'No unclaimed expenses available for this technician.'}
+                        : 'All available expenses have been added to the bundle.'}
                     </div>
                   ) : (
                     filteredUnadded.map(exp => renderExpenseCard(exp, false))
@@ -602,22 +491,20 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                 </div>
               </div>
             )}
-
           </div>
-
         </div>
 
         {/* Fixed Modal Footer */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-outline-variant/80 bg-surface-container-high/30 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-xs text-on-surface-variant">
-              Bundle Total:
+              Selected Bundle Total:
             </span>
             <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
               {addedTotal.toFixed(3)} KD
             </span>
             <span className="text-xs text-on-surface-variant hidden sm:inline">
-              ({addedExpenses.length} {addedExpenses.length === 1 ? 'expense' : 'expenses'})
+              ({addedExpenses.length} {addedExpenses.length === 1 ? 'expense selected' : 'expenses selected'})
             </span>
           </div>
 

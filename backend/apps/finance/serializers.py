@@ -265,6 +265,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
             return 'Paid'
         insts = self._get_sorted_approval_instances(obj)
         if insts:
+            pending_inst = next((i for i in insts if i.status == 'Pending'), None)
+            if pending_inst and not obj.approved:
+                return 'Pending Approval'
             latest_inst = insts[0]
             if latest_inst.status in ['Rejected', 'Rework']:
                 return latest_inst.status
