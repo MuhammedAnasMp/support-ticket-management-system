@@ -2,6 +2,7 @@ import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { DateRangePickerCard } from '../../ticket/DateRangePickerCard';
 import { SearchableSelect, type SelectOption } from '../../../components/SearchableSelect';
+import Can from '@/hooks/Can';
 
 interface DateFilterToolbarProps {
     fromDate: string;
@@ -124,8 +125,8 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                         type="button"
                         onClick={() => setPreset('today')}
                         className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'today'
-                                ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
-                                : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
+                            ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
+                            : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
                             }`}
                     >
                         Today
@@ -134,8 +135,8 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                         type="button"
                         onClick={() => setPreset('week')}
                         className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'week'
-                                ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
-                                : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
+                            ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
+                            : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
                             }`}
                     >
                         This Week
@@ -144,8 +145,8 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                         type="button"
                         onClick={() => setPreset('month')}
                         className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'month'
-                                ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
-                                : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
+                            ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
+                            : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
                             }`}
                     >
                         This Month
@@ -154,8 +155,8 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                         type="button"
                         onClick={() => setPreset('last30')}
                         className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors shrink-0 ${activePreset === 'last30'
-                                ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
-                                : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
+                            ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
+                            : 'border-outline-variant hover:bg-surface-container-high text-on-surface-variant'
                             }`}
                     >
                         Last 30 Days
@@ -184,16 +185,19 @@ export const DateFilterToolbar: React.FC<DateFilterToolbarProps> = ({
                     </div>
                 )}
 
-                {departments.length > 0 && onDeptChange && (
-                    <div className="min-w-[160px] max-w-[220px] flex-1 sm:flex-initial">
-                        <SearchableSelect
-                            value={selectedDept}
-                            onChange={onDeptChange}
-                            options={deptOptions}
-                            placeholder="All Departments"
-                        />
-                    </div>
-                )}
+                <Can permission='maintenance.create_ticket_all_departments' >
+
+                    {departments.length > 0 && onDeptChange && (
+                        <div className="min-w-[160px] max-w-[220px] flex-1 sm:flex-initial">
+                            <SearchableSelect
+                                value={selectedDept}
+                                onChange={onDeptChange}
+                                options={deptOptions}
+                                placeholder="All Departments"
+                            />
+                        </div>
+                    )}
+                </Can>
 
                 {onRefresh && (
                     <button

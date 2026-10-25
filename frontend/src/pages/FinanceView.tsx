@@ -28,6 +28,7 @@ import { PaymentsSubpage } from './finance/PaymentsSubpage';
 import { EditBundleModal } from './finance/EditBundleModal';
 import { ExpensesSubpage } from './finance/ExpensesSubpage';
 import Can from '../hooks/Can';
+import { usePermission } from '../hooks/usePermission';
 
 const getCurrentMonthRange = () => {
   const now = new Date();
@@ -54,6 +55,7 @@ export const FinanceView: React.FC = () => {
   const navigate = useNavigate();
   const token = useSelector((state: RootState) => state.auth.token);
   const currentUser = useSelector((state: RootState) => state.auth.user);
+  const { hasPermission } = usePermission();
 
   // Data states
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
@@ -248,6 +250,7 @@ export const FinanceView: React.FC = () => {
   // Bundle Detail View & Edit Modal States
   const [selectedBundleForView, setSelectedBundleForView] = useState<WorkerClaimItem | null>(null);
   const [selectedBundleForEdit, setSelectedBundleForEdit] = useState<WorkerClaimItem | null>(null);
+  const [updatingBundleId, setUpdatingBundleId] = useState<number | null>(null);
   const [editBundleForm, setEditBundleForm] = useState<{
     period_from: string;
     period_to: string;
@@ -346,10 +349,13 @@ export const FinanceView: React.FC = () => {
       return;
     }
 
+    const updatingId = selectedBundleForEdit.claim_id;
+    setUpdatingBundleId(updatingId);
+    setSelectedBundleForEdit(null);
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`${API_URL}/finance/claim/${selectedBundleForEdit.claim_id}/update-bundle/`, {
+      const res = await fetch(`${API_URL}/finance/claim/${updatingId}/update-bundle/`, {
         method: 'POST',
         headers: {
           'Authorization': `Token ${token}`,
@@ -365,14 +371,19 @@ export const FinanceView: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to update bundle');
 
-      setSuccessMessage(`Bundle ${selectedBundleForEdit.claim_id} updated successfully.`);
-      setSelectedBundleForEdit(null);
-      setSelectedBundleForView(null);
-      fetchData(true, true);
+      // Instantly update the modified bundle in memory (fastest, zero redundant GET call)
+      setBundles(prev => prev.map(b => (b.claim_id === updatingId ? { ...b, ...data } : b)));
+      bundlePagesCacheRef.current.clear();
+
+      // If user had view modal open for this bundle, update it
+      setSelectedBundleForView(prev => (prev?.claim_id === updatingId ? { ...prev, ...data } : prev));
+
+      setSuccessMessage(`Bundle ${updatingId} updated successfully.`);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
       setSubmitting(false);
+      setUpdatingBundleId(null);
     }
   };
 
@@ -1990,13 +2001,20 @@ export const FinanceView: React.FC = () => {
     });
   }, [expenses, filterDateFrom, filterDateTo, filterDateType, statusFilter, bundleFilter, ledgerBatchFilter, ledgerBatches, searchQuery]);
 
-  // Subpage Navigation Tabs
-  const navTabs = [
-    { key: 'expenses', label: 'Expenses', icon: Receipt },
-    { key: 'bundles', label: 'Bundles', icon: Layers },
-    { key: 'ledgers', label: 'Ledgers', icon: Building2 },
-    { key: 'payments', label: 'Disbursements & Audit', icon: CreditCard }
-  ];
+  // Subpage Navigation Tabs filtered by user permissions
+  const navTabs = useMemo(() => [
+    { key: 'expenses', label: 'Expenses', icon: Receipt, permission: 'finance.can_view_expenses' },
+    { key: 'bundles', label: 'Bundles', icon: Layers, permission: 'finance.can_view_bundles' },
+    { key: 'ledgers', label: 'Ledgers', icon: Building2, permission: 'finance.can_view_ledger' },
+    { key: 'payments', label: 'Disbursements & Audit', icon: CreditCard, permission: 'finance.can_view_audit' }
+  ].filter(tab => !tab.permission || hasPermission(tab.permission)), [hasPermission]);
+
+  // If the user navigates directly to a subpage they lack permission for, redirect to first permitted tab
+  useEffect(() => {
+    if (navTabs.length > 0 && !navTabs.some(tab => tab.key === subpage)) {
+      navigate(`/finance/${navTabs[0].key}`, { replace: true });
+    }
+  }, [subpage, navTabs, navigate]);
 
   const approvalsProps = {
     approvals,
@@ -2248,7 +2266,7 @@ export const FinanceView: React.FC = () => {
       </div>
 
       {/* SUBPAGES */}
-      {subpage === 'expenses' && (
+      {subpage === 'expenses' && hasPermission('finance.can_view_expenses') && (
         <ExpensesSubpage
           expenses={expenses}
           filteredExpenses={filteredExpenses}
@@ -2289,7 +2307,7 @@ export const FinanceView: React.FC = () => {
         />
       )}
 
-      {subpage === 'bundles' && (
+      {subpage === 'bundles' && hasPermission('finance.can_view_bundles') && (
         <BundlesSubpage
           filteredBundles={filteredBundles}
           bundles={bundles}
@@ -2338,6 +2356,7 @@ export const FinanceView: React.FC = () => {
           onRefresh={() => fetchData(true, true)}
           isSyncingNewBundle={isSyncingNewBundle}
           syncingBundleInfo={syncingBundleInfo}
+          updatingBundleId={updatingBundleId}
           selectedWorkerId={selectedWorkerId}
           setSelectedWorkerId={setSelectedWorkerId}
           currentPage={bundlePage}
@@ -2352,7 +2371,7 @@ export const FinanceView: React.FC = () => {
         />
       )}
 
-      {subpage === 'ledgers' && (
+      {subpage === 'ledgers' && hasPermission('finance.can_view_ledger') && (
         <LedgersSubpage
           filteredLedgers={filteredLedgers}
           ledgers={ledgers}
@@ -2430,7 +2449,7 @@ export const FinanceView: React.FC = () => {
         />
       )}
 
-      {subpage === 'payments' && (
+      {subpage === 'payments' && hasPermission('finance.can_view_audit') && (
         <PaymentsSubpage
           filteredPayments={filteredPayments}
           payments={payments}

@@ -79,6 +79,7 @@ interface BundlesSubpageProps {
     worker_name?: string;
     amount?: number;
   } | null;
+  updatingBundleId?: number | null;
   selectedWorkerId?: number | null;
   setSelectedWorkerId?: (id: number | null) => void;
   serverBundleStats?: {
@@ -141,6 +142,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   onItemsPerPageChange: propOnItemsPerPageChange,
   isSyncingNewBundle = false,
   syncingBundleInfo = null,
+  updatingBundleId = null,
   selectedWorkerId,
   setSelectedWorkerId,
   serverBundleStats
@@ -1372,19 +1374,19 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         b.status === 'Submitted' || b.status === 'In Review' || !!activePendingInstance
                       );
 
-                      const activeApp: any = isRework 
+                      const activeApp: any = isRework
                         ? (reworkInstance || approvalData?.app)
                         : (activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app) || {
-                        instance_id: b.claim_id,
-                        step_name: 'Bundle Approval',
-                        step_order: 1,
-                        assigned_role_name: 'Administrator',
-                        status: isRework ? ('Rework' as const) : isRejected ? ('Rejected' as const) : ('Pending' as const),
-                        created_at: b.claim_date || '',
-                        can_action: isAdmin,
-                        claim: b.claim_id,
-                        claim_id: b.claim_id
-                      };
+                          instance_id: b.claim_id,
+                          step_name: 'Bundle Approval',
+                          step_order: 1,
+                          assigned_role_name: 'Administrator',
+                          status: isRework ? ('Rework' as const) : isRejected ? ('Rejected' as const) : ('Pending' as const),
+                          created_at: b.claim_date || '',
+                          can_action: isAdmin,
+                          claim: b.claim_id,
+                          claim_id: b.claim_id
+                        };
 
                       const currentStepInfo = activeApp?.workflow_steps?.find(
                         (s: any) => s.step_id === activeApp.step_id || s.step_name === activeApp.step_name || s.step_order === activeApp.step_order
@@ -1469,22 +1471,37 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => openEditBundleModal(b)}
-                                      className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                      disabled={updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                      className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
                                       title="Edit Bundle & Modify Tied Expenses"
                                     >
-                                      <PlusCircle className="w-3.5 h-3.5" />
-                                      <span>Edit</span>
+                                      {updatingBundleId === b.claim_id ? (
+                                        <>
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          <span>Bundle Updating...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <PlusCircle className="w-3.5 h-3.5" />
+                                          <span>Edit</span>
+                                        </>
+                                      )}
                                     </button>
                                   </Can>
                                   <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim", "finance.add_workerclaim"] as any}>
                                     <button
                                       type="button"
                                       onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                      disabled={Boolean(submittingBundleIds[b.claim_id])}
+                                      disabled={updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
                                       className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
                                       title="Submit / Resubmit Bundle for Approval"
                                     >
-                                      {submittingBundleIds[b.claim_id] ? (
+                                      {updatingBundleId === b.claim_id ? (
+                                        <>
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          <span>Bundle Updating...</span>
+                                        </>
+                                      ) : submittingBundleIds[b.claim_id] ? (
                                         <>
                                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                           <span>Submitting...</span>
@@ -1687,21 +1704,36 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                           <button
                                             type="button"
                                             onClick={() => openEditBundleModal(b)}
-                                            className="px-2.5 py-1.5 rounded border border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
+                                            disabled={updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                            className="px-2.5 py-1.5 rounded border border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
                                             title="Edit Bundle & Modify Tied Expenses"
                                           >
-                                            <PlusCircle className="w-3.5 h-3.5" />
-                                            <span>Edit</span>
+                                            {updatingBundleId === b.claim_id ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Updating...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <PlusCircle className="w-3.5 h-3.5" />
+                                                <span>Edit</span>
+                                              </>
+                                            )}
                                           </button>
                                         </Can>
                                         <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim", "finance.add_workerclaim", "finance.submit_bundle", "finance.submit_workerclaim"] as any}>
                                           <button
                                             type="button"
                                             onClick={() => onHandleSubmitBundle(b.claim_id)}
-                                            disabled={Boolean(submittingBundleIds[b.claim_id])}
+                                            disabled={updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
                                             className="px-3 py-1.5 rounded bg-primary text-on-primary text-xs font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
                                           >
-                                            {submittingBundleIds[b.claim_id] ? (
+                                            {updatingBundleId === b.claim_id ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Bundle Updating...</span>
+                                              </>
+                                            ) : submittingBundleIds[b.claim_id] ? (
                                               <>
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 <span>Submitting...</span>
@@ -1778,24 +1810,39 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                         <button
                                           type="button"
+                                          disabled={updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
                                           onClick={() => openEditBundleModal(b)}
-                                          className="px-3.5 py-1.5 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                          className="px-3.5 py-1.5 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                                           title="Edit Bundle & Modify Tied Expenses"
                                         >
-                                          <PlusCircle className="w-3.5 h-3.5 text-primary" />
-                                          <span>Edit Bundle</span>
+                                          {updatingBundleId === b.claim_id ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                              <span>Bundle Updating...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <PlusCircle className="w-3.5 h-3.5 text-primary" />
+                                              <span>Edit Bundle</span>
+                                            </>
+                                          )}
                                         </button>
                                       </Can>
                                       <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim", "finance.add_workerclaim"] as any}>
                                         <button
                                           type="button"
-                                          disabled={Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                          disabled={updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
                                           onClick={() => onHandleSubmitBundle(b.claim_id)}
                                           className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
                                             }`}
                                           title="Submit / Resubmit Bundle for Approval"
                                         >
-                                          {submittingBundleIds[b.claim_id] ? (
+                                          {updatingBundleId === b.claim_id ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              <span>Bundle Updating...</span>
+                                            </>
+                                          ) : submittingBundleIds[b.claim_id] ? (
                                             <>
                                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                               <span>Submitting...</span>

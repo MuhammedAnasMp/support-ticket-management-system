@@ -15,12 +15,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const location = useLocation();
   const { hasPermission } = usePermission();
 
-  // If user lacks permission for the current path, redirect to next permitted menu item
-  const nextPermittedPath = getNextPermittedPath(location.pathname, hasPermission);
-  if (nextPermittedPath && nextPermittedPath !== location.pathname) {
-    return <Navigate to={nextPermittedPath} replace />;
-  }
-
   // Auto-request fullscreen mode on initial load / user interaction (unless opted out within 1 week)
   useEffect(() => {
     const isFullscreenOptedOut = (): boolean => {
@@ -50,6 +44,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       window.removeEventListener('pointerdown', triggerFullscreen);
     };
   }, []);
+
+  // If user lacks permission for the current path, redirect to next permitted menu item
+  const nextPermittedPath = getNextPermittedPath(location.pathname, hasPermission);
+  if (nextPermittedPath && nextPermittedPath !== location.pathname) {
+    return <Navigate to={nextPermittedPath} replace />;
+  }
 
   // Map pathnames to human readable page titles
   const getPageTitle = (path: string): string => {
