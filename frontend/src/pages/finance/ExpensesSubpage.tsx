@@ -50,6 +50,29 @@ interface ExpensesSubpageProps {
   onSortChange?: (field: string, direction: 'asc' | 'desc') => void;
 }
 
+export const formatToDdMmYyyy = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+  try {
+    const raw = String(dateStr).trim();
+    const datePart = raw.split('T')[0];
+    const parts = datePart.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [year, month, day] = parts;
+      return `${day}-${month}-${year}`;
+    }
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    }
+    return raw;
+  } catch {
+    return dateStr || '';
+  }
+};
+
 export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   expenses,
   filteredExpenses = expenses,
@@ -525,8 +548,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     });
   }, [selectedTicketId, selectedTicketObj, hasFetchedLedgerBatches, ledgerBatches, selectedTicketSubDeptId, selectedTicketSubDeptName]);
 
-  // 4. Derived ticket creation date (formatted as YYYY-MM-DD for min date attribute)
-  const ticketCreatedDateFormatted = useMemo(() => {
+  // 4. Derived ticket creation date (raw ISO YYYY-MM-DD for min date attribute & comparisons)
+  const ticketCreatedDateIso = useMemo(() => {
     if (!selectedTicketId || !ticketsList.length) return null;
 
     const ticket = ticketsList.find(
@@ -546,7 +569,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         const month = String(d.getMonth() + 1).padStart(2, '0');
         const year = d.getFullYear();
 
-        return `${day}-${month}-${year}`;
+        return `${year}-${month}-${day}`;
       }
 
       return String(rawDate).split('T')[0];
@@ -554,6 +577,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       return null;
     }
   }, [selectedTicketId, ticketsList]);
+
+  // Derived ticket creation date formatted as DD-MM-YYYY for UI display
+  const ticketCreatedDateFormatted = useMemo(() => {
+    return formatToDdMmYyyy(ticketCreatedDateIso);
+  }, [ticketCreatedDateIso]);
   const filteredExpenseTypes = useMemo(() => {
     if (!selectedTicketId) return [];
     if (!selectedTicketDepartment?.departmentId) return expenseTypesList;
@@ -710,8 +738,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     }
     if (!expenseDate) {
       missingFields.push('Expense Date (Please select date)');
-    } else if (ticketCreatedDateFormatted && expenseDate < ticketCreatedDateFormatted) {
-      missingFields.push(`Expense Date (${expenseDate}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
+    } else if (ticketCreatedDateIso && expenseDate < ticketCreatedDateIso) {
+      missingFields.push(`Expense Date (${formatToDdMmYyyy(expenseDate)}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
     }
     if (isRemarksRequired && !remarks.trim()) {
       missingFields.push(`Remarks / Description (Mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
@@ -889,8 +917,8 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) missingFields.push('Amount (Must be a valid positive number)');
     if (!expenseDate) {
       missingFields.push('Expense Date (Please select date)');
-    } else if (ticketCreatedDateFormatted && expenseDate < ticketCreatedDateFormatted) {
-      missingFields.push(`Expense Date (${expenseDate}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
+    } else if (ticketCreatedDateIso && expenseDate < ticketCreatedDateIso) {
+      missingFields.push(`Expense Date (${formatToDdMmYyyy(expenseDate)}) cannot be before the Ticket Creation Date (${ticketCreatedDateFormatted})`);
     }
     if (isRemarksRequired && !remarks.trim()) {
       missingFields.push(`Remarks / Description (Mandatory for category "${selectedExpenseTypeObj?.expense_name || 'selected category'}")`);
@@ -1074,15 +1102,13 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         <button
           type="button"
           onClick={() => handleSort(field)}
-          className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer group hover:text-primary ${
-            isActive ? 'text-primary dark:text-primary font-extrabold' : 'text-on-surface-variant'
-          } ${alignRight ? 'ml-auto justify-end' : ''}`}
+          className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer group hover:text-primary ${isActive ? 'text-primary dark:text-primary font-extrabold' : 'text-on-surface-variant'
+            } ${alignRight ? 'ml-auto justify-end' : ''}`}
           title={`Sort by ${label} (${isActive ? (currentSortDirection === 'asc' ? 'Ascending' : 'Descending') : 'Click to sort'})`}
         >
           <span>{label}</span>
-          <span className={`inline-flex items-center justify-center shrink-0 transition-all ${
-            isActive ? 'text-primary' : 'text-on-surface-variant/40 group-hover:text-primary'
-          }`}>
+          <span className={`inline-flex items-center justify-center shrink-0 transition-all ${isActive ? 'text-primary' : 'text-on-surface-variant/40 group-hover:text-primary'
+            }`}>
             {isActive ? (
               currentSortDirection === 'asc' ? (
                 <ArrowUp className="w-3 h-3 stroke-[2.5]" />
@@ -1805,15 +1831,14 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         </div>
 
         {bulkActionMsg && (
-          <div className={`px-4 py-2 text-xs flex items-center justify-between border-b ${
-            bulkActionMsg.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
-              : bulkActionMsg.type === 'info'
+          <div className={`px-4 py-2 text-xs flex items-center justify-between border-b ${bulkActionMsg.type === 'success'
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
+            : bulkActionMsg.type === 'info'
               ? 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900'
               : bulkActionMsg.type === 'warning'
-              ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900'
-              : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-900'
-          }`}>
+                ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900'
+                : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-900'
+            }`}>
             <div className="flex items-center gap-2">
               {bulkActionMsg.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
               {bulkActionMsg.type === 'info' && <Loader2 className="w-4 h-4 text-blue-600 shrink-0 animate-spin" />}
@@ -1994,387 +2019,596 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   {sortedExpenses
                     .filter((exp: any) => !effectiveIsSyncing || !effectiveSyncingInfo?.expense_id || String(exp.expense_id) !== String(effectiveSyncingInfo.expense_id))
                     .map((exp: any, expIdx: number) => {
-                    const isOdd = expIdx % 2 === 1;
-                    const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' ? exp.expense_type?.expense_name : 'General');
-                    const workerObj = exp.worker_detail || (typeof exp.worker === 'object' ? exp.worker : null);
-                    const workerName = workerObj?.full_name || workerObj?.username || (exp.worker ? `Worker ${exp.worker}` : 'N/A');
-                    const rawTicket = exp.ticket_details || exp.ticket;
-                    const ticketNo = typeof rawTicket === 'object' && rawTicket ? (rawTicket.work_order_no || `${rawTicket.ticket_id || rawTicket.id}`) : (rawTicket ? `${rawTicket}` : 'N/A');
-                    const subDeptName = exp.ticket_details?.sub_department_name ||
-                      exp.sub_department_name ||
-                      (typeof rawTicket === 'object' && rawTicket?.sub_department_name) ||
-                      (typeof exp.ticket === 'object' && exp.ticket?.nature?.sub_department?.sub_department_name) ||
-                      '';
-                    const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'General');
-                    const rawStatus = exp.status_display || (exp.approved ? 'Approved' : 'Pending Approval');
-                    const isExpanded = !!expandedExpenseIds[exp.expense_id];
-                    const approvalData = getExpenseApprovalGroup(exp);
+                      const isOdd = expIdx % 2 === 1;
+                      const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' ? exp.expense_type?.expense_name : 'General');
+                      const workerObj = exp.worker_detail || (typeof exp.worker === 'object' ? exp.worker : null);
+                      const workerName = workerObj?.full_name || workerObj?.username || (exp.worker ? `Worker ${exp.worker}` : 'N/A');
+                      const rawTicket = exp.ticket_details || exp.ticket;
+                      const ticketNo = typeof rawTicket === 'object' && rawTicket ? (rawTicket.work_order_no || `${rawTicket.ticket_id || rawTicket.id}`) : (rawTicket ? `${rawTicket}` : 'N/A');
+                      const subDeptName = exp.ticket_details?.sub_department_name ||
+                        exp.sub_department_name ||
+                        (typeof rawTicket === 'object' && rawTicket?.sub_department_name) ||
+                        (typeof exp.ticket === 'object' && exp.ticket?.nature?.sub_department?.sub_department_name) ||
+                        '';
+                      const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'General');
+                      const rawStatus = exp.status_display || (exp.approved ? 'Approved' : 'Pending Approval');
+                      const isExpanded = !!expandedExpenseIds[exp.expense_id];
+                      const approvalData = getExpenseApprovalGroup(exp);
 
-                    const mediaList: any[] = [
-                      ...(exp.receipts || []),
-                      ...(exp.receipt && !exp.receipts?.some((r: any) => r.media_id === exp.receipt?.media_id) ? [exp.receipt] : [])
-                    ];
+                      const mediaList: any[] = [
+                        ...(exp.receipts || []),
+                        ...(exp.receipt && !exp.receipts?.some((r: any) => r.media_id === exp.receipt?.media_id) ? [exp.receipt] : [])
+                      ];
 
-                    const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
-                    const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
-                    const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
-                    const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
+                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending');
+                      const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
+                      const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
+                      const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
 
-                    const isExpensePaid = Boolean(
-                      exp.is_paid ||
-                      rawStatus === 'Paid' ||
-                      (exp.claim && (exp.claim.status === 'Paid' || exp.claim_status === 'Paid'))
-                    );
-                    const isExpenseApproved = !isExpensePaid && (exp.approved === true || rawStatus === 'Approved');
+                      const isExpensePaid = Boolean(
+                        exp.is_paid ||
+                        rawStatus === 'Paid' ||
+                        (exp.claim && (exp.claim.status === 'Paid' || exp.claim_status === 'Paid'))
+                      );
+                      const isExpenseApproved = !isExpensePaid && (exp.approved === true || rawStatus === 'Approved');
 
-                    // An expense is actively in Rework ONLY if it has not yet been resubmitted to Pending
-                    const isCurrentlyRework = !isExpensePaid && !isExpenseApproved && !activePendingInstance && (
-                      rawStatus === 'Rework' ||
-                      (approvalData?.app?.status === 'Rework') ||
-                      (latestInstance?.status === 'Rework')
-                    );
-
-                    // An expense is actively in Rejected ONLY if it has not yet been resubmitted to Pending
-                    const isCurrentlyRejected = !isExpensePaid && !isExpenseApproved && !activePendingInstance && !isCurrentlyRework && (
-                      rawStatus === 'Rejected' ||
-                      (approvalData?.app?.status === 'Rejected') ||
-                      (latestInstance?.status === 'Rejected')
-                    );
-
-                    const isRework = isCurrentlyRework;
-                    const isRejected = isCurrentlyRejected;
-                    const isRejectedOrRework = isRework || isRejected;
-
-                    const statusText = isExpensePaid ? 'Paid' : isExpenseApproved ? 'Approved' : isRework ? 'Rework' : isRejected ? 'Rejected' : 'Pending Approval';
-
-                    const isPendingState = !isExpensePaid && !isExpenseApproved && !isRejectedOrRework && (!!activePendingInstance || approvalData?.app?.status === 'Pending' || rawStatus === 'Pending Approval');
-                    const isExpensePending = isPendingState && ((exp.expense_type_detail as any)?.approve_required !== false && (exp.expense_type as any)?.approve_required !== false);
-
-                    const activeApp: any = activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app || {
-                      instance_id: exp.expense_id,
-                      step_name: 'Expense Approval',
-                      step_order: 1,
-                      assigned_role_name: 'Administrator',
-                      status: isRework ? ('Rework' as const) : isRejected ? ('Rejected' as const) : ('Pending' as const),
-                      created_at: exp.expense_date || '',
-                      can_action: isAdmin,
-                      expense: exp.expense_id,
-                      expense_id: exp.expense_id,
-                      is_direct_expense: true
-                    };
-                    const currentUserId = currentUser?.id ?? currentUser?.user_id;
-                    const currentUsername = currentUser?.username;
-                    const currentRoleName = (
-                      (currentUser?.role as any)?.role_name ||
-                      (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
-                      currentUser?.role_name ||
-                      ''
-                    ).toLowerCase().trim();
-
-                    const currentStepInfo = activeApp.workflow_steps?.find(
-                      (s: any) => s.step_id === activeApp.step_id || s.step_name === activeApp.step_name || s.step_order === activeApp.step_order
-                    );
-
-                    let canUserActionActiveStep = false;
-                    if (isAdmin) {
-                      canUserActionActiveStep = true;
-                    } else if (activeApp?.can_action === true) {
-                      canUserActionActiveStep = true;
-                    } else {
-                      const assignedUserIds: any[] = currentStepInfo?.assigned_users_ids || activeApp?.assigned_users_ids || [];
-                      const assignedUserNames: string[] = currentStepInfo?.assigned_users_names || activeApp?.assigned_users_names || [];
-
-                      const stepRoleName = (currentStepInfo?.assigned_role_name || activeApp?.assigned_role_name || '').toLowerCase().trim();
-                      const isRoleMatch = Boolean(stepRoleName && currentRoleName && stepRoleName === currentRoleName);
-
-                      const isUserMatch = Boolean(
-                        (currentUserId && assignedUserIds.some(id => String(id) === String(currentUserId))) ||
-                        (currentUsername && assignedUserNames.some(u => u.toLowerCase() === currentUsername.toLowerCase())) ||
-                        (currentUser?.full_name && assignedUserNames.some(u => u.toLowerCase() === currentUser.full_name.toLowerCase()))
+                      // An expense is actively in Rework ONLY if it has not yet been resubmitted to Pending
+                      const isCurrentlyRework = !isExpensePaid && !isExpenseApproved && !activePendingInstance && (
+                        rawStatus === 'Rework' ||
+                        (approvalData?.app?.status === 'Rework') ||
+                        (latestInstance?.status === 'Rework')
                       );
 
-                      canUserActionActiveStep = isUserMatch || isRoleMatch;
-                    }
+                      // An expense is actively in Rejected ONLY if it has not yet been resubmitted to Pending
+                      const isCurrentlyRejected = !isExpensePaid && !isExpenseApproved && !activePendingInstance && !isCurrentlyRework && (
+                        rawStatus === 'Rejected' ||
+                        (approvalData?.app?.status === 'Rejected') ||
+                        (latestInstance?.status === 'Rejected')
+                      );
 
-                    const canActionExpense = canUserActionActiveStep;
+                      const isRework = isCurrentlyRework;
+                      const isRejected = isCurrentlyRejected;
+                      const isRejectedOrRework = isRework || isRejected;
 
-                    // Person / Approver info
-                    let approverDetailText = '';
-                    if (isExpenseApproved) {
-                      approverDetailText = 'Approved';
-                    } else if (isRework) {
-                      const reworkUsername = reworkInstance?.action_by_full_name || reworkInstance?.action_by_username || (typeof reworkInstance?.action_by === 'object' ? (reworkInstance.action_by.full_name || reworkInstance.action_by.username) : reworkInstance?.action_by) || (typeof activeApp?.action_by === 'object' ? (activeApp.action_by.full_name || activeApp.action_by.username) : (activeApp?.action_by_full_name || activeApp?.action_by_username)) || '';
-                      approverDetailText = reworkUsername ? `Rework requested by ${reworkUsername}` : 'Rework requested';
-                    } else if (isRejected) {
-                      const rejectedUsername = rejectedInstance?.action_by_full_name || rejectedInstance?.action_by_username || (typeof rejectedInstance?.action_by === 'object' ? (rejectedInstance.action_by.full_name || rejectedInstance.action_by.username) : rejectedInstance?.action_by) || (typeof activeApp?.action_by === 'object' ? (activeApp.action_by.full_name || activeApp.action_by.username) : (activeApp?.action_by_full_name || activeApp?.action_by_username)) || '';
-                      approverDetailText = rejectedUsername ? `Rejected by ${rejectedUsername}` : 'Rejected';
-                    } else if (activePendingInstance || activeApp) {
-                      const appToUse = activePendingInstance || activeApp;
-                      const userNames = appToUse.workflow_steps?.find((s: any) => s.step_name === appToUse.step_name)?.assigned_users_names || appToUse.assigned_users_names;
-                      if (userNames && userNames.length > 0) {
-                        approverDetailText = `Pending: ${userNames.join(', ')}`;
+                      const statusText = isExpensePaid ? 'Paid' : isExpenseApproved ? 'Approved' : isRework ? 'Rework' : isRejected ? 'Rejected' : 'Pending Approval';
+
+                      const isPendingState = !isExpensePaid && !isExpenseApproved && !isRejectedOrRework && (!!activePendingInstance || approvalData?.app?.status === 'Pending' || rawStatus === 'Pending Approval');
+                      const isExpensePending = isPendingState && ((exp.expense_type_detail as any)?.approve_required !== false && (exp.expense_type as any)?.approve_required !== false);
+
+                      const activeApp: any = activePendingInstance || reworkInstance || rejectedInstance || approvalData?.app || {
+                        instance_id: exp.expense_id,
+                        step_name: 'Expense Approval',
+                        step_order: 1,
+                        assigned_role_name: 'Administrator',
+                        status: isRework ? ('Rework' as const) : isRejected ? ('Rejected' as const) : ('Pending' as const),
+                        created_at: exp.expense_date || '',
+                        can_action: isAdmin,
+                        expense: exp.expense_id,
+                        expense_id: exp.expense_id,
+                        is_direct_expense: true
+                      };
+                      const currentUserId = currentUser?.id ?? currentUser?.user_id;
+                      const currentUsername = currentUser?.username;
+                      const currentRoleName = (
+                        (currentUser?.role as any)?.role_name ||
+                        (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+                        currentUser?.role_name ||
+                        ''
+                      ).toLowerCase().trim();
+
+                      const currentStepInfo = activeApp.workflow_steps?.find(
+                        (s: any) => s.step_id === activeApp.step_id || s.step_name === activeApp.step_name || s.step_order === activeApp.step_order
+                      );
+
+                      let canUserActionActiveStep = false;
+                      if (isAdmin) {
+                        canUserActionActiveStep = true;
+                      } else if (activeApp?.can_action === true) {
+                        canUserActionActiveStep = true;
                       } else {
-                        approverDetailText = `Pending: ${appToUse.assigned_role_name || 'Assigned Approver'}`;
+                        const assignedUserIds: any[] = currentStepInfo?.assigned_users_ids || activeApp?.assigned_users_ids || [];
+                        const assignedUserNames: string[] = currentStepInfo?.assigned_users_names || activeApp?.assigned_users_names || [];
+
+                        const stepRoleName = (currentStepInfo?.assigned_role_name || activeApp?.assigned_role_name || '').toLowerCase().trim();
+                        const isRoleMatch = Boolean(stepRoleName && currentRoleName && stepRoleName === currentRoleName);
+
+                        const isUserMatch = Boolean(
+                          (currentUserId && assignedUserIds.some(id => String(id) === String(currentUserId))) ||
+                          (currentUsername && assignedUserNames.some(u => u.toLowerCase() === currentUsername.toLowerCase())) ||
+                          (currentUser?.full_name && assignedUserNames.some(u => u.toLowerCase() === currentUser.full_name.toLowerCase()))
+                        );
+
+                        canUserActionActiveStep = isUserMatch || isRoleMatch;
                       }
-                    }
 
-                    // Authorized user check: Same assigned worker, submitter/creator, or administrator
-                    const expenseWorkerId = exp.worker_detail?.id ?? exp.worker_detail?.user_id ?? (typeof exp.worker === 'object' ? (exp.worker?.id ?? exp.worker?.user_id) : exp.worker);
-                    const expenseCreatorId = exp.added_by?.id ?? exp.added_by?.user_id ?? (typeof exp.added_by === 'object' ? (exp.added_by?.id ?? exp.added_by?.user_id) : exp.added_by) ?? exp.created_by?.id ?? exp.created_by?.user_id ?? exp.created_by;
-                    const isSameUser = Boolean(
-                      currentUserId && (
-                        String(expenseWorkerId) === String(currentUserId) ||
-                        String(expenseCreatorId) === String(currentUserId)
-                      )
-                    );
-                    const canEditExpense = Boolean(isAdmin || isSameUser);
+                      const canActionExpense = canUserActionActiveStep;
 
-                    return (
-                      <React.Fragment key={exp.expense_id}>
-                        <tr
-                          onClick={() => toggleExpandExpense(exp.expense_id)}
-                          className={`cursor-pointer transition-colors ${isExpanded
-                            ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
-                            : isMultiLineView
-                              ? 'bg-amber-50/75 dark:bg-amber-950/30 hover:bg-amber-100/75 dark:hover:bg-amber-950/45 border-l-4 border-l-amber-500 dark:border-l-amber-400 border-t border-amber-200/60 dark:border-amber-900/40'
-                              : 'hover:bg-surface-container-high'
-                            }`}
-                        >
-                          <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleExpandExpense(exp.expense_id); }}>
-                            <button
-                              type="button"
-                              className={`p-1 rounded transition-colors cursor-pointer ${isExpanded ? 'bg-primary text-on-primary shadow-xs' : 'hover:bg-surface-container-highest text-on-surface-variant'}`}
-                            >
-                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-primary">
-                            <div className="flex items-center gap-1.5">
-                              <span>{exp.expense_id}</span>
-                              {updatingExpenseId === exp.expense_id && (
-                                <span title="Updating expense...">
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600 dark:text-purple-400" />
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 font-medium text-on-surface">{catName}</td>
-                          <td className="px-4 py-3 text-on-surface-variant max-w-[220px]" title={getCleanRemarks(exp.remarks) || undefined}>
-                            {getCleanRemarks(exp.remarks) ? (
-                              <div className="text-[11px] text-on-surface leading-relaxed line-clamp-2 font-normal">
-                                {getCleanRemarks(exp.remarks)}
-                              </div>
-                            ) : (
-                              <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-on-surface-variant">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <AvatarCircle user={workerObj} name={workerName} size="xs" />
-                              <span className="truncate">{workerName}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                            {rawTicket ? (
+                      // Person / Approver info
+                      let approverDetailText = '';
+                      if (isExpenseApproved) {
+                        approverDetailText = 'Approved';
+                      } else if (isRework) {
+                        const reworkUsername = reworkInstance?.action_by_full_name || reworkInstance?.action_by_username || (typeof reworkInstance?.action_by === 'object' ? (reworkInstance.action_by.full_name || reworkInstance.action_by.username) : reworkInstance?.action_by) || (typeof activeApp?.action_by === 'object' ? (activeApp.action_by.full_name || activeApp.action_by.username) : (activeApp?.action_by_full_name || activeApp?.action_by_username)) || '';
+                        approverDetailText = reworkUsername ? `Rework requested by ${reworkUsername}` : 'Rework requested';
+                      } else if (isRejected) {
+                        const rejectedUsername = rejectedInstance?.action_by_full_name || rejectedInstance?.action_by_username || (typeof rejectedInstance?.action_by === 'object' ? (rejectedInstance.action_by.full_name || rejectedInstance.action_by.username) : rejectedInstance?.action_by) || (typeof activeApp?.action_by === 'object' ? (activeApp.action_by.full_name || activeApp.action_by.username) : (activeApp?.action_by_full_name || activeApp?.action_by_username)) || '';
+                        approverDetailText = rejectedUsername ? `Rejected by ${rejectedUsername}` : 'Rejected';
+                      } else if (activePendingInstance || activeApp) {
+                        const appToUse = activePendingInstance || activeApp;
+                        const userNames = appToUse.workflow_steps?.find((s: any) => s.step_name === appToUse.step_name)?.assigned_users_names || appToUse.assigned_users_names;
+                        if (userNames && userNames.length > 0) {
+                          approverDetailText = `Pending: ${userNames.join(', ')}`;
+                        } else {
+                          approverDetailText = `Pending: ${appToUse.assigned_role_name || 'Assigned Approver'}`;
+                        }
+                      }
+
+                      // Authorized user check: Same assigned worker, submitter/creator, or administrator
+                      const expenseWorkerId = exp.worker_detail?.id ?? exp.worker_detail?.user_id ?? (typeof exp.worker === 'object' ? (exp.worker?.id ?? exp.worker?.user_id) : exp.worker);
+                      const expenseCreatorId = exp.added_by?.id ?? exp.added_by?.user_id ?? (typeof exp.added_by === 'object' ? (exp.added_by?.id ?? exp.added_by?.user_id) : exp.added_by) ?? exp.created_by?.id ?? exp.created_by?.user_id ?? exp.created_by;
+                      const isSameUser = Boolean(
+                        currentUserId && (
+                          String(expenseWorkerId) === String(currentUserId) ||
+                          String(expenseCreatorId) === String(currentUserId)
+                        )
+                      );
+                      const canEditExpense = Boolean(isAdmin || isSameUser);
+
+                      return (
+                        <React.Fragment key={exp.expense_id}>
+                          <tr
+                            onClick={() => toggleExpandExpense(exp.expense_id)}
+                            className={`cursor-pointer transition-colors ${isExpanded
+                              ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
+                              : isMultiLineView
+                                ? 'bg-amber-50/75 dark:bg-amber-950/30 hover:bg-amber-100/75 dark:hover:bg-amber-950/45 border-l-4 border-l-amber-500 dark:border-l-amber-400 border-t border-amber-200/60 dark:border-amber-900/40'
+                                : 'hover:bg-surface-container-high'
+                              }`}
+                          >
+                            <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleExpandExpense(exp.expense_id); }}>
                               <button
-                                onClick={() => setSelectedTicketForModal(typeof rawTicket === 'object' ? rawTicket : { ticket_id: rawTicket })}
-                                className="font-mono font-medium text-primary hover:underline text-[11px] cursor-pointer"
+                                type="button"
+                                className={`p-1 rounded transition-colors cursor-pointer ${isExpanded ? 'bg-primary text-on-primary shadow-xs' : 'hover:bg-surface-container-highest text-on-surface-variant'}`}
                               >
-                                {ticketNo}
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                               </button>
-                            ) : (
-                              <span className="text-on-surface-variant/60 italic text-[11px]">No Ticket</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-on-surface-variant font-medium">
-                            {subDeptName ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-container-high text-on-surface border border-outline-variant/60">
-                                {subDeptName}
-                              </span>
-                            ) : (
-                              <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
-                          {/* <td className="px-4 py-3 text-on-surface-variant">{storeName}</td> */}
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                            {mediaList.length === 0 ? (
-                              <span className="text-on-surface-variant/40 italic text-[11px]">None</span>
-                            ) : (
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {mediaList.slice(0, 2).map((m: any, mIdx: number) => {
-                                  const url = getMediaUrl(m.file_url);
-                                  const isImg = isImage(m.file_name);
-                                  const isAud = isAudio(m.file_name);
-                                  const isVid = isVideo(m.file_name);
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-primary">
+                              <div className="flex items-center gap-1.5">
+                                <span>{exp.expense_id}</span>
+                                {updatingExpenseId === exp.expense_id && (
+                                  <span title="Updating expense...">
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600 dark:text-purple-400" />
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-medium text-on-surface">{catName}</td>
+                            <td className="px-4 py-3 text-on-surface-variant max-w-[220px]" title={getCleanRemarks(exp.remarks) || undefined}>
+                              {getCleanRemarks(exp.remarks) ? (
+                                <div className="text-[11px] text-on-surface leading-relaxed line-clamp-2 font-normal">
+                                  {getCleanRemarks(exp.remarks)}
+                                </div>
+                              ) : (
+                                <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-on-surface-variant">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <AvatarCircle user={workerObj} name={workerName} size="xs" />
+                                <span className="truncate">{workerName}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              {rawTicket ? (
+                                <button
+                                  onClick={() => setSelectedTicketForModal(typeof rawTicket === 'object' ? rawTicket : { ticket_id: rawTicket })}
+                                  className="font-mono font-medium text-primary hover:underline text-[11px] cursor-pointer"
+                                >
+                                  {ticketNo}
+                                </button>
+                              ) : (
+                                <span className="text-on-surface-variant/60 italic text-[11px]">No Ticket</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-on-surface-variant font-medium">
+                              {subDeptName ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-container-high text-on-surface border border-outline-variant/60">
+                                  {subDeptName}
+                                </span>
+                              ) : (
+                                <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-on-surface-variant">{formatToDdMmYyyy(exp.expense_date) || 'N/A'}</td>
+                            {/* <td className="px-4 py-3 text-on-surface-variant">{storeName}</td> */}
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              {mediaList.length === 0 ? (
+                                <span className="text-on-surface-variant/40 italic text-[11px]">None</span>
+                              ) : (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {mediaList.slice(0, 2).map((m: any, mIdx: number) => {
+                                    const url = getMediaUrl(m.file_url);
+                                    const isImg = isImage(m.file_name);
+                                    const isAud = isAudio(m.file_name);
+                                    const isVid = isVideo(m.file_name);
 
-                                  return (
+                                    return (
+                                      <button
+                                        key={m.media_id || mIdx}
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setMediaPreviewState({ items: mediaList, index: mIdx });
+                                        }}
+                                        className="w-7 h-7 rounded border border-outline-variant bg-surface-container-high overflow-hidden hover:border-primary transition-all relative flex items-center justify-center cursor-pointer shadow-xs group"
+                                        title={`Preview ${m.file_name || 'Receipt'}`}
+                                      >
+                                        {isImg ? (
+                                          <img
+                                            src={url}
+                                            alt={m.file_name}
+                                            style={{ transform: `rotate(${m.rotation || 0}deg)` }}
+                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                          />
+                                        ) : isAud ? (
+                                          <Headphones className="w-3.5 h-3.5 text-primary" />
+                                        ) : isVid ? (
+                                          <Video className="w-3.5 h-3.5 text-primary" />
+                                        ) : (
+                                          <FileText className="w-3.5 h-3.5 text-on-surface-variant" />
+                                        )}
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                      </button>
+                                    );
+                                  })}
+                                  {mediaList.length > 2 && (
                                     <button
-                                      key={m.media_id || mIdx}
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setMediaPreviewState({ items: mediaList, index: mIdx });
+                                        setMediaPreviewState({ items: mediaList, index: 2 });
                                       }}
-                                      className="w-7 h-7 rounded border border-outline-variant bg-surface-container-high overflow-hidden hover:border-primary transition-all relative flex items-center justify-center cursor-pointer shadow-xs group"
-                                      title={`Preview ${m.file_name || 'Receipt'}`}
+                                      className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
+                                      title={`+${mediaList.length - 2} more media files`}
                                     >
-                                      {isImg ? (
-                                        <img
-                                          src={url}
-                                          alt={m.file_name}
-                                          style={{ transform: `rotate(${m.rotation || 0}deg)` }}
-                                          className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                                        />
-                                      ) : isAud ? (
-                                        <Headphones className="w-3.5 h-3.5 text-primary" />
-                                      ) : isVid ? (
-                                        <Video className="w-3.5 h-3.5 text-primary" />
-                                      ) : (
-                                        <FileText className="w-3.5 h-3.5 text-on-surface-variant" />
-                                      )}
-                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                      +{mediaList.length - 2}
                                     </button>
-                                  );
-                                })}
-                                {mediaList.length > 2 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setMediaPreviewState({ items: mediaList, index: 2 });
-                                    }}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors cursor-pointer"
-                                    title={`+${mediaList.length - 2} more media files`}
-                                  >
-                                    +{mediaList.length - 2}
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                            {parseFloat(exp.amount || '0').toFixed(3)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col gap-0.5">
-                              {updatingExpenseId === exp.expense_id ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                                  <Loader2 className="w-3 h-3 animate-spin" /> Updating...
-                                </span>
-                              ) : (
-                                <div>
-                                  {renderStatusBadge(
-                                    statusText,
-                                    isExpensePending && !isRejectedOrRework && canActionExpense,
-                                    statusText === 'Pending Approval'
-                                      ? (activePendingInstance || activeApp)?.step_name
-                                      : undefined,
-                                    isExpensePending && Boolean(
-                                      (approvalData?.group?.items || (exp as any).approval_instances || []).some(
-                                        (inst: any) => inst.status === 'Approved' && (
-                                          (inst.action_by_username && currentUsername && inst.action_by_username.toLowerCase() === currentUsername.toLowerCase()) ||
-                                          (inst.action_by && currentUserId && (String(inst.action_by) === String(currentUserId) || String((inst.action_by as any)?.id) === String(currentUserId)))
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                              {parseFloat(exp.amount || '0').toFixed(3)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col gap-0.5">
+                                {updatingExpenseId === exp.expense_id ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                                    <Loader2 className="w-3 h-3 animate-spin" /> Updating...
+                                  </span>
+                                ) : (
+                                  <div>
+                                    {renderStatusBadge(
+                                      statusText,
+                                      isExpensePending && !isRejectedOrRework && canActionExpense,
+                                      statusText === 'Pending Approval'
+                                        ? (activePendingInstance || activeApp)?.step_name
+                                        : undefined,
+                                      isExpensePending && Boolean(
+                                        (approvalData?.group?.items || (exp as any).approval_instances || []).some(
+                                          (inst: any) => inst.status === 'Approved' && (
+                                            (inst.action_by_username && currentUsername && inst.action_by_username.toLowerCase() === currentUsername.toLowerCase()) ||
+                                            (inst.action_by && currentUserId && (String(inst.action_by) === String(currentUserId) || String((inst.action_by as any)?.id) === String(currentUserId)))
+                                          )
                                         )
                                       )
-                                    )
-                                  )}
-                                  {/* {isExpensePending && !isRejectedOrRework && approverDetailText && (
+                                    )}
+                                    {/* {isExpensePending && !isRejectedOrRework && approverDetailText && (
                                     <div className="text-[10px] text-on-surface-variant font-medium mt-0.5 truncate max-w-[190px]" title={approverDetailText}>
                                       {approverDetailText}
                                     </div>
                                   )} */}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {exp.claim ? (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                                Bundle {typeof exp.claim === 'object' ? exp.claim.claim_id : exp.claim}
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                Unclaimed
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            {isExpensePaid ? (
-                              <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                                <span>Paid</span>
-                              </span>
-                            ) : !exp.claim ? (
-                              (isRejectedOrRework || isExpenseApproved) ? (
-                                <Can permission={"finance.add_expense"}>
-                                  <button
-                                    type="button"
-                                    disabled={updatingExpenseId === exp.expense_id}
-                                    onClick={() => openEditExpenseModal(exp)}
-                                    className="px-2.5 py-1 rounded border border-gray-500/20  hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
-                                    title={isExpenseApproved ? "Edit (Will move back to Approval)" : "Edit & Resubmit"}
-                                  >
-                                    <Pencil className="w-3 h-3 text-primary" />
-                                    <span>Edit</span>
-                                  </button>
-                                </Can>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {exp.claim ? (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                  Bundle {typeof exp.claim === 'object' ? exp.claim.claim_id : exp.claim}
+                                </span>
                               ) : (
-                                <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">In Review</span>
-                              )
-                            ) : (
-                              <span className="text-[11px] text-on-surface-variant/60 font-medium">In Bundle</span>
-                            )}
-                          </td>
-                          {/* CHECKBOX CELL ON RIGHT */}
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                  Unclaimed
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              {isExpensePaid ? (
+                                <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                  <span>Paid</span>
+                                </span>
+                              ) : !exp.claim ? (
+                                (isRejectedOrRework || isExpenseApproved) ? (
+                                  <Can permission={"finance.add_expense"}>
+                                    <button
+                                      type="button"
+                                      disabled={updatingExpenseId === exp.expense_id}
+                                      onClick={() => openEditExpenseModal(exp)}
+                                      className="px-2.5 py-1 rounded border border-gray-500/20  hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
+                                      title={isExpenseApproved ? "Edit (Will move back to Approval)" : "Edit & Resubmit"}
+                                    >
+                                      <Pencil className="w-3 h-3 text-primary" />
+                                      <span>Edit</span>
+                                    </button>
+                                  </Can>
+                                ) : (
+                                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">In Review</span>
+                                )
+                              ) : (
+                                <span className="text-[11px] text-on-surface-variant/60 font-medium">In Bundle</span>
+                              )}
+                            </td>
+                            {/* CHECKBOX CELL ON RIGHT */}
 
 
-                          <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                            {isExpensePending && !isRejectedOrRework && canActionExpense ? (
-                              <input
-                                type="checkbox"
-                                className="rounded border-outline-variant text-primary focus:ring-primary cursor-pointer h-3.5 w-3.5"
-                                checked={selectedExpenseIdsForBulk.includes(exp.expense_id)}
-                                onChange={() => handleToggleSelectExpense(exp.expense_id)}
-                                title="Select expense for bulk approval"
-                              />
-                            ) : isExpensePending && !isRejectedOrRework ? (
-                              <span className="inline-block text-amber-500/80 font-mono text-[11px] cursor-help" title={`Pending action by: ${approverDetailText || 'previous step approver'}`}>⏳</span>
-                            ) : isExpenseApproved ? (
-                              <span className="inline-block text-emerald-600 font-bold text-xs" title="Already Approved">✓</span>
-                            ) : (
-                              <span className="inline-block text-outline text-xs">-</span>
-                            )}
-                          </td>
-                        </tr>
+                            <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              {isExpensePending && !isRejectedOrRework && canActionExpense ? (
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-outline-variant text-primary focus:ring-primary cursor-pointer h-3.5 w-3.5"
+                                  checked={selectedExpenseIdsForBulk.includes(exp.expense_id)}
+                                  onChange={() => handleToggleSelectExpense(exp.expense_id)}
+                                  title="Select expense for bulk approval"
+                                />
+                              ) : isExpensePending && !isRejectedOrRework ? (
+                                <span className="inline-block text-amber-500/80 font-mono text-[11px] cursor-help" title={`Pending action by: ${approverDetailText || 'previous step approver'}`}>⏳</span>
+                              ) : isExpenseApproved ? (
+                                <span className="inline-block text-emerald-600 font-bold text-xs" title="Already Approved">✓</span>
+                              ) : (
+                                <span className="inline-block text-outline text-xs">-</span>
+                              )}
+                            </td>
+                          </tr>
 
-                        {/* MULTI-LINE VIEW SECOND ROW (Pipeline 1-----2-----3-----4 + Quick Approve/Rework) */}
-                        {isMultiLineView && !isExpanded && (
-                          <tr className={`border-b-2 border-outline-variant/80 transition-colors ${isOdd
-                            ? 'bg-slate-100/90 dark:bg-slate-800/45'
-                            : 'bg-white dark:bg-surface-container-lowest'
-                            }`}>
-                            <td colSpan={15} className="px-4 py-2.5">
-                              <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
-                                ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
-                                : 'bg-surface-container-low dark:bg-surface-container-low/70 border-outline-variant/60 shadow-2xs'
-                                }`}>
-                                {/* Left/Main: Compact Horizontal Stepper Pipeline */}
-                                <div className="flex-1 overflow-x-auto min-w-0">
-                                  {approvalData?.group ? (
-                                    renderApprovalStepper(approvalData.group, true)
-                                  ) : (
-                                    <div className="text-xs text-on-surface-variant/70 italic px-2 py-1">
-                                      No approval workflow required for this expense.
-                                    </div>
-                                  )}
+                          {/* MULTI-LINE VIEW SECOND ROW (Pipeline 1-----2-----3-----4 + Quick Approve/Rework) */}
+                          {isMultiLineView && !isExpanded && (
+                            <tr className={`border-b-2 border-outline-variant/80 transition-colors ${isOdd
+                              ? 'bg-slate-100/90 dark:bg-slate-800/45'
+                              : 'bg-white dark:bg-surface-container-lowest'
+                              }`}>
+                              <td colSpan={15} className="px-4 py-2.5">
+                                <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
+                                  ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
+                                  : 'bg-surface-container-low dark:bg-surface-container-low/70 border-outline-variant/60 shadow-2xs'
+                                  }`}>
+                                  {/* Left/Main: Compact Horizontal Stepper Pipeline */}
+                                  <div className="flex-1 overflow-x-auto min-w-0">
+                                    {approvalData?.group ? (
+                                      renderApprovalStepper(approvalData.group, true)
+                                    ) : (
+                                      <div className="text-xs text-on-surface-variant/70 italic px-2 py-1">
+                                        No approval workflow required for this expense.
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Right: Quick Action Controls (Comment Box + Approve + Rework) */}
+                                  <div className="shrink-0 flex flex-col items-end gap-1.5 pt-2 xl:pt-0 border-t xl:border-t-0 border-outline-variant/40">
+                                    {isExpensePending && !isRejectedOrRework && canActionExpense ? (
+                                      <>
+                                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full xl:w-auto">
+                                          <input
+                                            type="text"
+                                            value={expenseRemarks[exp.expense_id] || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setExpenseRemarks(prev => ({ ...prev, [exp.expense_id]: val }));
+                                              if (val.trim() && reworkErrors[exp.expense_id]) {
+                                                setReworkErrors(prev => {
+                                                  const next = { ...prev };
+                                                  delete next[exp.expense_id];
+                                                  return next;
+                                                });
+                                              }
+                                            }}
+                                            placeholder="Comment (Required for Rework)..."
+                                            className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-48 xl:w-56 transition-all ${reworkErrors[exp.expense_id]
+                                              ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
+                                              : 'border-outline bg-surface-container-low focus:border-primary'
+                                              }`}
+                                          />
+                                          <button
+                                            type="button"
+                                            disabled={actioningExpenseId === exp.expense_id}
+                                            onClick={() => handleInlineExpenseAction(exp, 'APPROVED')}
+                                            className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                                            title="Approve this step"
+                                          >
+                                            {actioningExpenseId === exp.expense_id && actioningActionType === 'APPROVED' ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Approving...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Check className="w-3.5 h-3.5" />
+                                                <span>Approve</span>
+                                              </>
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={actioningExpenseId === exp.expense_id}
+                                            onClick={() => handleInlineExpenseAction(exp, 'REWORK')}
+                                            className="px-3 py-1.5 rounded bg-gray-400 hover:bg-black text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                                            title="Request rework for this expense"
+                                          >
+                                            {actioningExpenseId === exp.expense_id && actioningActionType === 'REWORK' ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Reworking...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <RotateCcw className="w-3.5 h-3.5" />
+                                                <span>Rework</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                        {reworkErrors[exp.expense_id] && (
+                                          <div className="text-[11px]  text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
+
+                                            <span>{reworkErrors[exp.expense_id]}</span>
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : isRejectedOrRework ? (
+                                      <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                        <button
+                                          type="button"
+                                          disabled={updatingExpenseId === exp.expense_id}
+                                          onClick={() => openEditExpenseModal(exp)}
+                                          className={`px-3 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
+                                            }`}
+                                        >
+                                          {updatingExpenseId === exp.expense_id ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              <span>Updating...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Pencil className="w-3.5 h-3.5" />
+                                              <span>Edit & Resubmit</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </Can>
+                                    ) : isExpenseApproved ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> Approved
+                                        </span>
+                                        {/* {!exp.claim && (
+                                        <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                          <button
+                                            type="button"
+                                            disabled={updatingExpenseId === exp.expense_id}
+                                            onClick={() => openEditExpenseModal(exp)}
+                                            className="px-2.5 py-1 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                            title="Edit approved expense (Will move back to Approval)"
+                                          >
+                                            <Pencil className="w-3.5 h-3.5 text-primary" />
+                                            <span>Edit</span>
+                                          </button>
+                                        </Can>
+                                      )} */}
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 </div>
+                              </td>
+                            </tr>
+                          )}
 
-                                {/* Right: Quick Action Controls (Comment Box + Approve + Rework) */}
-                                <div className="shrink-0 flex flex-col items-end gap-1.5 pt-2 xl:pt-0 border-t xl:border-t-0 border-outline-variant/40">
-                                  {isExpensePending && !isRejectedOrRework && canActionExpense ? (
-                                    <>
-                                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full xl:w-auto">
+                          {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE */}
+                          {isExpanded && (
+                            <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
+                              <td colSpan={15} className="px-6 py-4 border-b border-outline-variant space-y-4">
+                                {/* Visual Stepper Pipeline */}
+                                {approvalData?.group ? (
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
+                                        Approval Progress Steps
+                                      </span>
+                                      {approvalData.app && (
+                                        <span className="text-[11px] text-on-surface-variant font-medium">
+                                          Current Step: <strong className="text-primary">{approvalData.app.step_name}</strong>
+                                        </span>
+                                      )}
+                                    </div>
+                                    {renderApprovalStepper(approvalData.group)}
+                                  </div>
+                                ) : (
+                                  <div className="p-3 bg-surface-container-low rounded border border-outline-variant text-xs text-on-surface-variant italic">
+                                    No approval workflow required or assigned for this expense item.
+                                  </div>
+                                )}
+
+                                {/* Rejected or Rework Banner & Edit Button */}
+                                {isRejectedOrRework && (
+                                  <div className={`p-3.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${isRejected ? 'border-rose-500/30 bg-rose-500/10' : 'border-purple-500/30 bg-purple-500/10'
+                                    }`}>
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white shadow-xs ${isRejected ? 'bg-rose-600' : 'bg-purple-600'}`}>
+                                          {isRejected ? 'Rejected' : 'Rework'}
+                                        </span>
+                                        <span className="text-xs font-semibold text-on-surface">
+                                          {(reworkInstance?.step_name || rejectedInstance?.step_name || activeApp.step_name) || 'Approval'}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] text-on-surface-variant">
+                                        {(reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments)
+                                          ? `Reason: ${reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments}`
+                                          : isRejected
+                                            ? 'Rejected. Please edit and resubmit.'
+                                            : 'Rework needed. Please edit and resubmit.'}
+                                      </p>
+                                    </div>
+
+                                    <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                      <button
+                                        type="button"
+                                        disabled={updatingExpenseId === exp.expense_id}
+                                        onClick={() => openEditExpenseModal(exp)}
+                                        className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
+                                          }`}
+                                      >
+                                        {updatingExpenseId === exp.expense_id ? (
+                                          <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Updating...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Pencil className="w-3.5 h-3.5" />
+                                            <span>Resubmit</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </Can>
+                                  </div>
+                                )}
+
+                                {/* Action / Review Card if pending, not rework/rejected, and user can action or is administrator */}
+                                {isExpensePending && !isRejectedOrRework && canActionExpense && (
+                                  <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                          Pending Action
+                                        </span>
+                                        <span className="text-xs font-semibold text-on-surface">
+                                          {activeApp.step_name || 'Expense Approval'} ({activeApp.assigned_role_name || 'Administrator'})
+                                        </span>
+                                      </div>
+                                      {/* <p className="text-[11px] text-on-surface-variant">
+                                      {isAdmin
+                                        ? 'Administrator permission: You can review and action this approval step directly.'
+                                        : (activeApp.can_action
+                                          ? 'You are assigned as an authorized approver for this step.'
+                                          : `Assigned to ${activeApp.assigned_role_name || 'Administrator'}`)}
+                                    </p> */}
+                                    </div>
+
+                                    <div className="flex flex-col items-end gap-1.5 w-full md:w-auto">
+                                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                                         <input
                                           type="text"
                                           value={expenseRemarks[exp.expense_id] || ''}
@@ -2389,274 +2623,65 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                               });
                                             }
                                           }}
-                                          placeholder="Comment (Required for Rework)..."
-                                          className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-48 xl:w-56 transition-all ${reworkErrors[exp.expense_id]
+                                          placeholder="Add remark (Required for Rework)..."
+                                          className={`px-3 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-56 transition-all ${reworkErrors[exp.expense_id]
                                             ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
                                             : 'border-outline bg-surface-container-low focus:border-primary'
                                             }`}
                                         />
-                                        <button
-                                          type="button"
-                                          disabled={actioningExpenseId === exp.expense_id}
-                                          onClick={() => handleInlineExpenseAction(exp, 'APPROVED')}
-                                          className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-                                          title="Approve this step"
-                                        >
-                                          {actioningExpenseId === exp.expense_id && actioningActionType === 'APPROVED' ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Approving...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Check className="w-3.5 h-3.5" />
-                                              <span>Approve</span>
-                                            </>
-                                          )}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={actioningExpenseId === exp.expense_id}
-                                          onClick={() => handleInlineExpenseAction(exp, 'REWORK')}
-                                          className="px-3 py-1.5 rounded bg-gray-400 hover:bg-black text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-                                          title="Request rework for this expense"
-                                        >
-                                          {actioningExpenseId === exp.expense_id && actioningActionType === 'REWORK' ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Reworking...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <RotateCcw className="w-3.5 h-3.5" />
-                                              <span>Rework</span>
-                                            </>
-                                          )}
-                                        </button>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <button
+                                            type="button"
+                                            disabled={actioningExpenseId === exp.expense_id}
+                                            onClick={() => handleInlineExpenseAction(exp, 'APPROVED')}
+                                            className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                          >
+                                            {actioningExpenseId === exp.expense_id && actioningActionType === 'APPROVED' ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Approving...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Check className="w-3.5 h-3.5" />
+                                                <span>Approve</span>
+                                              </>
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={actioningExpenseId === exp.expense_id}
+                                            onClick={() => handleInlineExpenseAction(exp, 'REWORK')}
+                                            className="px-3 py-1.5 rounded bg-gray-400 text-white text-xs font-semibold hover:bg-black transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                          >
+                                            {actioningExpenseId === exp.expense_id && actioningActionType === 'REWORK' ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Reworking...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <RotateCcw className="w-3.5 h-3.5" />
+                                                <span>Rework</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
                                       </div>
                                       {reworkErrors[exp.expense_id] && (
-                                        <div className="text-[11px]  text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
-
+                                        <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
                                           <span>{reworkErrors[exp.expense_id]}</span>
                                         </div>
                                       )}
-                                    </>
-                                  ) : isRejectedOrRework ? (
-                                    <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
-                                      <button
-                                        type="button"
-                                        disabled={updatingExpenseId === exp.expense_id}
-                                        onClick={() => openEditExpenseModal(exp)}
-                                        className={`px-3 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
-                                          }`}
-                                      >
-                                        {updatingExpenseId === exp.expense_id ? (
-                                          <>
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            <span>Updating...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Pencil className="w-3.5 h-3.5" />
-                                            <span>Edit & Resubmit</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    </Can>
-                                  ) : isExpenseApproved ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-                                      </span>
-                                      {/* {!exp.claim && (
-                                        <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
-                                          <button
-                                            type="button"
-                                            disabled={updatingExpenseId === exp.expense_id}
-                                            onClick={() => openEditExpenseModal(exp)}
-                                            className="px-2.5 py-1 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                                            title="Edit approved expense (Will move back to Approval)"
-                                          >
-                                            <Pencil className="w-3.5 h-3.5 text-primary" />
-                                            <span>Edit</span>
-                                          </button>
-                                        </Can>
-                                      )} */}
                                     </div>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-
-                        {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE */}
-                        {isExpanded && (
-                          <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
-                            <td colSpan={15} className="px-6 py-4 border-b border-outline-variant space-y-4">
-                              {/* Visual Stepper Pipeline */}
-                              {approvalData?.group ? (
-                                <div>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
-                                      Approval Progress Steps
-                                    </span>
-                                    {approvalData.app && (
-                                      <span className="text-[11px] text-on-surface-variant font-medium">
-                                        Current Step: <strong className="text-primary">{approvalData.app.step_name}</strong>
-                                      </span>
-                                    )}
                                   </div>
-                                  {renderApprovalStepper(approvalData.group)}
-                                </div>
-                              ) : (
-                                <div className="p-3 bg-surface-container-low rounded border border-outline-variant text-xs text-on-surface-variant italic">
-                                  No approval workflow required or assigned for this expense item.
-                                </div>
-                              )}
+                                )}
 
-                              {/* Rejected or Rework Banner & Edit Button */}
-                              {isRejectedOrRework && (
-                                <div className={`p-3.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${isRejected ? 'border-rose-500/30 bg-rose-500/10' : 'border-purple-500/30 bg-purple-500/10'
-                                  }`}>
-                                  <div className="space-y-0.5">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold text-white shadow-xs ${isRejected ? 'bg-rose-600' : 'bg-purple-600'}`}>
-                                        {isRejected ? 'Rejected' : 'Rework'}
-                                      </span>
-                                      <span className="text-xs font-semibold text-on-surface">
-                                        {(reworkInstance?.step_name || rejectedInstance?.step_name || activeApp.step_name) || 'Approval'}
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-on-surface-variant">
-                                      {(reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments)
-                                        ? `Reason: ${reworkInstance?.comments || rejectedInstance?.comments || activeApp.comments}`
-                                        : isRejected
-                                          ? 'Rejected. Please edit and resubmit.'
-                                          : 'Rework needed. Please edit and resubmit.'}
-                                    </p>
-                                  </div>
-
-                                  <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
-                                    <button
-                                      type="button"
-                                      disabled={updatingExpenseId === exp.expense_id}
-                                      onClick={() => openEditExpenseModal(exp)}
-                                      className={`px-3.5 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
-                                        }`}
-                                    >
-                                      {updatingExpenseId === exp.expense_id ? (
-                                        <>
-                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          <span>Updating...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Pencil className="w-3.5 h-3.5" />
-                                          <span>Resubmit</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </Can>
-                                </div>
-                              )}
-
-                              {/* Action / Review Card if pending, not rework/rejected, and user can action or is administrator */}
-                              {isExpensePending && !isRejectedOrRework && canActionExpense && (
-                                <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                                        Pending Action
-                                      </span>
-                                      <span className="text-xs font-semibold text-on-surface">
-                                        {activeApp.step_name || 'Expense Approval'} ({activeApp.assigned_role_name || 'Administrator'})
-                                      </span>
-                                    </div>
-                                    {/* <p className="text-[11px] text-on-surface-variant">
-                                      {isAdmin
-                                        ? 'Administrator permission: You can review and action this approval step directly.'
-                                        : (activeApp.can_action
-                                          ? 'You are assigned as an authorized approver for this step.'
-                                          : `Assigned to ${activeApp.assigned_role_name || 'Administrator'}`)}
-                                    </p> */}
-                                  </div>
-
-                                  <div className="flex flex-col items-end gap-1.5 w-full md:w-auto">
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-                                      <input
-                                        type="text"
-                                        value={expenseRemarks[exp.expense_id] || ''}
-                                        onChange={(e) => {
-                                          const val = e.target.value;
-                                          setExpenseRemarks(prev => ({ ...prev, [exp.expense_id]: val }));
-                                          if (val.trim() && reworkErrors[exp.expense_id]) {
-                                            setReworkErrors(prev => {
-                                              const next = { ...prev };
-                                              delete next[exp.expense_id];
-                                              return next;
-                                            });
-                                          }
-                                        }}
-                                        placeholder="Add remark (Required for Rework)..."
-                                        className={`px-3 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-full sm:w-56 transition-all ${reworkErrors[exp.expense_id]
-                                          ? 'border-rose-500 bg-rose-500/10 focus:border-rose-600 focus:ring-1 focus:ring-rose-500'
-                                          : 'border-outline bg-surface-container-low focus:border-primary'
-                                          }`}
-                                      />
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <button
-                                          type="button"
-                                          disabled={actioningExpenseId === exp.expense_id}
-                                          onClick={() => handleInlineExpenseAction(exp, 'APPROVED')}
-                                          className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                                        >
-                                          {actioningExpenseId === exp.expense_id && actioningActionType === 'APPROVED' ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Approving...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Check className="w-3.5 h-3.5" />
-                                              <span>Approve</span>
-                                            </>
-                                          )}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={actioningExpenseId === exp.expense_id}
-                                          onClick={() => handleInlineExpenseAction(exp, 'REWORK')}
-                                          className="px-3 py-1.5 rounded bg-gray-400 text-white text-xs font-semibold hover:bg-black transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                                        >
-                                          {actioningExpenseId === exp.expense_id && actioningActionType === 'REWORK' ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Reworking...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <RotateCcw className="w-3.5 h-3.5" />
-                                              <span>Rework</span>
-                                            </>
-                                          )}
-                                        </button>
-                                      </div>
-                                    </div>
-                                    {reworkErrors[exp.expense_id] && (
-                                      <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 animate-pulse self-start sm:self-auto">
-                                        <span>{reworkErrors[exp.expense_id]}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Expense Context Details Card */}
-                              <div className="p-3.5 rounded border border-outline-variant bg-surface-container space-y-3">
-                                <div className="flex items-center justify-between pb-1 border-b border-outline-variant/60">
-                                  <span className="text-xs font-bold tracking-wider text-on-surface">Expense Information</span>
-                                  {/* {!exp.claim && (isRejectedOrRework || isExpenseApproved) && (
+                                {/* Expense Context Details Card */}
+                                <div className="p-3.5 rounded border border-outline-variant bg-surface-container space-y-3">
+                                  <div className="flex items-center justify-between pb-1 border-b border-outline-variant/60">
+                                    <span className="text-xs font-bold tracking-wider text-on-surface">Expense Information</span>
+                                    {/* {!exp.claim && (isRejectedOrRework || isExpenseApproved) && (
                                     <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
                                       <button
                                         type="button"
@@ -2670,50 +2695,50 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                       </button>
                                     </Can>
                                   )} */}
-                                </div>
-
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-                                  <div>
-                                    <span className="text-[10px] text-on-surface-variant font-medium block">Expense Category</span>
-                                    <span className="text-on-surface font-semibold">{catName}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-[10px] text-on-surface-variant font-medium block">Technician / Worker</span>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                      <AvatarCircle user={workerObj} name={workerName} size="xs" />
-                                      <span className="text-on-surface font-medium truncate">{workerName}</span>
+
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                                    <div>
+                                      <span className="text-[10px] text-on-surface-variant font-medium block">Expense Category</span>
+                                      <span className="text-on-surface font-semibold">{catName}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] text-on-surface-variant font-medium block">Technician / Worker</span>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <AvatarCircle user={workerObj} name={workerName} size="xs" />
+                                        <span className="text-on-surface font-medium truncate">{workerName}</span>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] text-on-surface-variant font-medium block">Sub Department</span>
+                                      <span className="text-on-surface font-medium">{subDeptName || '-'}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] text-on-surface-variant font-medium block">Responsible Store</span>
+                                      <span className="text-on-surface font-medium">{storeName}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] text-on-surface-variant font-medium block">Amount (KD)</span>
+                                      <span className="text-emerald-600 font-bold">{parseFloat(exp.amount || '0').toFixed(3)}</span>
                                     </div>
                                   </div>
-                                  <div>
-                                    <span className="text-[10px] text-on-surface-variant font-medium block">Sub Department</span>
-                                    <span className="text-on-surface font-medium">{subDeptName || '-'}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-[10px] text-on-surface-variant font-medium block">Responsible Store</span>
-                                    <span className="text-on-surface font-medium">{storeName}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-[10px] text-on-surface-variant font-medium block">Amount (KD)</span>
-                                    <span className="text-emerald-600 font-bold">{parseFloat(exp.amount || '0').toFixed(3)}</span>
-                                  </div>
-                                </div>
 
-                                {getCleanRemarks(exp.remarks) && (
-                                  <div className="pt-2 border-t border-outline-variant/60">
-                                    <span className="text-[10px] text-on-surface-variant font-medium block mb-1">Remarks / Description:</span>
-                                    <p className="p-2.5 rounded bg-surface-container-low border border-outline-variant/80 italic text-on-surface text-xs">
-                                      "{getCleanRemarks(exp.remarks)}"
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
+                                  {getCleanRemarks(exp.remarks) && (
+                                    <div className="pt-2 border-t border-outline-variant/60">
+                                      <span className="text-[10px] text-on-surface-variant font-medium block mb-1">Remarks / Description:</span>
+                                      <p className="p-2.5 rounded bg-surface-container-low border border-outline-variant/80 italic text-on-surface text-xs">
+                                        "{getCleanRemarks(exp.remarks)}"
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -2923,16 +2948,24 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                               </label>
                               <input
                                 type="date"
-                                min={ticketCreatedDateFormatted || undefined}
+                                min={ticketCreatedDateIso || undefined}
                                 value={expenseDate}
                                 onChange={(e) => setExpenseDate(e.target.value)}
-                                className={`w-full bg-surface-container-low border text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:ring-2 transition-all shadow-2xs cursor-pointer ${ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted
+                                className={`w-full bg-surface-container-low border text-on-surface text-xs rounded px-3.5 py-2.5 focus:outline-none focus:ring-2 transition-all shadow-2xs cursor-pointer ${ticketCreatedDateIso && expenseDate && expenseDate < ticketCreatedDateIso
                                   ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20'
                                   : 'border-outline-variant focus:border-primary focus:ring-primary/20 hover:border-outline'
                                   }`}
                                 required
                               />
-                              {ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted && (
+                              {expenseDate && (
+                                <div className="flex items-center justify-between mt-1 text-[11px] text-on-surface-variant">
+                                  <span>Selected: <strong className="font-semibold text-on-surface">{formatToDdMmYyyy(expenseDate)}</strong></span>
+                                  {ticketCreatedDateFormatted && (
+                                    <span>Ticket: {ticketCreatedDateFormatted}</span>
+                                  )}
+                                </div>
+                              )}
+                              {ticketCreatedDateIso && expenseDate && expenseDate < ticketCreatedDateIso && (
                                 <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
                                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                                   <span>Must be on or after ticket created date ({ticketCreatedDateFormatted}).</span>
@@ -3270,7 +3303,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
               </div>
               <div className="flex justify-between py-1 border-b border-outline-variant/50">
                 <span className="text-on-surface-variant font-medium">Expense Date:</span>
-                <span className="font-semibold text-on-surface">{previewExpenseItem.expense_date || 'N/A'}</span>
+                <span className="font-semibold text-on-surface">{formatToDdMmYyyy(previewExpenseItem.expense_date) || 'N/A'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-outline-variant/50">
                 <span className="text-on-surface-variant font-medium">Worker:</span>
@@ -3408,7 +3441,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-on-surface tracking-tight">Edit & Resubmit Expense {editingExpense.expense_id}</h3>
-                  <p className="text-xs text-on-surface-variant font-normal mt-0.5">Saving updates will reset approval to the initial step 1</p>
+                  <p className="text-xs text-on-surface-variant font-normal mt-0.5">
+                    Original Date: {formatToDdMmYyyy(editingExpense.expense_date)} • Saving updates will reset approval to the initial step 1
+                  </p>
                 </div>
               </div>
               <button
@@ -3562,16 +3597,17 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                   </label>
                   <input
                     type="date"
-                    min={ticketCreatedDateFormatted || undefined}
+                    min={ticketCreatedDateIso || undefined}
                     value={expenseDate}
                     onChange={(e) => setExpenseDate(e.target.value)}
-                    className={`w-full px-3.5 py-2.5 rounded border text-xs text-on-surface focus:outline-none focus:ring-2 cursor-pointer shadow-2xs ${ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted
+                    className={`w-full px-3.5 py-2.5 rounded border text-xs text-on-surface focus:outline-none focus:ring-2 cursor-pointer shadow-2xs ${ticketCreatedDateIso && expenseDate && expenseDate < ticketCreatedDateIso
                       ? 'bg-surface-container-low border-rose-500 focus:border-rose-500 focus:ring-rose-500/20'
                       : 'bg-surface-container-low border-outline focus:border-primary focus:ring-primary/20'
                       }`}
                     required
                   />
-                  {ticketCreatedDateFormatted && expenseDate && expenseDate < ticketCreatedDateFormatted && (
+
+                  {ticketCreatedDateIso && expenseDate && expenseDate < ticketCreatedDateIso && (
                     <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       <span>Must be on or after ticket created date ({ticketCreatedDateFormatted}).</span>
