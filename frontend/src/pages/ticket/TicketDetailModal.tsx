@@ -37,6 +37,32 @@ interface TicketDetailModalProps {
     onRefreshList: () => void;
 }
 
+const splitAmountToDinarAndFils = (amountStr: string | number) => {
+    if (amountStr === '' || amountStr === null || amountStr === undefined) {
+        return { dinar: '', fils: '' };
+    }
+    const val = typeof amountStr === 'number' ? amountStr.toFixed(3) : String(amountStr);
+    if (!val.includes('.')) {
+        return { dinar: val, fils: '' };
+    }
+    const [d, f] = val.split('.');
+    const filsNum = parseInt((f || '').padEnd(3, '0').slice(0, 3), 10);
+    return {
+        dinar: d || '',
+        fils: isNaN(filsNum) || filsNum === 0 ? '' : String(filsNum),
+    };
+};
+
+const combineDinarAndFils = (dinarStr: string, filsStr: string): string => {
+    const dTrim = (dinarStr || '').trim();
+    const fTrim = (filsStr || '').trim();
+    if (!dTrim && !fTrim) return '';
+    const dVal = parseInt(dTrim, 10) || 0;
+    const fVal = parseInt(fTrim, 10) || 0;
+    const total = dVal + (fVal / 1000);
+    return total.toFixed(3);
+};
+
 export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     selectedTicket,
     token,
@@ -687,7 +713,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         setIsLogHoursModalOpen(true);
     };
 
-    const [editExpenseForm, setEditExpenseForm] = useState({ amount: '', remarks: '', expense_type_id: '' });
+    const [editExpenseForm, setEditExpenseForm] = useState({ amount: '', dinar: '', fils: '', remarks: '', expense_type_id: '' });
+    const [addExpenseDinar, setAddExpenseDinar] = useState('');
+    const [addExpenseFils, setAddExpenseFils] = useState('');
     const [addExpenseRemarks, setAddExpenseRemarks] = useState('');
     const [addExpenseRemarksError, setAddExpenseRemarksError] = useState<string | null>(null);
     const [editExpenseRemarksError, setEditExpenseRemarksError] = useState<string | null>(null);
@@ -1155,11 +1183,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             return;
         }
 
+        const rawAmount = parseFloat(editExpenseForm.amount);
+        if (isNaN(rawAmount) || rawAmount <= 0) {
+            showError("Please enter a valid expense amount in Dinar or Fils.");
+            return;
+        }
+        const formattedAmount = rawAmount.toFixed(3);
+
         setEditExpenseRemarksError(null);
         setActionLoading(true);
         try {
-            const rawAmount = parseFloat(editExpenseForm.amount);
-            const formattedAmount = isNaN(rawAmount) ? editExpenseForm.amount : rawAmount.toFixed(3);
             const response = await fetch(`${API_URL}/finance/expense/${editingExpense.expense_id}/`, {
                 method: 'PATCH',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -1645,9 +1678,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         setActionLoading(true);
         try {
             const signal = uploadAbortRef.current?.signal;
-            const rawAmountStr = formData.get('amount') as string;
+            const rawAmountStr = (formData.get('amount') as string || combineDinarAndFils(addExpenseDinar, addExpenseFils));
             const rawAmountVal = parseFloat(rawAmountStr);
-            const amountToSend = isNaN(rawAmountVal) ? rawAmountStr : rawAmountVal.toFixed(3);
+            if (isNaN(rawAmountVal) || rawAmountVal <= 0) {
+                showError("Please enter a valid expense amount in Dinar or Fils.");
+                return;
+            }
+            const amountToSend = rawAmountVal.toFixed(3);
             const response = await fetch(`${API_URL}/finance/expense/`, {
                 method: 'POST',
                 headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -1673,6 +1710,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 setSelectedExpenseTypeId('');
                 setAddExpenseRemarks('');
                 setAddExpenseRemarksError(null);
+                setAddExpenseDinar('');
+                setAddExpenseFils('');
             } else {
                 const errData = await response.json().catch(() => ({}));
                 const errRemarks = errData?.remarks ? (Array.isArray(errData.remarks) ? errData.remarks.join(' ') : String(errData.remarks)) : null;
@@ -2754,7 +2793,18 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                         {!readOnly && !isApproved && (
                                                                                             <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
                                                                                                 <button
-                                                                                                    onClick={() => { setEditingExpense(exp); setEditExpenseForm({ amount: exp.amount, remarks: exp.remarks || '', expense_type_id: exp.expense_type.expense_type_id.toString() }); setEditExpenseRemarksError(null); }}
+                                                                                                    onClick={() => {
+                                                                                                        setEditingExpense(exp);
+                                                                                                        const { dinar, fils } = splitAmountToDinarAndFils(exp.amount);
+                                                                                                        setEditExpenseForm({
+                                                                                                            amount: exp.amount,
+                                                                                                            dinar,
+                                                                                                            fils,
+                                                                                                            remarks: exp.remarks || '',
+                                                                                                            expense_type_id: exp.expense_type.expense_type_id.toString()
+                                                                                                        });
+                                                                                                        setEditExpenseRemarksError(null);
+                                                                                                    }}
                                                                                                     className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
                                                                                                     aria-label="Edit Expense"
                                                                                                 >
@@ -3960,8 +4010,56 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                        <input required name="amount" type="number" step="0.001" min="0" inputMode="decimal" placeholder="0.000" disabled={actionLoading} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="block text-xs font-semibold text-outline">
+                                                Amount (KWD)
+                                            </label>
+                                            {combineDinarAndFils(addExpenseDinar, addExpenseFils) && parseFloat(combineDinarAndFils(addExpenseDinar, addExpenseFils)) > 0 && (
+                                                <span className="text-xs font-bold text-primary dark:text-cyan-400">
+                                                    Total: {combineDinarAndFils(addExpenseDinar, addExpenseFils)} KWD
+                                                </span>
+                                            )}
+                                        </div>
+                                        <input type="hidden" name="amount" value={combineDinarAndFils(addExpenseDinar, addExpenseFils)} />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="1"
+                                                        placeholder="0"
+                                                        disabled={actionLoading}
+                                                        value={addExpenseDinar}
+                                                        onChange={e => setAddExpenseDinar(e.target.value.replace(/[^0-9]/g, ''))}
+                                                        className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 pr-14 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-outline pointer-events-none">
+                                                        Dinar
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] text-outline mt-0.5 block pl-1">Dinar (KWD)</span>
+                                            </div>
+                                            <div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="999"
+                                                        step="1"
+                                                        placeholder="000"
+                                                        disabled={actionLoading}
+                                                        value={addExpenseFils}
+                                                        onChange={e => setAddExpenseFils(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+                                                        className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 pr-12 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-outline pointer-events-none">
+                                                        Fils
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] text-outline mt-0.5 block pl-1">Fils (0 - 999)</span>
+                                            </div>
+                                        </div>
                                     </div>
                                     {(() => {
                                         const selectedExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(selectedExpenseTypeId));
@@ -4403,8 +4501,61 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-semibold text-outline mb-1.5">Amount (KWD)</label>
-                                                        <input type="number" step="0.001" min="0" inputMode="decimal" placeholder="0.000" required value={editExpenseForm.amount} onChange={e => setEditExpenseForm({ ...editExpenseForm, amount: e.target.value })} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30" />
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <label className="block text-xs font-semibold text-outline">
+                                                                Amount (KWD)
+                                                            </label>
+                                                            {editExpenseForm.amount && parseFloat(editExpenseForm.amount) > 0 && (
+                                                                <span className="text-xs font-bold text-primary dark:text-cyan-400">
+                                                                    Total: {parseFloat(editExpenseForm.amount).toFixed(3)} KWD
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div>
+                                                                <div className="relative">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        step="1"
+                                                                        placeholder="0"
+                                                                        value={editExpenseForm.dinar}
+                                                                        onChange={e => {
+                                                                            const newDinar = e.target.value.replace(/[^0-9]/g, '');
+                                                                            const newAmount = combineDinarAndFils(newDinar, editExpenseForm.fils);
+                                                                            setEditExpenseForm({ ...editExpenseForm, dinar: newDinar, amount: newAmount });
+                                                                        }}
+                                                                        className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 pr-14 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
+                                                                    />
+                                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-outline pointer-events-none">
+                                                                        Dinar
+                                                                    </span>
+                                                                </div>
+                                                                <span className="text-[10px] text-outline mt-0.5 block pl-1">Dinar (KWD)</span>
+                                                            </div>
+                                                            <div>
+                                                                <div className="relative">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max="999"
+                                                                        step="1"
+                                                                        placeholder="000"
+                                                                        value={editExpenseForm.fils}
+                                                                        onChange={e => {
+                                                                            const newFils = e.target.value.replace(/[^0-9]/g, '').slice(0, 3);
+                                                                            const newAmount = combineDinarAndFils(editExpenseForm.dinar, newFils);
+                                                                            setEditExpenseForm({ ...editExpenseForm, fils: newFils, amount: newAmount });
+                                                                        }}
+                                                                        className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 pr-12 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
+                                                                    />
+                                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-outline pointer-events-none">
+                                                                        Fils
+                                                                    </span>
+                                                                </div>
+                                                                <span className="text-[10px] text-outline mt-0.5 block pl-1">Fils (0 - 999)</span>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                     {(() => {
                                                         const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
