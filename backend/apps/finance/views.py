@@ -171,9 +171,25 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
         role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
         user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        is_management_or_admin = (
+            role_name in (
+                'management', 'management team', 'administrator', 'admin',
+                'office administrator', 'finance', 'accountant', 'accounts', 'auditor'
+            ) or any(g in user_groups_lower for g in ('management', 'administrator', 'admin', 'office administrator', 'finance', 'accountant', 'accounts'))
+        )
 
-        if not user.is_superuser and not is_management:
+        has_finance_perms = (
+            user.has_perm('finance.approve_workerclaim') or
+            user.has_perm('finance.view_workerclaim') or
+            user.has_perm('finance.change_workerclaim') or
+            user.has_perm('finance.create_bundle') or
+            user.has_perm('finance.submit_bundle') or
+            user.has_perm('finance.view_expense') or
+            user.has_perm('finance.change_expense') or
+            user.has_perm('finance.approve_expense')
+        )
+
+        if not user.is_superuser and not getattr(user, 'is_staff', False) and not is_management_or_admin and not has_finance_perms:
             accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
                 queryset = queryset.filter(
@@ -836,6 +852,24 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
 
         # Scope by the requesting user's department
         user = request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user and not user.is_anonymous else []
+        is_management_or_admin = (
+            role_name in (
+                'management', 'management team', 'administrator', 'admin',
+                'office administrator', 'finance', 'accountant', 'accounts', 'auditor'
+            ) or any(g in user_groups_lower for g in ('management', 'administrator', 'admin', 'office administrator', 'finance', 'accountant', 'accounts'))
+        )
+        has_finance_perms = (
+            user.has_perm('finance.approve_workerclaim') or
+            user.has_perm('finance.view_workerclaim') or
+            user.has_perm('finance.change_workerclaim') or
+            user.has_perm('finance.create_bundle') or
+            user.has_perm('finance.submit_bundle') or
+            user.has_perm('finance.view_expense') or
+            user.has_perm('finance.approve_expense')
+        ) if user and not user.is_anonymous else False
+
         user_dept_ids = []
         if user and not user.is_anonymous:
             user_dept_ids = list(user.sub_departments.filter(department__isnull=False).values_list('department_id', flat=True).distinct())
@@ -854,10 +888,12 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             exp_qs = exp_qs.filter(expense_date__lte=to_date)
 
         if user_dept_ids:
-            exp_qs = exp_qs.filter(worker__sub_departments__department_id__in=user_dept_ids)
+            tech_ids_dept = list(CustomUser.objects.filter(sub_departments__department_id__in=user_dept_ids).values_list('pk', flat=True).distinct())
+            exp_qs = exp_qs.filter(worker_id__in=tech_ids_dept)
         elif dept_param and str(dept_param).upper() != 'ALL':
-            exp_qs = exp_qs.filter(worker__sub_departments__department_id=dept_param)
-        elif user and not user.is_anonymous and not getattr(user, 'is_superuser', False):
+            tech_ids_dept = list(CustomUser.objects.filter(sub_departments__department_id=dept_param).values_list('pk', flat=True).distinct())
+            exp_qs = exp_qs.filter(worker_id__in=tech_ids_dept)
+        elif user and not user.is_anonymous and not getattr(user, 'is_superuser', False) and not is_management_or_admin and not has_finance_perms:
             exp_qs = exp_qs.filter(worker=user)
 
         is_eligible_q = Q(approved=True) | Q(expense_type__approve_required=False)
@@ -878,15 +914,17 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
         if worker_ids_with_expenses:
             tech_filter |= Q(pk__in=worker_ids_with_expenses)
 
-        tech_users = CustomUser.objects.filter(tech_filter).distinct().prefetch_related('sub_departments')
+        tech_users = CustomUser.objects.filter(tech_filter).prefetch_related('sub_departments')
 
         # Strictly restrict to requesting user's department
         if user_dept_ids:
             tech_users = tech_users.filter(sub_departments__department_id__in=user_dept_ids)
         elif dept_param and str(dept_param).upper() != 'ALL':
             tech_users = tech_users.filter(sub_departments__department_id=dept_param)
-        elif user and not user.is_anonymous and not getattr(user, 'is_superuser', False):
+        elif user and not user.is_anonymous and not getattr(user, 'is_superuser', False) and not is_management_or_admin and not has_finance_perms:
             tech_users = tech_users.filter(pk=user.pk)
+
+        tech_users = tech_users.distinct()
 
         if search:
             tech_users = tech_users.filter(

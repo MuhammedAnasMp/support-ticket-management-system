@@ -14,6 +14,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import type { ExpenseItem } from './types';
+import { formatDateDMY } from './types';
 import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 
 interface CreateWorkerBundleModalProps {
@@ -100,6 +101,7 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     const workOrderNo = (typeof ticketObj === 'object' && ticketObj ? (ticketObj.work_order_no || '') : String(ticketObj || '')).toLowerCase();
     const amountStr = String(exp.amount || '');
     const dateStr = (exp.expense_date || '').toLowerCase();
+    const formattedDateStr = formatDateDMY(exp.expense_date).toLowerCase();
     return (
       expIdStr.includes(q) ||
       `#${expIdStr}`.includes(q) ||
@@ -108,7 +110,8 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
       remarks.includes(q) ||
       workOrderNo.includes(q) ||
       amountStr.includes(q) ||
-      dateStr.includes(q)
+      dateStr.includes(q) ||
+      formattedDateStr.includes(q)
     );
   };
 
@@ -202,7 +205,7 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
             </div>
 
             <div className="flex items-center gap-2 text-[10px] text-on-surface-variant truncate mt-0.5">
-              <span>{exp.expense_date}</span>
+              <span>{formatDateDMY(exp.expense_date)}</span>
               {exp.ticket_details?.work_order_no && (
                 <span>• WO: <strong className="text-on-surface">{exp.ticket_details.work_order_no}</strong></span>
               )}
@@ -295,7 +298,7 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
                 </span>
                 {(fromDate || toDate) && (
                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant font-medium border border-outline-variant/60 ml-0.5">
-                    Filter: {fromDate || 'Any'} → {toDate || 'Present'}
+                    Filter: {formatDateDMY(fromDate) || 'Any'} → {formatDateDMY(toDate) || 'Present'}
                   </span>
                 )}
               </div>

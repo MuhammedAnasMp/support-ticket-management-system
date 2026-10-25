@@ -283,3 +283,33 @@ export const getUserId = (userObj: any): number | null => {
   }
   return null;
 };
+
+export const formatDateDMY = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+  const str = String(dateStr).trim();
+  if (!str) return '';
+
+  const dateOnly = str.split('T')[0].split(' ')[0];
+  const parts = dateOnly.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    const year = parts[0];
+    const month = parts[1].padStart(2, '0');
+    const day = parts[2].padStart(2, '0');
+    return `${day}-${month}-${year}`;
+  }
+
+  if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(dateOnly)) {
+    return dateOnly.replace(/\//g, '-');
+  }
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+
+  return str;
+};
+

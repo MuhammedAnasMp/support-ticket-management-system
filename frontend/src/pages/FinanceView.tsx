@@ -73,7 +73,15 @@ export const FinanceView: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
 
   // Global Filter States (Default: Current Month or from localStorage)
-  const [searchQuery, setSearchQuery] = useState('');
+  // Per-subpage search queries to keep search state tied with each view (Expenses, Bundles, Ledgers, etc.)
+  const [subpageSearchQueries, setSubpageSearchQueries] = useState<Record<string, string>>({});
+  const searchQuery = subpageSearchQueries[subpage] || '';
+  const setSearchQuery = (val: string) => {
+    setSubpageSearchQueries(prev => ({
+      ...prev,
+      [subpage]: val
+    }));
+  };
   const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
     const stored = localStorage.getItem('finance_filter_date_from');
     if (stored !== null && stored !== undefined) return stored;
@@ -2131,11 +2139,29 @@ export const FinanceView: React.FC = () => {
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             type="text"
-            placeholder="Search by worker name, ID, ticket, amount..."
+            placeholder={
+              subpage === 'expenses'
+                ? "Search expenses by worker, ID, ticket, amount..."
+                : subpage === 'bundles'
+                ? "Search bundles by worker, bundle #, amount..."
+                : subpage === 'ledgers'
+                ? "Search ledgers by name, batch, amount..."
+                : "Search by worker name, ID, ticket, amount..."
+            }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded pl-9 pr-3 focus:outline-none focus:border-primary transition-colors shadow-2xs placeholder:text-on-surface-variant/60"
+            className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded pl-9 pr-8 focus:outline-none focus:border-primary transition-colors shadow-2xs placeholder:text-on-surface-variant/60"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Right Side: Filters (Date Range, Status, Bundle/Ledger Filter) */}

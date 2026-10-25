@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Receipt, PlusCircle, FileText, Trash2, Search, X, Check, Paperclip, ExternalLink, Loader2, Eye, Maximize2, ShieldCheck, Layers, AlertCircle,
-  Clock, RotateCcw, MessageSquare, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Rows3, ChevronsUp, RefreshCw, Plus
+  Clock, RotateCcw, MessageSquare, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Rows3, ChevronsUp, RefreshCw, Plus,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, ApprovalInstanceItem, LedgerBatchItem } from './types';
-import { getUserId } from './types';
+import { getUserId, formatDateDMY } from './types';
 import { Pagination } from './Pagination';
 import { DateRangePickerCard } from '../ticket/DateRangePickerCard';
 import type { ApprovalsSubpageProps } from './ApprovalsSubpage';
@@ -12,6 +13,7 @@ import { AvatarCircle, getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 import Can from '../../hooks/Can';
 import { BundleReportModal } from './BundleReportModal';
 import { CreateWorkerBundleModal } from './CreateWorkerBundleModal';
+import { confirmPopup } from '../../components/tailgrids/core/ConfirmationPopup';
 
 interface BundlesSubpageProps {
   filteredBundles?: WorkerClaimItem[];
@@ -632,7 +634,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                   {stepInst && stepInst.actioned_at && (
                     <span className="text-[8px] text-on-surface-variant mt-0.5">
-                      {new Date(stepInst.actioned_at).toLocaleDateString()}
+                      {formatDateDMY(stepInst.actioned_at)}
                     </span>
                   )}
 
@@ -661,7 +663,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               comment: cleanComment,
                               author: authorName,
                               status: i.status,
-                              date: i.actioned_at ? new Date(i.actioned_at).toLocaleDateString() : undefined
+                              date: i.actioned_at ? formatDateDMY(i.actioned_at) : undefined
                             });
                           }
                         }
@@ -731,6 +733,17 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
   const handleBulkApproveBundles = async () => {
     if (pendingActionableBundles.length === 0) return;
+
+    const confirmed = await confirmPopup({
+      preset: 'approve',
+      title: 'Approve All Pending Bundles',
+      description: `Are you sure you want to approve all ${pendingActionableBundles.length} pending claim bundle(s)? This will advance them through their current approval stage.`,
+      button1: 'Cancel',
+      button2: 'Approve All',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
+
     setBulkApproving(true);
     setBulkActionMsg(null);
     try {
@@ -823,6 +836,54 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
   const [userSubDeptMap, setUserSubDeptMap] = useState<Record<number, number[]>>({});
   const employeeItemsPerPage = 12;
+
+  // Frontend-based sorting for expanded bundle expenses table
+  type BundleExpSortField = 'expense_id' | 'category' | 'remarks' | 'date' | 'store' | 'ticket' | 'amount';
+  const [bundleExpSort, setBundleExpSort] = useState<{
+    field: BundleExpSortField;
+    dir: 'asc' | 'desc';
+  }>({ field: 'expense_id', dir: 'desc' });
+
+  const handleSortBundleExpenses = (field: BundleExpSortField) => {
+    setBundleExpSort(prev => {
+      if (prev.field === field) {
+        return { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { field, dir: (field === 'expense_id' || field === 'amount' || field === 'date') ? 'desc' : 'asc' };
+    });
+  };
+
+  const sortBundleExpensesList = (expenses: any[], field: BundleExpSortField, dir: 'asc' | 'desc') => {
+    return [...expenses].sort((a: any, b: any) => {
+      let comparison = 0;
+      if (field === 'expense_id') {
+        comparison = Number(a.expense_id || 0) - Number(b.expense_id || 0);
+      } else if (field === 'amount') {
+        comparison = parseFloat(a.amount || '0') - parseFloat(b.amount || '0');
+      } else if (field === 'date') {
+        const aDate = a.expense_date || '';
+        const bDate = b.expense_date || '';
+        comparison = aDate.localeCompare(bDate);
+      } else if (field === 'category') {
+        const aCat = (a.expense_type_detail?.expense_name || (typeof a.expense_type === 'object' && a.expense_type ? a.expense_type.expense_name : '')).toLowerCase();
+        const bCat = (b.expense_type_detail?.expense_name || (typeof b.expense_type === 'object' && b.expense_type ? b.expense_type.expense_name : '')).toLowerCase();
+        comparison = aCat.localeCompare(bCat);
+      } else if (field === 'remarks') {
+        const aRem = getCleanRemarks(a.remarks).toLowerCase();
+        const bRem = getCleanRemarks(b.remarks).toLowerCase();
+        comparison = aRem.localeCompare(bRem);
+      } else if (field === 'store') {
+        const aStore = (typeof a.responsible_store === 'object' && a.responsible_store ? a.responsible_store.store_name : (a.store_detail?.store_name || '')).toLowerCase();
+        const bStore = (typeof b.responsible_store === 'object' && b.responsible_store ? b.responsible_store.store_name : (b.store_detail?.store_name || '')).toLowerCase();
+        comparison = aStore.localeCompare(bStore);
+      } else if (field === 'ticket') {
+        const aTkt = String(a.ticket_details?.work_order_no || (typeof a.ticket === 'object' && a.ticket ? a.ticket.work_order_no : (a.ticket || ''))).toLowerCase();
+        const bTkt = String(b.ticket_details?.work_order_no || (typeof b.ticket === 'object' && b.ticket ? b.ticket.work_order_no : (b.ticket || ''))).toLowerCase();
+        comparison = aTkt.localeCompare(bTkt);
+      }
+      return dir === 'asc' ? comparison : -comparison;
+    });
+  };
 
   // Fetch Unclaimed Workers on demand when modal opens
   useEffect(() => {
@@ -1502,7 +1563,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 <span className="truncate">{b.worker_detail ? `${b.worker_detail.full_name || b.worker_detail.username}` : `Worker ${(b.worker_detail as any)?.id || ''}`}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-on-surface-variant">{new Date(b.claim_date).toLocaleDateString()}</td>
+                            <td className="px-4 py-3 text-on-surface-variant">{formatDateDMY(b.claim_date)}</td>
                             <td className="px-4 py-3 font-medium">
                               {b.ledger_details ? (
                                 <span
@@ -1994,20 +2055,132 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 ) : (
                                   <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-sm">
                                     <table className="w-full text-xs text-left text-on-surface">
-                                      <thead className="bg-surface-container-low text-on-surface-variant  text-[9px] tracking-wider border-b border-outline-variant">
+                                      <thead className="bg-surface-container-low text-on-surface-variant text-[9px] tracking-wider border-b border-outline-variant select-none">
                                         <tr>
-                                          <th className="px-3 py-2">Exp</th>
-                                          <th className="px-3 py-2">Category</th>
-                                          <th className="px-3 py-2 min-w-[130px]">Remarks</th>
-                                          <th className="px-3 py-2">Date</th>
-                                          <th className="px-3 py-2">Responsible Store</th>
-                                          <th className="px-3 py-2">Ticket / Work Order</th>
-                                          <th className="px-3 py-2 text-right">Amount (KD)</th>
-                                          <th className="px-3 py-2 text-right">Action</th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('expense_id');
+                                            }}
+                                            className="px-3 py-2 cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Exp"
+                                          >
+                                            <div className="inline-flex items-center gap-1 font-bold">
+                                              <span>Exp</span>
+                                              {bundleExpSort.field === 'expense_id' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('category');
+                                            }}
+                                            className="px-3 py-2 cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Category"
+                                          >
+                                            <div className="inline-flex items-center gap-1 font-bold">
+                                              <span>Category</span>
+                                              {bundleExpSort.field === 'category' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('remarks');
+                                            }}
+                                            className="px-3 py-2 min-w-[130px] cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Remarks"
+                                          >
+                                            <div className="inline-flex items-center gap-1 font-bold">
+                                              <span>Remarks</span>
+                                              {bundleExpSort.field === 'remarks' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('date');
+                                            }}
+                                            className="px-3 py-2 cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Date"
+                                          >
+                                            <div className="inline-flex items-center gap-1 font-bold">
+                                              <span>Date</span>
+                                              {bundleExpSort.field === 'date' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('store');
+                                            }}
+                                            className="px-3 py-2 cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Responsible Store"
+                                          >
+                                            <div className="inline-flex items-center gap-1 font-bold">
+                                              <span>Responsible Store</span>
+                                              {bundleExpSort.field === 'store' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('ticket');
+                                            }}
+                                            className="px-3 py-2 cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Ticket / Work Order"
+                                          >
+                                            <div className="inline-flex items-center gap-1 font-bold">
+                                              <span>Ticket / Work Order</span>
+                                              {bundleExpSort.field === 'ticket' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSortBundleExpenses('amount');
+                                            }}
+                                            className="px-3 py-2 text-right cursor-pointer hover:bg-surface-container-high/60 transition-colors"
+                                            title="Click to sort by Amount (KD)"
+                                          >
+                                            <div className="inline-flex items-center justify-end w-full gap-1 font-bold">
+                                              <span>Amount (KD)</span>
+                                              {bundleExpSort.field === 'amount' ? (
+                                                bundleExpSort.dir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-primary" /> : <ArrowDown className="w-2.5 h-2.5 text-primary" />
+                                              ) : (
+                                                <ArrowUpDown className="w-2.5 h-2.5 opacity-30 hover:opacity-80" />
+                                              )}
+                                            </div>
+                                          </th>
+                                          <th className="px-3 py-2 text-right font-bold">Action</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-outline-variant">
-                                        {bundleExpenses.map((exp: any, expIdx: number) => {
+                                        {sortBundleExpensesList(bundleExpenses, bundleExpSort.field, bundleExpSort.dir).map((exp: any, expIdx: number) => {
                                           const storeName = typeof exp.responsible_store === 'object' && exp.responsible_store ? exp.responsible_store.store_name : (exp.store_detail?.store_name || 'N/A');
                                           const ticketNo = exp.ticket_details?.work_order_no || (typeof exp.ticket === 'object' && exp.ticket ? exp.ticket.work_order_no : (exp.ticket ? `${exp.ticket}` : 'N/A'));
                                           const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : 'General');
@@ -2025,7 +2198,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                                   <span className="text-on-surface-variant/40 italic text-[11px]">-</span>
                                                 )}
                                               </td>
-                                              <td className="px-3 py-2 text-on-surface-variant">{exp.expense_date || 'N/A'}</td>
+                                              <td className="px-3 py-2 text-on-surface-variant">{formatDateDMY(exp.expense_date) || 'N/A'}</td>
                                               <td className="px-3 py-2 text-on-surface-variant">{storeName}</td>
                                               <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                                                 {((exp.ticket_details || exp.ticket) && setSelectedTicketForModal) ? (
@@ -2452,7 +2625,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       size="xs"
                     />
                     <span className="font-semibold text-on-surface">{selectedBundleForView.worker_detail?.full_name || selectedBundleForView.worker_detail?.username || 'Technician'}</span>
-                    {selectedBundleForView.claim_date && ` • Created: ${new Date(selectedBundleForView.claim_date).toLocaleDateString()}`}
+                    {selectedBundleForView.claim_date && ` • Created: ${formatDateDMY(selectedBundleForView.claim_date)}`}
                   </div>
                 </div>
               </div>
@@ -2482,7 +2655,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
               <div className="p-3 rounded bg-surface-container-low border border-outline-variant/80 shadow-2xs">
                 <span className="text-on-surface-variant block text-[10px]  tracking-wider font-semibold">Coverage Period</span>
                 <span className="font-semibold text-on-surface mt-0.5 block">
-                  {selectedBundleForView.period_from && selectedBundleForView.period_to ? `${selectedBundleForView.period_from} → ${selectedBundleForView.period_to}` : 'All Expenses'}
+                  {selectedBundleForView.period_from && selectedBundleForView.period_to ? `${formatDateDMY(selectedBundleForView.period_from)} → ${formatDateDMY(selectedBundleForView.period_to)}` : 'All Expenses'}
                 </span>
               </div>
               <div className="p-3 rounded bg-surface-container-low border border-outline-variant/80 shadow-2xs">
@@ -2568,7 +2741,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || 'Expense'}
                             </span>
                             <div className="flex flex-wrap items-center gap-2 text-[11px] text-on-surface-variant mt-0.5">
-                              <span>Date: {exp.expense_date}</span>
+                              <span>Date: {formatDateDMY(exp.expense_date)}</span>
                               {exp.ticket_details && (
                                 <button
                                   type="button"
@@ -2879,7 +3052,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                     </div>
                     <p className="text-xs text-on-surface-variant mt-0.5">
-                      Submitted by <strong className="text-on-surface">{workerDisplayName}</strong> on {previewExpense.expense_date || 'N/A'}
+                      Submitted by <strong className="text-on-surface">{workerDisplayName}</strong> on {formatDateDMY(previewExpense.expense_date) || 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -2975,7 +3148,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
                 <div>
                   <span className="text-[10px] font-semibold text-on-surface-variant  tracking-wider block">Expense Date</span>
-                  <span className="font-semibold text-on-surface block mt-1">{previewExpense.expense_date || 'N/A'}</span>
+                  <span className="font-semibold text-on-surface block mt-1">{formatDateDMY(previewExpense.expense_date) || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-semibold text-on-surface-variant  tracking-wider block">Worker / Technician</span>

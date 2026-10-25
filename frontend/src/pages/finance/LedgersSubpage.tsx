@@ -14,6 +14,7 @@ import { LedgerGroupReportModal, type LedgerGroupCluster } from './LedgerGroupRe
 import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 import Can from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
+import { confirmPopup } from '../../components/tailgrids/core/ConfirmationPopup';
 
 interface LedgersSubpageProps {
   filteredLedgers?: LedgerItem[];
@@ -1423,6 +1424,16 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   // Bulk Approve Handler for Ledger Groups
   const handleBulkApproveLedgers = async () => {
     if (pendingActionableGroups.length === 0) return;
+
+    const confirmed = await confirmPopup({
+      preset: 'approve',
+      title: 'Approve All Pending Ledger Groups',
+      description: `Are you sure you want to approve all ${pendingActionableGroups.length} pending ledger group(s)?`,
+      button1: 'Cancel',
+      button2: 'Approve All',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
 
     setBulkApproving(true);
     setBulkActionMsg(null);

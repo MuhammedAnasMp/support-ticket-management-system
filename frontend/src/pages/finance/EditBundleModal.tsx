@@ -15,7 +15,7 @@ import {
   GripHorizontal
 } from 'lucide-react';
 import type { WorkerClaimItem, ExpenseItem } from './types';
-import { getUserId } from './types';
+import { getUserId, formatDateDMY } from './types';
 
 interface EditBundleModalProps {
   selectedBundleForEdit: WorkerClaimItem | null;
@@ -127,6 +127,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
     const workOrderNo = (typeof ticketObj === 'object' && ticketObj ? (ticketObj.work_order_no || '') : String(ticketObj || '')).toLowerCase();
     const amountStr = String(exp.amount || '');
     const dateStr = (exp.expense_date || '').toLowerCase();
+    const formattedDateStr = formatDateDMY(exp.expense_date).toLowerCase();
     return (
       expIdStr.includes(q) ||
       `#${expIdStr}`.includes(q) ||
@@ -135,7 +136,8 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
       remarks.includes(q) ||
       workOrderNo.includes(q) ||
       amountStr.includes(q) ||
-      dateStr.includes(q)
+      dateStr.includes(q) ||
+      formattedDateStr.includes(q)
     );
   };
 
@@ -276,7 +278,7 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2 text-[10px] text-on-surface-variant truncate mt-0.5">
-              <span>{exp.expense_date}</span>
+              <span>{formatDateDMY(exp.expense_date)}</span>
               {exp.ticket_details?.work_order_no && (
                 <span>• WO: <strong className="text-on-surface ">{exp.ticket_details.work_order_no}</strong></span>
               )}
@@ -342,8 +344,14 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
                   </span>
                 )}
               </div>
-              <div className="text-xs text-on-surface-variant font-normal">
-                Technician: <strong className="text-on-surface font-semibold">{selectedBundleForEdit.worker_detail?.full_name || selectedBundleForEdit.worker_detail?.username || 'Technician'}</strong>
+              <div className="text-xs text-on-surface-variant font-normal flex items-center gap-2 flex-wrap">
+                <span>Technician: <strong className="text-on-surface font-semibold">{selectedBundleForEdit.worker_detail?.full_name || selectedBundleForEdit.worker_detail?.username || 'Technician'}</strong></span>
+                {selectedBundleForEdit.claim_date && (
+                  <span>• Date: <strong className="text-on-surface font-medium">{formatDateDMY(selectedBundleForEdit.claim_date)}</strong></span>
+                )}
+                {selectedBundleForEdit.period_from && selectedBundleForEdit.period_to && (
+                  <span>• Period: <strong className="text-on-surface font-medium">{formatDateDMY(selectedBundleForEdit.period_from)} → {formatDateDMY(selectedBundleForEdit.period_to)}</strong></span>
+                )}
               </div>
             </div>
           </div>

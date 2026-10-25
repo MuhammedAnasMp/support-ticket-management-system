@@ -1436,6 +1436,17 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   const handleBulkApprove = async (idsToApprove?: number[]) => {
     const ids = idsToApprove || selectedExpenseIdsForBulk;
     if (ids.length === 0) return;
+
+    const confirmed = await confirmPopup({
+      preset: 'approve',
+      title: 'Approve Pending Expenses',
+      description: `Are you sure you want to approve all ${ids.length} pending expense(s)?`,
+      button1: 'Cancel',
+      button2: 'Approve All',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
+
     setBulkApproving(true);
     setBulkActionMsg(null);
 
