@@ -265,6 +265,7 @@
     "maintenance.can_view_all_instruction": "Allows can view all instruction.",
     "maintenance.can_view_blocked_ticket": "Allows can view blocked ticket.",
     "maintenance.can_view_completed_ticket": "Allows can view completed ticket.",
+    "maintenance.can_view_dashboard": "Allows can view dashboard.",
     "maintenance.can_view_expance_for_ticket": "Allows can view the all expance the having in a tickets with detaild view when ticket.",
     "maintenance.can_view_in_progress_ticket": "Allows can view in progress ticket.",
     "maintenance.can_view_location_approval_ticket": "Allows can view location approval ticket.",
@@ -272,6 +273,7 @@
     "maintenance.can_view_open_ticket": "Allows can view open ticket.",
     "maintenance.can_view_reconciled_ticket": "Allows can view reconciled ticket.",
     "maintenance.can_view_rejected_ticket": "Allows can view rejected ticket.",
+    "maintenance.can_view_tickets": "Allows can view tickets.",
     "maintenance.change_active": "Allows can change active.",
     "maintenance.change_allocation": "Allows can change allocation.",
     "maintenance.change_approved_by": "Allows can change approved by.",
@@ -685,6 +687,7 @@
         "maintenance.can_view_all_instruction",
         "maintenance.can_view_blocked_ticket",
         "maintenance.can_view_completed_ticket",
+        "maintenance.can_view_dashboard",
         "maintenance.can_view_expance_for_ticket",
         "maintenance.can_view_in_progress_ticket",
         "maintenance.can_view_location_approval_ticket",
@@ -692,6 +695,7 @@
         "maintenance.can_view_open_ticket",
         "maintenance.can_view_reconciled_ticket",
         "maintenance.can_view_rejected_ticket",
+        "maintenance.can_view_tickets",
         "maintenance.change_active",
         "maintenance.change_allocation",
         "maintenance.change_approved_by",
@@ -845,21 +849,6 @@
       "display_name": "Area Manager",
       "ui_privileges": "",
       "permissions": []
-    },
-    "Cash Office": {
-      "display_name": "Cash Office",
-      "ui_privileges": "",
-      "permissions": [
-        "finance.add_payment",
-        "finance.change_payment",
-        "finance.pay_ledger",
-        "finance.pay_ledger_group",
-        "finance.settle_cash_ledger",
-        "finance.view_expense",
-        "finance.view_ledger",
-        "finance.view_ledgergroup",
-        "finance.view_payment"
-      ]
     },
     "Management": {
       "display_name": "Management",
@@ -1024,6 +1013,7 @@
         "maintenance.add_allocation",
         "maintenance.add_natureworker",
         "maintenance.add_worknature",
+        "maintenance.can_add_worker_in_completed",
         "maintenance.can_call_store",
         "maintenance.can_call_worker",
         "maintenance.can_change_others_log_time",

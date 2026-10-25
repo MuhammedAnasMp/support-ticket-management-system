@@ -37,12 +37,13 @@ export const menuItems: MenuItem[] = [
     title: 'Dashboard',
     icon: <Home className="w-4 h-4" />,
     path: '/',
-    permission: "accounts.add_2_customuser"
+    permission: "maintenance.can_view_dashboard"
   },
   {
     title: 'Tickets',
     icon: <Ticket className="w-4 h-4" />,
-    path: '/tickets/all'
+    path: '/tickets/all',
+    permission: "maintenance.can_view_tickets"
   },
   {
     title: 'Locations',

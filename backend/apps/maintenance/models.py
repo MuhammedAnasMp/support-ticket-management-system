@@ -276,6 +276,8 @@ class Ticket(models.Model):
             ("can_see_device_info", "Can see ticket device info"),
             ("can_view_expance_for_ticket",
              "Can view the all expance the having in a tickets with detaild view when ticket"),
+            ("can_view_dashboard", "Can view dashboard"),
+            ("can_view_tickets", "Can view tickets"),
         ]
 
     def __str__(self):
