@@ -106,6 +106,7 @@ class WorkerClaim(models.Model):
 
     class Meta:
         permissions = [
+            ('can_view_bundles', 'Can view bundles'),
             ('create_bundle', 'Can create claim bundle'),
             ('edit_bundle', 'Can edit claim bundle'),
             ('submit_bundle', 'Can submit claim bundle for approval'),
@@ -164,6 +165,7 @@ class Expense(models.Model):
 
     class Meta:
         permissions = [
+            ('can_view_expenses', 'Can view expenses'),
             ('approve_expense', 'Can approve expense'),
             ('reject_expense', 'Can reject expense'),
             ('view_ticket', 'Can view ticket'),
@@ -328,6 +330,8 @@ class Ledger(models.Model):
 
     class Meta:
         permissions = [
+            ('can_view_ledger', 'Can view ledger'),
+            ('can_view_ledgers', 'Can view ledgers'),
             ('approve_ledger', 'Can approve ledger'),
             ('reject_ledger', 'Can reject ledger'),
             ('pay_ledger', 'Can pay ledger'),
@@ -433,6 +437,9 @@ class AuditEvent(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
+        permissions = [
+            ('can_view_audit', 'Can view audit'),
+        ]
 
     def __str__(self):
         actor_name = self.actor.username if self.actor else "System"

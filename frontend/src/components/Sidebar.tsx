@@ -74,10 +74,10 @@ export const menuItems: MenuItem[] = [
     title: 'Finance System',
     icon: <Receipt className="w-4 h-4" />,
     subItems: [
-      { title: 'Expenses', path: '/finance/expenses', permission: 'reports.can_generate_report' },
-      { title: 'Worker Claims', path: '/finance/bundles', permission: 'reports.can_generate_report' },
-      { title: 'Ledger Batches', path: '/finance/ledgers', permission: 'reports.can_generate_report' },
-      { title: 'Disbursements & Audit', path: '/finance/payments', permission: 'reports.can_generate_report' },
+      { title: 'Expenses', path: '/finance/expenses', permission: 'finance.can_view_expenses' },
+      { title: 'Worker Claims', path: '/finance/bundles', permission: 'finance.can_view_bundles' },
+      { title: 'Ledger Batches', path: '/finance/ledgers', permission: 'finance.can_view_ledger' },
+      { title: 'Disbursements & Audit', path: '/finance/payments', permission: 'finance.can_view_audit' },
     ],
   },
   {
