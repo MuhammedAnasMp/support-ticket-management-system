@@ -13,6 +13,7 @@ import {
   disablePushNotifications,
   isPushEnabled
 } from '@/services/pushNotifications';
+import { GlobalApiProgressBar } from './GlobalApiProgressBar';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -233,7 +234,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
   };
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between px-2 py-1.5 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant shadow-sm transition-colors duration-200">
+    <header className="sticky top-0 z-20 relative flex items-center justify-between px-2 py-1.5 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant shadow-sm transition-colors duration-200">
+      {/* Top Glowing API Progress Bar (Single Line) */}
+      <GlobalApiProgressBar />
+
       {/* Left section: Hamburger & Breadcrumbs */}
       <div className="flex items-center gap-2">
         {!isSidebarOpen && (

@@ -4,6 +4,10 @@ import { Provider } from 'react-redux'
 import { store } from './store'
 import './index.css'
 import App from './App.tsx'
+import { initApiProgressTracker } from './services/apiProgressTracker'
+
+// Initialize the global API progress tracker to automatically intercept fetch requests
+initApiProgressTracker();
 
 // Disable inspect options (context menu and keyboard shortcuts) if running as a standalone PWA
 const isStandalone = () => {
