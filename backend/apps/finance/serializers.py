@@ -10,9 +10,73 @@ from apps.accounts.models import CustomUser
 from apps.stores.serializers import SubDepartmentSerializer
 
 
+import time
+
+_USER_SUMMARY_CACHE = {}
+_STEP_SUMMARY_CACHE = {}
+_WORKFLOW_STEPS_CACHE = {}
+
+
+def get_cached_workflow_steps(workflow_id):
+    if not workflow_id:
+        return []
+    now = time.time()
+    cached = _WORKFLOW_STEPS_CACHE.get(workflow_id)
+    if cached and (now - cached[0]) < 30:
+        return cached[1]
+
+    steps = ApprovalStep.objects.filter(workflow_id=workflow_id).select_related('assigned_role').prefetch_related('assigned_users').order_by('step_order')
+    res = [
+        {
+            'step_id': s.step_id,
+            'step_order': s.step_order,
+            'step_name': s.step_name,
+            'assigned_role_name': s.assigned_role.role_name if s.assigned_role else '',
+            'assigned_users_ids': [u.pk for u in s.assigned_users.all()],
+            'assigned_users_names': [u.full_name or u.username for u in s.assigned_users.all()],
+            'is_final_step': s.is_final_step
+        }
+        for s in steps
+    ]
+    _WORKFLOW_STEPS_CACHE[workflow_id] = (now, res)
+    return res
+
+
+def get_cached_step_info(step):
+    if not step:
+        return {}
+    sid = getattr(step, 'step_id', None)
+    now = time.time()
+    if sid:
+        cached = _STEP_SUMMARY_CACHE.get(sid)
+        if cached and (now - cached[0]) < 30:
+            return cached[1]
+
+    assigned_users = list(step.assigned_users.all())
+    info = {
+        'step_id': step.step_id,
+        'step_name': step.step_name,
+        'step_order': step.step_order,
+        'assigned_role_name': step.assigned_role.role_name if (getattr(step, 'assigned_role', None)) else '',
+        'assigned_users_names': [u.full_name or u.username for u in assigned_users],
+        'assigned_users_ids': [u.pk for u in assigned_users],
+        'workflow_id': step.workflow_id
+    }
+    if sid:
+        _STEP_SUMMARY_CACHE[sid] = (now, info)
+    return info
+
+
 def serialize_user_summary(user):
     if not user:
         return None
+    uid = getattr(user, 'pk', None)
+    now = time.time()
+    if uid:
+        cached = _USER_SUMMARY_CACHE.get(uid)
+        if cached and (now - cached[0]) < 30:
+            return cached[1]
+
     profile_image_url = None
     if getattr(user, 'profile_image', None):
         try:
@@ -41,7 +105,7 @@ def serialize_user_summary(user):
         except Exception:
             pass
 
-    return {
+    res = {
         'id': user.pk,
         'user_id': user.pk,
         'username': getattr(user, 'username', '') or '',
@@ -55,6 +119,9 @@ def serialize_user_summary(user):
         'phone': getattr(user, 'phone', '') or '',
         'email': getattr(user, 'email', '') or '',
     }
+    if uid:
+        _USER_SUMMARY_CACHE[uid] = (now, res)
+    return res
 
 
 def serialize_approval_instance_summary(inst, user=None):
@@ -64,26 +131,10 @@ def serialize_approval_instance_summary(inst, user=None):
     if inst.action_by:
         action_by_full_name = getattr(inst.action_by, 'full_name', '') or inst.action_by.username
 
-    assigned_users_names = []
-    assigned_users_ids = []
+    step_info = get_cached_step_info(inst.step) if inst.step else {}
     workflow_steps = []
-    if inst.step:
-        assigned_users_names = [u.full_name or u.username for u in inst.step.assigned_users.all()]
-        assigned_users_ids = [u.pk for u in inst.step.assigned_users.all()]
-        if inst.step.workflow:
-            steps = inst.step.workflow.steps.prefetch_related('assigned_users').select_related('assigned_role').order_by('step_order')
-            workflow_steps = [
-                {
-                    'step_id': s.step_id,
-                    'step_order': s.step_order,
-                    'step_name': s.step_name,
-                    'assigned_role_name': s.assigned_role.role_name if s.assigned_role else '',
-                    'assigned_users_ids': [u.pk for u in s.assigned_users.all()],
-                    'assigned_users_names': [u.full_name or u.username for u in s.assigned_users.all()],
-                    'is_final_step': s.is_final_step
-                }
-                for s in steps
-            ]
+    if step_info.get('workflow_id'):
+        workflow_steps = get_cached_workflow_steps(step_info['workflow_id'])
 
     can_action = False
     if user and getattr(user, 'is_authenticated', False) and inst.status == 'Pending':
@@ -92,12 +143,12 @@ def serialize_approval_instance_summary(inst, user=None):
 
     return {
         'instance_id': inst.instance_id,
-        'step_id': inst.step_id if inst.step else None,
-        'step_name': inst.step.step_name if inst.step else 'Step',
-        'step_order': inst.step.step_order if inst.step else 0,
-        'assigned_role_name': inst.step.assigned_role.role_name if (inst.step and inst.step.assigned_role) else '',
-        'assigned_users_names': assigned_users_names,
-        'assigned_users_ids': assigned_users_ids,
+        'step_id': step_info.get('step_id'),
+        'step_name': step_info.get('step_name', 'Step'),
+        'step_order': step_info.get('step_order', 0),
+        'assigned_role_name': step_info.get('assigned_role_name', ''),
+        'assigned_users_names': step_info.get('assigned_users_names', []),
+        'assigned_users_ids': step_info.get('assigned_users_ids', []),
         'workflow_steps': workflow_steps,
         'can_action': can_action,
         'action_by': inst.action_by_id,
@@ -111,6 +162,7 @@ def serialize_approval_instance_summary(inst, user=None):
         'ledger': inst.ledger_id,
         'expense': inst.expense_id,
     }
+
 
 
 def serialize_ticket_summary(ticket):
@@ -232,7 +284,7 @@ class EmployeeRateSerializer(serializers.ModelSerializer):
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
-    receipts = MediaSerializer(many=True, read_only=True)
+    receipts = serializers.SerializerMethodField()
     approval_instances = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     reject_reason = serializers.SerializerMethodField()
@@ -246,7 +298,23 @@ class ExpenseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Expense
         fields = '__all__'
-        depth = 1
+
+    def get_receipts(self, obj):
+        return [serialize_receipt_summary(r) for r in obj.receipts.all()]
+
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        # Populate object representations using already-computed summaries without firing nested queries
+        if instance.ticket_id and 'ticket_details' in rep:
+            rep['ticket'] = rep['ticket_details']
+        if instance.expense_type_id and 'expense_type_detail' in rep:
+            rep['expense_type'] = rep['expense_type_detail']
+        if instance.worker_id and 'worker_detail' in rep:
+            rep['worker'] = rep['worker_detail']
+        if instance.added_by_id and 'added_by_detail' in rep:
+            rep['added_by'] = rep['added_by_detail']
+        return rep
 
     def _get_sorted_approval_instances(self, obj):
         if hasattr(obj, '_cached_sorted_approval_instances'):
@@ -261,7 +329,15 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return [serialize_approval_instance_summary(inst) for inst in insts]
 
     def get_status_display(self, obj):
-        if getattr(obj, 'is_paid', False) or (obj.claim and obj.claim.status == 'Paid') or (hasattr(obj, 'ledgers') and obj.ledgers.filter(status='Paid').exists()):
+        is_paid = getattr(obj, 'is_paid', False)
+        if not is_paid and obj.claim and obj.claim.status == 'Paid':
+            is_paid = True
+        if not is_paid:
+            if hasattr(obj, '_prefetched_objects_cache') and 'ledgers' in obj._prefetched_objects_cache:
+                is_paid = any(l.status == 'Paid' for l in obj.ledgers.all())
+            elif hasattr(obj, 'ledgers'):
+                is_paid = obj.ledgers.filter(status='Paid').exists()
+        if is_paid:
             return 'Paid'
         insts = self._get_sorted_approval_instances(obj)
         if insts:
@@ -276,6 +352,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         if obj.claim and obj.claim.status in ['Rejected', 'Rework']:
             return obj.claim.status
         return 'Pending Approval'
+
 
     def get_reject_reason(self, obj):
         insts = self._get_sorted_approval_instances(obj)

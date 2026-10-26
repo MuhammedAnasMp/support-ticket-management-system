@@ -810,6 +810,9 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             'ticket__department',
             'ticket__status'
         ).prefetch_related(
+            'worker__sub_departments',
+            'submitted_by__sub_departments',
+            'approved_by__sub_departments',
             'ledgers__ledger_group',
             Prefetch(
                 'expenses',
@@ -822,21 +825,26 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                     'ticket__department',
                     'ticket__status',
                     'expense_type',
+                    'expense_type__parent',
                     'expense_type__department',
                     'responsible_store',
                     'added_by',
                     'claim'
                 ).prefetch_related(
                     'receipts',
+                    'worker__sub_departments',
+                    'ledgers',
                     'approval_instances__step__assigned_role',
                     'approval_instances__step__assigned_users',
                     'approval_instances__action_by'
                 )
+
             ),
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by'
         ).order_by('-claim_date', '-claim_id')
+
 
     @action(detail=False, methods=['get'], url_path='unclaimed-workers')
     def unclaimed_workers(self, request):
@@ -1458,35 +1466,53 @@ class LedgerViewSet(viewsets.ModelViewSet):
             'created_by__role',
             'store'
         ).prefetch_related(
+            'created_by__sub_departments',
             Prefetch(
                 'expenses',
                 queryset=Expense.objects.select_related(
                     'worker', 'worker__role', 'ticket', 'ticket__store', 'ticket__nature__sub_department__department',
-                    'ticket__department', 'ticket__status', 'expense_type', 'expense_type__department', 'responsible_store', 'added_by', 'claim'
-                ).prefetch_related('receipts')
+                    'ticket__department', 'ticket__status', 'expense_type', 'expense_type__parent', 'expense_type__department', 'responsible_store', 'added_by', 'claim'
+                ).prefetch_related(
+                    'receipts', 'worker__sub_departments', 'ledgers',
+                    'approval_instances__step__assigned_role',
+                    'approval_instances__step__assigned_users',
+                    'approval_instances__action_by'
+                )
             ),
             Prefetch(
                 'bundles',
                 queryset=WorkerClaim.objects.select_related(
-                    'worker', 'worker__role', 'submitted_by', 'approved_by', 'ticket', 'ticket__store', 'ticket__status'
+                    'worker', 'worker__role', 'submitted_by', 'submitted_by__role', 'approved_by', 'approved_by__role',
+                    'ticket', 'ticket__store', 'ticket__nature__sub_department__department', 'ticket__department', 'ticket__status'
                 ).prefetch_related(
+                    'worker__sub_departments',
+                    'submitted_by__sub_departments',
+                    'approved_by__sub_departments',
                     Prefetch(
                         'expenses',
                         queryset=Expense.objects.select_related(
                             'worker', 'worker__role', 'ticket', 'ticket__store', 'ticket__nature__sub_department__department',
-                            'ticket__department', 'ticket__status', 'expense_type', 'expense_type__department', 'responsible_store', 'added_by'
-                        ).prefetch_related('receipts')
+                            'ticket__department', 'ticket__status', 'expense_type', 'expense_type__parent', 'expense_type__department', 'responsible_store', 'added_by', 'claim'
+                        ).prefetch_related(
+                            'receipts', 'worker__sub_departments', 'ledgers',
+                            'approval_instances__step__assigned_role',
+                            'approval_instances__step__assigned_users',
+                            'approval_instances__action_by'
+                        )
                     ),
                     'approval_instances__step__assigned_role',
+                    'approval_instances__step__assigned_users',
                     'approval_instances__action_by',
                     'ledgers__ledger_group'
                 )
             ),
+
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by',
             'ledger_batch__sub_departments__department'
         ).order_by('-created_at', '-ledger_id')
+
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

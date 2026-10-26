@@ -1889,11 +1889,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   };
 
   useEffect(() => {
-    if (!showCreateLedgerModal) {
+    if (showCreateLedgerModal) {
+      handleRefreshAssemble();
+    } else {
       setAssembleSearch('');
       setSelectedUnmappedSubDept(null);
     }
   }, [showCreateLedgerModal]);
+
 
   const availableBundlesForAssemble = useMemo(() => {
     return bundles.filter(b => {
