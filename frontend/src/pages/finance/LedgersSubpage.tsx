@@ -4,7 +4,7 @@ import {
   CheckCircle2, AlertTriangle, Boxes, Tag, ChevronDown, ChevronRight, Rows3,
   ChevronsUp, Check, RotateCcw, User, Calendar, Users, Receipt,
   FileText, ExternalLink, Eye, EyeOff, Clock, FolderKanban, Lock, CheckCircle, Package,
-  RefreshCw, Plus, GitCommit, Send, CreditCard, Banknote
+  RefreshCw, Plus, GitCommit, Send, CreditCard, Banknote, Search
 } from 'lucide-react';
 import { getUserId, type LedgerItem, type WorkerClaimItem, type LedgerGroupItem, type ExpenseItem, type LedgerBatchItem, type ApprovalStepInfo, type ApprovalInstanceItem } from './types';
 import { Pagination } from './Pagination';
@@ -1483,6 +1483,97 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   };
 
+  // Search & Select All State for Assemble Modal
+  const [assembleSearch, setAssembleSearch] = useState<string>('');
+  const [selectedUnmappedSubDept, setSelectedUnmappedSubDept] = useState<string | null>(null);
+  const [isRefreshingAssemble, setIsRefreshingAssemble] = useState(false);
+  const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
+
+  const handleRefreshAssemble = async () => {
+    if (isRefreshingAssemble) return;
+    setIsRefreshingAssemble(true);
+    try {
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } finally {
+      setIsRefreshingAssemble(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showCreateLedgerModal) {
+      setAssembleSearch('');
+      setSelectedUnmappedSubDept(null);
+    }
+  }, [showCreateLedgerModal]);
+
+  const availableBundlesForAssemble = useMemo(() => {
+    return bundles.filter(b => {
+      if (b.status !== 'Approved') return false;
+      if (b.ledger_id) return false;
+      if (b.ledger_details && b.ledger_details.status !== 'Rejected') return false;
+      if (Array.isArray((b as any).ledgers) && (b as any).ledgers.length > 0) return false;
+      return true;
+    });
+  }, [bundles]);
+
+  const filteredBundlesForAssemble = useMemo(() => {
+    if (!assembleSearch.trim()) return availableBundlesForAssemble;
+    const q = assembleSearch.trim().toLowerCase();
+    return availableBundlesForAssemble.filter(b => {
+      const claimIdStr = String(b.claim_id);
+      if (claimIdStr.includes(q) || `bundle ${claimIdStr}`.toLowerCase().includes(q)) return true;
+      const workerName = (b.worker_detail?.full_name || b.worker_detail?.username || `worker ${b.worker}`).toLowerCase();
+      if (workerName.includes(q)) return true;
+      const wo = (b.ticket_details?.work_order_no || '').toLowerCase();
+      const title = (b.ticket_details?.title || '').toLowerCase();
+      if (wo.includes(q) || title.includes(q)) return true;
+      const amountStr = parseFloat(b.total_claimed_amount).toFixed(3);
+      if (amountStr.includes(q)) return true;
+      if (Array.isArray(b.expenses)) {
+        const hasExpMatch = b.expenses.some((e: any) => {
+          const sd = (e.ticket_details?.sub_department_name || e.sub_department_name || '').toLowerCase();
+          const eWo = (e.ticket_details?.work_order_no || '').toLowerCase();
+          return sd.includes(q) || eWo.includes(q);
+        });
+        if (hasExpMatch) return true;
+      }
+      return false;
+    });
+  }, [availableBundlesForAssemble, assembleSearch]);
+
+  const allFilteredSelected = useMemo(() => {
+    return (
+      filteredBundlesForAssemble.length > 0 &&
+      filteredBundlesForAssemble.every(b => selectedBundleIds.includes(b.claim_id))
+    );
+  }, [filteredBundlesForAssemble, selectedBundleIds]);
+
+  const someFilteredSelected = useMemo(() => {
+    return (
+      filteredBundlesForAssemble.length > 0 &&
+      filteredBundlesForAssemble.some(b => selectedBundleIds.includes(b.claim_id))
+    );
+  }, [filteredBundlesForAssemble, selectedBundleIds]);
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = someFilteredSelected && !allFilteredSelected;
+    }
+  }, [someFilteredSelected, allFilteredSelected]);
+
+  const handleToggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const filteredSet = new Set(filteredBundlesForAssemble.map(b => b.claim_id));
+      setSelectedBundleIds(selectedBundleIds.filter(id => !filteredSet.has(id)));
+    } else {
+      const newSet = new Set(selectedBundleIds);
+      filteredBundlesForAssemble.forEach(b => newSet.add(b.claim_id));
+      setSelectedBundleIds(Array.from(newSet));
+    }
+  };
+
   // Classification logic for Assemble Modal
   const classificationResult = useMemo(() => {
     const effectiveBatches = (ledgerBatches && ledgerBatches.length > 0 ? ledgerBatches : internalBatches) || [];
@@ -1495,7 +1586,13 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           subDeptName: string;
           expensesCount: number;
           totalAmount: number;
-          tickets: string[];
+          tickets: Array<{ ticketObj: any; ticketNo: string; exp: any }>;
+        }>,
+        unmappedTickets: [] as Array<{
+          ticketObj: any;
+          ticketNo: string;
+          subDeptName: string;
+          exp: any;
         }>,
         classifiedBatches: [] as Array<{
           batch: LedgerBatchItem;
@@ -1600,7 +1697,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       subDeptName: string;
       expensesCount: number;
       totalAmount: number;
-      ticketsSet: Set<string>;
+      ticketsMap: Map<string, { ticketObj: any; ticketNo: string; exp: any }>;
     }>();
 
     for (const exp of unmapped) {
@@ -1614,14 +1711,23 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           subDeptName: sdName,
           expensesCount: 0,
           totalAmount: 0,
-          ticketsSet: new Set<string>(),
+          ticketsMap: new Map(),
         });
       }
       const entry = unmappedSubDeptsMap.get(key)!;
       entry.expensesCount++;
       entry.totalAmount += parseFloat(exp.amount || '0');
+
+      const rawTicket: any = exp.ticket_details || exp.ticket;
       const tLabel = formatTicketDisplay(exp);
-      if (tLabel && tLabel !== '-') entry.ticketsSet.add(tLabel);
+      if (rawTicket || (tLabel && tLabel !== '-')) {
+        const ticketObj: any = typeof rawTicket === 'object' && rawTicket !== null ? rawTicket : { ticket_id: rawTicket };
+        const ticketNo = tLabel !== '-' ? tLabel : `#${ticketObj?.ticket_id ?? ticketObj?.id ?? 'Ticket'}`;
+        const tKey = String(ticketObj?.ticket_id ?? ticketObj?.id ?? ticketNo);
+        if (!entry.ticketsMap.has(tKey)) {
+          entry.ticketsMap.set(tKey, { ticketObj, ticketNo, exp });
+        }
+      }
     }
 
     const unmappedSubDepts = Array.from(unmappedSubDeptsMap.values()).map(entry => ({
@@ -1629,18 +1735,64 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       subDeptName: entry.subDeptName,
       expensesCount: entry.expensesCount,
       totalAmount: entry.totalAmount,
-      tickets: Array.from(entry.ticketsSet),
+      tickets: Array.from(entry.ticketsMap.values()),
     }));
+
+    // Collect all unique unmapped tickets across sub-departments for quick bottom list
+    const allUnmappedTicketMap = new Map<string, { ticketObj: any; ticketNo: string; subDeptName: string; exp: any }>();
+    for (const sd of unmappedSubDepts) {
+      for (const t of sd.tickets) {
+        const tKey = String((t.ticketObj as any)?.ticket_id ?? (t.ticketObj as any)?.id ?? t.ticketNo);
+        if (!allUnmappedTicketMap.has(tKey)) {
+          allUnmappedTicketMap.set(tKey, {
+            ...t,
+            subDeptName: sd.subDeptName,
+          });
+        }
+      }
+    }
+    const unmappedTickets = Array.from(allUnmappedTicketMap.values());
 
     return {
       totalExpenses: allExpenses.length,
       unmappedExpenses: unmapped,
       unmappedSubDepts,
+      unmappedTickets,
       classifiedBatches,
       totalAmount: sumTotal,
       hasUnmapped: unmapped.length > 0,
     };
   }, [selectedBundleIds, bundles, ledgerBatches, internalBatches]);
+
+  // Active unmapped sub-department (defaults to the first one)
+  const activeUnmappedSubDept = useMemo(() => {
+    if (classificationResult.unmappedSubDepts.length === 0) return null;
+    if (selectedUnmappedSubDept && classificationResult.unmappedSubDepts.some(sd => sd.subDeptName === selectedUnmappedSubDept)) {
+      return selectedUnmappedSubDept;
+    }
+    return classificationResult.unmappedSubDepts[0].subDeptName;
+  }, [selectedUnmappedSubDept, classificationResult.unmappedSubDepts]);
+
+  // Filter unmapped tickets based on clicked/active sub-department
+  const displayedUnmappedTickets = useMemo(() => {
+    if (!activeUnmappedSubDept) return [];
+    const matched = classificationResult.unmappedSubDepts.find(
+      sd => sd.subDeptName === activeUnmappedSubDept
+    );
+    return matched ? matched.tickets.map(t => ({ ...t, subDeptName: matched.subDeptName })) : [];
+  }, [activeUnmappedSubDept, classificationResult]);
+
+  // Auto-select the first unmapped sub-department by default
+  useEffect(() => {
+    if (classificationResult.unmappedSubDepts.length > 0) {
+      const exists = classificationResult.unmappedSubDepts.some(sd => sd.subDeptName === selectedUnmappedSubDept);
+      if (!selectedUnmappedSubDept || !exists) {
+        setSelectedUnmappedSubDept(classificationResult.unmappedSubDepts[0].subDeptName);
+      }
+    } else if (selectedUnmappedSubDept) {
+      setSelectedUnmappedSubDept(null);
+    }
+  }, [classificationResult.unmappedSubDepts, selectedUnmappedSubDept]);
 
   // Clean stale/attached bundle selections automatically
   useEffect(() => {
@@ -3227,7 +3379,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       {/* MODAL: ASSEMBLE LEDGER */}
       {showCreateLedgerModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface-container rounded border border-outline-variant max-w-2xl w-full p-4 space-y-4 shadow-2xl min-h-[580px] max-h-[90vh] flex flex-col">
+          <div className="bg-surface-container rounded border border-outline-variant max-w-7xl w-full p-4 space-y-4 shadow-2xl min-h-[580px] max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-outline-variant pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded bg-primary/10 text-primary">
@@ -3237,43 +3389,107 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   <h3 className="text-sm font-semibold text-on-surface">Assemble Ledger</h3>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setShowCreateLedgerModal(false);
-                  setSelectedBundleIds([]);
-                  setSelectedGroupId('');
-                  setNewGroupName('');
-                }}
-                className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRefreshAssemble}
+                  disabled={isRefreshingAssemble}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant text-xs font-medium text-on-surface hover:text-primary transition-colors cursor-pointer"
+                  title="Refresh bundles and ticket data"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAssemble ? 'animate-spin text-primary' : 'text-on-surface-variant'}`} />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCreateLedgerModal(false);
+                    setSelectedBundleIds([]);
+                    setSelectedGroupId('');
+                    setNewGroupName('');
+                  }}
+                  className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4 overflow-y-auto flex-1 pr-1 pb-20">
-              <div>
+              <div className="space-y-2">
+                {/* Search & Header */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
+                      <Package className="w-4 h-4 text-primary" />
+                      <span>Select Bundles to Assemble</span>
+                    </label>
+                    {selectedBundleIds.length > 0 && (
+                      <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                        {selectedBundleIds.length} bundle{selectedBundleIds.length !== 1 ? 's' : ''} selected
+                      </span>
+                    )}
+                  </div>
 
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                    <input
+                      type="text"
+                      value={assembleSearch}
+                      onChange={(e) => setAssembleSearch(e.target.value)}
+                      placeholder="Search by bundle #, worker, ticket, or amount..."
+                      className="w-full pl-9 pr-8 py-2 text-xs rounded border border-outline bg-surface-container text-on-surface focus:outline-none focus:border-primary transition-colors"
+                    />
+                    {assembleSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setAssembleSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                        title="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Select All Toolbar */}
+                  {availableBundlesForAssemble.length > 0 && (
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-surface-container rounded border border-outline-variant text-xs">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          ref={selectAllCheckboxRef}
+                          checked={allFilteredSelected}
+                          onChange={handleToggleSelectAll}
+                          disabled={filteredBundlesForAssemble.length === 0}
+                          className="accent-primary cursor-pointer rounded"
+                        />
+                        <span className="font-semibold text-on-surface">
+                          {allFilteredSelected ? 'Deselect All' : 'Select All'}
+                        </span>
+                        <span className="text-[11px] text-on-surface-variant">
+                          ({filteredBundlesForAssemble.length} {filteredBundlesForAssemble.length === 1 ? 'bundle' : 'bundles'}
+                          {assembleSearch.trim() ? ` matching "${assembleSearch.trim()}"` : ' available'})
+                        </span>
+                      </label>
+
+
+                    </div>
+                  )}
+                </div>
 
                 {/* Bundle Selection List */}
                 <div className="max-h-56 overflow-y-auto border border-outline-variant rounded divide-y divide-outline-variant bg-surface-container-low scrollbar-thin">
-                  {(() => {
-                    const availableBundles = bundles.filter(b => {
-                      if (b.status !== 'Approved') return false;
-                      if (b.ledger_id) return false;
-                      if (b.ledger_details && b.ledger_details.status !== 'Rejected') return false;
-                      if (Array.isArray((b as any).ledgers) && (b as any).ledgers.length > 0) return false;
-                      return true;
-                    });
-
-                    if (availableBundles.length === 0) {
-                      return (
-                        <div className="p-4 text-center text-xs text-on-surface-variant italic">
-                          No unassigned approved bundles available.
-                        </div>
-                      );
-                    }
-
-                    return availableBundles.map((b) => {
+                  {availableBundlesForAssemble.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-on-surface-variant italic">
+                      No unassigned approved bundles available.
+                    </div>
+                  ) : filteredBundlesForAssemble.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-on-surface-variant italic">
+                      No bundles found matching "{assembleSearch}".
+                    </div>
+                  ) : (
+                    filteredBundlesForAssemble.map((b) => {
                       const isSelected = selectedBundleIds.includes(b.claim_id);
                       return (
                         <div
@@ -3315,8 +3531,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                           </div>
                         </div>
                       );
-                    });
-                  })()}
+                    })
+                  )}
                 </div>
               </div>
 
@@ -3324,24 +3540,81 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               {selectedBundleIds.length > 0 && (
                 <div className="space-y-2">
                   {classificationResult.hasUnmapped && (
-                    <div className="p-3 rounded bg-amber-500/10 border border-amber-500/30 text-xs space-y-2">
-                      <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
-                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                        <span>The following Sub-Department(s) are missing from your active Ledger Batch configurations:</span>
+                    <div className="p-3.5 rounded bg-amber-500/10 border border-amber-500/30 text-xs space-y-3">
+                      <div className="flex items-center justify-between gap-2 font-semibold text-amber-800 dark:text-amber-300">
+                        <div className="flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                          <span>Following Sub-Department(s) are missing from your active Ledger Batch configurations:</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRefreshAssemble}
+                          disabled={isRefreshingAssemble}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high border border-amber-500/30 text-amber-900 dark:text-amber-200 text-[11px] font-medium transition-colors cursor-pointer shrink-0 shadow-2xs hover:text-primary"
+                          title="Refresh and re-check sub-departments after updating tickets"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isRefreshingAssemble ? 'animate-spin text-primary' : ''}`} />
+                          <span>Refresh</span>
+                        </button>
                       </div>
 
-                      {/* Clean Sub-Department Chips */}
-                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                        {classificationResult.unmappedSubDepts.map(sd => (
-                          <span
-                            key={sd.subDeptName}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container border border-amber-500/40 text-on-surface font-semibold text-xs shadow-2xs"
-                          >
-                            <Building2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                            <span>{sd.subDeptName}</span>
-                          </span>
-                        ))}
+                      {/* Clickable Sub-Department Chips */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                          {classificationResult.unmappedSubDepts.map(sd => {
+                            const isSelected = activeUnmappedSubDept === sd.subDeptName;
+                            return (
+                              <button
+                                key={sd.subDeptName}
+                                type="button"
+                                onClick={() => setSelectedUnmappedSubDept(sd.subDeptName)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold shadow-2xs transition-all cursor-pointer ${isSelected
+                                  ? 'bg-amber-600 text-white border border-amber-700 ring-2 ring-amber-500/30 dark:bg-amber-500 dark:text-gray-950 font-bold'
+                                  : 'bg-surface-container border border-amber-500/40 text-on-surface hover:bg-surface-container-high hover:border-amber-500'
+                                  }`}
+                                title={`Click to show tickets for ${sd.subDeptName}`}
+                              >
+                                <Building2 className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white dark:text-gray-950' : 'text-amber-600 dark:text-amber-400'}`} />
+                                <span>{sd.subDeptName}</span>
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-medium ${isSelected
+                                  ? 'bg-white/20 text-white dark:bg-black/20 dark:text-gray-950'
+                                  : 'bg-amber-500/20 text-amber-800 dark:text-amber-300'
+                                  }`}>
+                                  {sd.tickets.length} ticket{sd.tickets.length !== 1 ? 's' : ''}
+                                </span>
+                                <ChevronDown className={`w-3 h-3 transition-transform ${isSelected ? 'rotate-180' : ''}`} />
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
+
+                      {/* Bottom side: List tickets directly so user can open & change sub-department */}
+                      {displayedUnmappedTickets.length > 0 ? (
+                        <div className="pt-2 border-t border-amber-500/25 space-y-2">
+                          <div className="flex items-center gap-1.5 flex-wrap max-h-36 overflow-y-auto pr-1">
+                            {displayedUnmappedTickets.map(item => {
+                              const exp = item.exp;
+                              const ticketNo = item.ticketNo;
+                              return (
+                                <button
+                                  key={item.ticketNo}
+                                  type="button"
+                                  onClick={() => setSelectedTicketForModal && setSelectedTicketForModal(typeof (exp?.ticket_details || exp?.ticket) === 'object' ? (exp?.ticket_details || exp?.ticket) : (item.ticketObj || { ticket_id: (exp?.ticket_details || exp?.ticket) }))}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container border border-amber-500/40 hover:border-primary text-primary hover:underline font-mono text-[11px] font-medium cursor-pointer shadow-2xs hover:bg-surface-container-high transition-colors"
+                                  title={`Open ticket ${ticketNo} to change Sub-Department`}
+                                >
+                                  <span>{ticketNo}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="pt-2 border-t border-amber-500/25 text-xs text-on-surface-variant italic">
+                          No tickets found for this sub-department.
+                        </div>
+                      )}
                     </div>
                   )}
 

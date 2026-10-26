@@ -150,6 +150,7 @@ export type ConfirmPopupOptions = {
     button2?: string;
     variant?: ConfirmPopupVariant;
     icon?: React.ReactNode;
+    showButton1?: boolean;
 };
 
 export type ConfirmPopupArg = ConfirmPreset | (string & {}) | ConfirmPopupOptions;
@@ -209,6 +210,7 @@ const ConfirmationModal: React.FC<PopupComponentProps> = ({
     variant,
     icon,
     onClose,
+    showButton1 = true
 }) => {
     // Resolve variant automatically if not explicitly provided
     const resolvedVariant: ConfirmPopupVariant = variant || (() => {
@@ -339,13 +341,15 @@ const ConfirmationModal: React.FC<PopupComponentProps> = ({
 
                 {/* Footer / Actions */}
                 <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low shrink-0">
-                    <button
-                        type="button"
-                        onClick={() => onClose(false)}
-                        className="px-4 py-2 text-xs font-semibold rounded border border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface transition-colors cursor-pointer active:scale-95"
-                    >
-                        {button1}
-                    </button>
+
+                    {showButton1 && (
+                        <button
+                            type="button"
+                            onClick={() => onClose(false)}
+                            className="px-4 py-2 text-xs font-semibold rounded border border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface transition-colors cursor-pointer active:scale-95"
+                        >
+                            {button1}
+                        </button>)}
 
                     <button
                         type="button"

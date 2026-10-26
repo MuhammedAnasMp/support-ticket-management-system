@@ -29,6 +29,7 @@ import { EditBundleModal } from './finance/EditBundleModal';
 import { ExpensesSubpage } from './finance/ExpensesSubpage';
 import Can from '../hooks/Can';
 import { usePermission } from '../hooks/usePermission';
+import { confirmPopup } from '@/components/tailgrids/core/ConfirmationPopup';
 
 const getCurrentMonthRange = () => {
   const now = new Date();
@@ -177,6 +178,27 @@ export const FinanceView: React.FC = () => {
     bundlePagesCacheRef.current.clear();
     setBundlePage(1);
   }, [debouncedSearchQuery, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, bundlePageSize]);
+
+  // Ledgers server-side pagination state
+  const [ledgerPage, setLedgerPage] = useState<number>(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState<number>(10);
+  const [ledgerTotalCount, setLedgerTotalCount] = useState<number>(0);
+
+  // Ledgers in-memory temporary page cache (stores Page 1, Page 2, Page 3... for instant pagination switching)
+  const ledgerPagesCacheRef = useRef<Map<string, {
+    results: LedgerItem[];
+    count: number;
+  }>>(new Map());
+
+  const getLedgerFilterKey = () => {
+    return `${filterDateFrom}_${filterDateTo}_${statusFilter}_${debouncedSearchQuery}_${ledgerPageSize}`;
+  };
+
+  // Reset ledgerPage to 1 and clear temp cache whenever search or filters change
+  useEffect(() => {
+    ledgerPagesCacheRef.current.clear();
+    setLedgerPage(1);
+  }, [debouncedSearchQuery, statusFilter, filterDateFrom, filterDateTo, ledgerPageSize]);
 
   // Fetch LedgerBatches for filtering and subpages
   useEffect(() => {
@@ -398,11 +420,32 @@ export const FinanceView: React.FC = () => {
   const handleRemoveExpenseFromBundle = async (bundleId: number, expenseId: number) => {
     const targetBundle = (bundles || []).find(b => b.claim_id === bundleId);
     if ((targetBundle?.expenses?.length ?? 0) <= 1) {
-      alert("Cannot remove the only expense. Please delete the Bundle instead.");
+
+      const confirmed = await confirmPopup({
+        preset: "remove",
+        button2: "Close",
+        title: "Cannot remove",
+        description: "Cannot remove the only expense. Please delete the Bundle instead.",
+        showButton1: false,
+      });
+
+      if (confirmed) return;
+
+
       setErrorMessage("Cannot remove the only expense. Please delete the Bundle instead.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to remove Expense ${expenseId} from Bundle ${bundleId}? The bundle status will reset to Draft.`)) return;
+
+
+
+    const confirmed = await confirmPopup({
+      preset: 'remove',
+      title: ' Remove Expense',
+      description: `Are you sure you want to remove Expense ${expenseId} from Bundle ${bundleId}? The bundle status will reset to Draft.`,
+    });
+    if (!confirmed) return;
+
+
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -427,8 +470,16 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleDeleteBundle = async (claimId: number) => {
-    if (!window.confirm(`Are you sure you want to delete Bundle ${claimId}? All tied expenses will be unlinked and returned to unclaimed status.`)) return;
+    const confirmed = await confirmPopup({
+      preset: "delete",
+      title: `Delete Bundle ${claimId}?`,
+      description:
+        "Are you sure you want to delete this bundle? All tied expenses will be unlinked and returned to unclaimed status.",
+      button1: "Cancel",
+      button2: "Delete Bundle",
+    });
 
+    if (!confirmed) return;
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -666,6 +717,7 @@ export const FinanceView: React.FC = () => {
     if (bypassCache) {
       expensePagesCacheRef.current.clear();
       bundlePagesCacheRef.current.clear();
+      ledgerPagesCacheRef.current.clear();
     }
 
     const currentFilterKey = getExpenseFilterKey();
@@ -676,6 +728,10 @@ export const FinanceView: React.FC = () => {
     const bundleCacheKey = `${currentBundleFilterKey}_p${bundlePage}`;
     const isCachedBundlePage = !bypassCache && subpage === 'bundles' && bundlePagesCacheRef.current.has(bundleCacheKey);
 
+    const currentLedgerFilterKey = getLedgerFilterKey();
+    const ledgerCacheKey = `${currentLedgerFilterKey}_p${ledgerPage}`;
+    const isCachedLedgerPage = !bypassCache && subpage === 'ledgers' && ledgerPagesCacheRef.current.has(ledgerCacheKey);
+
     // Cancel any previous in-flight fetch request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -684,7 +740,7 @@ export const FinanceView: React.FC = () => {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    if (!isSilent && !isCachedExpensePage && !isCachedBundlePage) setLoading(true);
+    if (!isSilent && !isCachedExpensePage && !isCachedBundlePage && !isCachedLedgerPage) setLoading(true);
     setErrorMessage(null);
 
     const headers = {
@@ -724,7 +780,7 @@ export const FinanceView: React.FC = () => {
               .then(data => {
                 if (data && !signal.aborted) setApprovals(parseList(data));
               })
-              .catch(() => {});
+              .catch(() => { });
           }
           return;
         }
@@ -789,7 +845,7 @@ export const FinanceView: React.FC = () => {
             .then(data => {
               if (data && !signal.aborted) setApprovals(parseList(data));
             })
-            .catch(() => {});
+            .catch(() => { });
         }
       } else if (subpage === 'bundles') {
         // Instant response from temporary in-memory page cache (stores page 1, 2, 3... for fast switching)
@@ -812,7 +868,7 @@ export const FinanceView: React.FC = () => {
               .then(data => {
                 if (data && !signal.aborted) setUnclaimedExpenses(parseList(data));
               })
-              .catch(() => {});
+              .catch(() => { });
           }
           return;
         }
@@ -868,22 +924,82 @@ export const FinanceView: React.FC = () => {
             .then(data => {
               if (data && !signal.aborted) setUnclaimedExpenses(parseList(data));
             })
-            .catch(() => {});
+            .catch(() => { });
         }
       } else if (subpage === 'ledgers') {
-        const [resL, resG, resApprovedBundles, resExp, resApp] = await Promise.all([
-          fetch(`${API_URL}/finance/ledgers/?page_size=all${dateParams}`, { headers, signal }),
-          fetch(`${API_URL}/finance/ledger-groups/?page_size=all${dateParams}`, { headers, signal }),
-          fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=all`, { headers, signal }),
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&approved=true&page_size=all`, { headers, signal }),
-          fetch(approvalsUrl, { headers, signal })
+        // Instant response from temporary in-memory page cache (stores page 1, 2, 3... for fast switching)
+        if (isCachedLedgerPage) {
+          const cached = ledgerPagesCacheRef.current.get(ledgerCacheKey)!;
+          setLedgers(cached.results);
+          setLedgerTotalCount(cached.count);
+        }
+
+        // 1. Fetch paginated ledgers with API-based search
+        let ledgersUrl = `${API_URL}/finance/ledgers/?page=${ledgerPage}&page_size=${ledgerPageSize}${dateParams}`;
+        if (debouncedSearchQuery) {
+          ledgersUrl += `&search=${encodeURIComponent(debouncedSearchQuery)}`;
+        }
+        if (statusFilter !== 'ALL') {
+          ledgersUrl += `&status=${encodeURIComponent(statusFilter)}`;
+        }
+
+        // 2. Fetch ledger groups with API-based search
+        let groupsUrl = `${API_URL}/finance/ledger-groups/?page_size=all${dateParams}`;
+        if (debouncedSearchQuery) {
+          groupsUrl += `&search=${encodeURIComponent(debouncedSearchQuery)}`;
+        }
+
+        // Only await the core ledger datasets so the screen displays in milliseconds
+        const [resL, resG] = await Promise.all([
+          fetch(ledgersUrl, { headers, signal }),
+          fetch(groupsUrl, { headers, signal })
         ]);
         if (signal.aborted) return;
-        if (resL.ok) setLedgers(parseList(await resL.json()));
-        if (resG.ok) setLedgerGroups(parseList(await resG.json()));
-        if (resApprovedBundles.ok) setBundles(parseList(await resApprovedBundles.json()));
-        if (resExp.ok) setUnclaimedExpenses(parseList(await resExp.json()));
-        if (resApp.ok) setApprovals(parseList(await resApp.json()));
+
+        if (resL.ok) {
+          const lData = await resL.json();
+          if (lData && Array.isArray(lData.results)) {
+            setLedgers(lData.results);
+            const count = lData.count ?? lData.results.length;
+            setLedgerTotalCount(count);
+            ledgerPagesCacheRef.current.set(ledgerCacheKey, {
+              results: lData.results,
+              count
+            });
+          } else {
+            const list = parseList(lData);
+            setLedgers(list);
+            setLedgerTotalCount(list.length);
+            ledgerPagesCacheRef.current.set(ledgerCacheKey, {
+              results: list,
+              count: list.length
+            });
+          }
+        }
+
+        if (resG.ok) {
+          setLedgerGroups(parseList(await resG.json()));
+        }
+
+        // Background: Fetch approvals asynchronously without blocking initial render
+        if (approvals.length === 0 || bypassCache) {
+          fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && !signal.aborted) setApprovals(parseList(data));
+            })
+            .catch(() => { });
+        }
+
+        // Background / Fresh fetch: approved claims for assemble modal
+        if (bundles.length === 0 || bypassCache || showCreateLedgerModal) {
+          try {
+            const claimsRes = await fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=all`, { headers, signal });
+            if (claimsRes.ok && !signal.aborted) {
+              setBundles(parseList(await claimsRes.json()));
+            }
+          } catch { }
+        }
       } else if (subpage === 'approvals') {
         const res = await fetch(approvalsUrl, { headers, signal });
         if (signal.aborted) return;
@@ -933,7 +1049,9 @@ export const FinanceView: React.FC = () => {
     expensePageSize,
     expenseOrdering,
     bundlePage,
-    bundlePageSize
+    bundlePageSize,
+    ledgerPage,
+    ledgerPageSize
   ]);
 
   useEffect(() => {
@@ -1074,6 +1192,9 @@ export const FinanceView: React.FC = () => {
   }, [subpage, bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
 
   const filteredLedgers = useMemo(() => {
+    if (subpage === 'ledgers') {
+      return ledgers;
+    }
     // Group ledgers by group ID to determine each Ledger Group's unified status
     const groupBatchesMap = new Map<string | number, LedgerItem[]>();
     for (const l of ledgers) {
@@ -2143,10 +2264,10 @@ export const FinanceView: React.FC = () => {
               subpage === 'expenses'
                 ? "Search expenses by worker, ID, ticket, amount..."
                 : subpage === 'bundles'
-                ? "Search bundles by worker, bundle #, amount..."
-                : subpage === 'ledgers'
-                ? "Search ledgers by name, batch, amount..."
-                : "Search by worker name, ID, ticket, amount..."
+                  ? "Search bundles by worker, bundle #, amount..."
+                  : subpage === 'ledgers'
+                    ? "Search ledgers by name, batch, amount..."
+                    : "Search by worker name, ID, ticket, amount..."
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -2402,6 +2523,14 @@ export const FinanceView: React.FC = () => {
           loading={loading}
           submitting={submitting}
           renderStatusBadge={renderStatusBadge}
+          currentPage={ledgerPage}
+          totalItems={ledgerTotalCount}
+          itemsPerPage={ledgerPageSize}
+          onPageChange={(page) => setLedgerPage(page)}
+          onItemsPerPageChange={(size) => {
+            setLedgerPageSize(size);
+            setLedgerPage(1);
+          }}
           showCreateLedgerModal={showCreateLedgerModal}
           setShowCreateLedgerModal={setShowCreateLedgerModal}
           selectedBundleIds={selectedBundleIds}
@@ -2435,7 +2564,7 @@ export const FinanceView: React.FC = () => {
           setShowPaymentModal={setShowPaymentModal}
           approvalsProps={approvalsProps}
           setSelectedTicketForModal={setSelectedTicketForModal}
-          onRefresh={() => fetchData(true)}
+          onRefresh={() => fetchData(true, true)}
           onLedgerUpdated={(updatedLedger) => {
             setLedgers(prev => prev.map(l => l.ledger_id === updatedLedger.ledger_id ? updatedLedger : l));
             if (updatedLedger.ledger_group_detail) {
@@ -2514,9 +2643,12 @@ export const FinanceView: React.FC = () => {
           workers={[]}
           subDepartments={[]}
           expenseTypes={[]}
-          readOnly={true}
-          onClose={() => setSelectedTicketForModal(null)}
-          onRefreshList={() => fetchData(true)}
+          readOnly={false}
+          onClose={() => {
+            setSelectedTicketForModal(null);
+            fetchData(true, true);
+          }}
+          onRefreshList={() => fetchData(true, true)}
         />
       )}
 

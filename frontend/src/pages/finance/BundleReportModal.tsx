@@ -171,7 +171,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
       const tDetails = exp.ticket_details || (typeof exp.ticket === 'object' ? exp.ticket : null) || {};
       const rawTicketNo = tDetails.work_order_no || (tDetails.ticket_id ? `${tDetails.ticket_id}` : (exp.ticket ? `${exp.ticket}` : 'N/A'));
-      
+
       // 3-Letter Status Short Code (e.g. REC, CMP, OPN, PRG)
       const STATUS_CODE_MAP: Record<string, string> = {
         'rejected': 'REJ',
@@ -515,14 +515,14 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
           <div class="worker-section" data-worker-name="${worker.workerName}" style="${workerIdx > 0 ? 'margin-top: 18px;' : ''}">
             <div class="worker-header-block">
               ${workerIdx === 0
-                ? getHeaderHtml(workerList.length === 1 ? `${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''}` : 'Summary of All Worker Statements', true)
-                : `
+            ? getHeaderHtml(workerList.length === 1 ? `${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''}` : 'Summary of All Worker Statements', true)
+            : `
                   <div style="padding: 4px 0 3px 0; margin-bottom: 6px; border-bottom: 1.5px solid #111827; display: flex; justify-content: space-between; align-items: center; page-break-after: avoid; break-after: avoid;">
                     <span style="font-weight: 700; font-size: 11px; color: #111827;">Worker Statement: ${worker.workerName} ${worker.workerEmployeeNo ? `(${worker.workerEmployeeNo})` : ''}</span>
                     <span style="font-size: 9.5px; color: #4b5563;">Bundle ${bundle.claim_id}</span>
                   </div>
                 `
-              }
+          }
 
               <div class="meta-grid" style="grid-template-columns: repeat(4, 1fr); page-break-inside: avoid; break-inside: avoid; margin-bottom: 6px;">
                 <div class="meta-item">
@@ -1148,7 +1148,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded max-w-6xl w-full h-[92vh] max-h-[920px] flex flex-col shadow-2xl overflow-hidden transition-all text-on-surface dark:text-dark-on-surface">
+      <div className="bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded .max-w-6xl w-full h-[92vh] max-h-[920px] flex flex-col shadow-2xl overflow-hidden transition-all text-on-surface dark:text-dark-on-surface">
         {/* Header Bar */}
         <div className="px-5 py-4 border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between bg-surface-container-low dark:bg-dark-surface-container-low shrink-0">
           <div className="flex items-center gap-3">
@@ -1332,163 +1332,163 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                     filteredWorkerList.map((worker, wIdx) => {
                       const showUploadedBy = Boolean(worker.hasUploadedBy);
                       return (
-                      <div
-                        key={worker.workerId || wIdx}
-                        className="rounded border border-outline-variant bg-surface-container dark:bg-dark-surface-container overflow-hidden shadow-2xs space-y-3 p-4"
-                      >
-                        {/* Worker Identity Header */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-outline-variant">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded bg-primary/10 border border-primary/20 text-primary flex items-center justify-center font-bold text-xs">
-                              <User className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-bold text-on-surface">
-                                  {worker.workerName}
-                                </h4>
-                                {worker.workerEmployeeNo && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-on-surface-variant font-mono">
-                                    {worker.workerEmployeeNo}
-                                  </span>
-                                )}
+                        <div
+                          key={worker.workerId || wIdx}
+                          className="rounded border border-outline-variant bg-surface-container dark:bg-dark-surface-container overflow-hidden shadow-2xs space-y-3 p-4"
+                        >
+                          {/* Worker Identity Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-outline-variant">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded bg-primary/10 border border-primary/20 text-primary flex items-center justify-center font-bold text-xs">
+                                <User className="w-4 h-4" />
                               </div>
-                              <p className="text-[11px] text-on-surface-variant mt-0.5">
-                                {worker.expensesCount} Expense(s) across {worker.batchGroups.length} Batch(es) & {worker.locationCount} Store(s)
-                              </p>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-bold text-on-surface">
+                                    {worker.workerName}
+                                  </h4>
+                                  {worker.workerEmployeeNo && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-on-surface-variant font-mono">
+                                      {worker.workerEmployeeNo}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-on-surface-variant mt-0.5">
+                                  {worker.expensesCount} Expense(s) across {worker.batchGroups.length} Batch(es) & {worker.locationCount} Store(s)
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant block font-medium">Worker Total Payout</span>
+                              <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                KD {worker.totalAmount.toFixed(3)}
+                              </span>
                             </div>
                           </div>
 
-                          <div className="text-right">
-                            <span className="text-[10px] uppercase tracking-wider text-on-surface-variant block font-medium">Worker Total Payout</span>
-                            <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                          {/* Ledger Batch Wise Sections (Same Store Kept in Contiguous Order) */}
+                          <div className="space-y-4">
+                            {worker.batchGroups.map((batch, bIdx) => (
+                              <div key={batch.batchName || bIdx} className="rounded border border-outline-variant dark:border-dark-outline-variant overflow-hidden shadow-2xs bg-surface-container-low">
+                                {/* Batch Header Banner (Matching Ledgers Standard) */}
+                                <div className="flex items-center justify-between px-4 py-2.5 bg-primary/10 border-b border-primary/25 font-bold text-xs text-primary">
+                                  <div className="flex items-center gap-2">
+                                    <Boxes className="w-4 h-4 text-primary shrink-0" />
+                                    <span className="uppercase tracking-wide font-extrabold">{batch.batchName}</span>
+                                    <span className="text-[11px] text-on-surface-variant font-medium">
+                                      ({batch.expenses.length} item{batch.expenses.length !== 1 ? 's' : ''} across {batch.locationCount} store{batch.locationCount !== 1 ? 's' : ''})
+                                    </span>
+                                  </div>
+                                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                    Batch Subtotal: KD {batch.totalAmount.toFixed(3)}
+                                  </span>
+                                </div>
+
+                                {/* Batch Expenses Table */}
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs text-left text-on-surface border-collapse">
+                                    <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b border-outline-variant">
+                                      <tr>
+                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center w-12">SL</th>
+                                        <th className="px-3.5 py-2.5 border-r border-outline-variant/60 text-left min-w-[140px]">TICKET NO / WO#</th>
+                                        <th className="px-4 py-2.5 border-r border-outline-variant/60 text-left min-w-[150px]">STORE / LOCATION</th>
+                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">SUB DEPT</th>
+                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">CATEGORY</th>
+                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center">DATE</th>
+                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">REMARKS</th>
+                                        {showUploadedBy && (
+                                          <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center min-w-[120px]">UPLOADED BY</th>
+                                        )}
+                                        <th className="px-4 py-2.5 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold min-w-[90px]">
+                                          AMOUNT
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-outline-variant/50 text-xs">
+                                      {batch.expenses.map((exp: any, expIdx: number) => (
+                                        <tr key={exp.expenseId || expIdx} className="hover:bg-surface-container-high/40 transition-colors">
+                                          <td className="px-3 py-2 border-r border-outline-variant/60 text-center font-mono text-on-surface-variant text-[11px]">
+                                            {expIdx + 1}
+                                          </td>
+                                          <td className="px-3.5 py-2 border-r border-outline-variant/60 font-mono text-[11px]">
+                                            {setSelectedTicketForModal && exp.ticketObj?.ticket_id ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => setSelectedTicketForModal(exp.ticketObj)}
+                                                className="font-bold text-primary hover:underline cursor-pointer text-left block"
+                                              >
+                                                {exp.ticketNo}
+                                              </button>
+                                            ) : (
+                                              <span className="font-bold text-primary block">{exp.ticketNo}</span>
+                                            )}
+                                            {exp.ticketTitle && (
+                                              <span className="text-[10px] text-on-surface-variant truncate block max-w-xs">{exp.ticketTitle}</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-2 border-r border-outline-variant/60 font-bold text-on-surface">
+                                            <div className="flex items-center gap-1.5">
+                                              <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                                              <span>{exp.location}</span>
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-2 border-r border-outline-variant/60 text-on-surface-variant">{exp.subDepartment}</td>
+                                          <td className="px-3 py-2 border-r border-outline-variant/60 font-medium text-on-surface">{exp.category}</td>
+                                          <td className="px-3 py-2 border-r border-outline-variant/60 text-center font-mono text-on-surface-variant">{exp.date || '-'}</td>
+                                          <td className="px-3 py-2 border-r border-outline-variant/60 text-on-surface-variant max-w-xs truncate" title={exp.remarks}>
+                                            {exp.remarks || '-'}
+                                          </td>
+                                          {showUploadedBy && (
+                                            <td
+                                              className={`px-3 py-2 border-r border-outline-variant/60 text-center ${exp.isOfficeAdmin
+                                                ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-bold'
+                                                : 'text-on-surface'
+                                                }`}
+                                            >
+                                              {exp.creatorDisplayName ? (
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                  <span className="truncate max-w-[130px] font-medium">{exp.creatorDisplayName}</span>
+                                                </div>
+                                              ) : (
+                                                <span className="text-on-surface-variant/40">-</span>
+                                              )}
+                                            </td>
+                                          )}
+                                          <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                            KD {exp.amount.toFixed(3)}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                    <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
+                                      <tr>
+                                        <td colSpan={showUploadedBy ? 8 : 7} className="px-4 py-2.5 text-right uppercase tracking-wider text-on-surface text-[11px]">
+                                          Batch Subtotal ({batch.batchName}):
+                                        </td>
+                                        <td className="px-4 py-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 font-black text-xs">
+                                          KD {batch.totalAmount.toFixed(3)}
+                                        </td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Worker Total Bar */}
+                          <div className="flex items-center justify-between p-3 rounded bg-surface-container-high border border-outline-variant">
+                            <span className="text-xs font-bold  tracking-wider text-on-surface">
+                              Grand Total Payout ({worker.workerName}):
+                            </span>
+                            <span className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-3 py-1 rounded border border-emerald-500/20">
                               KD {worker.totalAmount.toFixed(3)}
                             </span>
                           </div>
-                        </div>
 
-                        {/* Ledger Batch Wise Sections (Same Store Kept in Contiguous Order) */}
-                        <div className="space-y-4">
-                          {worker.batchGroups.map((batch, bIdx) => (
-                            <div key={batch.batchName || bIdx} className="rounded border border-outline-variant dark:border-dark-outline-variant overflow-hidden shadow-2xs bg-surface-container-low">
-                              {/* Batch Header Banner (Matching Ledgers Standard) */}
-                              <div className="flex items-center justify-between px-4 py-2.5 bg-primary/10 border-b border-primary/25 font-bold text-xs text-primary">
-                                <div className="flex items-center gap-2">
-                                  <Boxes className="w-4 h-4 text-primary shrink-0" />
-                                  <span className="uppercase tracking-wide font-extrabold">{batch.batchName}</span>
-                                  <span className="text-[11px] text-on-surface-variant font-medium">
-                                    ({batch.expenses.length} item{batch.expenses.length !== 1 ? 's' : ''} across {batch.locationCount} store{batch.locationCount !== 1 ? 's' : ''})
-                                  </span>
-                                </div>
-                                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                  Batch Subtotal: KD {batch.totalAmount.toFixed(3)}
-                                </span>
-                              </div>
-
-                              {/* Batch Expenses Table */}
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-xs text-left text-on-surface border-collapse">
-                                  <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b border-outline-variant">
-                                    <tr>
-                                      <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center w-12">SL</th>
-                                      <th className="px-3.5 py-2.5 border-r border-outline-variant/60 text-left min-w-[140px]">TICKET NO / WO#</th>
-                                      <th className="px-4 py-2.5 border-r border-outline-variant/60 text-left min-w-[150px]">STORE / LOCATION</th>
-                                      <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">SUB DEPT</th>
-                                      <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">CATEGORY</th>
-                                      <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center">DATE</th>
-                                      <th className="px-3 py-2.5 border-r border-outline-variant/60 text-left">REMARKS</th>
-                                      {showUploadedBy && (
-                                        <th className="px-3 py-2.5 border-r border-outline-variant/60 text-center min-w-[120px]">UPLOADED BY</th>
-                                      )}
-                                      <th className="px-4 py-2.5 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold min-w-[90px]">
-                                        AMOUNT
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-outline-variant/50 text-xs">
-                                    {batch.expenses.map((exp: any, expIdx: number) => (
-                                      <tr key={exp.expenseId || expIdx} className="hover:bg-surface-container-high/40 transition-colors">
-                                        <td className="px-3 py-2 border-r border-outline-variant/60 text-center font-mono text-on-surface-variant text-[11px]">
-                                          {expIdx + 1}
-                                        </td>
-                                        <td className="px-3.5 py-2 border-r border-outline-variant/60 font-mono text-[11px]">
-                                          {setSelectedTicketForModal && exp.ticketObj?.ticket_id ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => setSelectedTicketForModal(exp.ticketObj)}
-                                              className="font-bold text-primary hover:underline cursor-pointer text-left block"
-                                            >
-                                              {exp.ticketNo}
-                                            </button>
-                                          ) : (
-                                            <span className="font-bold text-primary block">{exp.ticketNo}</span>
-                                          )}
-                                          {exp.ticketTitle && (
-                                            <span className="text-[10px] text-on-surface-variant truncate block max-w-xs">{exp.ticketTitle}</span>
-                                          )}
-                                        </td>
-                                        <td className="px-4 py-2 border-r border-outline-variant/60 font-bold text-on-surface">
-                                          <div className="flex items-center gap-1.5">
-                                            <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                                            <span>{exp.location}</span>
-                                          </div>
-                                        </td>
-                                        <td className="px-3 py-2 border-r border-outline-variant/60 text-on-surface-variant">{exp.subDepartment}</td>
-                                        <td className="px-3 py-2 border-r border-outline-variant/60 font-medium text-on-surface">{exp.category}</td>
-                                        <td className="px-3 py-2 border-r border-outline-variant/60 text-center font-mono text-on-surface-variant">{exp.date || '-'}</td>
-                                        <td className="px-3 py-2 border-r border-outline-variant/60 text-on-surface-variant max-w-xs truncate" title={exp.remarks}>
-                                          {exp.remarks || '-'}
-                                        </td>
-                                        {showUploadedBy && (
-                                          <td
-                                            className={`px-3 py-2 border-r border-outline-variant/60 text-center ${exp.isOfficeAdmin
-                                              ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-bold'
-                                              : 'text-on-surface'
-                                              }`}
-                                          >
-                                            {exp.creatorDisplayName ? (
-                                              <div className="flex flex-col items-center gap-0.5">
-                                                <span className="truncate max-w-[130px] font-medium">{exp.creatorDisplayName}</span>
-                                              </div>
-                                            ) : (
-                                              <span className="text-on-surface-variant/40">-</span>
-                                            )}
-                                          </td>
-                                        )}
-                                        <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                                          KD {exp.amount.toFixed(3)}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                  <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
-                                    <tr>
-                                      <td colSpan={showUploadedBy ? 8 : 7} className="px-4 py-2.5 text-right uppercase tracking-wider text-on-surface text-[11px]">
-                                        Batch Subtotal ({batch.batchName}):
-                                      </td>
-                                      <td className="px-4 py-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 font-black text-xs">
-                                        KD {batch.totalAmount.toFixed(3)}
-                                      </td>
-                                    </tr>
-                                  </tfoot>
-                                </table>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Worker Total Bar */}
-                        <div className="flex items-center justify-between p-3 rounded bg-surface-container-high border border-outline-variant">
-                          <span className="text-xs font-bold  tracking-wider text-on-surface">
-                            Grand Total Payout ({worker.workerName}):
-                          </span>
-                          <span className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-3 py-1 rounded border border-emerald-500/20">
-                            KD {worker.totalAmount.toFixed(3)}
-                          </span>
-                        </div>
-
-                        {/* 4-Tier Verification & Authorization Workflow */}
-                        {/* <div className="pt-3 border-t border-outline-variant space-y-2 mt-auto">
+                          {/* 4-Tier Verification & Authorization Workflow */}
+                          {/* <div className="pt-3 border-t border-outline-variant space-y-2 mt-auto">
                           <div className="flex items-center justify-between">
                             <span className="text-[10.5px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
                               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -1540,7 +1540,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                             </div>
                           </div>
                         </div> */}
-                      </div>
+                        </div>
                       );
                     })
                   )}

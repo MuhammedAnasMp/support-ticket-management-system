@@ -2168,7 +2168,10 @@ export const TicketsView: React.FC = () => {
                 workers={workers}
                 subDepartments={subDepartments}
                 expenseTypes={expenseTypes}
-                onClose={() => setSelectedTicket(null)}
+                onClose={() => {
+                    setSelectedTicket(null);
+                    fetchTickets();
+                }}
                 onRefreshList={fetchTickets}
             />
         </div>

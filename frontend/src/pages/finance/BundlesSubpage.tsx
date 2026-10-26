@@ -1524,6 +1524,16 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         )
                       );
 
+                      const hasPriorApprovedSteps = Boolean(
+                        (approvalData?.group?.items || []).some((i: any) => i.status === 'Approved') ||
+                        bundleHistoryList.some((i: any) => i.status === 'Approved')
+                      );
+
+                      const isFirstApproval = !isRejectedOrRework &&
+                        (b.status === 'Submitted' || b.status === 'In Review' || isBundlePending) &&
+                        !hasPriorApprovedSteps &&
+                        (!activePendingInstance?.step_order || activePendingInstance.step_order === 1);
+
                       return (
                         <React.Fragment key={b.claim_id ?? `bundle-${idx}`}>
                           <tr
@@ -1638,6 +1648,18 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : (b.status === 'Draft') ? (
                                 <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedBundleForReport(b);
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                                    title="Print bundle settlement report"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Report</span>
+                                  </button>
                                   <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                     <button
                                       onClick={() => openEditBundleModal(b)}
@@ -1677,6 +1699,20 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : (b.status === 'Submitted' || b.status === 'In Review') ? (
                                 <div className="inline-flex items-center gap-1.5">
+                                  {isFirstApproval && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedBundleForReport(b);
+                                      }}
+                                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                                      title="Print bundle settlement report"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>Report</span>
+                                    </button>
+                                  )}
                                   {canActionBundle ? (
                                     <button
                                       type="button"
@@ -2233,11 +2269,18 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                                     <Can permission='finance.edit_bundle' >
                                                       <button
                                                         type="button"
-                                                        onClick={(e) => {
+                                                        onClick={async (e) => {
                                                           e.stopPropagation();
                                                           if ((b.expenses?.length || 0) <= 1) {
-                                                            alert("Cannot remove the only expense. Please delete the Bundle instead.");
-                                                            return;
+                                                            const confirmed = await confirmPopup({
+                                                              preset: "remove",
+                                                              button2: "Close",
+                                                              title: "Cannot remove",
+                                                              description: "Cannot remove the only expense. Please delete the Bundle instead.",
+                                                              showButton1: false,
+                                                            });
+
+                                                            if (confirmed) return;
                                                           }
                                                           handleRemoveExpenseFromBundle(b.claim_id, exp.expense_id);
                                                         }}
@@ -2597,7 +2640,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-on-surface flex items-center gap-2 tracking-tight">
-                    Bundle #{selectedBundleForView.claim_id} Details
+                    Bundle {selectedBundleForView.claim_id} Details
                     {(() => {
                       const currentUserId = currentUser?.id ?? currentUser?.user_id;
                       const currentUsername = currentUser?.username;
@@ -2630,7 +2673,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {(selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted' || selectedBundleForView.status === 'Approved' || selectedBundleForView.status === 'Paid') && (
+                {(selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted' || selectedBundleForView.status === 'Approved' || selectedBundleForView.status === 'Paid') && (
                   <button
                     type="button"
                     onClick={() => setSelectedBundleForReport(selectedBundleForView)}
@@ -2670,7 +2713,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   Attached Ledger Batch
                 </span>
                 <span className="font-semibold text-xs text-on-surface">
-                  {selectedBundleForView.ledger_details.group_name} <span className="text-on-surface-variant font-normal">(Ledger #{selectedBundleForView.ledger_details.ledger_id} • Status: {selectedBundleForView.ledger_details.status})</span>
+                  {selectedBundleForView.ledger_details.group_name} <span className="text-on-surface-variant font-normal">(Ledger {selectedBundleForView.ledger_details.ledger_id} • Status: {selectedBundleForView.ledger_details.status})</span>
                 </span>
               </div>
             )}
@@ -2784,8 +2827,15 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   if ((selectedBundleForView.expenses?.length || 0) <= 1) {
-                                    alert("Cannot remove the only expense. Please delete the Bundle instead.");
-                                    return;
+                                    const confirmed = await confirmPopup({
+                                      preset: "remove",
+                                      button2: "Close",
+                                      title: "Cannot remove",
+                                      description: "Cannot remove the only expense. Please delete the Bundle instead.",
+                                      showButton1: false,
+                                    });
+
+                                    if (confirmed) return;
                                   }
                                   await handleRemoveExpenseFromBundle(selectedBundleForView.claim_id, exp.expense_id);
                                   const updatedExpenses = (selectedBundleForView.expenses || []).filter(item => item.expense_id !== exp.expense_id);
@@ -3181,7 +3231,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         onClick={() => setSelectedTicketForModal && setSelectedTicketForModal(rawTicket)}
                         className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold text-[11px] border border-primary/20 hover:bg-primary/20 cursor-pointer"
                       >
-                        Ticket #{ticketInfo.id}
+                        Ticket {ticketInfo.id}
                       </button>
                     )}
                   </div>

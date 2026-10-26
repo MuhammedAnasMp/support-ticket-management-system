@@ -1048,6 +1048,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         uploadAbortRef.current?.abort();
         uploadAbortRef.current = null;
         document.body.style.overflow = '';
+        try {
+            onRefreshList?.();
+        } catch { }
         onClose();
     };
 
@@ -2007,7 +2010,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     });
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 overscroll-contain">
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 overscroll-contain">
             {/* Hidden Media replacement input */}
             <input
                 id="media-replacement-input"

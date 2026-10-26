@@ -1145,10 +1145,15 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         search = self.request.query_params.get('search') or self.request.query_params.get('q')
         if search:
             search = search.strip()
+            q_search = (
+                Q(group_name__icontains=search) |
+                Q(created_by__username__icontains=search) |
+                Q(created_by__first_name__icontains=search) |
+                Q(created_by__last_name__icontains=search)
+            )
             if search.isdigit():
-                queryset = queryset.filter(Q(group_name__icontains=search) | Q(ledger_group_id=int(search)))
-            else:
-                queryset = queryset.filter(group_name__icontains=search)
+                q_search |= Q(ledger_group_id=int(search)) | Q(ledgers__ledger_id=int(search))
+            queryset = queryset.filter(q_search).distinct()
 
         from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
         if from_date:
@@ -1396,11 +1401,14 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 Q(ledger_group__group_name__icontains=search) |
                 Q(created_by__first_name__icontains=search) |
                 Q(created_by__last_name__icontains=search) |
-                Q(created_by__username__icontains=search)
+                Q(created_by__username__icontains=search) |
+                Q(bundles__worker__first_name__icontains=search) |
+                Q(bundles__worker__last_name__icontains=search) |
+                Q(bundles__worker__username__icontains=search)
             )
             if search.isdigit():
-                q_search |= Q(ledger_id=int(search))
-            queryset = queryset.filter(q_search)
+                q_search |= Q(ledger_id=int(search)) | Q(bundles__claim_id=int(search))
+            queryset = queryset.filter(q_search).distinct()
 
         return queryset.select_related(
             'ledger_group',
@@ -1431,7 +1439,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         ).prefetch_related('receipts')
                     ),
                     'approval_instances__step__assigned_role',
-                    'approval_instances__action_by'
+                    'approval_instances__action_by',
+                    'ledgers__ledger_group'
                 )
             ),
             'approval_instances__step__assigned_role',
@@ -1717,11 +1726,11 @@ class ApprovalInstanceViewSet(viewsets.ReadOnlyModelViewSet):
             'step__workflow__steps__assigned_users',
             'claim__expenses__receipts',
             'claim__expenses__expense_type',
-            'claim__expenses__ticket',
+            'claim__expenses__ticket__store',
             'claim__expenses__responsible_store',
             'claim__expenses__worker',
             'ledger__bundles__worker',
-            'ledger__bundles__ticket',
+            'ledger__bundles__ticket__store',
             'ledger__bundles__expenses__receipts',
             'ledger__bundles__expenses__expense_type',
             'ledger__bundles__expenses__responsible_store',

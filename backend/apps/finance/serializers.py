@@ -626,6 +626,11 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
     def get_approval_history(self, obj):
         request = self.context.get('request')
+        history_cache = self.context.setdefault('_history_cache', {})
+        cache_key = f"claim_{obj.claim_id}" if obj.claim_id else (f"ledger_{obj.ledger_id}" if obj.ledger_id else (f"expense_{obj.expense_id}" if obj.expense_id else None))
+        if cache_key and cache_key in history_cache:
+            return history_cache[cache_key]
+
         queryset = None
         if obj.claim:
             queryset = ApprovalInstance.objects.filter(claim=obj.claim)
@@ -638,7 +643,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
             from .services import ApprovalService
             instances = queryset.prefetch_related('step__assigned_users').select_related(
                 'step', 'step__assigned_role', 'action_by').order_by('step__step_order', 'created_at')
-            return [
+            res = [
                 {
                     'instance_id': inst.instance_id,
                     'step_id': inst.step_id if inst.step else None,
@@ -657,11 +662,14 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                 }
                 for inst in instances
             ]
+            if cache_key:
+                history_cache[cache_key] = res
+            return res
         return []
 
     def get_workflow_steps(self, obj):
         if obj.step and obj.step.workflow:
-            steps = obj.step.workflow.steps.prefetch_related('assigned_users').select_related('assigned_role').order_by('step_order')
+            steps = sorted(obj.step.workflow.steps.all(), key=lambda s: s.step_order)
             return [
                 {
                     'step_id': s.step_id,
@@ -678,11 +686,10 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
     def get_target_summary(self, obj):
         if obj.claim:
-            claim_expenses = obj.claim.expenses.select_related(
-                'ticket', 'expense_type', 'responsible_store').prefetch_related('receipts').all()
-            first_exp = claim_expenses.first()
+            claim_expenses = list(obj.claim.expenses.all())
+            first_exp = claim_expenses[0] if claim_expenses else None
             store_name = first_exp.responsible_store.store_name if first_exp and first_exp.responsible_store else (
-                obj.claim.ticket.store.store_name if obj.claim.ticket and obj.claim.ticket.store else None)
+                obj.claim.ticket.store.store_name if obj.claim.ticket and getattr(obj.claim.ticket, 'store', None) else None)
             ticket_info = None
             if obj.claim.ticket:
                 ticket_info = {
@@ -745,17 +752,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
             # Serialize bundles associated with this ledger
             bundles_list = []
-            ledger_bundles = obj.ledger.bundles.select_related(
-                'worker', 'ticket'
-            ).prefetch_related(
-                'expenses__receipts',
-                'expenses__expense_type',
-                'expenses__ticket',
-                'expenses__ticket__status',
-                'expenses__responsible_store',
-                'expenses__worker',
-                'expenses__added_by'
-            ).all()
+            ledger_bundles = list(obj.ledger.bundles.all())
 
             for bundle in ledger_bundles:
                 bundle_expenses = []
@@ -802,8 +799,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                 })
 
             # Serialize direct ledger expenses (if any)
-            ledger_expenses = obj.ledger.expenses.select_related(
-                'ticket', 'ticket__status', 'expense_type', 'responsible_store', 'worker', 'added_by').prefetch_related('receipts').all()
+            ledger_expenses = list(obj.ledger.expenses.all())
             expenses_list = []
             for exp in ledger_expenses:
                 t_info = serialize_ticket_summary(exp.ticket)
