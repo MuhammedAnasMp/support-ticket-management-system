@@ -483,6 +483,13 @@ class Payment(models.Model):
     recipient_name = models.CharField(max_length=150, blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
 
+    class Meta:
+        permissions = [
+            ('single_payment_process', 'Can process single bundle payment'),
+            ('bulk_payment_process', 'Can process bulk ledger group payment'),
+            ('bulk_payment_processs', 'Can process bulk ledger group payment (alias)'),
+        ]
+
     def __str__(self):
         return f"Payment #{self.payment_id} - Amount: {self.amount_paid} ({self.payment_method})"
 

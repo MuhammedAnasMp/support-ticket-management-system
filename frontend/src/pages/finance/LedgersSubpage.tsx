@@ -160,6 +160,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     ).toLowerCase();
     return (
       roleName === 'administrator' ||
+      roleName === 'admin' ||
+      hasPermission('finance.bulk_payment_processs') ||
+      hasPermission('finance.bulk_payment_process') ||
+      hasPermission('finance.single_payment_process') ||
       hasPermission('finance.pay_ledger_group') ||
       hasPermission('finance.pay_ledger') ||
       hasPermission('finance.settle_cash_ledger')
@@ -2782,31 +2786,33 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 )}
                               </Can>
                               {/* Cash Settlement / Pay Button for Cash Office (When group is completed and NOT yet paid) */}
-                              {cluster.isCompleted && !isGroupPaid && isCashOffice && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setGroupToPay(cluster);
-                                    setPayRecipientName('');
-                                    setPayRemarks('');
-                                    setPayingGroupError(null);
-                                  }}
-                                  disabled={payingGroupId === cluster.groupId}
-                                  className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
-                                  title="Perform Cash Settlement / Mark as Paid for this completed Ledger"
-                                >
-                                  {payingGroupId === cluster.groupId ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      <span>Settling...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Banknote className="w-3.5 h-3.5" />
-                                      <span>Cash Settlement</span>
-                                    </>
-                                  )}
-                                </button>
+                              {cluster.isCompleted && !isGroupPaid && (
+                                <Can permission={['finance.bulk_payment_processs', 'finance.bulk_payment_process']}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setGroupToPay(cluster);
+                                      setPayRecipientName('');
+                                      setPayRemarks('');
+                                      setPayingGroupError(null);
+                                    }}
+                                    disabled={payingGroupId === cluster.groupId}
+                                    className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
+                                    title="Perform Cash Settlement / Mark as Paid for this completed Ledger"
+                                  >
+                                    {payingGroupId === cluster.groupId ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Settling...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Banknote className="w-3.5 h-3.5" />
+                                        <span>Cash Settlement</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </Can>
                               )}
 
                               {/* Review / Action Button for pending approver */}
@@ -3062,26 +3068,28 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                             <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                                             <span>Settled</span>
                                           </span>
-                                        ) : (cluster.isCompleted || cluster.allApproved || groupStatus !== 'Draft') && isCashOffice ? (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const targetBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId) || {
-                                                claim_id: bundleItem.bundleId,
-                                                total_claimed_amount: String(bundleItem.totalAmount),
-                                                worker_detail: bundleItem.workerDetail,
-                                                worker_name: bundleItem.workerName,
-                                                status: 'Approved'
-                                              };
-                                              setShowPaymentModal(targetBundle as any);
-                                            }}
-                                            className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                            title={`Perform Cash Settlement for Bundle #${bundleItem.bundleId}`}
-                                          >
-                                            <Banknote className="w-3.5 h-3.5" />
-                                            <span>Cash Settlement</span>
-                                          </button>
+                                        ) : (cluster.isCompleted || cluster.allApproved || groupStatus !== 'Draft') ? (
+                                          <Can permission="finance.single_payment_process">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const targetBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId) || {
+                                                  claim_id: bundleItem.bundleId,
+                                                  total_claimed_amount: String(bundleItem.totalAmount),
+                                                  worker_detail: bundleItem.workerDetail,
+                                                  worker_name: bundleItem.workerName,
+                                                  status: 'Approved'
+                                                };
+                                                setShowPaymentModal(targetBundle as any);
+                                              }}
+                                              className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                              title={`Perform Cash Settlement for Bundle #${bundleItem.bundleId}`}
+                                            >
+                                              <Banknote className="w-3.5 h-3.5" />
+                                              <span>Cash Settlement</span>
+                                            </button>
+                                          </Can>
                                         ) : null}
 
                                         {/* Remove Bundle action if draft/rework */}

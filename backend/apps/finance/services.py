@@ -1388,14 +1388,15 @@ class LedgerService:
 
 class PaymentService:
     @classmethod
-    def process_payment(cls, actor, payment_method, amount_paid, bundle_id=None, ledger_id=None, expense_id=None, transaction_reference=None, remarks=None, recipient_name=None, ip_address=None):
+    def process_payment(cls, actor, payment_method='Cash', amount_paid=None, bundle_id=None, ledger_id=None, expense_id=None, transaction_reference=None, remarks=None, recipient_name=None, ip_address=None):
         """
-        Processes a payment for an approved Bundle or Ledger or individual Expense.
+        Processes a cash settlement payment for an approved Bundle or Ledger or individual Expense.
         Supports bundle-wise cash settlement: when all bundles in a ledger are paid,
         the ledger completes payment; when all ledgers in a group are paid, the group completes payment.
         Also supports ledger-wise settlement: settling a ledger marks all attached bundles as paid.
+        Payment method is strictly Cash only, and split / partial payment is not allowed (full amount enforced).
         """
-        amount_paid = Decimal(str(amount_paid))
+        payment_method = 'Cash'
 
         with transaction.atomic():
             bundle = WorkerClaim.objects.select_for_update().get(
@@ -1415,6 +1416,22 @@ class PaymentService:
             entity_id = getattr(target_entity, 'claim_id', getattr(
                 target_entity, 'ledger_id', getattr(target_entity, 'expense_id', None)))
 
+            # Disallow split payments: enforce full non-editable amount
+            if bundle:
+                full_amount = Decimal(str(bundle.total_claimed_amount))
+            elif ledger:
+                full_amount = Decimal(str(ledger.total_amount))
+            else:
+                full_amount = Decimal(str(expense.amount))
+
+            if amount_paid is not None:
+                passed_amount = Decimal(str(amount_paid))
+                if passed_amount != full_amount:
+                    raise ValidationError(
+                        f"Split / partial payment is not allowed for {entity_name} #{entity_id}. Full cash settlement of KD {full_amount:.3f} is required."
+                    )
+            amount_paid = full_amount
+
             if target_entity.status if hasattr(target_entity, 'status') else True:
                 status = getattr(target_entity, 'status', 'Approved')
                 if status != 'Approved':
@@ -1433,8 +1450,8 @@ class PaymentService:
                 ledger=ledger,
                 expense=expense,
                 amount_paid=amount_paid,
-                payment_method=payment_method,
-                transaction_reference=transaction_reference,
+                payment_method='Cash',
+                transaction_reference=None,
                 recipient_name=recipient_name,
                 paid_by=actor,
                 remarks=remarks

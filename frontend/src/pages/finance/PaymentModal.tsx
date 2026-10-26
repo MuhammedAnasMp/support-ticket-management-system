@@ -1,18 +1,11 @@
 import React, { useEffect } from 'react';
-import { X, Banknote, Loader2, AlertCircle, Package, Layers, Calendar, User, DollarSign } from 'lucide-react';
+import { X, Banknote, Loader2, AlertCircle, Package, Layers, Lock } from 'lucide-react';
 import type { PaymentItem, WorkerClaimItem, LedgerItem } from './types';
 import { formatDateDMY } from './types';
-import { SearchableSelect } from '../../components/SearchableSelect';
 
 interface PaymentModalProps {
   showPaymentModal: PaymentItem | WorkerClaimItem | LedgerItem | null;
   setShowPaymentModal: (item: PaymentItem | WorkerClaimItem | LedgerItem | null) => void;
-  paymentMethod: string;
-  setPaymentMethod: (m: string) => void;
-  paymentAmount: string;
-  setPaymentAmount: (a: string) => void;
-  paymentRef: string;
-  setPaymentRef: (r: string) => void;
   paymentRemarks: string;
   setPaymentRemarks: (rem: string) => void;
   paymentRecipient: string;
@@ -25,12 +18,6 @@ interface PaymentModalProps {
 export const PaymentModal: React.FC<PaymentModalProps> = ({
   showPaymentModal,
   setShowPaymentModal,
-  paymentMethod,
-  setPaymentMethod,
-  paymentAmount,
-  setPaymentAmount,
-  paymentRef,
-  setPaymentRef,
   paymentRemarks,
   setPaymentRemarks,
   paymentRecipient,
@@ -51,11 +38,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     (isClaim
       ? claimItem?.total_claimed_amount
       : isLedger
-      ? ledgerItem?.total_amount
-      : (showPaymentModal as PaymentItem)?.amount_paid) || '0'
+        ? ledgerItem?.total_amount
+        : (showPaymentModal as PaymentItem)?.amount_paid) || '0'
   );
 
-  // Automatically initialize default values when opened
+  // Automatically initialize default recipient when opened
   useEffect(() => {
     if (claimItem) {
       const defaultName =
@@ -64,7 +51,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         (claimItem as any).worker_name ||
         '';
       if (!paymentRecipient) setPaymentRecipient(defaultName);
-      if (!paymentAmount) setPaymentAmount(parseFloat(claimItem.total_claimed_amount || '0').toFixed(3));
     } else if (ledgerItem) {
       const defaultName =
         ledgerItem.ledger_group_detail?.recipient_name ||
@@ -73,17 +59,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         (ledgerItem as any).created_by_name ||
         '';
       if (!paymentRecipient) setPaymentRecipient(defaultName);
-      if (!paymentAmount) setPaymentAmount(parseFloat(ledgerItem.total_amount || '0').toFixed(3));
     }
   }, [claimItem?.claim_id, ledgerItem?.ledger_id]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-surface-container rounded-xl border border-outline-variant max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in-50 zoom-in-95 duration-150">
+      <div className="bg-surface-container rounded border border-outline-variant max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in-50 zoom-in-95 duration-150">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant pb-3.5">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25">
+            <div className="p-2 rounded bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25">
               <Banknote className="w-5 h-5" />
             </div>
             <div>
@@ -91,15 +76,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 {isClaim
                   ? `Cash Settlement: Bundle #${claimItem?.claim_id}`
                   : isLedger
-                  ? `Cash Settlement: Ledger #${ledgerItem?.ledger_id}`
-                  : `Disbursement Payment`}
+                    ? `Cash Settlement: Ledger #${ledgerItem?.ledger_id}`
+                    : `Cash Settlement`}
               </h3>
               <p className="text-[11px] text-on-surface-variant font-medium">
                 {isClaim
-                  ? 'Disburse payment for this approved worker claim bundle'
+                  ? 'Disburse full cash settlement for this approved worker claim bundle'
                   : isLedger
-                  ? 'Disburse payment for this approved ledger and its attached bundles'
-                  : 'Record payment transaction details'}
+                    ? 'Disburse full cash settlement for this approved ledger and its attached bundles'
+                    : 'Record cash settlement'}
               </p>
             </div>
           </div>
@@ -107,14 +92,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             type="button"
             onClick={() => setShowPaymentModal(null)}
             disabled={submitting}
-            className="p-1.5 rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
+            className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Target Details Summary Box */}
-        <div className="p-3.5 rounded-lg bg-surface-container-low border border-outline-variant/80 space-y-2.5">
+        <div className="p-3.5 rounded bg-surface-container-low border border-outline-variant/80 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {isClaim ? (
@@ -133,7 +118,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               </span>
             </div>
             <div className="text-right">
-              <span className="text-[10px] text-on-surface-variant uppercase font-medium">Payable Total: </span>
+              <span className="text-[10px] text-on-surface-variant uppercase font-medium">Settlement Amount: </span>
               <span className="text-sm font-extrabold text-teal-600 dark:text-teal-400">
                 KD {targetAmount.toFixed(3)}
               </span>
@@ -198,67 +183,48 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <input
               type="text"
               required
-              placeholder="e.g. Technician / Worker / Site Engineer name..."
+              placeholder="Enter receiver / technician / site engineer name..."
               value={paymentRecipient}
               onChange={(e) => setPaymentRecipient(e.target.value)}
-              className="w-full bg-surface-container-low border border-outline text-on-surface rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none"
+              className="w-full bg-surface-container-low border border-outline text-on-surface rounded p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-on-surface mb-1">Payment Method</label>
-              <SearchableSelect
-                value={paymentMethod}
-                onChange={(val) => setPaymentMethod(val)}
-                options={[
-                  { value: 'Cash', label: 'Cash' },
-                  { value: 'Bank Transfer', label: 'Bank Transfer' },
-                  { value: 'Check', label: 'Check' },
-                  { value: 'Digital Wallet', label: 'Digital Wallet' },
-                  { value: 'Other', label: 'Other' },
-                ]}
-                placeholder="Select Payment Method"
-              />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-1 gap-3">
+
 
             <div>
-              <label className="block font-semibold text-on-surface mb-1">Amount Paid (KD)</label>
-              <input
-                type="number"
-                step="0.001"
-                value={paymentAmount || targetAmount.toFixed(3)}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                className="w-full bg-surface-container-low border border-outline text-on-surface rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none font-bold text-teal-600 dark:text-teal-400"
-              />
+              <label className="block font-semibold text-on-surface mb-1">
+                Amount to Pay
+              </label>
+              <div className="flex items-center justify-between p-2.5 rounded bg-surface-container-low border border-outline text-xs select-none">
+                <span className="font-extrabold text-teal-600 dark:text-teal-400 text-sm">
+                  KD {targetAmount.toFixed(3)}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-500/10 text-on-surface-variant font-semibold border border-outline-variant">
+                  <Lock className="w-2.5 h-2.5" />
+                  <span>Fixed</span>
+                </span>
+              </div>
             </div>
           </div>
 
           <div>
-            <label className="block font-semibold text-on-surface mb-1">Transaction Reference / Voucher No.</label>
-            <input
-              type="text"
-              placeholder="e.g. TRX-987654 / Voucher #123 (Optional)"
-              value={paymentRef}
-              onChange={(e) => setPaymentRef(e.target.value)}
-              className="w-full bg-surface-container-low border border-outline text-on-surface rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-on-surface mb-1">Settlement Notes / Remarks</label>
+            <label className="block font-semibold text-on-surface mb-1">
+              Settlement Notes / Remarks <span className="text-[10px] font-normal text-on-surface-variant">(Optional)</span>
+            </label>
             <textarea
               value={paymentRemarks}
               onChange={(e) => setPaymentRemarks(e.target.value)}
               placeholder="Disbursement details or handover remarks..."
-              className="w-full bg-surface-container-low border border-outline text-on-surface rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none h-16 resize-none"
+              className="w-full bg-surface-container-low border border-outline text-on-surface rounded p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none h-18 resize-none"
             />
           </div>
         </div>
 
         {/* Error message */}
         {errorMessage && (
-          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+          <div className="p-3 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMessage}</span>
           </div>
@@ -270,7 +236,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             type="button"
             onClick={() => setShowPaymentModal(null)}
             disabled={submitting}
-            className="px-4 py-2 rounded-lg border border-outline text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
+            className="px-4 py-2 rounded border border-outline text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
           >
             Cancel
           </button>
@@ -278,17 +244,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             type="button"
             onClick={handleProcessPayment}
             disabled={submitting || !paymentRecipient.trim()}
-            className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
+            className="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
           >
             {submitting ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Processing Settlement...</span>
+                <span>Processing Cash Settlement...</span>
               </>
             ) : (
               <>
                 <Banknote className="w-3.5 h-3.5" />
-                <span>Confirm Settlement</span>
+                <span>Confirm Cash Settlement (KD {targetAmount.toFixed(3)})</span>
               </>
             )}
           </button>

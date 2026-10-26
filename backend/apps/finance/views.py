@@ -1257,6 +1257,8 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
         is_cash_office = (
             role_name in ('cash office', 'cash officer', 'cashier') or
+            user.has_perm('finance.bulk_payment_process') or
+            user.has_perm('finance.bulk_payment_processs') or
             user.has_perm('finance.pay_ledger') or
             user.has_perm('finance.pay_ledger_group') or
             user.is_superuser or
@@ -1939,8 +1941,26 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def process_payment(self, request):
         user = request.user
         role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
+        amount_paid = request.data.get('amount_paid')
+        bundle_id = request.data.get('bundle_id')
+        ledger_id = request.data.get('ledger_id')
+        expense_id = request.data.get('expense_id')
+
+        has_specific_perm = False
+        if bundle_id:
+            has_specific_perm = user.has_perm('finance.single_payment_process')
+        elif ledger_id:
+            has_specific_perm = (
+                user.has_perm('finance.bulk_payment_process') or
+                user.has_perm('finance.bulk_payment_processs')
+            )
+
         is_cash_office = (
+            has_specific_perm or
             role_name in ('cash office', 'cash officer', 'cashier') or
+            user.has_perm('finance.single_payment_process') or
+            user.has_perm('finance.bulk_payment_process') or
+            user.has_perm('finance.bulk_payment_processs') or
             user.has_perm('finance.pay_ledger') or
             user.has_perm('finance.pay_ledger_group') or
             user.has_perm('finance.settle_cash_ledger') or
@@ -1952,13 +1972,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 {'detail': 'Permission denied. Only Cash Office role or authorized payment officers can disburse cash settlement.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-
-        payment_method = request.data.get('payment_method', 'Cash')
-        amount_paid = request.data.get('amount_paid')
-        bundle_id = request.data.get('bundle_id')
-        ledger_id = request.data.get('ledger_id')
-        expense_id = request.data.get('expense_id')
-        transaction_reference = request.data.get('transaction_reference')
         remarks = request.data.get('remarks')
         recipient_name = request.data.get('recipient_name')
 
@@ -1966,12 +1979,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
         try:
             payment = PaymentService.process_payment(
                 actor=request.user,
-                payment_method=payment_method,
+                payment_method='Cash',
                 amount_paid=amount_paid,
                 bundle_id=bundle_id,
                 ledger_id=ledger_id,
                 expense_id=expense_id,
-                transaction_reference=transaction_reference,
                 remarks=remarks,
                 recipient_name=recipient_name,
                 ip_address=request.META.get('REMOTE_ADDR')

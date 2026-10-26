@@ -1817,27 +1817,30 @@ export const FinanceView: React.FC = () => {
     const ledgerId = !isClaim ? (showPaymentModal as LedgerItem).ledger_id : undefined;
 
     try {
+      const fullAmount = 'total_claimed_amount' in showPaymentModal
+        ? showPaymentModal.total_claimed_amount
+        : 'total_amount' in showPaymentModal
+        ? showPaymentModal.total_amount
+        : showPaymentModal.amount_paid;
+
       const res = await fetch(`${API_URL}/finance/payments/process-payment/`, {
         method: 'POST',
         headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bundle_id: claimId,
           ledger_id: ledgerId,
-          payment_method: paymentMethod,
-          amount_paid: paymentAmount || ('total_claimed_amount' in showPaymentModal ? showPaymentModal.total_claimed_amount : 'total_amount' in showPaymentModal ? showPaymentModal.total_amount : showPaymentModal.amount_paid),
-          transaction_reference: paymentRef || undefined,
+          payment_method: 'Cash',
+          amount_paid: fullAmount,
           remarks: paymentRemarks || undefined,
           recipient_name: paymentRecipient || undefined
         })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-      setSuccessMessage(`Payment #${data.payment_id} recorded successfully.`);
+      setSuccessMessage(`Cash Settlement recorded successfully.`);
       setShowPaymentModal(null);
-      setPaymentRef('');
       setPaymentRemarks('');
       setPaymentRecipient('');
-      setPaymentAmount('');
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -2556,12 +2559,6 @@ export const FinanceView: React.FC = () => {
       <PaymentModal
         showPaymentModal={showPaymentModal}
         setShowPaymentModal={setShowPaymentModal}
-        paymentMethod={paymentMethod}
-        setPaymentMethod={setPaymentMethod}
-        paymentAmount={paymentAmount}
-        setPaymentAmount={setPaymentAmount}
-        paymentRef={paymentRef}
-        setPaymentRef={setPaymentRef}
         paymentRemarks={paymentRemarks}
         setPaymentRemarks={setPaymentRemarks}
         paymentRecipient={paymentRecipient}
