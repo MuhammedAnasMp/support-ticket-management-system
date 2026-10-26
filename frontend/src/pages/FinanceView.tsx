@@ -26,6 +26,7 @@ import { LedgersSubpage } from './finance/LedgersSubpage';
 import { ApprovalsSubpage } from './finance/ApprovalsSubpage';
 import { PaymentsSubpage } from './finance/PaymentsSubpage';
 import { EditBundleModal } from './finance/EditBundleModal';
+import { PaymentModal } from './finance/PaymentModal';
 import { ExpensesSubpage } from './finance/ExpensesSubpage';
 import Can from '../hooks/Can';
 import { usePermission } from '../hooks/usePermission';
@@ -271,10 +272,11 @@ export const FinanceView: React.FC = () => {
   const [approvalComments, setApprovalComments] = useState('');
 
   // Payment Modal Form
-  const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentRemarks, setPaymentRemarks] = useState('');
+  const [paymentRecipient, setPaymentRecipient] = useState('');
 
   // Approval Queue Filters
   const [roleFilterOnly, setRoleFilterOnly] = useState(true);
@@ -1824,15 +1826,18 @@ export const FinanceView: React.FC = () => {
           payment_method: paymentMethod,
           amount_paid: paymentAmount || ('total_claimed_amount' in showPaymentModal ? showPaymentModal.total_claimed_amount : 'total_amount' in showPaymentModal ? showPaymentModal.total_amount : showPaymentModal.amount_paid),
           transaction_reference: paymentRef || undefined,
-          remarks: paymentRemarks || undefined
+          remarks: paymentRemarks || undefined,
+          recipient_name: paymentRecipient || undefined
         })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-      setSuccessMessage(`Payment ${data.payment_id} recorded successfully.`);
+      setSuccessMessage(`Payment #${data.payment_id} recorded successfully.`);
       setShowPaymentModal(null);
       setPaymentRef('');
       setPaymentRemarks('');
+      setPaymentRecipient('');
+      setPaymentAmount('');
       fetchData(true);
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -2545,6 +2550,25 @@ export const FinanceView: React.FC = () => {
         handleSaveUpdateBundle={handleSaveUpdateBundle}
         errorMessage={errorMessage}
         setErrorMessage={setErrorMessage}
+      />
+
+      {/* POPUP MODAL: CASH SETTLEMENT & DISBURSEMENT PAYMENT */}
+      <PaymentModal
+        showPaymentModal={showPaymentModal}
+        setShowPaymentModal={setShowPaymentModal}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
+        paymentAmount={paymentAmount}
+        setPaymentAmount={setPaymentAmount}
+        paymentRef={paymentRef}
+        setPaymentRef={setPaymentRef}
+        paymentRemarks={paymentRemarks}
+        setPaymentRemarks={setPaymentRemarks}
+        paymentRecipient={paymentRecipient}
+        setPaymentRecipient={setPaymentRecipient}
+        handleProcessPayment={handleProcessPayment}
+        submitting={submitting}
+        errorMessage={errorMessage}
       />
 
       {/* POPUP MODAL: TICKET DETAIL MODAL */}

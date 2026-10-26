@@ -1937,6 +1937,22 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='process-payment')
     def process_payment(self, request):
+        user = request.user
+        role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
+        is_cash_office = (
+            role_name in ('cash office', 'cash officer', 'cashier') or
+            user.has_perm('finance.pay_ledger') or
+            user.has_perm('finance.pay_ledger_group') or
+            user.has_perm('finance.settle_cash_ledger') or
+            user.is_superuser or
+            role_name in ('administrator', 'admin')
+        )
+        if not is_cash_office:
+            return Response(
+                {'detail': 'Permission denied. Only Cash Office role or authorized payment officers can disburse cash settlement.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         payment_method = request.data.get('payment_method', 'Cash')
         amount_paid = request.data.get('amount_paid')
         bundle_id = request.data.get('bundle_id')
@@ -1944,6 +1960,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         expense_id = request.data.get('expense_id')
         transaction_reference = request.data.get('transaction_reference')
         remarks = request.data.get('remarks')
+        recipient_name = request.data.get('recipient_name')
 
         from django.core.exceptions import ValidationError as DjangoValidationError
         try:
@@ -1956,6 +1973,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 expense_id=expense_id,
                 transaction_reference=transaction_reference,
                 remarks=remarks,
+                recipient_name=recipient_name,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
             return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Receipt, PlusCircle, FileText, Trash2, Search, X, Check, Paperclip, ExternalLink, Loader2, Eye, Maximize2, ShieldCheck, Layers, AlertCircle,
   Clock, RotateCcw, MessageSquare, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Rows3, ChevronsUp, RefreshCw, Plus,
-  ArrowUpDown, ArrowUp, ArrowDown
+  ArrowUpDown, ArrowUp, ArrowDown, Banknote
 } from 'lucide-react';
 import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, ApprovalInstanceItem, LedgerBatchItem } from './types';
 import { getUserId, formatDateDMY } from './types';
@@ -11,6 +11,7 @@ import { DateRangePickerCard } from '../ticket/DateRangePickerCard';
 import type { ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { AvatarCircle, getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 import Can from '../../hooks/Can';
+import { usePermission } from '../../hooks/usePermission';
 import { BundleReportModal } from './BundleReportModal';
 import { CreateWorkerBundleModal } from './CreateWorkerBundleModal';
 import { confirmPopup } from '../../components/tailgrids/core/ConfirmationPopup';
@@ -138,6 +139,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   API_URL = '',
   errorMessage,
   setErrorMessage,
+  setShowPaymentModal,
   setSelectedTicketForModal,
   onRefresh,
   currentPage: propCurrentPage,
@@ -238,6 +240,21 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     currentUser?.role_name ||
     ''
   ).toLowerCase().trim();
+
+  const { hasPermission } = usePermission();
+
+  const isCashOffice = useMemo(() => {
+    if (isAdmin) return true;
+    const roleName = currentRoleName;
+    return (
+      roleName === 'cash office' ||
+      roleName === 'cash officer' ||
+      roleName === 'cashier' ||
+      hasPermission('finance.pay_ledger') ||
+      hasPermission('finance.pay_ledger_group') ||
+      hasPermission('finance.settle_cash_ledger')
+    );
+  }, [isAdmin, currentRoleName, hasPermission]);
 
   // Helper to determine whether the current user has permission to action a given approval step
   const checkCanUserActionStep = (activeApp: any, currentStepInfo?: any) => {
@@ -1730,7 +1747,45 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                   )}
                                 </div>
                               ) : isBundleApproved ? (
-                                null
+                                <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
+                                  {/* Print / Report button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedBundleForReport(b);
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                                    title="Print bundle settlement report"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Report</span>
+                                  </button>
+
+                                  {/* Cash Settlement Action (When bundle is Approved and NOT yet paid) */}
+                                  {b.status === 'Approved' && isCashOffice && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowPaymentModal?.(b);
+                                      }}
+                                      className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                      title="Disburse Cash Settlement for this approved claim bundle"
+                                    >
+                                      <Banknote className="w-3.5 h-3.5" />
+                                      <span>Cash Settlement</span>
+                                    </button>
+                                  )}
+
+                                  {/* Paid Badge if already settled */}
+                                  {b.status === 'Paid' && (
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                      <span>Settled</span>
+                                    </span>
+                                  )}
+                                </div>
                               ) : null}
 
                             </td>
@@ -1878,12 +1933,25 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         </Can>
                                       </div>
                                     ) : b.status === 'Approved' ? (
-                                      <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> Approved
+                                        </span>
+                                        {isCashOffice && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setShowPaymentModal?.(b)}
+                                            className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                            title="Disburse Cash Settlement for this approved claim bundle"
+                                          >
+                                            <Banknote className="w-3.5 h-3.5" />
+                                            <span>Cash Settlement</span>
+                                          </button>
+                                        )}
+                                      </div>
                                     ) : b.status === 'Paid' ? (
                                       <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1">
-                                        <DollarSign className="w-3.5 h-3.5" /> Paid
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" /> Settled
                                       </span>
                                     ) : null}
                                   </div>
@@ -2074,16 +2142,37 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                   <span className="text-xs font-bold  tracking-wider text-on-surface">
                                     Expenses in Bundle {b.claim_id} ({bundleExpenses.length})
                                   </span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedBundleForView(b);
-                                    }}
-                                    className="text-xs text-primary hover:underline font-medium cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                    <span>View Full</span>
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    {b.status === 'Approved' && isCashOffice && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setShowPaymentModal?.(b);
+                                        }}
+                                        className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                        title="Disburse Cash Settlement for this approved bundle"
+                                      >
+                                        <Banknote className="w-3.5 h-3.5" />
+                                        <span>Cash Settlement</span>
+                                      </button>
+                                    )}
+                                    {b.status === 'Paid' && (
+                                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1 shrink-0">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" /> Settled
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedBundleForView(b);
+                                      }}
+                                      className="text-xs text-primary hover:underline font-medium cursor-pointer flex items-center gap-1"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View Full</span>
+                                    </button>
+                                  </div>
                                 </div>
 
                                 {bundleExpenses.length === 0 ? (

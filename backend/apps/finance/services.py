@@ -1388,9 +1388,12 @@ class LedgerService:
 
 class PaymentService:
     @classmethod
-    def process_payment(cls, actor, payment_method, amount_paid, bundle_id=None, ledger_id=None, expense_id=None, transaction_reference=None, remarks=None, ip_address=None):
+    def process_payment(cls, actor, payment_method, amount_paid, bundle_id=None, ledger_id=None, expense_id=None, transaction_reference=None, remarks=None, recipient_name=None, ip_address=None):
         """
         Processes a payment for an approved Bundle or Ledger or individual Expense.
+        Supports bundle-wise cash settlement: when all bundles in a ledger are paid,
+        the ledger completes payment; when all ledgers in a group are paid, the group completes payment.
+        Also supports ledger-wise settlement: settling a ledger marks all attached bundles as paid.
         """
         amount_paid = Decimal(str(amount_paid))
 
@@ -1418,6 +1421,13 @@ class PaymentService:
                     raise ValidationError(
                         f"Cannot pay {entity_name} #{entity_id} because its status is '{status}' (requires 'Approved').")
 
+            # Determine recipient name default if not provided
+            if not recipient_name:
+                if bundle and bundle.worker:
+                    recipient_name = bundle.worker.get_full_name() or bundle.worker.username
+                elif ledger and hasattr(ledger, 'created_by') and ledger.created_by:
+                    recipient_name = ledger.created_by.get_full_name() or ledger.created_by.username
+
             payment = Payment.objects.create(
                 claim=bundle,
                 ledger=ledger,
@@ -1425,22 +1435,78 @@ class PaymentService:
                 amount_paid=amount_paid,
                 payment_method=payment_method,
                 transaction_reference=transaction_reference,
+                recipient_name=recipient_name,
                 paid_by=actor,
                 remarks=remarks
             )
 
+            now = timezone.now()
+
             if bundle:
                 bundle.status = 'Paid'
                 bundle.save(update_fields=['status'])
-                now = timezone.now()
                 Expense.objects.filter(claim=bundle).update(is_paid=True, paid_at=now, paid_by=actor)
+
+                # Check all parent ledgers that contain this bundle
+                parent_ledgers = list(bundle.ledgers.select_for_update().all())
+                for parent_ledger in parent_ledgers:
+                    unpaid_bundles_exist = parent_ledger.bundles.exclude(status='Paid').exists()
+                    unpaid_expenses_exist = parent_ledger.expenses.filter(is_paid=False).exists()
+                    if not unpaid_bundles_exist and not unpaid_expenses_exist:
+                        parent_ledger.status = 'Paid'
+                        parent_ledger.save(update_fields=['status'])
+                        create_audit_event(
+                            'Ledger', parent_ledger.ledger_id, 'PAYMENT_PROCESSED', actor=actor,
+                            payload={
+                                'trigger': 'ALL_BUNDLES_PAID',
+                                'last_bundle_id': bundle.claim_id,
+                                'payment_id': payment.payment_id,
+                                'remarks': f"All {parent_ledger.bundles.count()} bundles settled. Ledger marked as Paid."
+                            },
+                            ip_address=ip_address
+                        )
+                        # Check if parent ledger group is now completely paid
+                        if parent_ledger.ledger_group:
+                            group = parent_ledger.ledger_group
+                            if group.ledgers.exclude(status='Paid').count() == 0:
+                                group.is_paid = True
+                                group.paid_at = now
+                                group.paid_by = actor
+                                group.payment_method = payment_method
+                                group.payment_reference = transaction_reference
+                                group.payment_remarks = remarks
+                                if recipient_name and not group.recipient_name:
+                                    group.recipient_name = recipient_name
+                                group.save(update_fields=['is_paid', 'paid_at', 'paid_by', 'payment_method', 'payment_reference', 'payment_remarks', 'recipient_name'])
+                                create_audit_event(
+                                    'LedgerGroup', group.ledger_group_id, 'GROUP_PAID', actor=actor,
+                                    payload={
+                                        'trigger': 'ALL_LEDGERS_PAID',
+                                        'remarks': f"All child ledgers & bundles settled. Ledger Group '{group.group_name}' marked as Paid."
+                                    },
+                                    ip_address=ip_address
+                                )
             elif ledger:
                 ledger.status = 'Paid'
                 ledger.save(update_fields=['status'])
+                attached_bundles = list(ledger.bundles.select_for_update().all())
                 ledger.bundles.update(status='Paid')
-                now = timezone.now()
                 ledger.expenses.update(is_paid=True, paid_at=now, paid_by=actor)
-                Expense.objects.filter(claim__in=ledger.bundles.all()).update(is_paid=True, paid_at=now, paid_by=actor)
+                Expense.objects.filter(claim__in=attached_bundles).update(is_paid=True, paid_at=now, paid_by=actor)
+
+                # Record bundle-level settlement audit events
+                for b in attached_bundles:
+                    create_audit_event(
+                        'WorkerClaim', b.claim_id, 'PAYMENT_PROCESSED', actor=actor,
+                        payload={
+                            'trigger': 'LEDGER_SETTLED',
+                            'ledger_id': ledger.ledger_id,
+                            'payment_id': payment.payment_id,
+                            'remarks': f"Settled via Ledger #{ledger.ledger_id}"
+                        },
+                        ip_address=ip_address
+                    )
+
                 if ledger.ledger_group:
                     group = ledger.ledger_group
                     if group.ledgers.exclude(status='Paid').count() == 0:
@@ -1450,17 +1516,27 @@ class PaymentService:
                         group.payment_method = payment_method
                         group.payment_reference = transaction_reference
                         group.payment_remarks = remarks
-                        group.save(update_fields=['is_paid', 'paid_at', 'paid_by', 'payment_method', 'payment_reference', 'payment_remarks'])
+                        if recipient_name and not group.recipient_name:
+                            group.recipient_name = recipient_name
+                        group.save(update_fields=['is_paid', 'paid_at', 'paid_by', 'payment_method', 'payment_reference', 'payment_remarks', 'recipient_name'])
+                        create_audit_event(
+                            'LedgerGroup', group.ledger_group_id, 'GROUP_PAID', actor=actor,
+                            payload={
+                                'trigger': 'ALL_LEDGERS_PAID',
+                                'remarks': f"All ledgers in group settled. Ledger Group '{group.group_name}' marked as Paid."
+                            },
+                            ip_address=ip_address
+                        )
             elif expense:
                 expense.is_paid = True
-                expense.paid_at = timezone.now()
+                expense.paid_at = now
                 expense.paid_by = actor
                 expense.save(update_fields=['is_paid', 'paid_at', 'paid_by'])
 
             create_audit_event(
                 entity_name, entity_id, 'PAYMENT_PROCESSED', actor=actor,
                 payload={'payment_id': payment.payment_id, 'amount_paid': str(
-                    amount_paid), 'payment_method': payment_method, 'reference': transaction_reference},
+                    amount_paid), 'payment_method': payment_method, 'reference': transaction_reference, 'recipient_name': recipient_name},
                 ip_address=ip_address
             )
 
@@ -1500,8 +1576,8 @@ class PaymentService:
             group.ledgers.update(status='Paid')
 
             # Mark all bundles in those ledgers as Paid
-            all_bundles = WorkerClaim.objects.filter(ledgers__ledger_group=group).distinct()
-            all_bundles.update(status='Paid')
+            all_bundles = list(WorkerClaim.objects.filter(ledgers__ledger_group=group).distinct())
+            WorkerClaim.objects.filter(pk__in=[b.pk for b in all_bundles]).update(status='Paid')
 
             # Mark all direct expenses on ledgers as Paid
             direct_expenses = Expense.objects.filter(ledgers__ledger_group=group).distinct()
@@ -1523,6 +1599,19 @@ class PaymentService:
                 remarks=remarks or f"Cash settlement for Ledger Group '{group.group_name}'"
             )
 
+            # Create payment audit events for every bundle settled through this ledger group
+            for b in all_bundles:
+                create_audit_event(
+                    'WorkerClaim', b.claim_id, 'PAYMENT_PROCESSED', actor=actor,
+                    payload={
+                        'trigger': 'LEDGER_GROUP_PAID',
+                        'ledger_group_id': group.ledger_group_id,
+                        'payment_id': payment.payment_id,
+                        'remarks': f"Settled via Ledger Group '{group.group_name}'"
+                    },
+                    ip_address=ip_address
+                )
+
             create_audit_event(
                 'LedgerGroup', group.ledger_group_id, 'GROUP_PAID', actor=actor,
                 payload={
@@ -1532,7 +1621,7 @@ class PaymentService:
                     'reference': payment_reference,
                     'recipient_name': recipient_name,
                     'ledgers_count': group.ledgers.count(),
-                    'bundles_count': all_bundles.count(),
+                    'bundles_count': len(all_bundles),
                     'expenses_count': direct_expenses.count() + bundle_expenses.count()
                 },
                 ip_address=ip_address

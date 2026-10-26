@@ -29,7 +29,7 @@ interface LedgersSubpageProps {
   expandedLedgerIds: Record<number, boolean>;
   toggleExpandLedger: (ledgerId: number) => void;
   handleSubmitLedger: (ledgerId: number) => void;
-  setShowPaymentModal: (item: LedgerItem) => void;
+  setShowPaymentModal: (item: LedgerItem | WorkerClaimItem | any) => void;
   handleDeleteLedger: (ledgerId: number) => void;
   openEditBundleModal: (bundle: WorkerClaimItem) => void;
   openAddExpenseModal?: (ledger: LedgerItem) => void;
@@ -964,6 +964,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     totalAmount: number;
     expenses: ExpenseItem[];
     ledgerBatches: { batchId?: number; batchName: string; count: number; amount: number }[];
+    bundleObj?: any;
   }
 
   const getGroupBundleBreakdown = (cluster: LedgerGroupCluster): GroupBundleBreakdownItem[] => {
@@ -978,6 +979,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         const bId = b.claim_id || b.id;
         if (bId && !bundleMap.has(bId)) {
           const wObj = b.worker_detail || (typeof b.worker === 'object' ? b.worker : null);
+          const matchingBundle = (bundles || []).find(mb => (mb.claim_id || (mb as any).id) === bId);
+          const bStatus = (l.status === 'Paid' || cluster.isPaid) ? 'Paid' : (matchingBundle?.status || b.status || 'Approved');
           bundleMap.set(bId, {
             bundleId: bId,
             workerName: wObj?.full_name || wObj?.username || `Worker ${b.worker}`,
@@ -986,10 +989,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
             profileImage: wObj?.profile_image || null,
             periodFrom: b.period_from,
             periodTo: b.period_to,
-            status: b.status || 'Approved',
+            status: bStatus,
             totalAmount: 0,
             expenses: [],
-            ledgerBatches: []
+            ledgerBatches: [],
+            bundleObj: matchingBundle || b
           });
         }
       });
@@ -1004,6 +1008,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           if (!bundleMap.has(bId)) {
             const matchingBundle = (bundles || []).find(b => b.claim_id === bId);
             const wObj = matchingBundle?.worker_detail || (exp as any).worker_detail || (typeof exp.worker === 'object' ? exp.worker : null);
+            const bStatus = (l.status === 'Paid' || cluster.isPaid) ? 'Paid' : (matchingBundle?.status || 'Approved');
             bundleMap.set(bId, {
               bundleId: bId,
               workerName: wObj?.full_name || wObj?.username || (exp as any).worker_name || 'Worker',
@@ -1012,10 +1017,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               profileImage: wObj?.profile_image || null,
               periodFrom: matchingBundle?.period_from,
               periodTo: matchingBundle?.period_to,
-              status: matchingBundle?.status || 'Approved',
+              status: bStatus,
               totalAmount: 0,
               expenses: [],
-              ledgerBatches: []
+              ledgerBatches: [],
+              bundleObj: matchingBundle || { claim_id: bId, total_claimed_amount: String(exp.amount), worker_detail: wObj, status: bStatus }
             });
           }
 
@@ -2635,11 +2641,27 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                           {/* 3. Batches / Bundles Count */}
                           <td className="px-4 py-3">
-                            <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium border border-outline-variant/60 text-[11px] whitespace-nowrap">
-                              {hierarchyGrouping === 'bundle_wise'
-                                ? `${getGroupBundleBreakdown(cluster).length} Bundle${getGroupBundleBreakdown(cluster).length !== 1 ? 's' : ''}`
-                                : `${cluster.ledgers.length} Batch${cluster.ledgers.length !== 1 ? 'es' : ''}`}
-                            </span>
+                            {hierarchyGrouping === 'bundle_wise' ? (() => {
+                              const breakdown = getGroupBundleBreakdown(cluster);
+                              const settledCount = breakdown.filter(b => b.status === 'Paid' || isGroupPaid).length;
+                              const totalCount = breakdown.length;
+                              return (
+                                <div className="flex flex-col items-start gap-0.5">
+                                  <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium border border-outline-variant/60 text-[11px] whitespace-nowrap">
+                                    {totalCount} Bundle{totalCount !== 1 ? 's' : ''}
+                                  </span>
+                                  {totalCount > 0 && (
+                                    <span className={`text-[10px] font-bold ${settledCount === totalCount && totalCount > 0 ? 'text-teal-600 dark:text-teal-400' : settledCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-on-surface-variant'}`}>
+                                      {settledCount}/{totalCount} Settled
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })() : (
+                              <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium border border-outline-variant/60 text-[11px] whitespace-nowrap">
+                                {cluster.ledgers.length} Batch${cluster.ledgers.length !== 1 ? 'es' : ''}
+                              </span>
+                            )}
                           </td>
 
                           {/* 4. Expenses Count */}
@@ -3032,54 +3054,87 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                     <td className="px-4 py-2.5 text-right font-bold text-on-surface">
                                       {bundleItem.totalAmount.toFixed(3)}
                                     </td>
-                                    <Can permission='finance.change_ledger'>
-                                      <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
-                                        {!cluster.isCompleted && groupStatus !== "In Review" && (() => {
-                                          const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
-                                          return (
-                                            <button
-                                              type="button"
-                                              disabled={isRemovingBundle}
-                                              onClick={async (e) => {
-                                                e.stopPropagation();
-                                                const totalBundlesInGroup = getGroupBundleBreakdown(cluster).length;
-                                                if (totalBundlesInGroup <= 1) {
-                                                  alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
-                                                  return;
-                                                }
-                                                setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
-                                                try {
-                                                  if (handleRemoveBundleFromGroup) {
-                                                    await handleRemoveBundleFromGroup(Number(cluster.groupId), bundleItem.bundleId);
-                                                  } else if (handleRemoveBundleFromLedger) {
-                                                    const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
-                                                    if (targetLedger) {
-                                                      await handleRemoveBundleFromLedger(targetLedger.ledger_id, bundleItem.bundleId);
+                                    <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                        {/* Cash Settlement Action for Bundle */}
+                                        {bundleItem.status === 'Paid' || isGroupPaid ? (
+                                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                            <span>Settled</span>
+                                          </span>
+                                        ) : (cluster.isCompleted || cluster.allApproved || groupStatus !== 'Draft') && isCashOffice ? (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const targetBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId) || {
+                                                claim_id: bundleItem.bundleId,
+                                                total_claimed_amount: String(bundleItem.totalAmount),
+                                                worker_detail: bundleItem.workerDetail,
+                                                worker_name: bundleItem.workerName,
+                                                status: 'Approved'
+                                              };
+                                              setShowPaymentModal(targetBundle as any);
+                                            }}
+                                            className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                            title={`Perform Cash Settlement for Bundle #${bundleItem.bundleId}`}
+                                          >
+                                            <Banknote className="w-3.5 h-3.5" />
+                                            <span>Cash Settlement</span>
+                                          </button>
+                                        ) : null}
+
+                                        {/* Remove Bundle action if draft/rework */}
+                                        {!cluster.isCompleted && groupStatus !== "In Review" && !isGroupPaid && (
+                                          <Can permission='finance.change_ledger'>
+                                            {(() => {
+                                              const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  disabled={isRemovingBundle}
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const totalBundlesInGroup = getGroupBundleBreakdown(cluster).length;
+                                                    if (totalBundlesInGroup <= 1) {
+                                                      alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+                                                      return;
                                                     }
-                                                  }
-                                                } finally {
-                                                  setRemovingBundleKey(null);
-                                                }
-                                              }}
-                                              className="px-2.5 py-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium disabled:opacity-50"
-                                              title="Remove Bundle from this Ledger"
-                                            >
-                                              {isRemovingBundle ? (
-                                                <>
-                                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                  <span>Removing...</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <Trash2 className="w-3.5 h-3.5" />
-                                                  <span>Remove Bundle</span>
-                                                </>
-                                              )}
-                                            </button>
-                                          );
-                                        })()}
-                                      </td>
-                                    </Can>
+                                                    setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
+                                                    try {
+                                                      if (handleRemoveBundleFromGroup) {
+                                                        await handleRemoveBundleFromGroup(Number(cluster.groupId), bundleItem.bundleId);
+                                                      } else if (handleRemoveBundleFromLedger) {
+                                                        const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
+                                                        if (targetLedger) {
+                                                          await handleRemoveBundleFromLedger(targetLedger.ledger_id, bundleItem.bundleId);
+                                                        }
+                                                      }
+                                                    } finally {
+                                                      setRemovingBundleKey(null);
+                                                    }
+                                                  }}
+                                                  className="px-2.5 py-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium disabled:opacity-50"
+                                                  title="Remove Bundle from this Ledger"
+                                                >
+                                                  {isRemovingBundle ? (
+                                                    <>
+                                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                      <span>Removing...</span>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <Trash2 className="w-3.5 h-3.5" />
+                                                      <span>Remove Bundle</span>
+                                                    </>
+                                                  )}
+                                                </button>
+                                              );
+                                            })()}
+                                          </Can>
+                                        )}
+                                      </div>
+                                    </td>
                                   </tr>
 
                                   {/* EXPANDED BUNDLE DETAILS TABLE */}
