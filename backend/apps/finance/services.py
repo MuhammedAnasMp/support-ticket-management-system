@@ -709,6 +709,12 @@ class LedgerService:
             if ledger_group_id:
                 ledger_group = LedgerGroup.objects.get(pk=ledger_group_id)
 
+            existing_batch_map = {}
+            if ledger_group:
+                for l in ledger_group.ledgers.select_for_update().all():
+                    if l.ledger_batch_id:
+                        existing_batch_map[l.ledger_batch_id] = l
+
             created_ledgers = []
             for b_id, data in batch_expenses_map.items():
                 batch_obj = data['batch']
@@ -716,30 +722,47 @@ class LedgerService:
                 batch_bundle_list = list(data['bundles'])
                 batch_total = sum(e.amount for e in batch_exp_list)
 
-                ledger = Ledger.objects.create(
-                    ledger_group=ledger_group,
-                    ledger_batch=batch_obj,
-                    store=None,
-                    created_by=created_by,
-                    total_amount=batch_total,
-                    status='Draft',
-                    remarks=remarks
-                )
-                ledger.bundles.set(batch_bundle_list)
-                ledger.expenses.set(batch_exp_list)
+                ledger = existing_batch_map.get(b_id)
+                if ledger:
+                    if ledger.status == 'Paid':
+                        raise ValidationError(
+                            f"Ledger Batch '{batch_obj.batch_name}' in this group is 'Paid' and cannot be modified."
+                        )
+                    ledger.expenses.add(*batch_exp_list)
+                    ledger.bundles.add(*batch_bundle_list)
+                    if ledger.status in ['Approved', 'In Review', 'Submitted']:
+                        ledger.status = 'Draft'
+                        ledger.approval_instances.all().delete()
+                        ledger.save(update_fields=['status'])
+                    cls.recalculate_ledger_total(ledger)
+                    created_ledgers.append(ledger)
+                else:
+                    ledger = Ledger.objects.create(
+                        ledger_group=ledger_group,
+                        ledger_batch=batch_obj,
+                        store=None,
+                        created_by=created_by,
+                        total_amount=batch_total,
+                        status='Draft',
+                        remarks=remarks
+                    )
+                    ledger.bundles.set(batch_bundle_list)
+                    ledger.expenses.set(batch_exp_list)
 
-                create_audit_event(
-                    'Ledger', ledger.ledger_id, 'LEDGER_CREATED', actor=created_by,
-                    payload={
-                        'batch_id': batch_obj.batch_id,
-                        'batch_name': batch_obj.batch_name,
-                        'bundle_ids': [b.claim_id for b in batch_bundle_list],
-                        'expense_ids': [e.expense_id for e in batch_exp_list],
-                        'total_amount': str(batch_total)
-                    },
-                    ip_address=ip_address
-                )
-                created_ledgers.append(ledger)
+                    create_audit_event(
+                        'Ledger', ledger.ledger_id, 'LEDGER_CREATED', actor=created_by,
+                        payload={
+                            'batch_id': batch_obj.batch_id,
+                            'batch_name': batch_obj.batch_name,
+                            'bundle_ids': [b.claim_id for b in batch_bundle_list],
+                            'expense_ids': [e.expense_id for e in batch_exp_list],
+                            'total_amount': str(batch_total)
+                        },
+                        ip_address=ip_address
+                    )
+                    created_ledgers.append(ledger)
+
+            Expense.objects.filter(pk__in=[e.pk for e in expenses]).update(is_claimed=True)
 
             if ledger_group:
                 group_total = sum(
@@ -838,9 +861,20 @@ class LedgerService:
 
             expense = Expense.objects.select_for_update().get(pk=expense_id)
 
-            # Unlink expense from its bundle if it belongs to one
+            # Check if this expense is the only expense in its bundle (claim)
             if expense.claim:
                 bundle = expense.claim
+                if bundle.expenses.count() <= 1:
+                    raise ValidationError(
+                        "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.")
+
+                # Also prevent removing if it is the only expense of this bundle inside this ledger batch
+                ledger_bundle_exp_count = ledger.expenses.filter(claim=bundle).count()
+                if ledger_bundle_exp_count <= 1:
+                    raise ValidationError(
+                        "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.")
+
+                # Unlink expense from its bundle if it belongs to one
                 expense.is_claimed = False
                 expense.claim = None
                 expense.save(update_fields=['is_claimed', 'claim'])
@@ -936,16 +970,16 @@ class LedgerService:
                     )
 
                 ledger.bundles.add(bundle)
-                for exp in new_expenses:
-                    ledger.expenses.add(exp)
+                ledger.expenses.add(*new_expenses)
+                Expense.objects.filter(pk__in=[e.pk for e in new_expenses]).update(is_claimed=True)
                 added_amount = sum(e.amount for e in new_expenses)
             else:
                 # Fallback if ledger has no specific batch
                 new_expenses = [
                     e for e in bundle_expenses if not ledger.expenses.filter(pk=e.pk).exists()]
                 ledger.bundles.add(bundle)
-                for exp in new_expenses:
-                    ledger.expenses.add(exp)
+                ledger.expenses.add(*new_expenses)
+                Expense.objects.filter(pk__in=[e.pk for e in new_expenses]).update(is_claimed=True)
                 added_amount = sum(e.amount for e in new_expenses)
 
             # If ledger was approved or in review, reset to Draft for re-approval
@@ -955,6 +989,10 @@ class LedgerService:
                 ledger.save(update_fields=['status'])
 
             cls.recalculate_ledger_total(ledger)
+            if ledger.ledger_group:
+                group_total = sum(l.total_amount for l in ledger.ledger_group.ledgers.all())
+                ledger.ledger_group.total_amount = group_total
+                ledger.ledger_group.save(update_fields=['total_amount'])
 
             create_audit_event(
                 'Ledger', ledger.ledger_id, 'BUNDLE_ADDED', actor=actor,
@@ -967,33 +1005,42 @@ class LedgerService:
             return ledger
 
     @classmethod
-    def add_bundle_to_group(cls, ledger_group_id, bundle_id, actor=None, ip_address=None):
+    def add_bundle_to_group(cls, ledger_group_id, bundle_id=None, bundle_ids=None, actor=None, ip_address=None):
         """
-        Attaches an approved WorkerClaim (bundle) to a LedgerGroup.
-        Automatically classifies the bundle's expenses by sub_department into matching LedgerBatches within this LedgerGroup.
+        Attaches approved WorkerClaim(s) (bundles) to a LedgerGroup.
+        Automatically classifies each bundle's expenses by sub_department into matching LedgerBatches within this LedgerGroup.
         - If a matching Ledger for that LedgerBatch exists in the group and is editable (Draft/Rework/Rejected), adds the expenses & bundle to it and updates total_amount.
         - If no matching Ledger exists in the group, creates a new Ledger for that LedgerBatch in this group.
         """
+        target_bundle_ids = list(bundle_ids) if bundle_ids else ([bundle_id] if bundle_id else [])
+        if not target_bundle_ids:
+            raise ValidationError("No bundle ID(s) provided.")
+
         with transaction.atomic():
             group = LedgerGroup.objects.select_for_update().get(pk=ledger_group_id)
             if group.is_completed:
                 raise ValidationError(
                     f"Ledger Group '{group.group_name}' is completed and locked. Bundles cannot be added.")
 
-            bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
-            if bundle.status != 'Approved':
-                raise ValidationError(
-                    f"Bundle #{bundle.claim_id} is in status '{bundle.status}'. Only 'Approved' bundles can be added.")
+            bundles = list(WorkerClaim.objects.select_for_update().filter(claim_id__in=target_bundle_ids))
+            if len(bundles) != len(target_bundle_ids):
+                found_ids = {b.claim_id for b in bundles}
+                missing = [str(bid) for bid in target_bundle_ids if bid not in found_ids]
+                raise ValidationError(f"Bundle(s) not found: {', '.join(missing)}")
 
-            # Load bundle expenses
-            bundle_expenses = list(Expense.objects.select_for_update().filter(claim=bundle).select_related(
+            for b in bundles:
+                if b.status != 'Approved':
+                    raise ValidationError(
+                        f"Bundle #{b.claim_id} is in status '{b.status}'. Only 'Approved' bundles can be added.")
+
+            # Load all bundle expenses in a single query
+            bundle_expenses = list(Expense.objects.select_for_update().filter(claim__in=bundles).select_related(
                 'ticket__nature__sub_department',
                 'ticket__department',
                 'expense_type'
             ))
             if not bundle_expenses:
-                raise ValidationError(
-                    f"Bundle #{bundle.claim_id} has no expenses.")
+                raise ValidationError("Selected bundle(s) have no expenses.")
 
             # Fetch active LedgerBatches with their sub_departments
             batches = list(LedgerBatch.objects.filter(
@@ -1008,7 +1055,7 @@ class LedgerService:
                     subdept_to_batch[subdept.sub_department_id] = batch
 
             # Classify bundle expenses into batches
-            batch_expenses_map = {}  # batch_id -> {'batch': batch, 'expenses': []}
+            batch_expenses_map = {}  # batch_id -> {'batch': batch, 'expenses': [], 'bundles': set()}
             unmapped_errors = []
 
             for exp in bundle_expenses:
@@ -1032,10 +1079,12 @@ class LedgerService:
                 if matching_batch.batch_id not in batch_expenses_map:
                     batch_expenses_map[matching_batch.batch_id] = {
                         'batch': matching_batch,
-                        'expenses': []
+                        'expenses': [],
+                        'bundles': set()
                     }
-                batch_expenses_map[matching_batch.batch_id]['expenses'].append(
-                    exp)
+                batch_expenses_map[matching_batch.batch_id]['expenses'].append(exp)
+                if exp.claim:
+                    batch_expenses_map[matching_batch.batch_id]['bundles'].add(exp.claim)
 
             if unmapped_errors:
                 raise ValidationError(
@@ -1047,10 +1096,12 @@ class LedgerService:
                 l.ledger_batch_id: l for l in existing_ledgers if l.ledger_batch_id}
 
             affected_ledgers = []
+            all_added_expenses = []
 
             for b_id, data in batch_expenses_map.items():
                 batch_obj = data['batch']
                 exp_list = data['expenses']
+                bundle_set = list(data['bundles'])
 
                 ledger = existing_batch_map.get(b_id)
                 if ledger:
@@ -1058,12 +1109,9 @@ class LedgerService:
                         raise ValidationError(
                             f"Ledger Batch '{batch_obj.batch_name}' in this group is 'Paid' and cannot be modified."
                         )
-                    for exp in exp_list:
-                        ledger.expenses.add(exp)
-                        exp.is_claimed = True
-                        exp.save(update_fields=['is_claimed'])
+                    ledger.expenses.add(*exp_list)
+                    ledger.bundles.add(*bundle_set)
 
-                    ledger.bundles.add(bundle)
                     if ledger.status in ['Approved', 'In Review', 'Submitted']:
                         ledger.status = 'Draft'
                         ledger.approval_instances.all().delete()
@@ -1081,17 +1129,23 @@ class LedgerService:
                         total_amount=batch_total,
                         status='Draft'
                     )
-                    new_ledger.bundles.add(bundle)
+                    new_ledger.bundles.set(bundle_set)
                     new_ledger.expenses.set(exp_list)
-                    for exp in exp_list:
-                        exp.is_claimed = True
-                        exp.save(update_fields=['is_claimed'])
-
                     affected_ledgers.append(new_ledger)
+
+                all_added_expenses.extend(exp_list)
+
+            if all_added_expenses:
+                Expense.objects.filter(pk__in=[e.pk for e in all_added_expenses]).update(is_claimed=True)
+
+            # Recalculate group total_amount
+            group_total = sum(l.total_amount for l in group.ledgers.all())
+            group.total_amount = group_total
+            group.save(update_fields=['total_amount'])
 
             create_audit_event(
                 'LedgerGroup', group.ledger_group_id, 'BUNDLE_ADDED_TO_GROUP', actor=actor,
-                payload={'bundle_id': bundle_id,
+                payload={'bundle_ids': target_bundle_ids,
                          'affected_batches': len(affected_ledgers)},
                 ip_address=ip_address
             )

@@ -4,7 +4,8 @@ import {
   CheckCircle2, AlertTriangle, Boxes, Tag, ChevronDown, ChevronRight, Rows3,
   ChevronsUp, Check, RotateCcw, User, Calendar, Users, Receipt,
   FileText, ExternalLink, Eye, EyeOff, Clock, FolderKanban, Lock, CheckCircle, Package,
-  RefreshCw, Plus, GitCommit, Send, CreditCard, Banknote, Search
+  RefreshCw, Plus, GitCommit, Send, CreditCard, Banknote, Search,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { getUserId, type LedgerItem, type WorkerClaimItem, type LedgerGroupItem, type ExpenseItem, type LedgerBatchItem, type ApprovalStepInfo, type ApprovalInstanceItem } from './types';
 import { Pagination } from './Pagination';
@@ -127,6 +128,13 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 }) => {
   // Stepper Visibility State
   const [showStepper, setShowStepper] = useState<boolean>(true);
+  const [isAddingToExistingGroup, setIsAddingToExistingGroup] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!showCreateLedgerModal) {
+      setIsAddingToExistingGroup(false);
+    }
+  }, [showCreateLedgerModal]);
 
   // Refreshing State
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -183,8 +191,44 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     });
   };
 
+  const isOnlyExpenseInBundleOrLedger = (
+    ledger: LedgerItem,
+    exp: ExpenseItem,
+    explicitBundleCount?: number
+  ) => {
+    if (explicitBundleCount !== undefined && explicitBundleCount <= 1) return true;
+    if ((ledger.expenses?.length || 0) <= 1) return true;
+
+    const rawClaim = exp.claim ?? (exp as any).claim_id ?? (exp as any).bundle_id;
+    const claimId = rawClaim && typeof rawClaim === 'object' ? rawClaim.claim_id : rawClaim;
+
+    if (claimId) {
+      const matchingBundle = (bundles || []).find(b => Number(b.claim_id || (b as any).id) === Number(claimId))
+        || (ledger.bundles || []).find((b: any) => Number(b.claim_id || (b as any).id) === Number(claimId));
+
+      if (matchingBundle?.expenses && matchingBundle.expenses.length <= 1) {
+        return true;
+      }
+
+      const bundleExpInLedger = (ledger.expenses || []).filter(e => {
+        const c = e.claim ?? (e as any).claim_id ?? (e as any).bundle_id;
+        const cid = c && typeof c === 'object' ? c.claim_id : c;
+        return Number(cid) === Number(claimId);
+      }).length;
+
+      if (bundleExpInLedger <= 1) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   // Report Modal State for Ledger Group
   const [selectedGroupForReport, setSelectedGroupForReport] = useState<LedgerGroupCluster | null>(null);
+  const [selectedGroupForAction, setSelectedGroupForAction] = useState<LedgerGroupCluster | null>(null);
+  const [actionComments, setActionComments] = useState('');
+  const [actionCommentError, setActionCommentError] = useState('');
 
   // Mark as Completed & Lock Group States
   const [groupToConfirmComplete, setGroupToConfirmComplete] = useState<LedgerGroupCluster | null>(null);
@@ -443,9 +487,19 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
   const onDeleteLedgerGroup = async (cluster: LedgerGroupCluster) => {
     if (!cluster || !cluster.groupId) return;
-    if (!window.confirm(`Are you sure you want to delete Ledger Group "${cluster.groupName}" (${cluster.groupId})?\n\nAll batches in this group will be deleted and attached claim bundles will return to available status.`)) {
-      return;
-    }
+
+
+    const confirmed = await confirmPopup({
+      preset: "delete",
+      title: `Delete Ledger Group "${cluster.groupName}"?`,
+      description: `Are you sure you want to delete Ledger Group "${cluster.groupName}" (${cluster.groupId})?\n\nAll batches in this group will be deleted, and attached claim bundles will return to available status.`,
+      button1: "Cancel",
+      button2: "Delete Ledger Group",
+    });
+
+    if (!confirmed) return;
+
+
     setDeletingGroupId(cluster.groupId);
     setBulkActionMsg(null);
     try {
@@ -621,12 +675,32 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   };
 
+  const selectedGroupTitle = useMemo(() => {
+    if (!selectedGroupId) return null;
+    const foundGroup = dynamicGroups.find(g => String(g.ledger_group_id) === String(selectedGroupId)) ||
+      ledgerGroups?.find(g => String(g.ledger_group_id) === String(selectedGroupId));
+    if (foundGroup) return foundGroup.group_name;
+    const matchLedger = (ledgers || []).find(l => String(l.ledger_group || l.ledger_group_id || l.ledger_group_detail?.ledger_group_id) === String(selectedGroupId));
+    if (matchLedger?.ledger_group_detail?.group_name) return matchLedger.ledger_group_detail.group_name;
+    return `Ledger Group #${selectedGroupId}`;
+  }, [selectedGroupId, dynamicGroups, ledgerGroups, ledgers]);
+
   const ledgerGroupSelectOptions: SelectOption[] = useMemo(() => {
     const list = dynamicGroups.filter(g => !g.is_completed);
     if (selectedGroupId && !list.some(g => String(g.ledger_group_id) === String(selectedGroupId))) {
       const foundInProp = ledgerGroups?.find(g => String(g.ledger_group_id) === String(selectedGroupId));
       if (foundInProp) {
         list.unshift(foundInProp);
+      } else {
+        const matchLedger = (ledgers || []).find(l => String(l.ledger_group || l.ledger_group_id || l.ledger_group_detail?.ledger_group_id) === String(selectedGroupId));
+        if (matchLedger) {
+          list.unshift({
+            ledger_group_id: Number(selectedGroupId),
+            group_name: matchLedger.ledger_group_detail?.group_name || `Ledger Group ${selectedGroupId}`,
+            total_amount: String(matchLedger.ledger_group_detail?.total_amount || '0'),
+            is_completed: Boolean(matchLedger.ledger_group_detail?.is_completed)
+          } as LedgerGroupItem);
+        }
       }
     }
     return [
@@ -635,7 +709,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         const unused = isGroupUnused(g);
         return {
           value: String(g.ledger_group_id),
-          label: `${g.group_name} (${parseFloat(g.total_amount).toFixed(3)} KD)${unused ? ' • [Unused]' : ''}`,
+          label: `${g.group_name} (${parseFloat(g.total_amount || '0').toFixed(3)} KD)${unused ? ' • [Unused]' : ''}`,
           canDelete: unused,
           deleteTooltip: `Delete unused group "${g.group_name}"`
         };
@@ -778,9 +852,28 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   const isServerPaginated = propOnPageChange !== undefined;
 
   // Helper to find pending approval instance for a Ledger
-  const getLedgerApproval = (ledgerId: number): ApprovalInstanceItem | undefined => {
-    const list = approvalsProps?.displayedApprovals || approvalsProps?.approvals || [];
-    return list.find(a =>
+  const getLedgerApproval = (ledgerId: number, fallbackLedger?: LedgerItem): ApprovalInstanceItem | undefined => {
+    // 1. First check fallbackLedger or targetLedger's own embedded approval_history
+    const targetLedger = fallbackLedger || (ledgers || []).find(l => l.ledger_id === ledgerId);
+    const embeddedPending = (targetLedger as any)?.approval_history?.find((a: any) => a.status === 'Pending' || a.status === 'In Review');
+    if (embeddedPending) {
+      return embeddedPending;
+    }
+
+    // 2. Check full approvals list
+    const allApprovals = approvalsProps?.approvals || [];
+    const fromAll = allApprovals.find(a =>
+      (a.ledger === ledgerId ||
+        a.ledger_id === ledgerId ||
+        (a.target_summary?.type === 'Ledger' && a.target_summary?.id === ledgerId) ||
+        (a.workflow_entity_type?.toUpperCase() === 'LEDGER' && (a.ledger === ledgerId || a.ledger_id === ledgerId))) &&
+      a.status === 'Pending'
+    );
+    if (fromAll) return fromAll;
+
+    // 3. Fallback to displayed approvals
+    const displayed = approvalsProps?.displayedApprovals || [];
+    return displayed.find(a =>
       (a.ledger === ledgerId ||
         a.ledger_id === ledgerId ||
         (a.target_summary?.type === 'Ledger' && a.target_summary?.id === ledgerId) ||
@@ -790,24 +883,41 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   };
 
   // Helper to check if current user can approve a Ledger
-  const canUserApproveLedger = (ledgerId: number, ledgerApp?: ApprovalInstanceItem): boolean => {
-    const app = ledgerApp || getLedgerApproval(ledgerId);
-    if (!app) return false;
-
-    if (app.can_action) return true;
-    if (currentUser?.is_superuser) return true;
-
+  const canUserApproveLedger = (ledgerId: number, ledgerApp?: ApprovalInstanceItem, fallbackLedger?: LedgerItem): boolean => {
     const userRoleStr = (
       (currentUser?.role as any)?.role_name ||
       (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
       ''
     ).toLowerCase().trim();
 
+    if (currentUser?.is_superuser || userRoleStr === 'admin' || userRoleStr === 'administrator') {
+      return true;
+    }
+
+    const app = ledgerApp || getLedgerApproval(ledgerId, fallbackLedger);
+    if (!app) {
+      if ((currentUser as any)?.is_staff) return true;
+      return false;
+    }
+
+    if (app.can_action) return true;
+
     const assignedRoleStr = (app.assigned_role_name || '').toLowerCase().trim();
     if (userRoleStr && assignedRoleStr && userRoleStr === assignedRoleStr) return true;
 
     const currentUsername = currentUser?.username;
-    if (currentUsername && app.workflow_steps?.some(s => s.assigned_users_names?.includes(currentUsername))) {
+    const currentUserId = currentUser?.id ?? currentUser?.user_id;
+
+    if (currentUsername && app.workflow_steps?.some(s => s.assigned_users_names?.some((u: string) => u.toLowerCase() === currentUsername.toLowerCase()))) {
+      return true;
+    }
+    if (currentUserId && app.workflow_steps?.some(s => s.assigned_users_ids?.includes(currentUserId))) {
+      return true;
+    }
+    if (currentUsername && (app as any).assigned_users_names?.some((u: string) => u.toLowerCase() === currentUsername.toLowerCase())) {
+      return true;
+    }
+    if (currentUserId && (app as any).assigned_users_ids?.includes(currentUserId)) {
       return true;
     }
 
@@ -1396,17 +1506,294 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     return Array.from(map.values());
   }, [filteredLedgers, dynamicGroups, ledgerGroups]);
 
-  const totalItemsCount = propTotalItems !== undefined ? propTotalItems : allGroupedLedgerClusters.length;
+  // Sort States & Handlers
+  type MainSortField = 'ledger' | 'bundles' | 'expenses' | 'created_by' | 'total_amount' | 'status';
+  const [mainSortField, setMainSortField] = useState<MainSortField | null>(null);
+  const [mainSortDirection, setMainSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleMainSort = (field: MainSortField) => {
+    if (mainSortField === field) {
+      if (mainSortDirection === 'asc') {
+        setMainSortDirection('desc');
+      } else {
+        setMainSortField(null);
+        setMainSortDirection('asc');
+      }
+    } else {
+      setMainSortField(field);
+      setMainSortDirection('asc');
+    }
+  };
+
+  type BundleSortField = 'bundle_id' | 'claim_bundle' | 'batches' | 'expenses' | 'worker' | 'bundle_total';
+  const [bundleSortField, setBundleSortField] = useState<BundleSortField | null>(null);
+  const [bundleSortDirection, setBundleSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleBundleSort = (field: BundleSortField) => {
+    if (bundleSortField === field) {
+      if (bundleSortDirection === 'asc') {
+        setBundleSortDirection('desc');
+      } else {
+        setBundleSortField(null);
+        setBundleSortDirection('asc');
+      }
+    } else {
+      setBundleSortField(field);
+      setBundleSortDirection('asc');
+    }
+  };
+
+  type ExpenseSortField = 'exp' | 'description' | 'target_batch' | 'sub_department' | 'ticket' | 'category' | 'date' | 'amount';
+  const [expenseSortField, setExpenseSortField] = useState<ExpenseSortField | null>(null);
+  const [expenseSortDirection, setExpenseSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleExpenseSort = (field: ExpenseSortField) => {
+    if (expenseSortField === field) {
+      if (expenseSortDirection === 'asc') {
+        setExpenseSortDirection('desc');
+      } else {
+        setExpenseSortField(null);
+        setExpenseSortDirection('asc');
+      }
+    } else {
+      setExpenseSortField(field);
+      setExpenseSortDirection('asc');
+    }
+  };
+
+  const renderSortIndicator = (
+    currentField: string | null,
+    targetField: string,
+    direction: 'asc' | 'desc'
+  ) => {
+    if (currentField !== targetField) {
+      return (
+        <ArrowUpDown className="w-3 h-3 text-on-surface-variant/40 group-hover:text-on-surface-variant inline-block ml-1 transition-colors" />
+      );
+    }
+    return direction === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-primary inline-block ml-1 font-bold" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-primary inline-block ml-1 font-bold" />
+    );
+  };
+
+  const getClusterStatus = (c: LedgerGroupCluster): string => {
+    if (c.isPaid || (c.ledgers.length > 0 && c.ledgers.every(l => l.status === 'Paid'))) return 'Paid';
+    if (c.isCompleted) return 'Completed';
+    if (c.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')) return 'Approved';
+    if (c.ledgers.some(l => l.status === 'Rework')) return 'Rework';
+    if (c.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')) return 'In Review';
+    if (c.ledgers.some(l => l.status === 'Rejected')) return 'Rejected';
+    return 'Draft';
+  };
+
+  const sortedGroupedLedgerClusters = useMemo(() => {
+    if (!mainSortField) return allGroupedLedgerClusters;
+    return [...allGroupedLedgerClusters].sort((a, b) => {
+      let comparison = 0;
+      switch (mainSortField) {
+        case 'ledger':
+          comparison = (a.groupName || '').localeCompare(b.groupName || '', undefined, { numeric: true, sensitivity: 'base' });
+          break;
+        case 'bundles': {
+          const countA = a.totalBundlesCount ?? a.ledgers.length;
+          const countB = b.totalBundlesCount ?? b.ledgers.length;
+          comparison = countA - countB;
+          break;
+        }
+        case 'expenses': {
+          const countA = a.totalExpensesCount ?? a.ledgers.reduce((sum, l) => sum + (Array.isArray(l.expenses) ? l.expenses.length : 0), 0);
+          const countB = b.totalExpensesCount ?? b.ledgers.reduce((sum, l) => sum + (Array.isArray(l.expenses) ? l.expenses.length : 0), 0);
+          comparison = countA - countB;
+          break;
+        }
+        case 'created_by': {
+          const nameA = a.createdByName || '';
+          const nameB = b.createdByName || '';
+          comparison = nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'total_amount':
+          comparison = a.totalAmount - b.totalAmount;
+          break;
+        case 'status': {
+          comparison = getClusterStatus(a).localeCompare(getClusterStatus(b));
+          break;
+        }
+      }
+      return mainSortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [allGroupedLedgerClusters, mainSortField, mainSortDirection]);
+
+  const totalItemsCount = propTotalItems !== undefined ? propTotalItems : sortedGroupedLedgerClusters.length;
 
   useEffect(() => {
     setLocalPage(1);
-  }, [allGroupedLedgerClusters.length]);
+  }, [sortedGroupedLedgerClusters.length]);
 
   const groupedLedgerClusters = useMemo<LedgerGroupCluster[]>(() => {
-    if (isServerPaginated) return allGroupedLedgerClusters;
+    if (isServerPaginated) return sortedGroupedLedgerClusters;
     const start = (currentPage - 1) * itemsPerPage;
-    return allGroupedLedgerClusters.slice(start, start + itemsPerPage);
-  }, [isServerPaginated, allGroupedLedgerClusters, currentPage, itemsPerPage]);
+    return sortedGroupedLedgerClusters.slice(start, start + itemsPerPage);
+  }, [isServerPaginated, sortedGroupedLedgerClusters, currentPage, itemsPerPage]);
+
+  const getSortedGroupBundleBreakdown = (cluster: LedgerGroupCluster): GroupBundleBreakdownItem[] => {
+    const list = getGroupBundleBreakdown(cluster);
+    if (!bundleSortField) return list;
+    return [...list].sort((a, b) => {
+      let comparison = 0;
+      switch (bundleSortField) {
+        case 'bundle_id':
+        case 'claim_bundle':
+          comparison = a.bundleId - b.bundleId;
+          break;
+        case 'batches':
+          comparison = a.ledgerBatches.length - b.ledgerBatches.length;
+          break;
+        case 'expenses':
+          comparison = a.expenses.length - b.expenses.length;
+          break;
+        case 'worker':
+          comparison = (a.workerName || '').localeCompare(b.workerName || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'bundle_total':
+          comparison = a.totalAmount - b.totalAmount;
+          break;
+      }
+      return bundleSortDirection === 'asc' ? comparison : -comparison;
+    });
+  };
+
+  const getSortedBundleExpenses = (bundleItem: GroupBundleBreakdownItem) => {
+    if (!expenseSortField) return bundleItem.expenses;
+    return [...bundleItem.expenses].sort((a, b) => {
+      let comparison = 0;
+      switch (expenseSortField) {
+        case 'exp':
+          comparison = a.expense_id - b.expense_id;
+          break;
+        case 'description': {
+          const descA = a.remarks || a.ticket_details?.title || (a as any).description || '';
+          const descB = b.remarks || b.ticket_details?.title || (b as any).description || '';
+          comparison = descA.localeCompare(descB, undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'target_batch': {
+          const getBatch = (exp: ExpenseItem) => {
+            return bundleItem.ledgerBatches.find(bb => {
+              const batchObj = (ledgerBatches || internalBatches || []).find(bItem => bItem.batch_name === bb.batchName);
+              const sds = (batchObj?.sub_departments || []).map(sd => typeof sd === 'number' ? sd : (sd as any).sub_department_id);
+              const expSdId = exp.ticket_details?.sub_department_id ?? exp.sub_department_id;
+              return expSdId && sds.includes(Number(expSdId));
+            })?.batchName || 'General Batch';
+          };
+          comparison = getBatch(a).localeCompare(getBatch(b), undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'sub_department': {
+          const sdA = a.ticket_details?.sub_department_name || (a as any).sub_department_name || '';
+          const sdB = b.ticket_details?.sub_department_name || (b as any).sub_department_name || '';
+          comparison = sdA.localeCompare(sdB, undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'ticket': {
+          const tA = formatTicketDisplay(a);
+          const tB = formatTicketDisplay(b);
+          comparison = tA.localeCompare(tB, undefined, { numeric: true });
+          break;
+        }
+        case 'category': {
+          const getCat = (exp: ExpenseItem) =>
+            exp.expense_type_detail?.expense_name ||
+            (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : ((exp as any).expense_type_name || (exp as any).category_name || ''));
+          comparison = getCat(a).localeCompare(getCat(b), undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'date': {
+          const timeA = a.expense_date ? new Date(a.expense_date).getTime() : 0;
+          const timeB = b.expense_date ? new Date(b.expense_date).getTime() : 0;
+          comparison = timeA - timeB;
+          break;
+        }
+        case 'amount':
+          comparison = parseFloat(a.amount || '0') - parseFloat(b.amount || '0');
+          break;
+      }
+      return expenseSortDirection === 'asc' ? comparison : -comparison;
+    });
+  };
+
+  type FlatExpenseSortField = 'exp' | 'description' | 'ticket' | 'category' | 'date' | 'source_bundle' | 'amount';
+  const [flatExpenseSortField, setFlatExpenseSortField] = useState<FlatExpenseSortField | null>(null);
+  const [flatExpenseSortDirection, setFlatExpenseSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleFlatExpenseSort = (field: FlatExpenseSortField) => {
+    if (flatExpenseSortField === field) {
+      if (flatExpenseSortDirection === 'asc') {
+        setFlatExpenseSortDirection('desc');
+      } else {
+        setFlatExpenseSortField(null);
+        setFlatExpenseSortDirection('asc');
+      }
+    } else {
+      setFlatExpenseSortField(field);
+      setFlatExpenseSortDirection('asc');
+    }
+  };
+
+  const getSortedLedgerExpenses = (expenses: ExpenseItem[], viewMode?: string): ExpenseItem[] => {
+    if (!flatExpenseSortField) return expenses;
+    return [...expenses].sort((a, b) => {
+      let comparison = 0;
+      switch (flatExpenseSortField) {
+        case 'exp':
+          comparison = a.expense_id - b.expense_id;
+          break;
+        case 'description': {
+          const getWorkerName = (exp: ExpenseItem) => {
+            const wObj = exp.worker_detail || (typeof exp.worker === 'object' && exp.worker !== null ? exp.worker : null);
+            return wObj?.full_name || wObj?.username || (typeof exp.worker === 'object' && exp.worker !== null ? (exp.worker.full_name || exp.worker.username || `Worker ${exp.worker.id}`) : `Worker ${exp.worker}`);
+          };
+          const descA = a.ticket_details?.title || a.remarks || a.expense_type_detail?.expense_name || getWorkerName(a) || '';
+          const descB = b.ticket_details?.title || b.remarks || b.expense_type_detail?.expense_name || getWorkerName(b) || '';
+          comparison = descA.localeCompare(descB, undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'ticket': {
+          const tA = formatTicketDisplay(a);
+          const tB = formatTicketDisplay(b);
+          comparison = tA.localeCompare(tB, undefined, { numeric: true });
+          break;
+        }
+        case 'category': {
+          const getCat = (exp: ExpenseItem) =>
+            exp.expense_type_detail?.expense_name ||
+            (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : ((exp as any).expense_type_name || (exp as any).category_name || 'General'));
+          comparison = getCat(a).localeCompare(getCat(b), undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'date': {
+          const timeA = a.expense_date ? new Date(a.expense_date).getTime() : 0;
+          const timeB = b.expense_date ? new Date(b.expense_date).getTime() : 0;
+          comparison = timeA - timeB;
+          break;
+        }
+        case 'source_bundle': {
+          const getClaimId = (exp: ExpenseItem) => {
+            const cid = typeof exp.claim === 'object' && exp.claim !== null ? exp.claim.claim_id : exp.claim;
+            return cid ? Number(cid) : 0;
+          };
+          comparison = getClaimId(a) - getClaimId(b);
+          break;
+        }
+        case 'amount':
+          comparison = parseFloat(a.amount || '0') - parseFloat(b.amount || '0');
+          break;
+      }
+      return flatExpenseSortDirection === 'asc' ? comparison : -comparison;
+    });
+  };
 
   // Pending Actionable Ledger Groups for Bulk Approve
   const pendingActionableGroups = useMemo(() => {
@@ -1809,64 +2196,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   }, [showCreateLedgerModal, bundles, selectedBundleIds]);
 
-  // Attach Bundle to Group Modal State
-  const [selectedGroupForAddBundle, setSelectedGroupForAddBundle] = useState<LedgerGroupCluster | null>(null);
-  const [selectedBundleIdsToAttach, setSelectedBundleIdsToAttach] = useState<number[]>([]);
-  const [attachingBundle, setAttachingBundle] = useState<boolean>(false);
-  const [attachBundleError, setAttachBundleError] = useState<string | null>(null);
-  const [loadingAvailableBundles, setLoadingAvailableBundles] = useState<boolean>(false);
-  const [fetchedApprovedBundles, setFetchedApprovedBundles] = useState<WorkerClaimItem[] | null>(null);
-
-  const openAddBundleModal = async (cluster: LedgerGroupCluster) => {
-    setSelectedGroupForAddBundle(cluster);
-    setSelectedBundleIdsToAttach([]);
-    setAttachBundleError(null);
-    setLoadingAvailableBundles(true);
-    setFetchedApprovedBundles(null);
-    try {
-      const res = await fetch(`${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=100`, {
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : (data?.results || []);
-        setFetchedApprovedBundles(list);
-      } else {
-        setFetchedApprovedBundles(bundles);
-      }
-    } catch (err) {
-      console.error("Failed to fetch approved bundles", err);
-      setFetchedApprovedBundles(bundles);
-    } finally {
-      setLoadingAvailableBundles(false);
-    }
-  };
-
-  const handleAttachBundleToGroup = async () => {
-    if (!selectedGroupForAddBundle || selectedBundleIdsToAttach.length === 0) return;
-    setAttachingBundle(true);
-    setAttachBundleError(null);
-    try {
-      if (handleAddBundleToGroup) {
-        await handleAddBundleToGroup(Number(selectedGroupForAddBundle.groupId), selectedBundleIdsToAttach);
-      } else if (handleAddBundleToLedger) {
-        for (const bundleId of selectedBundleIdsToAttach) {
-          await handleAddBundleToLedger(Number(selectedGroupForAddBundle.groupId), bundleId);
-        }
-      }
-      if (onRefresh) {
-        await onRefresh();
-      }
-      setSelectedGroupForAddBundle(null);
-      setSelectedBundleIdsToAttach([]);
-      setAttachBundleError(null);
-    } catch (err: any) {
-      setAttachBundleError(err.message || 'Failed to add bundle(s) to ledger ');
-    } finally {
-      setAttachingBundle(false);
+  const openAddBundleModal = (cluster: LedgerGroupCluster) => {
+    setIsAddingToExistingGroup(true);
+    setSelectedGroupId(String(cluster.groupId));
+    setNewGroupName('');
+    setSelectedBundleIds([]);
+    setShowCreateLedgerModal(true);
+    if (onRefresh) {
+      onRefresh();
     }
   };
 
@@ -2081,6 +2418,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setIsAddingToExistingGroup(false);
                   setSelectedBundleIds([]);
                   setSelectedGroupId('');
                   setNewGroupName('');
@@ -2130,18 +2468,71 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           <>
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-xs text-left text-on-surface">
-                <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[10px] tracking-wider border-b border-outline-variant">
+                <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[10px] tracking-wider border-b border-outline-variant select-none">
                   <tr>
                     <th className="w-9 px-2 py-3 text-center"></th>
-                    <th className="px-4 py-3">Ledger </th>
-                    <th className="px-4 py-3">{hierarchyGrouping === 'bundle_wise' ? 'Bundles' : 'Batches'}</th>
-                    <th className="px-4 py-3">Expenses</th>
-                    <th className="px-4 py-3">Created By</th>
-                    <th className="px-4 py-3 text-right">Group Total</th>
-                    <th className="px-4 py-3 text-center">Status</th>
+                    <th
+                      onClick={() => handleMainSort('ledger')}
+                      className="px-4 py-3 cursor-pointer hover:text-primary transition-colors group"
+                      title="Sort by Ledger Group"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span>Ledger</span>
+                        {renderSortIndicator(mainSortField, 'ledger', mainSortDirection)}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleMainSort('bundles')}
+                      className="px-4 py-3 cursor-pointer hover:text-primary transition-colors group"
+                      title="Sort by Bundles / Batches Count"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span>{hierarchyGrouping === 'bundle_wise' ? 'Bundles' : 'Batches'}</span>
+                        {renderSortIndicator(mainSortField, 'bundles', mainSortDirection)}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleMainSort('expenses')}
+                      className="px-4 py-3 cursor-pointer hover:text-primary transition-colors group"
+                      title="Sort by Expenses Count"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span>Expenses</span>
+                        {renderSortIndicator(mainSortField, 'expenses', mainSortDirection)}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleMainSort('created_by')}
+                      className="px-4 py-3 cursor-pointer hover:text-primary transition-colors group"
+                      title="Sort by Creator"
+                    >
+                      <div className="inline-flex items-center gap-1">
+                        <span>Created By</span>
+                        {renderSortIndicator(mainSortField, 'created_by', mainSortDirection)}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleMainSort('total_amount')}
+                      className="px-4 py-3 text-right cursor-pointer hover:text-primary transition-colors group"
+                      title="Sort by Group Total Amount"
+                    >
+                      <div className="inline-flex items-center justify-end gap-1 w-full">
+                        <span>Group Total</span>
+                        {renderSortIndicator(mainSortField, 'total_amount', mainSortDirection)}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleMainSort('status')}
+                      className="px-4 py-3 text-center cursor-pointer hover:text-primary transition-colors group"
+                      title="Sort by Status"
+                    >
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <span>Status</span>
+                        {renderSortIndicator(mainSortField, 'status', mainSortDirection)}
+                      </div>
+                    </th>
                     {/* <Can permission='finance.change_ledger'> */}
                     <th className="px-4 py-3 text-right">Actions</th>
-
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
@@ -2165,13 +2556,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 : 'Draft';
 
                     const canUserApproveGroup = cluster.ledgers.some(l => {
-                      if (l.status !== 'Submitted' && l.status !== 'In Review') return false;
-                      const app = getLedgerApproval(l.ledger_id);
-                      return canUserApproveLedger(l.ledger_id, app);
+                      const st = (l.status || '').toLowerCase().replace('_', ' ');
+                      if (st !== 'submitted' && st !== 'in review' && st !== 'pending' && st !== 'pending approval') return false;
+                      const app = getLedgerApproval(l.ledger_id, l);
+                      return canUserApproveLedger(l.ledger_id, app, l);
                     });
 
                     const hasDraftBatches = cluster.ledgers.some(l => l.status === 'Draft' || l.status === 'Rework' || l.status === 'Rejected');
-                    const isGroupInReview = cluster.ledgers.some(l => l.status === 'Submitted' || l.status === 'In Review');
+                    const isGroupInReview = cluster.ledgers.some(l => {
+                      const st = (l.status || '').toLowerCase().replace('_', ' ');
+                      return st === 'submitted' || st === 'in review' || st === 'pending' || st === 'pending approval';
+                    });
 
                     const groupPendingStep = cluster.ledgers
                       .map(l => (l as any).approval_history?.find((i: any) => i.status === 'Pending')?.step_name || getLedgerApproval(l.ledger_id)?.step_name)
@@ -2389,6 +2784,24 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 </button>
                               )}
 
+                              {/* Review / Action Button for pending approver */}
+                              {isGroupInReview && canUserApproveGroup && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    toggleGroupAccordion(cluster.groupId)
+                                    setSelectedGroupForAction(cluster);
+                                    setActionComments(groupReworkComments[cluster.groupId] || '');
+                                    setActionCommentError('');
+                                  }}
+                                  className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-[11px] font-semibold hover:bg-amber-500/25 transition-all cursor-pointer inline-flex items-center gap-1"
+                                  title={`Review and action pending approval step: ${groupPendingStep}`}
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  <span>Review / Action</span>
+                                </button>
+                              )}
+
                               {/* Paid Badge if already settled */}
                               {isGroupPaid && (
                                 <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
@@ -2397,8 +2810,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 </span>
                               )}
 
-                              {/* Group Report Button (When group is completed) */}
-                              {cluster.isCompleted && (
+                              {/* Group Report Button (Available once submitted / in review / approved / completed) */}
+                              {(cluster.isCompleted || groupStatus !== 'Draft') && (
                                 <button
                                   type="button"
                                   onClick={() => setSelectedGroupForReport(cluster)}
@@ -2496,17 +2909,71 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                             {/* CHILD BUNDLE SUB-HEADER */}
                             <tr className="bg-surface-container-high/90 text-on-surface-variant uppercase text-[9px] tracking-wider border-y border-outline-variant select-none">
                               <th className="w-9 px-2 py-2 text-center"></th>
-                              <th className="px-4 py-2">Bundle ID</th>
-                              <th className="px-4 py-2">Claim Bundle</th>
-                              <th className="px-4 py-2">Batches</th>
-                              <th className="px-4 py-2">Expenses</th>
-                              <th className="px-4 py-2">Worker</th>
-                              <th className="px-4 py-2 text-right">Bundle Total</th>
+                              <th
+                                onClick={() => handleBundleSort('bundle_id')}
+                                className="px-4 py-2 cursor-pointer hover:text-primary transition-colors group"
+                                title="Sort by Bundle ID"
+                              >
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Bundle ID</span>
+                                  {renderSortIndicator(bundleSortField, 'bundle_id', bundleSortDirection)}
+                                </div>
+                              </th>
+                              <th
+                                onClick={() => handleBundleSort('claim_bundle')}
+                                className="px-4 py-2 cursor-pointer hover:text-primary transition-colors group"
+                                title="Sort by Claim Bundle"
+                              >
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Claim Bundle</span>
+                                  {renderSortIndicator(bundleSortField, 'claim_bundle', bundleSortDirection)}
+                                </div>
+                              </th>
+                              <th
+                                onClick={() => handleBundleSort('batches')}
+                                className="px-4 py-2 cursor-pointer hover:text-primary transition-colors group"
+                                title="Sort by Batches Count"
+                              >
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Batches</span>
+                                  {renderSortIndicator(bundleSortField, 'batches', bundleSortDirection)}
+                                </div>
+                              </th>
+                              <th
+                                onClick={() => handleBundleSort('expenses')}
+                                className="px-4 py-2 cursor-pointer hover:text-primary transition-colors group"
+                                title="Sort by Expenses Count"
+                              >
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Expenses</span>
+                                  {renderSortIndicator(bundleSortField, 'expenses', bundleSortDirection)}
+                                </div>
+                              </th>
+                              <th
+                                onClick={() => handleBundleSort('worker')}
+                                className="px-4 py-2 cursor-pointer hover:text-primary transition-colors group"
+                                title="Sort by Worker Name"
+                              >
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Worker</span>
+                                  {renderSortIndicator(bundleSortField, 'worker', bundleSortDirection)}
+                                </div>
+                              </th>
+                              <th
+                                onClick={() => handleBundleSort('bundle_total')}
+                                className="px-4 py-2 text-right cursor-pointer hover:text-primary transition-colors group"
+                                title="Sort by Bundle Total Amount"
+                              >
+                                <div className="inline-flex items-center justify-end gap-1 w-full">
+                                  <span>Bundle Total</span>
+                                  {renderSortIndicator(bundleSortField, 'bundle_total', bundleSortDirection)}
+                                </div>
+                              </th>
                               {/* <Can permission='finance.change_ledger'> */}
                               <th className="px-4 py-2 text-right">Actions</th>
                               {/* </Can> */}
                             </tr>
-                            {getGroupBundleBreakdown(cluster).map((bundleItem, bIdx) => {
+                            {getSortedGroupBundleBreakdown(cluster).map((bundleItem, bIdx) => {
                               const bundleKey = `${cluster.groupId}_${bundleItem.bundleId}`;
                               const isBundleExpanded = !!expandedGroupBundleKeys[bundleKey];
                               const isOdd = bIdx % 2 === 1;
@@ -2618,23 +3085,95 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                       <td colSpan={8} className="p-4 border-b border-outline-variant space-y-3">
                                         <div className="overflow-x-auto rounded border border-outline-variant bg-surface-container shadow-2xs">
                                           <table className="w-full text-xs text-left text-on-surface">
-                                            <thead className="bg-surface-container-high/80 text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant">
+                                            <thead className="bg-surface-container-high/80 text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant select-none">
                                               <tr>
-                                                <th className="px-3 py-2.5">Exp</th>
-                                                <th className="px-3 py-2.5">Description</th>
-                                                <th className="px-3 py-2.5">Target Ledger Batch</th>
-                                                <th className="px-3 py-2.5">Sub-Department</th>
-                                                <th className="px-3 py-2.5">Ticket / WO</th>
-                                                <th className="px-3 py-2.5">Category</th>
-                                                <th className="px-3 py-2.5">Date</th>
-                                                <th className="px-3 py-2.5 text-right">Amount</th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('exp')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Expense ID"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Exp</span>
+                                                    {renderSortIndicator(expenseSortField, 'exp', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('description')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Description"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Description</span>
+                                                    {renderSortIndicator(expenseSortField, 'description', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('target_batch')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Target Ledger Batch"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Target Ledger Batch</span>
+                                                    {renderSortIndicator(expenseSortField, 'target_batch', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('sub_department')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Sub-Department"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Sub-Department</span>
+                                                    {renderSortIndicator(expenseSortField, 'sub_department', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('ticket')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Ticket / WO"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Ticket / WO</span>
+                                                    {renderSortIndicator(expenseSortField, 'ticket', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('category')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Category"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Category</span>
+                                                    {renderSortIndicator(expenseSortField, 'category', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('date')}
+                                                  className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Date"
+                                                >
+                                                  <div className="inline-flex items-center gap-1">
+                                                    <span>Date</span>
+                                                    {renderSortIndicator(expenseSortField, 'date', expenseSortDirection)}
+                                                  </div>
+                                                </th>
+                                                <th
+                                                  onClick={() => handleExpenseSort('amount')}
+                                                  className="px-3 py-2.5 text-right cursor-pointer hover:text-primary transition-colors group"
+                                                  title="Sort by Amount"
+                                                >
+                                                  <div className="inline-flex items-center justify-end gap-1 w-full">
+                                                    <span>Amount</span>
+                                                    {renderSortIndicator(expenseSortField, 'amount', expenseSortDirection)}
+                                                  </div>
+                                                </th>
                                                 <Can permission='finance.change_ledger'>
                                                   <th className="px-3 py-2.5 text-right">Action</th>
                                                 </Can>
                                               </tr>
                                             </thead>
                                             <tbody className="divide-y divide-outline-variant/40">
-                                              {bundleItem.expenses.map((exp, eIdx) => {
+                                              {getSortedBundleExpenses(bundleItem).map((exp, eIdx) => {
                                                 const expSubDept = exp.ticket_details?.sub_department_name || (exp as any).sub_department_name || '-';
                                                 const matchingBatch = bundleItem.ledgerBatches.find(bb => {
                                                   const batchObj = (ledgerBatches || internalBatches || []).find(b => b.batch_name === bb.batchName);
@@ -2679,8 +3218,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                           <button
                                                             onClick={(e) => {
                                                               e.stopPropagation();
-                                                              if ((parentLedger.expenses?.length || 0) <= 1) {
-                                                                alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
+                                                              if (isOnlyExpenseInBundleOrLedger(parentLedger, exp, bundleItem.expenses?.length)) {
+                                                                confirmPopup({
+                                                                  preset: "remove",
+                                                                  button2: "Close",
+                                                                  title: "Cannot Remove Expense",
+                                                                  description: "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.",
+                                                                  showButton1: false,
+                                                                });
                                                                 return;
                                                               }
                                                               handleRemoveExpenseFromLedger(parentLedger.ledger_id, exp.expense_id);
@@ -2837,19 +3382,78 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                         ) : (
                                           <div className="overflow-x-auto rounded border border-outline-variant bg-surface-container shadow-2xs">
                                             <table className="w-full text-xs text-left text-on-surface">
-                                              <thead className="bg-surface-container-high/80 text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant">
+                                              <thead className="bg-surface-container-high/80 text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant select-none">
                                                 <tr>
-                                                  <th className="px-3 py-2.5">Exp</th>
-                                                  {activeViewMode === 'flat_table' ? (
-                                                    <th className="px-3 py-2.5">Worker & Sub-Dept</th>
-                                                  ) : (
-                                                    <th className="px-3 py-2.5">Description</th>
-                                                  )}
-                                                  <th className="px-3 py-2.5">Ticket / WO</th>
-                                                  <th className="px-3 py-2.5">Category</th>
-                                                  <th className="px-3 py-2.5">Date</th>
-                                                  <th className="px-3 py-2.5">Source Bundle</th>
-                                                  <th className="px-3 py-2.5 text-right">Amount</th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('exp')}
+                                                    className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Expense ID"
+                                                  >
+                                                    <div className="inline-flex items-center gap-1">
+                                                      <span>Exp</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'exp', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('description')}
+                                                    className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Description"
+                                                  >
+                                                    <div className="inline-flex items-center gap-1">
+                                                      <span>Description</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'description', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('ticket')}
+                                                    className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Ticket / WO"
+                                                  >
+                                                    <div className="inline-flex items-center gap-1">
+                                                      <span>Ticket / WO</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'ticket', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('category')}
+                                                    className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Category"
+                                                  >
+                                                    <div className="inline-flex items-center gap-1">
+                                                      <span>Category</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'category', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('date')}
+                                                    className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Date"
+                                                  >
+                                                    <div className="inline-flex items-center gap-1">
+                                                      <span>Date</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'date', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('source_bundle')}
+                                                    className="px-3 py-2.5 cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Source Bundle"
+                                                  >
+                                                    <div className="inline-flex items-center gap-1">
+                                                      <span>Source Bundle</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'source_bundle', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
+                                                  <th
+                                                    onClick={() => handleFlatExpenseSort('amount')}
+                                                    className="px-3 py-2.5 text-right cursor-pointer hover:text-primary transition-colors group"
+                                                    title="Sort by Amount"
+                                                  >
+                                                    <div className="inline-flex items-center justify-end gap-1 w-full">
+                                                      <span>Amount</span>
+                                                      {renderSortIndicator(flatExpenseSortField, 'amount', flatExpenseSortDirection)}
+                                                    </div>
+                                                  </th>
                                                   <th className="px-3 py-2.5 text-right">Actions</th>
                                                 </tr>
                                               </thead>
@@ -2978,7 +3582,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                               </tr>
 
                                                               {/* EXPENSES (CHILDREN OF WORKER) */}
-                                                              {isChildExpanded && w.expenses.map(exp => {
+                                                              {isChildExpanded && getSortedLedgerExpenses(w.expenses, activeViewMode).map(exp => {
                                                                 const ticketLabel = formatTicketDisplay(exp);
                                                                 const claimId = typeof exp.claim === 'object' && exp.claim !== null ? exp.claim.claim_id : exp.claim;
                                                                 const expDescription = exp.ticket_details?.title || exp.remarks || exp.expense_type_detail?.expense_name || 'General';
@@ -3033,8 +3637,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                         <button
                                                                           onClick={(e) => {
                                                                             e.stopPropagation();
-                                                                            if (ledgerExpenses.length <= 1) {
-                                                                              alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
+                                                                            if (isOnlyExpenseInBundleOrLedger(l, exp)) {
+                                                                              confirmPopup({
+                                                                                preset: "remove",
+                                                                                button2: "Close",
+                                                                                title: "Cannot Remove Expense",
+                                                                                description: "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.",
+                                                                                showButton1: false,
+                                                                              });
                                                                               return;
                                                                             }
                                                                             handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
@@ -3184,7 +3794,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                               </tr>
 
                                                               {/* EXPENSES */}
-                                                              {isChildExpanded && sd.expenses.map(exp => {
+                                                              {isChildExpanded && getSortedLedgerExpenses(sd.expenses, activeViewMode).map(exp => {
                                                                 const ticketLabel = formatTicketDisplay(exp);
                                                                 const claimId = typeof exp.claim === 'object' && exp.claim !== null ? exp.claim.claim_id : exp.claim;
                                                                 const expDescription = exp.ticket_details?.title || exp.remarks || exp.expense_type_detail?.expense_name || 'General';
@@ -3239,8 +3849,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                         <button
                                                                           onClick={(e) => {
                                                                             e.stopPropagation();
-                                                                            if (ledgerExpenses.length <= 1) {
-                                                                              alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
+                                                                            if (isOnlyExpenseInBundleOrLedger(l, exp)) {
+                                                                              confirmPopup({
+                                                                                preset: "remove",
+                                                                                button2: "Close",
+                                                                                title: "Cannot Remove Expense",
+                                                                                description: "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.",
+                                                                                showButton1: false,
+                                                                              });
                                                                               return;
                                                                             }
                                                                             handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
@@ -3265,27 +3881,35 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                 )}
                                                 {/* VIEW MODE 3: FLAT TABLE */}
                                                 {activeViewMode === 'flat_table' && (
-                                                  ledgerExpenses.map((exp: any) => {
+                                                  getSortedLedgerExpenses(ledgerExpenses, activeViewMode).map((exp: any) => {
                                                     const subDeptName = exp.ticket_details?.sub_department_name || exp.sub_department_name || '-';
                                                     const ticketLabel = formatTicketDisplay(exp);
                                                     const claimId = typeof exp.claim === 'object' && exp.claim !== null ? exp.claim.claim_id : exp.claim;
                                                     const workerObj = exp.worker_detail || (typeof exp.worker === 'object' && exp.worker !== null ? exp.worker : null);
                                                     const workerName = workerObj?.full_name || workerObj?.username || (typeof exp.worker === 'object' && exp.worker !== null ? (exp.worker.full_name || exp.worker.username || `Worker ${exp.worker.id}`) : `Worker ${exp.worker}`);
+                                                    const expDescription = exp.ticket_details?.title || exp.remarks || exp.expense_type_detail?.expense_name || '';
 
                                                     return (
                                                       <tr key={exp.expense_id} className="hover:bg-surface-container-high/40 transition-colors">
                                                         <td className="px-3 py-2 font-medium text-primary">{exp.expense_id}</td>
                                                         <td className="px-3 py-2">
-                                                          <div className="flex items-center gap-1.5 min-w-0">
-                                                            <AvatarCircle
-                                                              user={workerObj}
-                                                              name={workerName}
-                                                              size="xs"
-                                                            />
-                                                            <span className="font-medium text-on-surface truncate">{workerName}</span>
-                                                            <span className="text-[10px] px-1 py-0.2 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant shrink-0">
-                                                              {subDeptName}
-                                                            </span>
+                                                          <div className="flex flex-col min-w-0">
+                                                            {expDescription ? (
+                                                              <span className="font-medium text-on-surface truncate max-w-xs" title={expDescription}>
+                                                                {expDescription}
+                                                              </span>
+                                                            ) : null}
+                                                            <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                                                              <AvatarCircle
+                                                                user={workerObj}
+                                                                name={workerName}
+                                                                size="xs"
+                                                              />
+                                                              <span className="text-[11px] text-on-surface-variant truncate">{workerName}</span>
+                                                              <span className="text-[10px] px-1 py-0.2 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant shrink-0">
+                                                                {subDeptName}
+                                                              </span>
+                                                            </div>
                                                           </div>
                                                         </td>
                                                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -3327,8 +3951,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                             <button
                                                               onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                if (ledgerExpenses.length <= 1) {
-                                                                  alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
+                                                                if (isOnlyExpenseInBundleOrLedger(l, exp)) {
+                                                                  confirmPopup({
+                                                                    preset: "remove",
+                                                                    button2: "Close",
+                                                                    title: "Cannot Remove Expense",
+                                                                    description: "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.",
+                                                                    showButton1: false,
+                                                                  });
                                                                   return;
                                                                 }
                                                                 handleRemoveExpenseFromLedger(l.ledger_id, exp.expense_id);
@@ -3386,7 +4016,19 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   <Boxes className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-on-surface">Assemble Ledger</h3>
+                  <h3 className="text-sm font-semibold text-on-surface flex items-center gap-2">
+                    <span>{selectedGroupTitle ? `Add Bundles to: ${selectedGroupTitle}` : 'Assemble Ledger'}</span>
+                    {selectedGroupId && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 font-semibold">
+                        Group #{selectedGroupId}
+                      </span>
+                    )}
+                  </h3>
+                  {selectedGroupId && (
+                    <p className="text-[11px] text-on-surface-variant mt-0.5">
+                      Selected bundles will be assembled into batches and attached to this existing ledger group.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -3472,66 +4114,112 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                           {assembleSearch.trim() ? ` matching "${assembleSearch.trim()}"` : ' available'})
                         </span>
                       </label>
-
-
+                      {selectedBundleIds.length > 0 && (
+                        <div className="text-[11px] font-semibold text-on-surface-variant">
+                          Selected:{' '}
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                            KD {availableBundlesForAssemble
+                              .filter(b => selectedBundleIds.includes(b.claim_id))
+                              .reduce((sum, b) => sum + (parseFloat(b.total_claimed_amount) || 0), 0)
+                              .toFixed(3)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                {/* Bundle Selection List */}
-                <div className="max-h-56 overflow-y-auto border border-outline-variant rounded divide-y divide-outline-variant bg-surface-container-low scrollbar-thin">
+                {/* Bundle Selection Grid */}
+                <div className="max-h-72 overflow-y-auto border border-outline-variant rounded bg-surface-container-low p-2.5 scrollbar-thin">
                   {availableBundlesForAssemble.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-on-surface-variant italic">
+                    <div className="p-8 text-center text-xs text-on-surface-variant italic">
                       No unassigned approved bundles available.
                     </div>
                   ) : filteredBundlesForAssemble.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-on-surface-variant italic">
+                    <div className="p-8 text-center text-xs text-on-surface-variant italic">
                       No bundles found matching "{assembleSearch}".
                     </div>
                   ) : (
-                    filteredBundlesForAssemble.map((b) => {
-                      const isSelected = selectedBundleIds.includes(b.claim_id);
-                      return (
-                        <div
-                          key={b.claim_id}
-                          onClick={() => {
-                            setSelectedBundleIds(
-                              isSelected
-                                ? selectedBundleIds.filter(id => id !== b.claim_id)
-                                : [...selectedBundleIds, b.claim_id]
-                            );
-                          }}
-                          className={`flex items-center justify-between p-2.5 hover:bg-surface-container transition-colors cursor-pointer text-xs ${isSelected ? 'bg-primary/10 border-l-4 border-l-primary' : ''
-                            }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => { }}
-                              className="accent-primary cursor-pointer rounded"
-                            />
-                            <div>
-                              <span className="font-semibold text-primary">Bundle {b.claim_id}</span>
-                              <span className="text-[11px] text-on-surface-variant ml-2">
-                                {b.worker_detail?.full_name || b.worker_detail?.username || `Worker ${b.worker}`}
-                              </span>
-                              <span className="text-[10px] text-on-surface-variant block mt-0.5">
-                                {b.expenses?.length || 0} expenses • {b.ticket_details ? `${b.ticket_details.work_order_no} - ${b.ticket_details.title}` : 'Multiple Tickets'}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                      {filteredBundlesForAssemble.map((b) => {
+                        const isSelected = selectedBundleIds.includes(b.claim_id);
+                        const workerObj = b.worker_detail || (typeof b.worker === 'object' ? b.worker : null) || (b.expenses && b.expenses[0]?.worker_detail) || null;
+                        const workerName = workerObj?.full_name || workerObj?.username || b.worker_detail?.full_name || b.worker_detail?.username || `Worker ${b.worker}`;
+                        const workerImage = workerObj?.profile_image || (typeof b.worker === 'object' ? (b.worker as any)?.profile_image : null) || (b.expenses && (b.expenses[0]?.worker_detail as any)?.profile_image) || null;
+                        const expensesCount = b.expenses?.length || 0;
+                        const ticketDisplay = b.ticket_details?.work_order_no || (b.ticket_details?.title ? b.ticket_details.title : (expensesCount > 0 ? `${expensesCount} expenses` : '-'));
+                        const subDeptNames = Array.from(new Set(
+                          (b.expenses || []).map((e: any) => e.ticket_details?.sub_department_name || e.sub_department_name).filter(Boolean)
+                        ));
+
+                        return (
+                          <div
+                            key={b.claim_id}
+                            onClick={() => {
+                              setSelectedBundleIds(
+                                isSelected
+                                  ? selectedBundleIds.filter(id => id !== b.claim_id)
+                                  : [...selectedBundleIds, b.claim_id]
+                              );
+                            }}
+                            className={`p-2.5 rounded border transition-all cursor-pointer flex flex-col justify-between text-xs gap-2.5 select-none ${isSelected
+                              ? 'bg-primary/10 border-primary ring-1 ring-primary/40 shadow-xs'
+                              : 'bg-surface-container border-outline-variant/70 hover:bg-surface-container-high hover:border-outline'
+                              }`}
+                          >
+                            {/* Card Top: Checkbox, Bundle ID & Amount */}
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => { }}
+                                  className="accent-primary cursor-pointer rounded shrink-0 mt-0.5"
+                                />
+                                <span className="font-bold text-primary truncate text-xs">
+                                  Bundle {b.claim_id}
+                                </span>
+                              </div>
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs shrink-0 whitespace-nowrap">
+                                KD {parseFloat(b.total_claimed_amount).toFixed(3)}
                               </span>
                             </div>
+
+                            {/* Card Middle: User Avatar, Name & Sub-Departments */}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <AvatarCircle
+                                user={workerObj}
+                                name={workerName}
+                                image={workerImage}
+                                size="sm"
+                              />
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <div className="text-[11px] font-semibold text-on-surface truncate" title={workerName}>
+                                  {workerName}
+                                </div>
+                                {subDeptNames.length > 0 ? (
+                                  <div className="text-[10px] text-on-surface-variant truncate" title={subDeptNames.join(', ')}>
+                                    {subDeptNames.join(', ')}
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-on-surface-variant/70 italic">
+                                    General Sub-Dept
+                                  </div>
+                                )}
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded bg-surface-container-high font-medium shrink-0">
+                                {expensesCount} exp
+                              </span>
+                            </div>
+
+                            {/* Card Bottom: Metadata Badges */}
+                            <div className="pt-1.5 border-t border-outline-variant/40 flex items-center justify-between text-[10px] text-on-surface-variant gap-1">
+
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
-                              KD {parseFloat(b.total_claimed_amount).toFixed(3)}
-                            </span>
-                            <span className="text-[10px] text-on-surface-variant">
-                              {b.period_from && b.period_to ? `${b.period_from} → ${b.period_to}` : 'Approved'}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -3655,25 +4343,35 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               {/* Group selection / creation */}
               <div className="space-y-3 pt-1 relative z-20">
                 <div className="relative z-30">
-                  <label className="text-xs font-medium text-on-surface block mb-1">
-                    Select Existing Ledger
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-on-surface block">
+                      Select Existing Ledger
+                    </label>
+                    {isAddingToExistingGroup && (
+                      <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-medium inline-flex items-center gap-1 bg-indigo-500/10 dark:bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">
+                        <Lock className="w-3 h-3" />
+                        <span>Fixed to Current Ledger</span>
+                      </span>
+                    )}
+                  </div>
                   <SearchableSelect
+                    disabled={isAddingToExistingGroup}
                     options={ledgerGroupSelectOptions}
                     value={selectedGroupId}
                     onChange={(val) => {
+                      if (isAddingToExistingGroup) return;
                       setSelectedGroupId(val);
                       if (val) setNewGroupName('');
                     }}
                     onSearchChange={handleGroupSearch}
                     loading={loadingGroups}
                     disableLocalFilter={true}
-                    onDeleteOption={handleDeleteUnusedGroup}
+                    onDeleteOption={isAddingToExistingGroup ? undefined : handleDeleteUnusedGroup}
                     placeholder="Search or select a ledger ..."
                   />
                 </div>
 
-                {selectedGroupId && (() => {
+                {selectedGroupId && !isAddingToExistingGroup && (() => {
                   const currentGrp = dynamicGroups.find(g => String(g.ledger_group_id) === String(selectedGroupId)) ||
                     ledgerGroups?.find(g => String(g.ledger_group_id) === String(selectedGroupId));
                   if (currentGrp && isGroupUnused(currentGrp)) {
@@ -3765,275 +4463,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 {submitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Assembling...</span>
+                    <span>{selectedGroupId ? 'Adding Bundles...' : 'Assembling...'}</span>
                   </>
                 ) : (
                   <>
                     <Boxes className="w-3.5 h-3.5" />
                     <span>
-                      {classificationResult.classifiedBatches.length > 1
-                        ? `${classificationResult.classifiedBatches.length} Ledgers will be created`
-                        : 'Assemble Ledger Batch'}
-                    </span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ATTACH BUNDLE TO LEDGER  */}
-      {selectedGroupForAddBundle && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface-container rounded border border-outline-variant max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-outline-variant pb-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-on-surface">
-                    Add Bundle to Ledger: {selectedGroupForAddBundle.groupName}
-                  </h3>
-                  <p className="text-[11px] text-on-surface-variant">
-                    Group {selectedGroupForAddBundle.groupId} • {selectedGroupForAddBundle.ledgers.length} Ledger Batches
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedGroupForAddBundle(null);
-                  setSelectedBundleIdsToAttach([]);
-                  setAttachBundleError(null);
-                }}
-                className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {attachBundleError && (
-              <div className="p-3 rounded bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{attachBundleError}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAttachBundleError(null)}
-                  className="p-0.5 hover:bg-red-500/20 rounded cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            <div className="space-y-3 overflow-y-auto flex-1 pr-1">
-              <p className="text-xs text-on-surface">
-                Select one or more approved worker claim bundles to add into this Ledger. The system will automatically place them into their corresponding ledger batches.
-              </p>
-
-              {loadingAvailableBundles ? (
-                <div className="py-12 flex flex-col items-center justify-center gap-3 text-on-surface-variant">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span className="text-xs font-medium">Fetching approved bundles...</span>
-                </div>
-              ) : (() => {
-                const availableSourceBundles = fetchedApprovedBundles !== null ? fetchedApprovedBundles : bundles;
-                const groupBatches = selectedGroupForAddBundle.ledgers;
-                const groupExpenseIds = new Set<number>();
-                groupBatches.forEach(l => {
-                  if (Array.isArray(l.expenses)) {
-                    l.expenses.forEach(e => groupExpenseIds.add(e.expense_id));
-                  }
-                });
-
-                // Find eligible approved bundles
-                const eligibleBundlesWithTarget = availableSourceBundles.filter(b => {
-                  if (b.status !== 'Approved') return false;
-                  if (b.ledger_id && groupBatches.some(l => l.ledger_id === b.ledger_id)) return false;
-
-                  const bundleExpenses = b.expenses || [];
-                  if (bundleExpenses.length === 0) return false;
-
-                  // Check if this bundle is already attached
-                  const unattachedExpenses = bundleExpenses.filter(e => !groupExpenseIds.has(e.expense_id));
-                  if (unattachedExpenses.length === 0) return false;
-
-                  return true;
-                }).map(b => {
-                  const bundleExpenses = b.expenses || [];
-                  // Find matching editable ledger in this group
-                  const matchingLedger = groupBatches.find(l => {
-                    const isEditable = !selectedGroupForAddBundle.isCompleted && l.status !== 'Paid';
-                    if (!isEditable) return false;
-
-                    const ledgerBatch = (ledgerBatches || internalBatches || []).find(
-                      (bItem: any) => (bItem.batch_id || bItem.id) === l.ledger_batch || bItem.batch_name === l.ledger_batch_detail?.batch_name
-                    ) || l.ledger_batch_detail;
-
-                    const allowedSubDeptIds = new Set<number>();
-                    if (ledgerBatch?.sub_departments && Array.isArray(ledgerBatch.sub_departments)) {
-                      ledgerBatch.sub_departments.forEach((id: any) => allowedSubDeptIds.add(Number(id)));
-                    }
-                    if (ledgerBatch?.sub_departments_detail && Array.isArray(ledgerBatch.sub_departments_detail)) {
-                      ledgerBatch.sub_departments_detail.forEach((sd: any) => allowedSubDeptIds.add(Number(sd.sub_department_id)));
-                    }
-
-                    if (allowedSubDeptIds.size === 0) return true; // General batch
-                    return bundleExpenses.every(e => {
-                      const sdId = e.ticket_details?.sub_department_id ?? e.sub_department_id;
-                      return sdId && allowedSubDeptIds.has(Number(sdId));
-                    });
-                  }) || groupBatches[0];
-
-                  return { bundle: b, targetLedger: matchingLedger };
-                });
-
-                if (eligibleBundlesWithTarget.length === 0) {
-                  return (
-                    <div className="p-4 rounded border border-outline-variant bg-surface-container-low text-xs text-on-surface-variant italic text-center">
-                      No eligible approved bundles available to add to {selectedGroupForAddBundle.groupName}.
-                    </div>
-                  );
-                }
-
-                const totalEligibleCount = eligibleBundlesWithTarget.length;
-                const selectedCount = selectedBundleIdsToAttach.length;
-                const isAllSelected = totalEligibleCount > 0 && selectedCount === totalEligibleCount;
-                const selectedTotalAmount = eligibleBundlesWithTarget
-                  .filter(item => selectedBundleIdsToAttach.includes(item.bundle.claim_id))
-                  .reduce((sum, item) => sum + (parseFloat(item.bundle.total_claimed_amount) || 0), 0);
-
-                return (
-                  <div className="space-y-2.5">
-                    {/* Multi-select Header Toolbar */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-surface-container rounded border border-outline-variant text-xs">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedBundleIdsToAttach(eligibleBundlesWithTarget.map(item => item.bundle.claim_id));
-                            } else {
-                              setSelectedBundleIdsToAttach([]);
-                            }
-                          }}
-                          className="accent-primary cursor-pointer rounded"
-                        />
-                        <span className="font-semibold text-on-surface">
-                          Select All ({totalEligibleCount})
-                        </span>
-                      </label>
-                      <div className="text-[11px] font-medium text-on-surface-variant">
-                        {selectedCount > 0 ? (
-                          <span>
-                            <strong className="text-primary font-semibold">{selectedCount}</strong> selected • <strong className="text-emerald-600 dark:text-emerald-400 font-bold">KD {selectedTotalAmount.toFixed(3)}</strong>
-                          </span>
-                        ) : (
-                          <span>0 selected</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="max-h-72 overflow-y-auto border border-outline-variant rounded divide-y divide-outline-variant bg-surface-container-low scrollbar-thin">
-                      {eligibleBundlesWithTarget.map(({ bundle: b, targetLedger }) => {
-                        const bundleExpenses = b.expenses || [];
-                        const isSelected = selectedBundleIdsToAttach.includes(b.claim_id);
-
-                        const toggleSelection = () => {
-                          setSelectedBundleIdsToAttach(prev =>
-                            prev.includes(b.claim_id)
-                              ? prev.filter(id => id !== b.claim_id)
-                              : [...prev, b.claim_id]
-                          );
-                        };
-
-                        return (
-                          <div
-                            key={b.claim_id}
-                            onClick={toggleSelection}
-                            className={`p-3 flex items-start justify-between text-xs transition-colors cursor-pointer ${isSelected
-                              ? 'bg-primary/10 border-l-4 border-l-primary'
-                              : 'hover:bg-surface-container'
-                              }`}
-                          >
-                            <div className="flex items-start gap-2.5">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={toggleSelection}
-                                onClick={(e) => e.stopPropagation()}
-                                className="accent-primary mt-0.5 cursor-pointer rounded"
-                              />
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-primary">Bundle {b.claim_id}</span>
-                                  <span className="text-[11px] text-on-surface font-medium">
-                                    {b.worker_detail?.full_name || b.worker_detail?.username || `Worker ${b.worker}`}
-                                  </span>
-                                </div>
-                                <div className="text-[10px] text-on-surface-variant">
-                                  Period: {b.period_from && b.period_to ? `${b.period_from} → ${b.period_to}` : 'All Expenses'} • {bundleExpenses.length} expense{bundleExpenses.length > 1 ? 's' : ''}
-                                </div>
-
-                                {targetLedger && (
-                                  <div className="pt-0.5 flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-500/20">
-                                      ✓ Targets: {targetLedger.ledger_batch_detail?.batch_name || `Batch ${targetLedger.ledger_id}`}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
-                                KD {parseFloat(b.total_claimed_amount).toFixed(3)}
-                              </span>
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20">
-                                Approved
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-outline-variant shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedGroupForAddBundle(null);
-                  setSelectedBundleIdsToAttach([]);
-                }}
-                className="px-4 py-2 rounded border border-outline text-xs font-medium hover:bg-surface-container-high transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAttachBundleToGroup}
-                disabled={attachingBundle || selectedBundleIdsToAttach.length === 0}
-                className="px-4 py-2 rounded bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                {attachingBundle ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>
-                      Adding {selectedBundleIdsToAttach.length > 1 ? `${selectedBundleIdsToAttach.length} Bundles` : 'Bundle'} to Group...
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>
-                      Add {selectedBundleIdsToAttach.length > 0 ? `${selectedBundleIdsToAttach.length} ` : ''}Bundle{selectedBundleIdsToAttach.length === 1 ? '' : 's'} to Group
+                      {selectedGroupId
+                        ? `Add ${selectedBundleIds.length > 0 ? `${selectedBundleIds.length} ` : ''}Bundle${selectedBundleIds.length === 1 ? '' : 's'} to Ledger Group`
+                        : classificationResult.classifiedBatches.length > 1
+                          ? `${classificationResult.classifiedBatches.length} Ledgers will be created`
+                          : 'Assemble Ledger Batch'}
                     </span>
                   </>
                 )}
@@ -4060,6 +4500,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           }}
         />
       )}
+
 
       {/* Confirmation Modal for Marking Ledger  as Completed */}
       {groupToConfirmComplete && (

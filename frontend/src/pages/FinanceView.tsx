@@ -503,8 +503,16 @@ export const FinanceView: React.FC = () => {
   };
 
   const handleDeleteLedger = async (ledgerId: number) => {
-    if (!window.confirm(`Are you sure you want to delete Ledger Batch ${ledgerId}?`)) return;
 
+    const confirmed = await confirmPopup({
+      preset: "delete",
+      title: `Delete Ledger Batch ${ledgerId}?`,
+      description: `Are you sure you want to delete Ledger Batch ${ledgerId}?`,
+      button1: "Cancel",
+      button2: "Delete Batch",
+    });
+
+    if (!confirmed) return;
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -550,12 +558,63 @@ export const FinanceView: React.FC = () => {
 
   const handleRemoveExpenseFromLedger = async (ledgerId: number, expenseId: number) => {
     const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
-    if ((targetLedger?.expenses?.length ?? 0) <= 1) {
-      alert("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
-      setErrorMessage("The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle.");
+    const targetExp = targetLedger?.expenses?.find(e => e.expense_id === expenseId)
+      || (expenses || []).find(e => e.expense_id === expenseId);
+
+    const rawClaim = targetExp ? (targetExp.claim ?? (targetExp as any).claim_id ?? (targetExp as any).bundle_id) : null;
+    const claimId = rawClaim && typeof rawClaim === 'object' ? rawClaim.claim_id : rawClaim;
+
+    const matchingBundle = claimId
+      ? ((bundles || []).find(b => Number(b.claim_id || (b as any).id) === Number(claimId))
+         || (targetLedger?.bundles || []).find(b => Number(b.claim_id || (b as any).id) === Number(claimId)))
+      : null;
+
+    const bundleExpensesInLedger = claimId && targetLedger?.expenses
+      ? targetLedger.expenses.filter(e => {
+          const c = e.claim ?? (e as any).claim_id ?? (e as any).bundle_id;
+          const cid = c && typeof c === 'object' ? c.claim_id : c;
+          return Number(cid) === Number(claimId);
+        }).length
+      : 0;
+
+    const totalBundleExpenses = matchingBundle?.expenses?.length;
+
+    const isOnlyExpenseInBundle = Boolean(
+      claimId && (
+        (totalBundleExpenses !== undefined && totalBundleExpenses <= 1) ||
+        bundleExpensesInLedger <= 1
+      )
+    );
+
+    const isOnlyExpenseInLedger = (targetLedger?.expenses?.length ?? 0) <= 1;
+
+    if (isOnlyExpenseInBundle || isOnlyExpenseInLedger) {
+      const description = isOnlyExpenseInBundle
+        ? "The only expense cannot be removed directly. Please remove the bundle first, then remove the expense from the bundle."
+        : "The only expense in this Ledger Batch cannot be removed directly. Please remove the bundle first or delete the ledger batch.";
+
+      await confirmPopup({
+        preset: "remove",
+        button2: "Close",
+        title: "Cannot Remove Expense",
+        description,
+        showButton1: false,
+      });
+      setErrorMessage(description);
       return;
     }
-    if (!window.confirm(`Are you sure you want to remove Expense ${expenseId} from this Ledger Batch?`)) return;
+
+
+    const confirmed = await confirmPopup({
+      preset: "remove",
+      title: `Remove Expense ${expenseId}?`,
+      description: `Are you sure you want to remove Expense ${expenseId} from this Ledger Batch?`,
+      button1: "Cancel",
+      button2: "Remove Expense",
+    });
+
+    if (!confirmed) return;
+
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -603,15 +662,13 @@ export const FinanceView: React.FC = () => {
       const bundleIds = Array.isArray(bundleId) ? bundleId : [bundleId];
       if (bundleIds.length === 0) return;
 
-      for (const bId of bundleIds) {
-        const res = await fetch(`${API_URL}/finance/ledger-groups/${groupId}/add-bundle/`, {
-          method: 'POST',
-          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bundle_id: bId, bundle_ids: [bId] })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || `Failed to add Bundle ${bId} to ledger group`);
-      }
+      const res = await fetch(`${API_URL}/finance/ledger-groups/${groupId}/add-bundle/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bundle_ids: bundleIds })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to add bundle(s) to ledger group');
 
       const count = bundleIds.length;
       setSuccessMessage(`${count} bundle${count > 1 ? 's' : ''} successfully added to Ledger Group ${groupId}.`);
@@ -660,7 +717,17 @@ export const FinanceView: React.FC = () => {
       setErrorMessage("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to remove Bundle ${bundleId} from this Ledger Group?`)) return;
+
+    const confirmed = await confirmPopup({
+      preset: "remove",
+      title: "Remove Bundle from Ledger Group",
+      description: "Are you sure you want to remove Bundle 24 from this Ledger Group?",
+      button1: "Cancel",
+      button2: "Remove Bundle",
+    });
+
+    if (!confirmed) return;
+
     setSubmitting(true);
     setErrorMessage(null);
     try {

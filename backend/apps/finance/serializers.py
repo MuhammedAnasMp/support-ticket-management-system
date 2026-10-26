@@ -545,9 +545,11 @@ class LedgerSerializer(serializers.ModelSerializer):
         return None
 
     def get_approval_history(self, obj):
+        request = self.context.get('request')
+        user = request.user if request else None
         insts = list(obj.approval_instances.all())
         insts.sort(key=lambda x: (x.step.step_order if x.step else 0, x.created_at or timezone.now()))
-        return [serialize_approval_instance_summary(inst) for inst in insts]
+        return [serialize_approval_instance_summary(inst, user=user) for inst in insts]
 
 
 class LedgerWriteSerializer(serializers.ModelSerializer):

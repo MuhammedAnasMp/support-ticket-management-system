@@ -1135,6 +1135,47 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             raise exceptions.ValidationError({'detail': msg})
 
 
+def get_optimized_ledger_queryset():
+    return Ledger.objects.select_related(
+        'ledger_group',
+        'ledger_group__created_by',
+        'ledger_group__completed_by',
+        'ledger_batch',
+        'created_by',
+        'created_by__role',
+        'store'
+    ).prefetch_related(
+        Prefetch(
+            'expenses',
+            queryset=Expense.objects.select_related(
+                'worker', 'worker__role', 'ticket', 'ticket__store', 'ticket__nature__sub_department__department',
+                'ticket__department', 'ticket__status', 'expense_type', 'expense_type__department', 'responsible_store', 'added_by', 'claim'
+            ).prefetch_related('receipts')
+        ),
+        Prefetch(
+            'bundles',
+            queryset=WorkerClaim.objects.select_related(
+                'worker', 'worker__role', 'submitted_by', 'approved_by', 'ticket', 'ticket__store', 'ticket__status'
+            ).prefetch_related(
+                Prefetch(
+                    'expenses',
+                    queryset=Expense.objects.select_related(
+                        'worker', 'worker__role', 'ticket', 'ticket__store', 'ticket__nature__sub_department__department',
+                        'ticket__department', 'ticket__status', 'expense_type', 'expense_type__department', 'responsible_store', 'added_by'
+                    ).prefetch_related('receipts')
+                ),
+                'approval_instances__step__assigned_role',
+                'approval_instances__action_by',
+                'ledgers__ledger_group'
+            )
+        ),
+        'approval_instances__step__assigned_role',
+        'approval_instances__step__assigned_users',
+        'approval_instances__action_by',
+        'ledger_batch__sub_departments__department'
+    )
+
+
 class LedgerGroupViewSet(viewsets.ModelViewSet):
     queryset = LedgerGroup.objects.all().prefetch_related('ledgers').order_by('-created_at')
     serializer_class = LedgerGroupSerializer
@@ -1279,7 +1320,7 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
 
-        updated_ledgers = list(group.ledgers.all())
+        updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
         return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='action')
@@ -1322,7 +1363,7 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         if actioned_count == 0:
             return Response({'detail': 'You are not authorized to action the pending approval step for this Ledger Group.'}, status=status.HTTP_403_FORBIDDEN)
 
-        updated_ledgers = list(group.ledgers.all())
+        updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
         return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='add-bundle')
@@ -1335,15 +1376,13 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         target_ids = bundle_ids if isinstance(bundle_ids, list) else [bundle_id]
         from django.core.exceptions import ValidationError as DjangoValidationError
         try:
-            group = None
-            for b_id in target_ids:
-                group = LedgerService.add_bundle_to_group(
-                    ledger_group_id=pk,
-                    bundle_id=b_id,
-                    actor=request.user,
-                    ip_address=request.META.get('REMOTE_ADDR')
-                )
-            updated_ledgers = list(group.ledgers.all()) if group else []
+            group = LedgerService.add_bundle_to_group(
+                ledger_group_id=pk,
+                bundle_ids=target_ids,
+                actor=request.user,
+                ip_address=request.META.get('REMOTE_ADDR')
+            )
+            updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
             return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
@@ -1362,7 +1401,7 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            updated_ledgers = list(group.ledgers.all())
+            updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
             return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
@@ -1576,7 +1615,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            return Response(LedgerSerializer(ledger).data, status=status.HTTP_200_OK)
+            fresh_ledger = get_optimized_ledger_queryset().filter(pk=ledger.pk).first() or ledger
+            return Response(LedgerSerializer(fresh_ledger).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
