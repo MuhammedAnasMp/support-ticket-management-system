@@ -2374,6 +2374,7 @@ export const FinanceView: React.FC = () => {
         <BundlesSubpage
           filteredBundles={filteredBundles}
           bundles={bundles}
+          ledgers={ledgers}
           unclaimedExpenses={unclaimedExpenses}
           loading={loading}
           submitting={submitting}

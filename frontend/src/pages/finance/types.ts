@@ -192,8 +192,10 @@ export interface WorkerClaimItem {
   approval_instances?: ApprovalInstanceItem[];
   ledger_details?: {
     ledger_id: number;
+    ledger_group_id?: number;
     group_name: string;
     status: string;
+    is_completed?: boolean;
     created_at?: string;
   } | null;
 }

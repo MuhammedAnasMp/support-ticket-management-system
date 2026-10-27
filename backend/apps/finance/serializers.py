@@ -508,10 +508,13 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         if ledgers:
             ledger = ledgers[0]
             group_name = ledger.ledger_group.group_name if ledger.ledger_group else f"Ledger Batch #{ledger.ledger_id}"
+            is_completed = bool(ledger.ledger_group and ledger.ledger_group.is_completed)
             return {
                 'ledger_id': ledger.ledger_id,
+                'ledger_group_id': ledger.ledger_group_id,
                 'group_name': group_name,
                 'status': ledger.status,
+                'is_completed': is_completed,
                 'created_at': ledger.created_at.isoformat() if ledger.created_at else None
             }
         return None

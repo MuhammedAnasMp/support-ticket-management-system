@@ -602,6 +602,17 @@ class BundleService:
 
 class LedgerService:
     @classmethod
+    def has_super_permission(cls, user):
+        if not user:
+            return False
+        if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+            return True
+        role_name = getattr(getattr(user, 'role', None), 'role_name', '').lower().strip()
+        if role_name in ('administrator', 'admin'):
+            return True
+        return user.has_perm('finance.super_permission') or user.has_perm('super_permission')
+
+    @classmethod
     def recalculate_ledger_total(cls, ledger):
         """
         Recalculates total_amount of a Ledger batch based on its expenses and/or bundles.
@@ -711,6 +722,11 @@ class LedgerService:
 
             existing_batch_map = {}
             if ledger_group:
+                group_has_approved = ledger_group.ledgers.filter(status='Approved').exists()
+                if group_has_approved and not cls.has_super_permission(created_by):
+                    raise ValidationError(
+                        f"Ledger Group '{ledger_group.group_name}' is Approved. Only users with super_permission can add bundles."
+                    )
                 for l in ledger_group.ledgers.select_for_update().all():
                     if l.ledger_batch_id:
                         existing_batch_map[l.ledger_batch_id] = l
@@ -727,6 +743,10 @@ class LedgerService:
                     if ledger.status == 'Paid':
                         raise ValidationError(
                             f"Ledger Batch '{batch_obj.batch_name}' in this group is 'Paid' and cannot be modified."
+                        )
+                    if ledger.status == 'Approved' and not cls.has_super_permission(created_by):
+                        raise ValidationError(
+                            f"Ledger Batch '{batch_obj.batch_name}' is Approved. Only users with super_permission can add bundles to an approved ledger."
                         )
                     ledger.expenses.add(*batch_exp_list)
                     ledger.bundles.add(*batch_bundle_list)
@@ -923,6 +943,9 @@ class LedgerService:
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
+            if ledger.status == 'Approved' and not cls.has_super_permission(actor):
+                raise ValidationError(
+                    f"Ledger #{ledger_id} is Approved. Only users with super_permission can add bundles to an approved ledger.")
 
             bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
             if bundle.status != 'Approved':
@@ -1021,6 +1044,9 @@ class LedgerService:
             if group.is_completed:
                 raise ValidationError(
                     f"Ledger Group '{group.group_name}' is completed and locked. Bundles cannot be added.")
+            if group.ledgers.filter(status='Approved').exists() and not cls.has_super_permission(actor):
+                raise ValidationError(
+                    f"Ledger Group '{group.group_name}' is Approved. Only users with super_permission can add bundles.")
 
             bundles = list(WorkerClaim.objects.select_for_update().filter(claim_id__in=target_bundle_ids))
             if len(bundles) != len(target_bundle_ids):
@@ -1109,6 +1135,10 @@ class LedgerService:
                         raise ValidationError(
                             f"Ledger Batch '{batch_obj.batch_name}' in this group is 'Paid' and cannot be modified."
                         )
+                    if ledger.status == 'Approved' and not cls.has_super_permission(actor):
+                        raise ValidationError(
+                            f"Ledger Batch '{batch_obj.batch_name}' is Approved. Only users with super_permission can add bundles to an approved ledger."
+                        )
                     ledger.expenses.add(*exp_list)
                     ledger.bundles.add(*bundle_set)
 
@@ -1173,13 +1203,20 @@ class LedgerService:
                 raise ValidationError(
                     "Cannot remove the only bundle. Please delete the Ledger Batch instead.")
 
-            # Check if any ledger containing this bundle or its expenses is Paid
+            # Check if any ledger containing this bundle or its expenses is Paid or Approved without super_permission
             for l in ledgers:
-                if l.status == 'Paid' and (bundle in l.bundles.all() or any(e.claim_id == bundle_id for e in l.expenses.all())):
+                has_bundle = bundle in l.bundles.all()
+                matching_expenses = [e for e in l.expenses.all() if e.claim_id == bundle_id or e.claim == bundle]
+                if has_bundle or matching_expenses:
                     batch_name = l.ledger_batch.batch_name if l.ledger_batch else f"Ledger #{l.ledger_id}"
-                    raise ValidationError(
-                        f"Cannot remove Bundle #{bundle_id}: Ledger Batch '{batch_name}' is already 'Paid' and settled."
-                    )
+                    if l.status == 'Paid':
+                        raise ValidationError(
+                            f"Cannot remove Bundle #{bundle_id}: Ledger Batch '{batch_name}' is already 'Paid' and settled."
+                        )
+                    if l.status == 'Approved' and not cls.has_super_permission(actor):
+                        raise ValidationError(
+                            f"Cannot remove Bundle #{bundle_id}: Ledger Batch '{batch_name}' is Approved. Only users with super_permission can remove bundles from an approved ledger."
+                        )
 
             affected_count = 0
             for l in ledgers:
@@ -1223,6 +1260,9 @@ class LedgerService:
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
+            if ledger.status == 'Approved' and not cls.has_super_permission(actor):
+                raise ValidationError(
+                    f"Ledger #{ledger_id} is Approved. Only users with super_permission can remove bundles from an approved ledger.")
 
             if ledger.bundles.count() <= 1:
                 raise ValidationError(

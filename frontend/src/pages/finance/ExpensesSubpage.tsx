@@ -117,6 +117,9 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     setExpandedExpenseIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Last active row state for clicked row highlight
+  const [lastActiveExpenseId, setLastActiveExpenseId] = useState<number | string | null>(null);
+
   // Refreshing State
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
@@ -2191,19 +2194,25 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         )
                       );
                       const canEditExpense = Boolean(isAdmin || isSameUser);
+                      const isLastActive = lastActiveExpenseId === exp.expense_id;
 
                       return (
                         <React.Fragment key={exp.expense_id}>
                           <tr
-                            onClick={() => toggleExpandExpense(exp.expense_id)}
-                            className={`cursor-pointer transition-colors ${isExpanded
-                              ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
-                              : isMultiLineView
-                                ? 'bg-amber-50/75 dark:bg-amber-950/30 hover:bg-amber-100/75 dark:hover:bg-amber-950/45 border-l-4 border-l-amber-500 dark:border-l-amber-400 border-t border-amber-200/60 dark:border-amber-900/40'
-                                : 'hover:bg-surface-container-high'
+                            onClick={() => {
+                              setLastActiveExpenseId(exp.expense_id);
+                              toggleExpandExpense(exp.expense_id);
+                            }}
+                            className={`cursor-pointer transition-colors ${isLastActive
+                              ? 'bg-blue-100/75 dark:bg-blue-900/40 border-l-4 border-l-blue-600 dark:border-l-blue-400 ring-1 ring-inset ring-blue-500/30'
+                              : isExpanded
+                                ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
+                                : isMultiLineView
+                                  ? 'bg-amber-50/75 dark:bg-amber-950/30 hover:bg-amber-100/75 dark:hover:bg-amber-950/45 border-l-4 border-l-amber-500 dark:border-l-amber-400 border-t border-amber-200/60 dark:border-amber-900/40'
+                                  : 'hover:bg-surface-container-high'
                               }`}
                           >
-                            <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleExpandExpense(exp.expense_id); }}>
+                            <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); setLastActiveExpenseId(exp.expense_id); toggleExpandExpense(exp.expense_id); }}>
                               <button
                                 type="button"
                                 className={`p-1 rounded transition-colors cursor-pointer ${isExpanded ? 'bg-primary text-on-primary shadow-xs' : 'hover:bg-surface-container-highest text-on-surface-variant'}`}
@@ -2374,7 +2383,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                     <button
                                       type="button"
                                       disabled={updatingExpenseId === exp.expense_id}
-                                      onClick={() => openEditExpenseModal(exp)}
+                                      onClick={() => {
+                                        setLastActiveExpenseId(exp.expense_id);
+                                        openEditExpenseModal(exp);
+                                      }}
                                       className="px-2.5 py-1 rounded border border-gray-500/20  hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
                                       title={isExpenseApproved ? "Edit (Will move back to Approval)" : "Edit & Resubmit"}
                                     >
@@ -2413,10 +2425,15 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
                           {/* MULTI-LINE VIEW SECOND ROW (Pipeline 1-----2-----3-----4 + Quick Approve/Rework) */}
                           {isMultiLineView && !isExpanded && (
-                            <tr className={`border-b-2 border-outline-variant/80 transition-colors ${isOdd
-                              ? 'bg-slate-100/90 dark:bg-slate-800/45'
-                              : 'bg-white dark:bg-surface-container-lowest'
-                              }`}>
+                            <tr
+                              onClick={() => setLastActiveExpenseId(exp.expense_id)}
+                              className={`border-b-2 border-outline-variant/80 transition-colors ${isLastActive
+                                ? 'bg-blue-50/70 dark:bg-blue-950/30 border-l-4 border-l-blue-600 dark:border-l-blue-400'
+                                : isOdd
+                                  ? 'bg-slate-100/90 dark:bg-slate-800/45'
+                                  : 'bg-white dark:bg-surface-container-lowest'
+                              }`}
+                            >
                               <td colSpan={15} className="px-4 py-2.5">
                                 <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
                                   ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
@@ -2555,7 +2572,13 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
                           {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE */}
                           {isExpanded && (
-                            <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
+                            <tr
+                              onClick={() => setLastActiveExpenseId(exp.expense_id)}
+                              className={`transition-colors ${isLastActive
+                                ? 'bg-blue-50/40 dark:bg-blue-950/20 border-l-4 border-l-blue-600 dark:border-l-blue-400'
+                                : 'bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary'
+                              }`}
+                            >
                               <td colSpan={15} className="px-6 py-4 border-b border-outline-variant space-y-4">
                                 {/* Visual Stepper Pipeline */}
                                 {approvalData?.group ? (

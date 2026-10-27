@@ -151,27 +151,45 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
   const { hasPermission } = usePermission();
 
-  const isCashOffice = useMemo(() => {
+  const canSinglePay = useMemo(() => {
     if (currentUser?.is_superuser) return true;
     const roleName = (
       (currentUser?.role as any)?.role_name ||
       (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
       ''
     ).toLowerCase();
+    if (roleName === 'administrator' || roleName === 'admin') return true;
     return (
-      roleName === 'administrator' ||
-      roleName === 'admin' ||
-      hasPermission('finance.bulk_payment_processs') ||
-      hasPermission('finance.bulk_payment_process') ||
       hasPermission('finance.single_payment_process') ||
-      hasPermission('finance.pay_ledger_group') ||
-      hasPermission('finance.pay_ledger') ||
-      hasPermission('finance.settle_cash_ledger')
+      hasPermission('single_payment_process')
     );
   }, [currentUser, hasPermission]);
 
+  const canBulkPay = useMemo(() => {
+    if (currentUser?.is_superuser) return true;
+    const roleName = (
+      (currentUser?.role as any)?.role_name ||
+      (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+      ''
+    ).toLowerCase();
+    if (roleName === 'administrator' || roleName === 'admin') return true;
+    return (
+      hasPermission('finance.bulk_payment_processs') ||
+      hasPermission('finance.bulk_payment_process') ||
+      hasPermission('bulk_payment_processs') ||
+      hasPermission('bulk_payment_process')
+    );
+  }, [currentUser, hasPermission]);
+
+  const isCashOffice = useMemo(() => {
+    return canBulkPay || canSinglePay;
+  }, [canBulkPay, canSinglePay]);
+
   // Ledger Group Accordion State (groupId -> boolean expanded)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Record<string | number, boolean>>({});
+
+  // Last active row state for clicked row highlight
+  const [lastActiveRowKey, setLastActiveRowKey] = useState<string | number | null>(null);
 
   const toggleGroupAccordion = (groupId: string | number) => {
     setExpandedGroupIds(prev => {
@@ -234,62 +252,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   const [actionComments, setActionComments] = useState('');
   const [actionCommentError, setActionCommentError] = useState('');
 
-  // Mark as Completed & Lock Group States
-  const [groupToConfirmComplete, setGroupToConfirmComplete] = useState<LedgerGroupCluster | null>(null);
-  const [completingGroupId, setCompletingGroupId] = useState<string | number | null>(null);
-  const [completingGroupError, setCompletingGroupError] = useState<string | null>(null);
 
-  // Complete Ledger Group API Handler
-  const handleCompleteLedgerGroup = async (cluster: LedgerGroupCluster) => {
-    if (!cluster || !cluster.groupId || !API_URL) return;
-    setCompletingGroupId(cluster.groupId);
-    setCompletingGroupError(null);
-
-    try {
-      const res = await fetch(`${API_URL}/finance/ledger-groups/${cluster.groupId}/complete/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || data.error || 'Failed to mark ledger group as completed.');
-      }
-
-      const completedGroup: LedgerGroupItem = data;
-
-      // Synchronize dynamicGroups state in place
-      setDynamicGroups(prev =>
-        prev.map(g => (String(g.ledger_group_id) === String(completedGroup.ledger_group_id) ? { ...g, ...completedGroup } : g))
-      );
-
-      // Instantly update ledgers in memory
-      cluster.ledgers.forEach(l => {
-        const updatedBatch: LedgerItem = {
-          ...l,
-          ledger_group_detail: {
-            ...(l.ledger_group_detail || {}),
-            ...completedGroup,
-            is_completed: true,
-            completed_at: completedGroup.completed_at,
-            completed_by_detail: completedGroup.completed_by_detail,
-          } as LedgerGroupItem
-        };
-        if (onLedgerUpdated) {
-          onLedgerUpdated(updatedBatch);
-        }
-      });
-
-      setGroupToConfirmComplete(null);
-    } catch (err: any) {
-      setCompletingGroupError(err.message || 'Failed to complete ledger group.');
-    } finally {
-      setCompletingGroupId(null);
-    }
-  };
 
   // Cash Settlement / Pay Group Modal States
   const [groupToPay, setGroupToPay] = useState<LedgerGroupCluster | null>(null);
@@ -1123,6 +1086,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       ];
     }
 
+    const isGroupPaid = cluster.isPaid || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Paid'));
     const isDraft = cluster.ledgers.every(l => l.status === 'Draft') || (cluster.ledgers.length === 0);
     const isFinished = cluster.allApproved || cluster.isCompleted || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid'));
     const activePendingItem = allInstances.find(i => i.status === 'Pending');
@@ -1132,10 +1096,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
     return (
       <div className="py-2 px-1 overflow-x-auto">
-        <div className="flex items-start justify-between min-w-[520px]">
+        <div className="flex items-start justify-between min-w-[700px]">
           {/* START NODE */}
           <div className="flex flex-col items-center shrink-0 w-16">
-            <div className={`w-5 h-5 roundedf flex items-center justify-center text-[9px] font-bold border shrink-0 ${isDraft
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border shrink-0 ${isDraft
               ? 'bg-surface-container text-on-surface-variant border-outline-variant/80'
               : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40'
               }`}>
@@ -1190,7 +1154,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               <React.Fragment key={step.step_id || idx}>
                 <div className={`flex-1 h-0.5 mx-1 mt-2.5 transition-colors ${isPrevCompleted && (isApproved || isPending) ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
                 <div className="flex flex-col items-center shrink-0 w-24 text-center">
-                  <div className={`w-5 h-5 roundedf flex items-center justify-center text-[9px] border transition-all ${circleClass}`}>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] border transition-all ${circleClass}`}>
                     {iconNode}
                   </div>
                   <span className="text-[9px] font-bold text-on-surface mt-1 truncate max-w-full" title={step.step_name}>
@@ -1203,6 +1167,50 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               </React.Fragment>
             );
           })}
+
+          {/* FINAL CASH OFFICE NODE (VISUAL STEPPER FINAL STAGE) */}
+          {(() => {
+            const isCashOfficeCompleted = isGroupPaid;
+            const isCashOfficePending = !isDraft && isFinished && !isGroupPaid;
+            const isCashOfficeUpcoming = !isFinished;
+
+            let circleClass = "bg-surface-container text-on-surface-variant/70 border-outline-variant/60";
+            let labelBadge = "Cash Office";
+            let iconNode: React.ReactNode = <Banknote className="w-3 h-3 opacity-60" />;
+
+            if (isCashOfficeCompleted) {
+              circleClass = "bg-teal-600 text-white border-teal-700 font-bold shadow-xs";
+              iconNode = <Check className="w-3 h-3" />;
+              labelBadge = "Paid / Settled";
+            } else if (isCashOfficePending) {
+              circleClass = "bg-amber-500 text-white border-amber-600 font-bold animate-pulse shadow-xs ring-2 ring-amber-500/30";
+              iconNode = <Banknote className="w-3 h-3" />;
+              labelBadge = "Pending Settlement";
+            } else if (isCashOfficeUpcoming) {
+              circleClass = "bg-surface-container text-on-surface-variant/70 border-outline-variant/60";
+              iconNode = <Banknote className="w-3 h-3 opacity-60" />;
+              labelBadge = "Upcoming";
+            }
+
+            const isConnectorActive = isFinished && !isDraft;
+
+            return (
+              <React.Fragment key="final-cash-office-node">
+                <div className={`flex-1 h-0.5 mx-1 mt-2.5 transition-colors ${isConnectorActive ? (isCashOfficeCompleted ? 'bg-teal-500' : 'bg-emerald-500') : 'bg-outline-variant'}`} />
+                <div className="flex flex-col items-center shrink-0 w-24 text-center">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] border transition-all ${circleClass}`}>
+                    {iconNode}
+                  </div>
+                  <span className="text-[9px] font-bold text-on-surface mt-1 truncate max-w-full" title="Cash Office Settlement">
+                    Cash Office
+                  </span>
+                  <span className="text-[8px] text-on-surface-variant truncate max-w-full font-medium" title={labelBadge}>
+                    {labelBadge}
+                  </span>
+                </div>
+              </React.Fragment>
+            );
+          })()}
         </div>
       </div>
     );
@@ -2549,7 +2557,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
-                  {groupedLedgerClusters.map((cluster) => {
+                  {groupedLedgerClusters.map((cluster, clusterIdx) => {
                     const isGroupCollapsed = !expandedGroupIds[cluster.groupId];
 
                     // Compute unified group status and permissions
@@ -2598,18 +2606,25 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                       )
                     );
 
+                    const isLastActiveGroup = lastActiveRowKey === `group_${cluster.groupId}` || lastActiveRowKey === cluster.groupId;
+
                     return (
                       <React.Fragment key={`cluster_${cluster.groupId}`}>
                         {/* 1. UNIFIED  GROUP ROW */}
                         <tr
-                          onClick={() => toggleGroupAccordion(cluster.groupId)}
-                          className={`border-t-2 border-b border-outline-variant/80 select-none cursor-pointer transition-all ${!isGroupCollapsed
-                            ? 'bg-indigo-50/90 dark:bg-indigo-950/40 hover:bg-indigo-100/90 dark:hover:bg-indigo-950/60 shadow-2xs'
-                            : 'bg-slate-100/90 dark:bg-slate-800/80 hover:bg-slate-200/90 dark:hover:bg-slate-700/80'
+                          onClick={() => {
+                            setLastActiveRowKey(`group_${cluster.groupId}`);
+                            toggleGroupAccordion(cluster.groupId);
+                          }}
+                          className={`select-none cursor-pointer transition-all ${isLastActiveGroup
+                            ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                            : !isGroupCollapsed
+                              ? 'bg-indigo-50/95 dark:bg-indigo-950/50 hover:bg-indigo-100/95 dark:hover:bg-indigo-950/70 border-t-2 border-b-2 border-indigo-500/60 border-l-4 border-l-indigo-600 shadow-xs'
+                              : 'bg-slate-100/90 dark:bg-slate-800/80 hover:bg-slate-200/90 dark:hover:bg-slate-700/80 border-t-2 border-b border-outline-variant/80'
                             }`}
                         >
                           {/* 1. Chevron */}
-                          <td className="w-9 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleGroupAccordion(cluster.groupId); }}>
+                          <td className="w-9 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); setLastActiveRowKey(`group_${cluster.groupId}`); toggleGroupAccordion(cluster.groupId); }}>
                             <button
                               type="button"
                               className="p-1 rounded hover:bg-surface-container-high transition-colors text-on-surface-variant cursor-pointer flex items-center justify-center mx-auto"
@@ -2701,9 +2716,13 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              <Can permission='finance.change_ledger'>
-                                {/* Add Bundle to Group Button (If not completed and not paid) */}
-                                {!cluster.isCompleted && !cluster.ledgers.some(l => l.status === 'Paid' || l.status === "In Review") && (
+                              {/* Add Bundle to Group Button (If approved, requires super_permission) */}
+                              {(() => {
+                                const isGroupApproved = groupStatus === 'Approved' || cluster.allApproved || cluster.isCompleted;
+                                const isPaidOrInReview = isGroupPaid || cluster.ledgers.some(l => l.status === 'Paid' || l.status === "In Review");
+                                if (isPaidOrInReview) return null;
+
+                                const addBundleBtn = (
                                   <button
                                     type="button"
                                     onClick={() => openAddBundleModal(cluster)}
@@ -2713,7 +2732,20 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                     <PlusCircle className="w-3.5 h-3.5" />
                                     <span>Add Bundle</span>
                                   </button>
-                                )}
+                                );
+
+                                return isGroupApproved ? (
+                                  <Can permission="super_permission">
+                                    {addBundleBtn}
+                                  </Can>
+                                ) : (
+                                  <Can permission="finance.change_ledger">
+                                    {addBundleBtn}
+                                  </Can>
+                                );
+                              })()}
+
+                              <Can permission='finance.change_ledger'>
 
                                 {/* Group Submission Action (If draft/rework batches exist) */}
                                 {!cluster.isCompleted && hasDraftBatches && (
@@ -2738,28 +2770,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                   </button>
                                 )}
 
-                                {/* Mark as Completed Button (When all batches are approved) */}
-                                {!cluster.isCompleted && cluster.allApproved && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setGroupToConfirmComplete(cluster)}
-                                    disabled={completingGroupId === cluster.groupId}
-                                    className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
-                                    title="Mark this Ledger as completed to lock it and enable Group Report"
-                                  >
-                                    {completingGroupId === cluster.groupId ? (
-                                      <>
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        <span>Completing...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <CheckCircle className="w-3.5 h-3.5" />
-                                        <span>Complete</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
+
 
 
                                 {/* Delete Group Action (If draft or rework/rejected and not completed/in review/paid) */}
@@ -2785,12 +2796,13 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                   </button>
                                 )}
                               </Can>
-                              {/* Cash Settlement / Pay Button for Cash Office (When group is completed and NOT yet paid) */}
-                              {cluster.isCompleted && !isGroupPaid && (
+                              {/* Cash Settlement / Pay Button for Cash Office (When group is approved/completed and NOT yet paid) */}
+                              {(cluster.allApproved || cluster.isCompleted) && !isGroupPaid && canBulkPay && (
                                 <Can permission={['finance.bulk_payment_processs', 'finance.bulk_payment_process']}>
                                   <button
                                     type="button"
                                     onClick={() => {
+                                      setLastActiveRowKey(`group_${cluster.groupId}`);
                                       setGroupToPay(cluster);
                                       setPayRecipientName('');
                                       setPayRemarks('');
@@ -2820,6 +2832,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    setLastActiveRowKey(`group_${cluster.groupId}`);
                                     toggleGroupAccordion(cluster.groupId)
                                     setSelectedGroupForAction(cluster);
                                     setActionComments(groupReworkComments[cluster.groupId] || '');
@@ -2833,26 +2846,36 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 </button>
                               )}
 
-                              {/* Paid Badge if already settled */}
-                              {isGroupPaid && (
+                              {/* Paid Badge if already settled, otherwise Waiting in CO if approved and user cannot pay */}
+                              {isGroupPaid ? (
                                 <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                                   <span>Settled</span>
                                 </span>
-                              )}
+                              ) : (cluster.allApproved || cluster.isCompleted) && !canBulkPay ? (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 inline-flex items-center gap-1 shrink-0" title="Waiting in Cash Office for group settlement">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                  <span>Waiting in CO</span>
+                                </span>
+                              ) : null}
 
-                              {/* Group Report Button (Available once submitted / in review / approved / completed) */}
-                              {(cluster.isCompleted || groupStatus !== 'Draft') && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedGroupForReport(cluster)}
-                                  className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                  title="Open comprehensive group financial settlement report"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                  <span>Report</span>
-                                </button>
-                              )}
+                              <Can permission={['finance.view_ledger_report', 'reports.can_generate_report'] as any}>
+                                {/* Group Report Button (Available once submitted / in review / approved / completed) */}
+                                {(cluster.isCompleted || groupStatus !== 'Draft') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setLastActiveRowKey(`group_${cluster.groupId}`);
+                                      setSelectedGroupForReport(cluster);
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                    title="Open comprehensive group financial settlement report"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Report</span>
+                                  </button>
+                                )}
+                              </Can>
 
 
                             </div>
@@ -2863,7 +2886,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                         {/* 1.5 GROUP APPROVAL STEPPER & INLINE ACTION CONTROLS */}
                         {!isGroupCollapsed && (showStepper || (isGroupInReview && canUserApproveGroup)) && (groupStatus !== "Draft") && (
                           <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/60">
-                            <td colSpan={8} className="px-6 py-3 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+                            <td colSpan={8} className="px-6 py-3 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3 border-l-4 border-l-indigo-500/60">
                               {showStepper && (
                                 <>
                                   <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-outline-variant/40">
@@ -2938,7 +2961,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                         {!isGroupCollapsed && hierarchyGrouping === 'bundle_wise' && (
                           <>
                             {/* CHILD BUNDLE SUB-HEADER */}
-                            <tr className="bg-surface-container-high/90 text-on-surface-variant uppercase text-[9px] tracking-wider border-y border-outline-variant select-none">
+                            <tr className="bg-indigo-50/50 dark:bg-indigo-950/30 text-on-surface-variant uppercase text-[9px] tracking-wider border-y border-outline-variant select-none border-l-4 border-l-indigo-500/60">
                               <th className="w-9 px-2 py-2 text-center"></th>
                               <th
                                 onClick={() => handleBundleSort('bundle_id')}
@@ -3009,18 +3032,25 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               const isBundleExpanded = !!expandedGroupBundleKeys[bundleKey];
                               const isOdd = bIdx % 2 === 1;
 
+                              const isLastActiveBundle = lastActiveRowKey === `bundle_${bundleKey}` || lastActiveRowKey === bundleItem.bundleId;
+
                               return (
                                 <React.Fragment key={`group_bundle_${bundleKey}`}>
                                   <tr
-                                    onClick={() => toggleExpandGroupBundle(cluster.groupId, bundleItem.bundleId)}
-                                    className={`cursor-pointer transition-colors ${isBundleExpanded
-                                      ? 'bg-purple-500/10 dark:bg-purple-500/20'
-                                      : isOdd
-                                        ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
-                                        : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
+                                    onClick={() => {
+                                      setLastActiveRowKey(`bundle_${bundleKey}`);
+                                      toggleExpandGroupBundle(cluster.groupId, bundleItem.bundleId);
+                                    }}
+                                    className={`cursor-pointer transition-colors ${isLastActiveBundle
+                                      ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                                      : 'border-l-4 border-l-indigo-500/40 ' + (isBundleExpanded
+                                        ? 'bg-purple-500/10 dark:bg-purple-500/20'
+                                        : isOdd
+                                          ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
+                                          : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30')
                                       }`}
                                   >
-                                    <td className="w-9 px-2 py-2.5 text-center relative" onClick={(e) => { e.stopPropagation(); toggleExpandGroupBundle(cluster.groupId, bundleItem.bundleId); }}>
+                                    <td className="w-9 px-2 py-2.5 text-center relative" onClick={(e) => { e.stopPropagation(); setLastActiveRowKey(`bundle_${bundleKey}`); toggleExpandGroupBundle(cluster.groupId, bundleItem.bundleId); }}>
                                       <div className="flex items-center justify-center relative">
                                         <button type="button" className="p-1 rounded transition-colors cursor-pointer relative z-10">
                                           {isBundleExpanded ? <ChevronDown className="w-3.5 h-3.5 text-purple-600" /> : <ChevronRight className="w-3.5 h-3.5 text-purple-600" />}
@@ -3062,85 +3092,108 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                     </td>
                                     <td className="px-4 py-2.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
                                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                        {/* Cash Settlement Action for Bundle */}
+                                        {/* Cash Settlement Action / Status for Bundle */}
                                         {bundleItem.status === 'Paid' || isGroupPaid ? (
                                           <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
                                             <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                                             <span>Settled</span>
                                           </span>
-                                        ) : (cluster.isCompleted || cluster.allApproved || groupStatus !== 'Draft') ? (
-                                          <Can permission="finance.single_payment_process">
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const targetBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId) || {
-                                                  claim_id: bundleItem.bundleId,
-                                                  total_claimed_amount: String(bundleItem.totalAmount),
-                                                  worker_detail: bundleItem.workerDetail,
-                                                  worker_name: bundleItem.workerName,
-                                                  status: 'Approved'
-                                                };
-                                                setShowPaymentModal(targetBundle as any);
-                                              }}
-                                              className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                              title={`Perform Cash Settlement for Bundle #${bundleItem.bundleId}`}
-                                            >
-                                              <Banknote className="w-3.5 h-3.5" />
-                                              <span>Cash Settlement</span>
-                                            </button>
-                                          </Can>
+                                        ) : (cluster.allApproved || cluster.isCompleted) ? (
+                                          canSinglePay ? (
+                                            <Can permission="finance.single_payment_process">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  const targetBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId) || {
+                                                    claim_id: bundleItem.bundleId,
+                                                    total_claimed_amount: String(bundleItem.totalAmount),
+                                                    worker_detail: bundleItem.workerDetail,
+                                                    worker_name: bundleItem.workerName,
+                                                    status: 'Approved'
+                                                  };
+                                                  setShowPaymentModal(targetBundle as any);
+                                                }}
+                                                className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                                title={`Perform Cash Settlement for Bundle #${bundleItem.bundleId}`}
+                                              >
+                                                <Banknote className="w-3.5 h-3.5" />
+                                                <span>Cash Settlement</span>
+                                              </button>
+                                            </Can>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 inline-flex items-center gap-1 shrink-0" title="Waiting in Cash Office for settlement">
+                                              <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                              <span>Waiting in CO</span>
+                                            </span>
+                                          )
+                                        ) : (groupStatus === 'In Review' || isGroupInReview || (!cluster.allApproved && groupStatus !== 'Draft')) ? (
+                                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 inline-flex items-center gap-1 shrink-0" title="Waiting for ledger approval">
+                                            <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                            <span>Waiting Approval</span>
+                                          </span>
                                         ) : null}
 
-                                        {/* Remove Bundle action if draft/rework */}
-                                        {!cluster.isCompleted && groupStatus !== "In Review" && !isGroupPaid && (
-                                          <Can permission='finance.change_ledger'>
-                                            {(() => {
-                                              const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
-                                              return (
-                                                <button
-                                                  type="button"
-                                                  disabled={isRemovingBundle}
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const totalBundlesInGroup = getGroupBundleBreakdown(cluster).length;
-                                                    if (totalBundlesInGroup <= 1) {
-                                                      alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
-                                                      return;
+                                        {/* Remove Bundle action (If approved, requires super_permission) */}
+                                        {(() => {
+                                          if (groupStatus === "In Review" || isGroupPaid) return null;
+                                          const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
+                                          if (targetLedger?.status === 'Paid') return null;
+
+                                          const isBundleApproved = groupStatus === 'Approved' || cluster.allApproved || cluster.isCompleted || targetLedger?.status === 'Approved';
+                                          const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
+
+                                          const removeBundleBtn = (
+                                            <button
+                                              type="button"
+                                              disabled={isRemovingBundle}
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                const totalBundlesInGroup = getGroupBundleBreakdown(cluster).length;
+                                                if (totalBundlesInGroup <= 1) {
+                                                  alert("Cannot remove the only bundle. Please delete the Ledger Batch instead.");
+                                                  return;
+                                                }
+                                                setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
+                                                try {
+                                                  if (handleRemoveBundleFromGroup) {
+                                                    await handleRemoveBundleFromGroup(Number(cluster.groupId), bundleItem.bundleId);
+                                                  } else if (handleRemoveBundleFromLedger) {
+                                                    if (targetLedger) {
+                                                      await handleRemoveBundleFromLedger(targetLedger.ledger_id, bundleItem.bundleId);
                                                     }
-                                                    setRemovingBundleKey(`${cluster.groupId}_${bundleItem.bundleId}`);
-                                                    try {
-                                                      if (handleRemoveBundleFromGroup) {
-                                                        await handleRemoveBundleFromGroup(Number(cluster.groupId), bundleItem.bundleId);
-                                                      } else if (handleRemoveBundleFromLedger) {
-                                                        const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
-                                                        if (targetLedger) {
-                                                          await handleRemoveBundleFromLedger(targetLedger.ledger_id, bundleItem.bundleId);
-                                                        }
-                                                      }
-                                                    } finally {
-                                                      setRemovingBundleKey(null);
-                                                    }
-                                                  }}
-                                                  className="px-2.5 py-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium disabled:opacity-50"
-                                                  title="Remove Bundle from this Ledger"
-                                                >
-                                                  {isRemovingBundle ? (
-                                                    <>
-                                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                      <span>Removing...</span>
-                                                    </>
-                                                  ) : (
-                                                    <>
-                                                      <Trash2 className="w-3.5 h-3.5" />
-                                                      <span>Remove Bundle</span>
-                                                    </>
-                                                  )}
-                                                </button>
-                                              );
-                                            })()}
-                                          </Can>
-                                        )}
+                                                  }
+                                                } finally {
+                                                  setRemovingBundleKey(null);
+                                                }
+                                              }}
+                                              className="px-2.5 py-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium disabled:opacity-50"
+                                              title="Remove Bundle from this Ledger"
+                                            >
+                                              {isRemovingBundle ? (
+                                                <>
+                                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                  <span>Removing...</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                  <span>Remove Bundle</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          );
+
+                                          return isBundleApproved ? (
+                                            <Can permission="super_permission">
+                                              {removeBundleBtn}
+                                            </Can>
+                                          ) : (
+                                            <Can permission="finance.change_ledger">
+                                              {removeBundleBtn}
+                                            </Can>
+                                          );
+                                        })()}
                                       </div>
                                     </td>
                                   </tr>
@@ -3251,8 +3304,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                 const parentLedger = cluster.ledgers.find(l => (l.expenses || []).some(e => e.expense_id === exp.expense_id));
                                                 const isExpEditable = parentLedger ? (!cluster.isCompleted && parentLedger.status !== 'Paid') : (!cluster.isCompleted);
 
+                                                const isLastActiveExp = lastActiveRowKey === `exp_${exp.expense_id}`;
+
                                                 return (
-                                                  <tr key={exp.expense_id} className={eIdx % 2 === 1 ? 'bg-surface-container-low/50' : 'bg-surface-container'}>
+                                                  <tr
+                                                    key={exp.expense_id}
+                                                    onClick={() => setLastActiveRowKey(`exp_${exp.expense_id}`)}
+                                                    className={`cursor-pointer transition-colors ${isLastActiveExp
+                                                      ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                                                      : eIdx % 2 === 1 ? 'bg-surface-container-low/50' : 'bg-surface-container'
+                                                      }`}
+                                                  >
                                                     <td className="py-2 pr-3 pl-8 font-mono text-primary font-medium relative">
                                                       {/* Rose connector */}
                                                       <div className="absolute left-[16px] top-0 bottom-0 w-[2px] bg-rose-500/60 dark:bg-rose-400/60" />
@@ -3324,7 +3386,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                         {!isGroupCollapsed && hierarchyGrouping === 'batch_wise' && (
                           <>
                             {/* CHILD BATCH SUB-HEADER */}
-                            <tr className="bg-surface-container-high/90 text-on-surface-variant uppercase text-[9px] tracking-wider border-y border-outline-variant select-none">
+                            <tr className="bg-indigo-50/50 dark:bg-indigo-950/30 text-on-surface-variant uppercase text-[9px] tracking-wider border-y border-outline-variant select-none border-l-4 border-l-indigo-500/60">
                               <th className="w-9 px-2 py-2 text-center"></th>
                               <th className="px-4 py-2">Batch ID</th>
                               <th className="px-4 py-2">Batch Name</th>
@@ -3341,21 +3403,28 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               const activeViewMode = ledgerViewModes[l.ledger_id] || globalViewMode;
                               const isLedgerEditable = !cluster.isCompleted && l.status !== 'Approved' && l.status !== 'Paid';
 
+                              const isLastActiveLedger = lastActiveRowKey === `ledger_${l.ledger_id}` || lastActiveRowKey === l.ledger_id;
+
                               return (
                                 <React.Fragment key={l.ledger_id}>
                                   {/* MAIN ROW */}
                                   <tr
-                                    onClick={() => toggleExpandLedger(l.ledger_id)}
-                                    className={`cursor-pointer transition-colors ${isExpanded
-                                      ? 'bg-primary/10 dark:bg-primary/20'
-                                      : isMultiLineView
-                                        ? isOdd
-                                          ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
-                                          : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
-                                        : 'hover:bg-surface-container-high'
+                                    onClick={() => {
+                                      setLastActiveRowKey(`ledger_${l.ledger_id}`);
+                                      toggleExpandLedger(l.ledger_id);
+                                    }}
+                                    className={`cursor-pointer transition-colors ${isLastActiveLedger
+                                      ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                                      : 'border-l-4 border-l-indigo-500/40 ' + (isExpanded
+                                        ? 'bg-primary/10 dark:bg-primary/20'
+                                        : isMultiLineView
+                                          ? isOdd
+                                            ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
+                                            : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
+                                          : 'hover:bg-surface-container-high')
                                       }`}
                                   >
-                                    <td className="w-9 px-2 py-2.5 text-center relative" onClick={(e) => { e.stopPropagation(); toggleExpandLedger(l.ledger_id); }}>
+                                    <td className="w-9 px-2 py-2.5 text-center relative" onClick={(e) => { e.stopPropagation(); setLastActiveRowKey(`ledger_${l.ledger_id}`); toggleExpandLedger(l.ledger_id); }}>
                                       <div className="flex items-center justify-center relative">
                                         <button
                                           type="button"
@@ -3404,8 +3473,15 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                                   {/* MULTI-LINE VIEW SECOND ROW (Batch summary) */}
                                   {isMultiLineView && !isExpanded && (
-                                    <tr className={`border-b border-outline-variant transition-colors ${isOdd ? 'bg-slate-100/90 dark:bg-slate-800/45' : 'bg-white dark:bg-surface-container-lowest'
-                                      }`}>
+                                    <tr
+                                      onClick={() => setLastActiveRowKey(`ledger_${l.ledger_id}`)}
+                                      className={`transition-colors ${isLastActiveLedger
+                                        ? 'bg-blue-50/70 dark:bg-blue-950/30 border-none'
+                                        : 'border-b border-outline-variant ' + (isOdd
+                                          ? 'bg-slate-100/90 dark:bg-slate-800/45'
+                                          : 'bg-white dark:bg-surface-container-lowest')
+                                        }`}
+                                    >
                                       <td colSpan={8} className="px-4 py-2">
                                         <div className={`flex items-center justify-between gap-2.5 px-3 py-2 rounded border text-xs ${isOdd
                                           ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
@@ -3435,7 +3511,13 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                                   {/* CLEAN, FLAT EXPANDED ROW (NO NESTED BOXES) */}
                                   {isExpanded && (
-                                    <tr className="bg-surface-container-lowest/90 dark:bg-surface-container-low/50">
+                                    <tr
+                                      onClick={() => setLastActiveRowKey(`ledger_${l.ledger_id}`)}
+                                      className={`transition-colors ${isLastActiveLedger
+                                        ? 'bg-blue-50/40 dark:bg-blue-950/20 border-none'
+                                        : 'bg-surface-container-lowest/90 dark:bg-surface-container-low/50'
+                                        }`}
+                                    >
                                       <td colSpan={8} className="p-4 border-b border-outline-variant space-y-3">
 
 
@@ -3530,14 +3612,21 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                     const sdKey = String(sd.subDeptId || sd.subDeptName);
                                                     const isExpanded = !!expandedSubDepts[`${l.ledger_id}_${sdKey}`];
 
+                                                    const isLastActiveSd = lastActiveRowKey === `sd_${l.ledger_id}_${sdKey}`;
+
                                                     return (
                                                       <React.Fragment key={sdKey}>
                                                         {/* LEVEL 3: Sub-Department Header */}
                                                         <tr
-                                                          onClick={() => toggleSubDeptAccordion(l.ledger_id, sdKey)}
-                                                          className={`cursor-pointer transition-all select-none border-t border-outline-variant/60 ${isExpanded
-                                                            ? 'bg-purple-50/90 dark:bg-purple-950/40 hover:bg-purple-100/80 dark:hover:bg-purple-950/60 shadow-2xs'
-                                                            : 'bg-surface-container/80 hover:bg-surface-container-high text-on-surface'
+                                                          onClick={() => {
+                                                            setLastActiveRowKey(`sd_${l.ledger_id}_${sdKey}`);
+                                                            toggleSubDeptAccordion(l.ledger_id, sdKey);
+                                                          }}
+                                                          className={`cursor-pointer transition-all select-none ${isLastActiveSd
+                                                            ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none shadow-2xs'
+                                                            : isExpanded
+                                                              ? 'border-t border-outline-variant/60 bg-purple-50/90 dark:bg-purple-950/40 hover:bg-purple-100/80 dark:hover:bg-purple-950/60 shadow-2xs'
+                                                              : 'border-t border-outline-variant/60 bg-surface-container/80 hover:bg-surface-container-high text-on-surface'
                                                             }`}
                                                         >
                                                           <td colSpan={6} className="py-2.5 pr-3 pl-3.5 relative">
@@ -3547,6 +3636,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                 className="p-0.5 rounded hover:bg-surface-container-highest/60 text-on-surface-variant cursor-pointer transition-transform"
                                                                 onClick={(e) => {
                                                                   e.stopPropagation();
+                                                                  setLastActiveRowKey(`sd_${l.ledger_id}_${sdKey}`);
                                                                   toggleSubDeptAccordion(l.ledger_id, sdKey);
                                                                 }}
                                                                 title={isExpanded ? 'Collapse sub-department' : 'Expand sub-department'}
@@ -3653,8 +3743,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                 const claimId = typeof exp.claim === 'object' && exp.claim !== null ? exp.claim.claim_id : exp.claim;
                                                                 const expDescription = exp.ticket_details?.title || exp.remarks || exp.expense_type_detail?.expense_name || 'General';
 
+                                                                const isLastActiveExp = lastActiveRowKey === `exp_${exp.expense_id}`;
+
                                                                 return (
-                                                                  <tr key={exp.expense_id} className="bg-surface hover:bg-surface-container/70 transition-colors border-b border-outline-variant/30">
+                                                                  <tr
+                                                                    key={exp.expense_id}
+                                                                    onClick={() => setLastActiveRowKey(`exp_${exp.expense_id}`)}
+                                                                    className={`cursor-pointer transition-colors ${isLastActiveExp
+                                                                      ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                                                                      : 'border-b border-outline-variant/30 bg-surface hover:bg-surface-container/70'
+                                                                      }`}
+                                                                  >
                                                                     <td className="py-2 pr-3 pl-12 font-medium text-primary relative">
                                                                       {/* Rose Child line */}
                                                                       <div className="absolute left-[16px] top-0 bottom-0 w-[2px] bg-rose-500/60 dark:bg-rose-400/60" />
@@ -3865,8 +3964,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                                 const claimId = typeof exp.claim === 'object' && exp.claim !== null ? exp.claim.claim_id : exp.claim;
                                                                 const expDescription = exp.ticket_details?.title || exp.remarks || exp.expense_type_detail?.expense_name || 'General';
 
+                                                                const isLastActiveExp = lastActiveRowKey === `exp_${exp.expense_id}`;
+
                                                                 return (
-                                                                  <tr key={exp.expense_id} className="bg-surface hover:bg-surface-container/70 transition-colors border-b border-outline-variant/30">
+                                                                  <tr
+                                                                    key={exp.expense_id}
+                                                                    onClick={() => setLastActiveRowKey(`exp_${exp.expense_id}`)}
+                                                                    className={`cursor-pointer transition-colors ${isLastActiveExp
+                                                                      ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                                                                      : 'border-b border-outline-variant/30 bg-surface hover:bg-surface-container/70'
+                                                                      }`}
+                                                                  >
                                                                     <td className="py-2 pr-3 pl-12 font-medium text-primary relative">
                                                                       {/* Rose Child */}
                                                                       <div className="absolute left-[16px] top-0 bottom-0 w-[2px] bg-rose-500/60 dark:bg-rose-400/60" />
@@ -3955,8 +4063,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                     const workerName = workerObj?.full_name || workerObj?.username || (typeof exp.worker === 'object' && exp.worker !== null ? (exp.worker.full_name || exp.worker.username || `Worker ${exp.worker.id}`) : `Worker ${exp.worker}`);
                                                     const expDescription = exp.ticket_details?.title || exp.remarks || exp.expense_type_detail?.expense_name || '';
 
+                                                    const isLastActiveExp = lastActiveRowKey === `exp_${exp.expense_id}`;
+
                                                     return (
-                                                      <tr key={exp.expense_id} className="hover:bg-surface-container-high/40 transition-colors">
+                                                      <tr
+                                                        key={exp.expense_id}
+                                                        onClick={() => setLastActiveRowKey(`exp_${exp.expense_id}`)}
+                                                        className={`cursor-pointer transition-colors ${isLastActiveExp
+                                                          ? 'bg-blue-100/75 dark:bg-blue-900/40 border-none'
+                                                          : 'hover:bg-surface-container-high/40'
+                                                          }`}
+                                                      >
                                                         <td className="px-3 py-2 font-medium text-primary">{exp.expense_id}</td>
                                                         <td className="px-3 py-2">
                                                           <div className="flex flex-col min-w-0">
@@ -4052,6 +4169,33 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               );
                             })}
                           </>
+                        )}
+
+                        {/* END OF LEDGER CLOSING FOOTER */}
+                        {!isGroupCollapsed && (
+                          <tr className="bg-indigo-50/70 dark:bg-indigo-950/40 border-b-2 border-indigo-500/40 border-l-4 border-l-indigo-600 select-none">
+                            <td colSpan={8} className="px-5 py-2.5">
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2 text-indigo-950 dark:text-indigo-200 font-medium">
+                                  <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                  <span>End of <strong>{cluster.groupName}</strong> (Ledger-{cluster.groupId})</span>
+                                  <span className="text-outline/40">•</span>
+                                  <span className="text-[11px] text-on-surface-variant font-normal">
+                                    {(cluster.ledgers?.length || 0)} Batch(es) • {cluster.totalBundlesCount || 0} Bundle(s) • Total: <strong className="text-on-surface font-bold">KD {(parseFloat(String(cluster.totalAmount || 0)) || 0).toFixed(3)}</strong>
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleGroupAccordion(cluster.groupId)}
+                                  className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 hover:underline flex items-center gap-1 cursor-pointer bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/25 transition-colors"
+                                  title="Collapse this Ledger Group"
+                                >
+                                  <ChevronsUp className="w-3.5 h-3.5" />
+                                  <span>Collapse Ledger</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
                         )}
                       </React.Fragment>
                     );
@@ -4568,75 +4712,6 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       )}
 
 
-      {/* Confirmation Modal for Marking Ledger  as Completed */}
-      {groupToConfirmComplete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-surface-container-lowest border border-outline-variant rounded shadow-2xl max-w-md w-full p-6 text-on-surface space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-base font-bold text-on-surface">Confirm Ledger  Completion</h3>
-                <p className="text-xs text-on-surface-variant mt-1">
-                  Are you sure you want to mark <strong className="text-on-surface font-semibold">{groupToConfirmComplete.groupName}</strong> as Completed?
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 rounded p-3.5 text-xs space-y-2 text-amber-900 dark:text-amber-200">
-              <div className="font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
-                <Lock className="w-3.5 h-3.5" />
-                <span>Important Locking Rules:</span>
-              </div>
-              <ul className="list-disc pl-4 space-y-1 text-on-surface-variant">
-                <li>This Ledger will be <strong>permanently locked</strong>.</li>
-                <li><strong>No batches, bundles, or expenses</strong> can be added, removed, or reassigned.</li>
-                <li>The Ledger will be finalized exclusively for <strong>reporting & audit settlement</strong>.</li>
-              </ul>
-            </div>
-
-            {completingGroupError && (
-              <div className="p-3 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{completingGroupError}</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupToConfirmComplete(null);
-                  setCompletingGroupError(null);
-                }}
-                disabled={completingGroupId !== null}
-                className="px-4 py-2 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCompleteLedgerGroup(groupToConfirmComplete)}
-                disabled={completingGroupId !== null}
-                className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
-              >
-                {completingGroupId !== null ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Completing & Locking...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Yes, Mark as Completed</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Cash Settlement / Payment Modal */}
       {groupToPay && (

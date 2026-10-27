@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Receipt, PlusCircle, FileText, Trash2, Search, X, Check, Paperclip, ExternalLink, Loader2, Eye, Maximize2, ShieldCheck, Layers, AlertCircle,
-  Clock, RotateCcw, MessageSquare, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Rows3, ChevronsUp, RefreshCw, Plus,
+  Clock, RotateCcw, MessageSquare, CheckCircle, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Rows3, ChevronsUp, RefreshCw, Plus,
   ArrowUpDown, ArrowUp, ArrowDown, Banknote
 } from 'lucide-react';
-import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, ApprovalInstanceItem, LedgerBatchItem } from './types';
+import type { WorkerClaimItem, ExpenseItem, MediaFileItem, ApprovalStepInfo, ApprovalInstanceItem, LedgerBatchItem, LedgerItem } from './types';
 import { getUserId, formatDateDMY } from './types';
 import { Pagination } from './Pagination';
 import { DateRangePickerCard } from '../ticket/DateRangePickerCard';
@@ -19,6 +19,7 @@ import { confirmPopup } from '../../components/tailgrids/core/ConfirmationPopup'
 interface BundlesSubpageProps {
   filteredBundles?: WorkerClaimItem[];
   bundles: WorkerClaimItem[];
+  ledgers?: LedgerItem[];
   unclaimedExpenses: ExpenseItem[];
   loading: boolean;
   submitting: boolean;
@@ -99,6 +100,7 @@ interface BundlesSubpageProps {
 export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   bundles,
   filteredBundles = bundles,
+  ledgers = [],
   unclaimedExpenses,
   loading,
   submitting,
@@ -222,6 +224,9 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [expandedBundleIds, setExpandedBundleIds] = useState<Record<number, boolean>>({});
   const toggleExpandBundle = (bundleId: number) =>
     setExpandedBundleIds(prev => ({ ...prev, [bundleId]: !prev[bundleId] }));
+
+  // Last active row state for clicked row highlight
+  const [lastActiveRowId, setLastActiveRowId] = useState<number | string | null>(null);
 
   // Admin and current user privilege resolution
   const isAdmin = Boolean(
@@ -357,7 +362,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           id: bundle.claim_id,
           items: historyItems,
           isApproved: bundle.status === 'Approved' || bundle.status === 'Paid',
-          remarks: typeof bundle.remarks === 'string' ? bundle.remarks : ''
+          isPaid: bundle.status === 'Paid',
+          isCompleted: Boolean(bundle.ledger_details?.is_completed || bundle.status === 'Paid'),
+          status: bundle.status,
+          remarks: typeof bundle.remarks === 'string' ? bundle.remarks : '',
+          ledger_details: bundle.ledger_details
         }
       };
     }
@@ -393,7 +402,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: approvedItems as any,
-          isApproved: true
+          isApproved: true,
+          isPaid: bundle.status === 'Paid',
+          isCompleted: Boolean(bundle.ledger_details?.is_completed || bundle.status === 'Paid'),
+          status: bundle.status,
+          ledger_details: bundle.ledger_details
         }
       };
     }
@@ -435,7 +448,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: fallbackItems as any,
-          isApproved: false
+          isApproved: false,
+          isPaid: false,
+          isCompleted: false,
+          status: bundle.status,
+          ledger_details: bundle.ledger_details
         }
       };
     }
@@ -462,7 +479,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           type: 'Bundle' as const,
           id: bundle.claim_id,
           items: draftItems as any,
-          isApproved: false
+          isApproved: false,
+          isPaid: false,
+          isCompleted: false,
+          status: bundle.status,
+          ledger_details: bundle.ledger_details
         }
       };
     }
@@ -537,8 +558,26 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     }
   };
 
-  // Render Visual Stepper Pipeline UI (Start -> Steps -> End) matching ExpensesSubpage
-  const renderApprovalStepper = (group: { label: string; type: 'Bundle' | 'Ledger' | 'Expense'; id: number; items: ApprovalInstanceItem[]; isApproved?: boolean; remarks?: string }, compact = false) => {
+  // Render Visual Stepper Pipeline UI (Start -> Steps -> Ledger Status -> Cash Office) matching ExpensesSubpage
+  const renderApprovalStepper = (group: {
+    label: string;
+    type: 'Bundle' | 'Ledger' | 'Expense';
+    id: number;
+    items: ApprovalInstanceItem[];
+    isApproved?: boolean;
+    isPaid?: boolean;
+    isCompleted?: boolean;
+    status?: string;
+    remarks?: string;
+    ledger_details?: {
+      ledger_id: number;
+      ledger_group_id?: number;
+      group_name: string;
+      status: string;
+      is_completed?: boolean;
+      created_at?: string;
+    } | null;
+  }, compact = false) => {
     let steps: ApprovalStepInfo[] = [];
     for (const item of group.items) {
       if (item.workflow_steps && item.workflow_steps.length > 0) {
@@ -581,7 +620,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
     return (
       <div className={compact ? "p-1.5 bg-transparent overflow-x-auto" : "p-4 bg-surface-container-low border border-outline-variant/60 rounded overflow-x-auto shadow-2xs"}>
-        <div className={`flex items-start justify-between px-1 py-1 ${compact ? 'min-w-[480px]' : 'min-w-[650px]'}`}>
+        <div className={`flex items-start justify-between px-1 py-1 ${compact ? 'min-w-[660px]' : 'min-w-[850px]'}`}>
           {/* START NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
             <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
@@ -712,16 +751,155 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             );
           })}
 
-          {/* CONNECTOR LINE TO END */}
-          <div className={`flex-1 h-0.5 mx-1 ${compact ? 'mt-3' : 'mt-3.5'} transition-colors ${isFinished ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
+          {/* LEDGER STATUS NODE (BEFORE CASH OFFICE) */}
+          {(() => {
+            const ledgerInfo = group.ledger_details || (ledgers && ledgers.length > 0 ? (() => {
+              const match = ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id ?? b.id) === group.id));
+              if (!match) return null;
+              return {
+                ledger_id: match.ledger_id,
+                ledger_group_id: match.ledger_group,
+                group_name: match.ledger_group_detail?.group_name || `Ledger #${match.ledger_id}`,
+                status: match.status,
+                is_completed: Boolean(match.ledger_group_detail?.is_completed)
+              };
+            })() : null);
 
-          {/* END NODE */}
-          <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
-            <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full flex items-center justify-center font-bold border shrink-0 ${isFinished ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-surface-container-high text-on-surface-variant border-outline'}`}>
-              End
-            </div>
-            <span className="text-[9px] text-on-surface-variant mt-0.5 font-medium">Approved</span>
-          </div>
+            const hasLedger = Boolean(ledgerInfo);
+            const ledgerStatus = (ledgerInfo?.status || '').trim();
+
+            const isLedgerCompleted = ledgerStatus === 'Approved' || ledgerStatus === 'Paid' || Boolean(ledgerInfo?.is_completed);
+            const isLedgerInReview = ledgerStatus === 'In Review' || ledgerStatus === 'Submitted';
+            const isLedgerDraft = ledgerStatus === 'Draft';
+            const isLedgerRework = ledgerStatus === 'Rework';
+            const isLedgerRejected = ledgerStatus === 'Rejected';
+
+            let circleClass = "bg-surface-container text-on-surface-variant/70 border-outline-variant/60";
+            let labelBadge = "Upcoming";
+            let iconNode: React.ReactNode = <Layers className={compact ? "w-3 h-3 opacity-60" : "w-3.5 h-3.5 opacity-60"} />;
+
+            if (isLedgerCompleted) {
+              circleClass = "bg-emerald-500 text-white border-emerald-600 font-bold shadow-sm";
+              iconNode = <Check className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Approved";
+            } else if (isLedgerInReview) {
+              circleClass = "bg-amber-500 text-white border-amber-600 font-bold animate-pulse shadow-md ring-2 ring-amber-500/30";
+              iconNode = <Clock className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "In Review";
+            } else if (isLedgerDraft) {
+              circleClass = "bg-indigo-500 text-white border-indigo-600 font-bold shadow-sm";
+              iconNode = <Layers className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Draft";
+            } else if (isLedgerRework) {
+              circleClass = "bg-purple-600 text-white border-purple-700 font-bold shadow-sm";
+              iconNode = <RotateCcw className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Rework";
+            } else if (isLedgerRejected) {
+              circleClass = "bg-rose-600 text-white border-rose-700 font-bold shadow-sm";
+              iconNode = <X className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Rejected";
+            } else if (isFinished) {
+              // Bundle is approved, but not yet added to a ledger -> Active / blinking step!
+              circleClass = "bg-amber-500 text-white border-amber-600 font-bold animate-pulse shadow-md ring-2 ring-amber-500/30";
+              iconNode = <Layers className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Pending Assembly";
+            } else {
+              // Bundle is still in approval stages
+              circleClass = "bg-surface-container text-on-surface-variant/70 border-outline-variant/60";
+              iconNode = <Layers className={compact ? "w-3 h-3 opacity-60" : "w-3.5 h-3.5 opacity-60"} />;
+              labelBadge = "Upcoming";
+            }
+
+            const isConnectorActive = isFinished;
+            const connectorColor = isConnectorActive
+              ? (isLedgerCompleted ? 'bg-emerald-500' : isLedgerInReview || !hasLedger ? 'bg-amber-500' : 'bg-indigo-500')
+              : 'bg-outline-variant';
+
+            return (
+              <React.Fragment key="pipeline-ledger-status-node">
+                {/* Connector from last approval step to Ledger node */}
+                <div className={`flex-1 h-0.5 mx-1 ${compact ? 'mt-3' : 'mt-3.5'} transition-colors ${connectorColor}`} />
+
+                {/* Ledger Node */}
+                <div
+                  className={`flex flex-col items-center text-center shrink-0 ${compact ? 'w-[110px]' : 'w-[140px]'}`}
+                  title={hasLedger ? `Ledger: ${ledgerInfo?.group_name} (Status: ${isLedgerCompleted ? 'Approved' : ledgerStatus})` : isFinished ? 'Bundle approved, waiting to be assembled into a Ledger' : 'Ledger assembly'}
+                >
+                  <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded-full flex items-center justify-center transition-all border shrink-0 ${circleClass}`}>
+                    {iconNode}
+                  </div>
+                  <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-semibold text-on-surface mt-1 line-clamp-1 w-full`}>
+                    Ledger
+                  </span>
+                  <span className="text-[9px] text-on-surface-variant line-clamp-1 w-full font-medium" title={labelBadge}>
+                    {labelBadge}
+                  </span>
+                  {hasLedger && ledgerInfo?.group_name && (
+                    <span className="text-[8px] text-on-surface-variant/80 line-clamp-1 w-full" title={ledgerInfo.group_name}>
+                      {ledgerInfo.group_name}
+                    </span>
+                  )}
+                </div>
+              </React.Fragment>
+            );
+          })()}
+
+          {/* FINAL CASH OFFICE NODE (VISUAL STEPPER FINAL STAGE) */}
+          {(() => {
+            const ledgerInfo = group.ledger_details || (ledgers && ledgers.length > 0 ? (() => {
+              const match = ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id ?? b.id) === group.id));
+              if (!match) return null;
+              return {
+                ledger_id: match.ledger_id,
+                status: match.status,
+                is_completed: Boolean(match.ledger_group_detail?.is_completed)
+              };
+            })() : null);
+
+            const isLedgerCompleted = ledgerInfo?.status === 'Approved' || ledgerInfo?.status === 'Paid' || Boolean(ledgerInfo?.is_completed);
+            const isPaid = Boolean(group.isPaid || group.status === 'Paid' || ledgerInfo?.status === 'Paid');
+            const isCashOfficeCompleted = isPaid;
+            // Cash office ONLY pends when the ledger is approved/completed and not yet paid!
+            const isCashOfficePending = !isPaid && isLedgerCompleted;
+            const isCashOfficeUpcoming = !isPaid && !isCashOfficePending;
+
+            let circleClass = "bg-surface-container-high text-on-surface-variant border-outline";
+            let labelBadge = "Cash Office";
+            let iconNode: React.ReactNode = <Banknote className={compact ? "w-3 h-3 opacity-60" : "w-3.5 h-3.5 opacity-60"} />;
+
+            if (isCashOfficeCompleted) {
+              circleClass = "bg-teal-600 text-white border-teal-700 font-bold shadow-sm";
+              iconNode = <Check className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Paid / Settled";
+            } else if (isCashOfficePending) {
+              circleClass = "bg-amber-500 text-white border-amber-600 font-bold animate-pulse shadow-md ring-2 ring-amber-500/30";
+              iconNode = <Banknote className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />;
+              labelBadge = "Pending Settlement";
+            } else if (isCashOfficeUpcoming) {
+              circleClass = "bg-surface-container text-on-surface-variant/70 border-outline-variant/60";
+              iconNode = <Banknote className={compact ? "w-3 h-3 opacity-60" : "w-3.5 h-3.5 opacity-60"} />;
+              labelBadge = "Upcoming";
+            }
+
+            const isConnectorActive = isLedgerCompleted || isPaid;
+
+            return (
+              <React.Fragment key="final-cash-office-node">
+                <div className={`flex-1 h-0.5 mx-1 ${compact ? 'mt-3' : 'mt-3.5'} transition-colors ${isConnectorActive ? (isCashOfficeCompleted ? 'bg-teal-500' : 'bg-emerald-500') : 'bg-outline-variant'}`} />
+                <div className={`flex flex-col items-center text-center shrink-0 ${compact ? 'w-[110px]' : 'w-[140px]'}`}>
+                  <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-xs'} rounded-full flex items-center justify-center transition-all border shrink-0 ${circleClass}`}>
+                    {iconNode}
+                  </div>
+                  <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-semibold text-on-surface mt-1 line-clamp-1 w-full`} title="Cash Office Settlement">
+                    Cash Office
+                  </span>
+                  <span className="text-[9px] text-on-surface-variant line-clamp-1 w-full" title={labelBadge}>
+                    {labelBadge}
+                  </span>
+                </div>
+              </React.Fragment>
+            );
+          })()}
         </div>
       </div>
     );
@@ -1486,6 +1664,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       const latestInstance = activePendingInstance || approvalData?.app || approvalData?.group?.items?.[0];
 
                       const isBundleApproved = b.status === 'Approved' || b.status === 'Paid';
+                      const isLedgerApproved = Boolean(
+                        (b.ledger_details && (b.ledger_details.status === 'Approved' || b.ledger_details.status === 'Paid')) ||
+                        ((b as any).ledger_status === 'Approved' || (b as any).ledger_status === 'Paid') ||
+                        (Array.isArray((b as any).ledgers) && (b as any).ledgers.some((l: any) => l.status === 'Approved' || l.status === 'Paid'))
+                      );
 
                       // A bundle is ONLY in Rework if its backend status is Rework or latest step is Rework AND it is not actively In Review / Pending
                       const isRework = !isBundleApproved && !activePendingInstance && b.status !== 'In Review' && b.status !== 'Submitted' && (
@@ -1551,20 +1734,27 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                         !hasPriorApprovedSteps &&
                         (!activePendingInstance?.step_order || activePendingInstance.step_order === 1);
 
+                      const isLastActive = lastActiveRowId === b.claim_id;
+
                       return (
                         <React.Fragment key={b.claim_id ?? `bundle-${idx}`}>
                           <tr
-                            onClick={() => toggleExpandBundle(b.claim_id)}
-                            className={`cursor-pointer transition-colors ${isExpanded
-                              ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
-                              : isMultiLineView
-                                ? isOdd
-                                  ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
-                                  : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
-                                : 'hover:bg-surface-container-high'
+                            onClick={() => {
+                              setLastActiveRowId(b.claim_id);
+                              toggleExpandBundle(b.claim_id);
+                            }}
+                            className={`cursor-pointer transition-colors ${isLastActive
+                              ? 'bg-blue-100/75 dark:bg-blue-900/40 border-l-4 border-l-blue-600 dark:border-l-blue-400 ring-1 ring-inset ring-blue-500/30'
+                              : isExpanded
+                                ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
+                                : isMultiLineView
+                                  ? isOdd
+                                    ? 'bg-slate-100/90 dark:bg-slate-800/45 hover:bg-slate-200/90 dark:hover:bg-slate-700/60'
+                                    : 'bg-white dark:bg-surface-container-lowest hover:bg-slate-50 dark:hover:bg-slate-800/30'
+                                  : 'hover:bg-surface-container-high'
                               }`}
                           >
-                            <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); toggleExpandBundle(b.claim_id); }}>
+                            <td className="w-8 px-2 py-3 text-center" onClick={(e) => { e.stopPropagation(); setLastActiveRowId(b.claim_id); toggleExpandBundle(b.claim_id); }}>
                               <button
                                 type="button"
                                 className={`p-1 rounded transition-colors cursor-pointer ${isExpanded ? 'bg-primary text-on-primary shadow-xs' : 'hover:bg-surface-container-highest text-on-surface-variant'}`}
@@ -1665,21 +1855,29 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : (b.status === 'Draft') ? (
                                 <div className="inline-flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedBundleForReport(b);
-                                    }}
-                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
-                                    title="Print bundle settlement report"
-                                  >
-                                    <FileText className="w-3.5 h-3.5" />
-                                    <span>Report</span>
-                                  </button>
+                                  {!isLedgerApproved && (
+                                    <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLastActiveRowId(b.claim_id);
+                                        setSelectedBundleForReport(b);
+                                      }}
+                                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                                      title="Print bundle settlement report"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>Report</span>
+                                    </button>
+                                    </Can>
+                                  )}
                                   <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                     <button
-                                      onClick={() => openEditBundleModal(b)}
+                                      onClick={() => {
+                                        setLastActiveRowId(b.claim_id);
+                                        openEditBundleModal(b);
+                                      }}
                                       className="px-2.5 py-1 rounded border border-primary/40 text-primary text-[11px] font-medium hover:bg-primary/10 transition-colors cursor-pointer inline-flex items-center gap-1"
                                       title="Edit Bundle & Modify Tied Expenses"
                                     >
@@ -1689,7 +1887,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                   </Can>
                                   <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                     <button
-                                      onClick={() => onHandleSubmitBundle(b.claim_id)}
+                                      onClick={() => {
+                                        setLastActiveRowId(b.claim_id);
+                                        onHandleSubmitBundle(b.claim_id);
+                                      }}
                                       disabled={Boolean(submittingBundleIds[b.claim_id])}
                                       className="px-2.5 py-1 rounded bg-primary text-on-primary text-[11px] font-medium hover:bg-primary-container transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs"
                                     >
@@ -1705,7 +1906,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                   </Can>
                                   <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                     <button
-                                      onClick={() => handleDeleteBundle(b.claim_id)}
+                                      onClick={() => {
+                                        setLastActiveRowId(b.claim_id);
+                                        handleDeleteBundle(b.claim_id);
+                                      }}
                                       disabled={submitting}
                                       className="p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center disabled:opacity-50"
                                       title="Delete Bundle & Release Tied Expenses"
@@ -1716,24 +1920,30 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : (b.status === 'Submitted' || b.status === 'In Review') ? (
                                 <div className="inline-flex items-center gap-1.5">
-                                  {isFirstApproval && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedBundleForReport(b);
-                                      }}
-                                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
-                                      title="Print bundle settlement report"
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      <span>Report</span>
-                                    </button>
+                                  {isFirstApproval && !isLedgerApproved && (
+                                      <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setLastActiveRowId(b.claim_id);
+                                          setSelectedBundleForReport(b);
+                                        }}
+                                        className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                                        title="Print bundle settlement report"
+                                      >
+                                        <FileText className="w-3.5 h-3.5" />
+                                        <span>Report</span>
+                                      </button>
+                                      </Can>
                                   )}
                                   {canActionBundle ? (
                                     <button
                                       type="button"
-                                      onClick={() => toggleExpandBundle(b.claim_id)}
+                                      onClick={() => {
+                                        setLastActiveRowId(b.claim_id);
+                                        toggleExpandBundle(b.claim_id);
+                                      }}
                                       className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-[11px] font-semibold hover:bg-amber-500/25 transition-all cursor-pointer inline-flex items-center gap-1"
                                       title="Click to expand row and action approval"
                                     >
@@ -1748,36 +1958,6 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : isBundleApproved ? (
                                 <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
-                                  {/* Print / Report button */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedBundleForReport(b);
-                                    }}
-                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
-                                    title="Print bundle settlement report"
-                                  >
-                                    <FileText className="w-3.5 h-3.5" />
-                                    <span>Report</span>
-                                  </button>
-
-                                  {/* Cash Settlement Action (When bundle is Approved and NOT yet paid) */}
-                                  {b.status === 'Approved' && isCashOffice && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setShowPaymentModal?.(b);
-                                      }}
-                                      className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                      title="Disburse Cash Settlement for this approved claim bundle"
-                                    >
-                                      <Banknote className="w-3.5 h-3.5" />
-                                      <span>Cash Settlement</span>
-                                    </button>
-                                  )}
-
                                   {/* Paid Badge if already settled */}
                                   {b.status === 'Paid' && (
                                     <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
@@ -1793,8 +1973,15 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                           {/* MULTI-LINE VIEW SECOND ROW (Pipeline 1-----2-----3-----4 + Quick Approve/Rework) */}
                           {isMultiLineView && !isExpanded && (
-                            <tr className={`border-b-2 border-outline-variant/80 transition-colors ${isOdd ? 'bg-slate-100/90 dark:bg-slate-800/45' : 'bg-white dark:bg-surface-container-lowest'
-                              }`}>
+                            <tr
+                              onClick={() => setLastActiveRowId(b.claim_id)}
+                              className={`border-b-2 border-outline-variant/80 transition-colors ${isLastActive
+                                ? 'bg-blue-50/70 dark:bg-blue-950/30 border-l-4 border-l-blue-600 dark:border-l-blue-400'
+                                : isOdd
+                                  ? 'bg-slate-100/90 dark:bg-slate-800/45'
+                                  : 'bg-white dark:bg-surface-container-lowest'
+                              }`}
+                            >
                               <td colSpan={8} className="px-4 py-2.5">
                                 <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
                                   ? 'bg-white dark:bg-surface-container/70 border-outline-variant/80 shadow-xs'
@@ -1937,17 +2124,6 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                                           <CheckCircle2 className="w-3.5 h-3.5" /> Approved
                                         </span>
-                                        {isCashOffice && (
-                                          <button
-                                            type="button"
-                                            onClick={() => setShowPaymentModal?.(b)}
-                                            className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                            title="Disburse Cash Settlement for this approved claim bundle"
-                                          >
-                                            <Banknote className="w-3.5 h-3.5" />
-                                            <span>Cash Settlement</span>
-                                          </button>
-                                        )}
                                       </div>
                                     ) : b.status === 'Paid' ? (
                                       <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1">
@@ -1962,7 +2138,13 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                           {/* EXPANDED ACCORDION VIEW: VISUAL APPROVAL STEPPER PIPELINE & TIED EXPENSES */}
                           {isExpanded && (
-                            <tr className="bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary">
+                            <tr
+                              onClick={() => setLastActiveRowId(b.claim_id)}
+                              className={`transition-colors ${isLastActive
+                                ? 'bg-blue-50/40 dark:bg-blue-950/20 border-l-4 border-l-blue-600 dark:border-l-blue-400'
+                                : 'bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary'
+                              }`}
+                            >
                               <td colSpan={8} className="px-6 py-4 border-b border-outline-variant space-y-4">
                                 {/* Visual Stepper Pipeline with "Approval Progress Steps" header */}
                                 {b.status !== 'Draft' && (approvalData?.group ? (
@@ -2143,20 +2325,6 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     Expenses in Bundle {b.claim_id} ({bundleExpenses.length})
                                   </span>
                                   <div className="flex items-center gap-2">
-                                    {b.status === 'Approved' && isCashOffice && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setShowPaymentModal?.(b);
-                                        }}
-                                        className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
-                                        title="Disburse Cash Settlement for this approved bundle"
-                                      >
-                                        <Banknote className="w-3.5 h-3.5" />
-                                        <span>Cash Settlement</span>
-                                      </button>
-                                    )}
                                     {b.status === 'Paid' && (
                                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1 shrink-0">
                                         <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" /> Settled
@@ -2762,17 +2930,27 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {(selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted' || selectedBundleForView.status === 'Approved' || selectedBundleForView.status === 'Paid') && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedBundleForReport(selectedBundleForView)}
-                    className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all shadow-xs hover:shadow cursor-pointer"
-                    title="Print bundle settlement report"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Report</span>
-                  </button>
-                )}
+                {(() => {
+                  const isModalLedgerApproved = Boolean(
+                    (selectedBundleForView.ledger_details && (selectedBundleForView.ledger_details.status === 'Approved' || selectedBundleForView.ledger_details.status === 'Paid')) ||
+                    ((selectedBundleForView as any).ledger_status === 'Approved' || (selectedBundleForView as any).ledger_status === 'Paid') ||
+                    (Array.isArray((selectedBundleForView as any).ledgers) && (selectedBundleForView as any).ledgers.some((l: any) => l.status === 'Approved' || l.status === 'Paid'))
+                  );
+                  if (isModalLedgerApproved) return null;
+                  return (selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted') && (
+                    <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBundleForReport(selectedBundleForView)}
+                        className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all shadow-xs hover:shadow cursor-pointer"
+                        title="Print bundle settlement report"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Report</span>
+                      </button>
+                    </Can>
+                  );
+                })()}
                 <button onClick={() => setSelectedBundleForView(null)} className="p-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>

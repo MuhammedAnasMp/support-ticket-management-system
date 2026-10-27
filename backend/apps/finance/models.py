@@ -111,6 +111,7 @@ class WorkerClaim(models.Model):
             ('edit_bundle', 'Can edit claim bundle'),
             ('submit_bundle', 'Can submit claim bundle for approval'),
             ('delete_bundle', 'Can delete claim bundle'),
+            ('view_bundle_report', 'Can view bundle report'),
             ('create_workerclaim', 'Can create worker claim'),
             ('edit_workerclaim', 'Can edit worker claim'),
             ('submit_workerclaim', 'Can submit worker claim for approval'),
@@ -292,6 +293,9 @@ class LedgerGroup(models.Model):
         permissions = [
             ('pay_ledger_group', 'Can pay ledger group'),
             ('settle_cash_ledger', 'Can settle cash for ledger group'),
+            ('view_ledger_report', 'Can view ledger report'),
+            ('worker_wise_settlement', 'Can view worker-wise settlement'),
+            ('location_wise_expenses', 'Can view location-wise expenses'),
         ]
 
     def __str__(self):
@@ -335,6 +339,7 @@ class Ledger(models.Model):
             ('approve_ledger', 'Can approve ledger'),
             ('reject_ledger', 'Can reject ledger'),
             ('pay_ledger', 'Can pay ledger'),
+            ('super_permission', 'Super permission to modify approved ledgers'),
         ]
 
     def __str__(self):

@@ -8,6 +8,8 @@ import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { getUserId, type LedgerItem, type ExpenseItem, type LedgerBatchItem, type WorkerClaimItem } from './types';
+import Can from '@/hooks/Can';
+import { usePermission } from '@/hooks/usePermission';
 
 export interface LedgerGroupCluster {
   groupId: number | string;
@@ -77,12 +79,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   API_URL,
   onGroupRenamed,
 }) => {
-  const [activeTab, setActiveTab] = useState<'userwise' | 'storewise' | 'consolidated'>('userwise');
+  const { hasPermission } = usePermission();
+  const canWorkerWise = hasPermission('finance.worker_wise_settlement') || hasPermission('worker_wise_settlement');
+  const canLocationWise = hasPermission('finance.location_wise_expenses') || hasPermission('location_wise_expenses');
+
+  const [activeTab, setActiveTab] = useState<'userwise' | 'storewise' | 'consolidated'>(() => {
+    if (!canWorkerWise && canLocationWise) return 'storewise';
+    return 'userwise';
+  });
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
   const [groupByLocation, setGroupByLocation] = useState(true);
   const [isVerticalOrientation, setIsVerticalOrientation] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showWorkerDetailsInSummary, setShowWorkerDetailsInSummary] = useState(false);
+  const [showWorkerDetailsInSummary, setShowWorkerDetailsInSummary] = useState(true);
   const [fetchedExpenseTypes, setFetchedExpenseTypes] = useState<any[]>([]);
   const [fetchedBatches, setFetchedBatches] = useState<LedgerBatchItem[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -1704,7 +1713,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
       // Header Section
       const pdfMainTitle = isTargetTab === 'userwise'
-        ? 'WORKER SETTLEMENT (FOR OFFICE)'
+        ? 'WORKER SETTLEMENT (FOR CASH OFFICE)'
         : 'LOCATION-WISE EXPENSE (FOR ACCOUNTS)';
 
       doc.setFontSize(14);
@@ -2875,27 +2884,31 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           {/* REPORT VIEW TABS */}
           <div className="flex items-center justify-between flex-wrap gap-3 border-b border-outline-variant pb-2">
             <div className="flex items-center gap-2 overflow-x-auto">
-              <button
-                onClick={() => setActiveTab('userwise')}
-                className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'userwise'
-                  ? 'bg-primary text-on-primary shadow-2xs'
-                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                  }`}
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>Worker-wise Settlement(For Office)</span>
-              </button>
+              <Can permission={['finance.worker_wise_settlement', 'reports.can_generate_report'] as any}>
+                <button
+                  onClick={() => setActiveTab('userwise')}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'userwise'
+                    ? 'bg-primary text-on-primary shadow-2xs'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                    }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>Worker-wise Settlement(For Cash Office)</span>
+                </button>
+              </Can>
 
-              <button
-                onClick={() => setActiveTab('storewise')}
-                className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise'
-                  ? 'bg-primary text-on-primary shadow-2xs'
-                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                  }`}
-              >
-                <Boxes className="w-3.5 h-3.5" />
-                <span>Expenses(For Accounts)</span>
-              </button>
+              <Can permission={['finance.location_wise_expenses', 'reports.can_generate_report'] as any}>
+                <button
+                  onClick={() => setActiveTab('storewise')}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise'
+                    ? 'bg-primary text-on-primary shadow-2xs'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                    }`}
+                >
+                  <Boxes className="w-3.5 h-3.5" />
+                  <span>Expenses(For Accounts)</span>
+                </button>
+              </Can>
             </div>
 
             {/* Search Input, Group by Location & Vertical Orientation Toggles */}
