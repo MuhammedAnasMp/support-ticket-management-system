@@ -6,10 +6,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
     Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
-    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search, Receipt
+    UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search, Receipt, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
+import { printTicketDetailsReport, buildTicketPrintPreviewHtmlSync, DEFAULT_PRINT_SECTIONS, type TicketPrintSectionsConfig } from './ticketPrintReport';
 import Can, { permissionDebugEnabled } from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
 import {
@@ -493,6 +494,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     // UI / Action states
     const [modalLoading, setModalLoading] = useState(false);
+    const [isPrinting, setIsPrinting] = useState(false);
+    const [isPrintOptionsModalOpen, setIsPrintOptionsModalOpen] = useState(false);
+    const [printSections, setPrintSections] = useState<TicketPrintSectionsConfig>(DEFAULT_PRINT_SECTIONS);
     const [actionLoading, setActionLoading] = useState(false);
     const [activeWorkerId, setActiveWorkerId] = useState<number | null>(null);
     const [selectedExpenseTypeId, setSelectedExpenseTypeId] = useState<string>('');
@@ -1049,7 +1053,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         uploadAbortRef.current = null;
         document.body.style.overflow = '';
         try {
-            onRefreshList?.();
+            // Do not trigger full list reload on modal close
         } catch { }
         onClose();
     };
@@ -2002,6 +2006,31 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         return !catDeptId || catDeptId === ticketDeptId;
     });
 
+    const handlePrintTicket = async () => {
+        if (isPrinting || modalLoading) return;
+        setIsPrinting(true);
+        try {
+            await printTicketDetailsReport({
+                ticketDetails,
+                ticketSubDeptName,
+                allocations: safeAllocations,
+                workLogs: safeWorkLogs,
+                expenses: safeExpenses,
+                mediaList,
+                issueMedia,
+                completedMedia,
+                token,
+                currentUser: user,
+                sections: printSections,
+            });
+        } catch (err) {
+            console.error('Error printing ticket report:', err);
+        } finally {
+            setIsPrinting(false);
+            setIsPrintOptionsModalOpen(false);
+        }
+    };
+
     const hasBillsCategoryForDept = mediaCategories.some(cat => {
         const isBills = cat.category_name?.toLowerCase() === 'bills' || cat.category_name?.toLowerCase() === 'bill';
         if (!isBills) return false;
@@ -2054,6 +2083,20 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
 
                     <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <button
+                            onClick={() => setIsPrintOptionsModalOpen(true)}
+                            disabled={isPrinting || modalLoading}
+                            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:text-primary transition-all cursor-pointer active:scale-95 touch-manipulation disabled:opacity-50"
+                            title="Print Ticket Details"
+                            type="button"
+                        >
+                            {isPrinting ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            ) : (
+                                <Printer className="w-4 h-4 text-primary" />
+                            )}
+                            <span className="hidden sm:inline">{isPrinting ? 'Preparing...' : 'Print'}</span>
+                        </button>
                         <Can permission="maintenance.can_see_device_info">
                             {ticketDetails.device_info && (
                                 <div className="inline-flex items-center gap-1  text-[11px] px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-medium shrink-0" title="Created using device">
@@ -3077,6 +3120,14 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         };
 
                         const actions: FabAction[] = [
+                            {
+                                key: 'print',
+                                label: isPrinting ? 'Preparing Print...' : 'Print Ticket',
+                                icon: isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />,
+                                color: 'bg-sky-600 hover:bg-sky-700 text-white',
+                                onClick: () => { setIsFabOpen(false); setIsPrintOptionsModalOpen(true); },
+                                show: true,
+                            },
                             // Ticket History
                             {
                                 key: 'history',
@@ -5600,6 +5651,193 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 >
                                     {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                                     Confirm Approval
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Print Options Checkbox Selection Modal */}
+            <AnimatePresence>
+                {isPrintOptionsModalOpen && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.6 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => !isPrinting && setIsPrintOptionsModalOpen(false)}
+                            className="fixed inset-0 bg-black cursor-pointer"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                            className="relative z-10 w-full max-w-7xl bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded shadow-2xl overflow-hidden flex flex-col h-[88vh] max-h-[88vh]"
+                        >
+                            {/* Header */}
+                            <div className="px-4 py-3 border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between bg-surface-container dark:bg-dark-surface-container">
+                                <div className="flex items-center gap-2">
+                                    <Printer className="w-4 h-4 text-primary" />
+                                    <div>
+                                        <h3 className="text-xs sm:text-sm font-bold text-on-surface dark:text-dark-on-surface">
+                                            Print Ticket Options
+                                        </h3>
+                                        <p className="text-[11px] text-outline">
+                                            Select the sections to include in the printed report
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={isPrinting}
+                                    onClick={() => setIsPrintOptionsModalOpen(false)}
+                                    className="p-1 rounded text-outline hover:bg-surface-container-high cursor-pointer"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Split Body: Left Options + Right Live Sample Preview */}
+                            <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden min-h-0 overscroll-contain">
+                                <div className="w-full md:w-md shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-outline-variant dark:border-dark-outline-variant md:overflow-hidden">
+                                    {/* Quick Toggle Bar */}
+                                    <div className="px-4 py-2 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant/60 flex items-center justify-between text-xs">
+                                        <span className="font-semibold text-outline">
+                                            {Object.values(printSections).filter(Boolean).length} of {Object.keys(printSections).length} selected
+                                        </span>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setPrintSections({ ...DEFAULT_PRINT_SECTIONS })}
+                                                className="text-primary hover:underline font-semibold cursor-pointer"
+                                            >
+                                                Select All
+                                            </button>
+                                            <span className="text-outline-variant">|</span>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setPrintSections({
+                                                        qrCode: false,
+                                                        kpiSummary: false,
+                                                        classificationAndStore: false,
+                                                        description: false,
+                                                        approvals: false,
+                                                        allocatedPersonnel: false,
+                                                        workLogs: false,
+                                                        expenses: false,
+                                                        beforeMedia: false,
+                                                        afterMedia: false,
+                                                        expenseMedia: false,
+                                                        historyTimeline: false,
+                                                    })
+                                                }
+                                                className="text-outline hover:text-on-surface hover:underline font-semibold cursor-pointer"
+                                            >
+                                                Clear All
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Checkboxes List */}
+                                    <div className="p-4 space-y-2 md:overflow-y-auto scrollbar-thin md:flex-1">
+                                        {([
+                                            { key: 'qrCode', label: 'QR Code in Header', sub: 'Scannable QR code for this ticket' },
+                                            { key: 'kpiSummary', label: 'Summary Metrics Bar', sub: 'Age, staff count, hours, labour & expense totals' },
+                                            { key: 'classificationAndStore', label: 'Ticket & Store / Location Details', sub: 'Department, nature, priority, store & manager info' },
+                                            { key: 'description', label: 'Issue Description', sub: 'Detailed scope of work & problem statement' },
+                                            { key: 'approvals', label: 'Approvals & Resolution Status', sub: 'Ticket & location approval / rejection details' },
+                                            { key: 'allocatedPersonnel', label: `Allocated Personnel (${safeAllocations.length})`, sub: 'Assigned technicians, planned hours & remarks' },
+                                            { key: 'workLogs', label: `Work Logs & Labour Hours (${safeWorkLogs.length})`, sub: 'Logged technician hours, time windows & labour cost' },
+                                            { key: 'expenses', label: `Financial Expenses (${safeExpenses.length})`, sub: 'Material claims, categories, remarks & amounts' },
+                                            { key: 'beforeMedia', label: `Before Repair Media (${issueMedia.filter(m => !isAudio(m.file_name || '')).length})`, sub: 'Initial issue photos & video starting frames' },
+                                            { key: 'afterMedia', label: `After Repair Media (${completedMedia.filter(m => !isAudio(m.file_name || '')).length})`, sub: 'Completion photos & video starting frames' },
+                                            { key: 'expenseMedia', label: 'Expense Receipts & Bills Media', sub: 'Attached bill & receipt images' },
+                                            { key: 'historyTimeline', label: 'Ticket Audit & Status Timeline', sub: 'Chronological status transition history' },
+                                        ] as { key: keyof TicketPrintSectionsConfig; label: string; sub: string }[]).map((opt) => (
+                                            <label
+                                                key={opt.key}
+                                                className={`flex items-start gap-3 p-2.5 rounded border cursor-pointer transition-colors ${printSections[opt.key]
+                                                    ? 'bg-primary/5 border-primary/40 dark:bg-primary/10'
+                                                    : 'bg-surface dark:bg-dark-surface border-outline-variant/60 hover:bg-surface-container-low'
+                                                    }`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={printSections[opt.key]}
+                                                    onChange={(e) =>
+                                                        setPrintSections((prev) => ({
+                                                            ...prev,
+                                                            [opt.key]: e.target.checked,
+                                                        }))
+                                                    }
+                                                    className="mt-0.5 w-4 h-4 accent-primary rounded cursor-pointer shrink-0"
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface leading-tight">
+                                                        {opt.label}
+                                                    </p>
+                                                    <p className="text-[11px] text-outline mt-0.5 leading-snug">
+                                                        {opt.sub}
+                                                    </p>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+
+                                </div>
+
+                                {/* Right Side: Exact Print Report HTML Preview (A4 Pages) */}
+                                <div className="flex-1 bg-slate-100 dark:bg-slate-900/70 p-2 sm:p-3 flex flex-col min-h-[480px] md:min-h-0 md:h-full overflow-hidden">
+                                    <iframe
+                                        title="Live Print Sample Preview"
+                                        srcDoc={buildTicketPrintPreviewHtmlSync({
+                                            ticketDetails,
+                                            ticketSubDeptName,
+                                            allocations: safeAllocations,
+                                            workLogs: safeWorkLogs,
+                                            expenses: safeExpenses,
+                                            mediaList,
+                                            issueMedia,
+                                            completedMedia,
+                                            token,
+                                            currentUser: user,
+                                            sections: printSections,
+                                            isPreview: true,
+                                        })}
+                                        className="w-full flex-1 min-h-[460px] md:min-h-0 md:h-full border-0 bg-transparent rounded"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-4 py-3 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isPrinting}
+                                    onClick={() => setIsPrintOptionsModalOpen(false)}
+                                    className="px-3.5 py-1.5 text-xs font-semibold rounded border border-outline-variant text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isPrinting}
+                                    onClick={handlePrintTicket}
+                                    className="px-4 py-1.5 text-xs font-bold rounded bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95 transition-all shadow-sm"
+                                >
+                                    {isPrinting ? (
+                                        <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Preparing Print...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Printer className="w-3.5 h-3.5" />
+                                            <span>Print Selected</span>
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </motion.div>

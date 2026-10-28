@@ -2170,9 +2170,9 @@ export const TicketsView: React.FC = () => {
                 expenseTypes={expenseTypes}
                 onClose={() => {
                     setSelectedTicket(null);
-                    fetchTickets();
+                    // Do not reload ticket list on close
                 }}
-                onRefreshList={fetchTickets}
+                onRefreshList={() => fetchTickets(true)}
             />
         </div>
     );
