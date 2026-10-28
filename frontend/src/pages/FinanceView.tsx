@@ -132,7 +132,6 @@ export const FinanceView: React.FC = () => {
         { value: 'Draft', label: 'Draft' },
         { value: 'In Review', label: 'In Review' },
         { value: 'Approved', label: 'Approved' },
-        { value: 'Completed', label: 'Completed' },
         { value: 'Paid', label: 'Paid' },
         { value: 'Rework', label: 'Rework' },
       ];
@@ -142,7 +141,6 @@ export const FinanceView: React.FC = () => {
       { value: 'Draft', label: 'Draft' },
       { value: 'In Review', label: 'In Review' },
       { value: 'Approved', label: 'Approved' },
-      { value: 'Completed', label: 'Completed' },
       { value: 'Rework', label: 'Rework' },
       { value: 'Paid', label: 'Paid' },
     ];
@@ -1200,11 +1198,7 @@ export const FinanceView: React.FC = () => {
       let groupStatus = 'Draft';
       if (isPaid) {
         groupStatus = 'Paid';
-      } else if (isCompleted) {
-        groupStatus = 'Completed';
-      } else if (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Paid')) {
-        groupStatus = 'Paid';
-      } else if (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid')) {
+      } else if (isCompleted || (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid'))) {
         groupStatus = 'Approved';
       } else if (groupBatches.some(b => b.status === 'Rework')) {
         groupStatus = 'Rework';

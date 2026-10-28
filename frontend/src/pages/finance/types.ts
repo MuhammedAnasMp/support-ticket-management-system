@@ -218,6 +218,7 @@ export interface LedgerGroupItem {
   payment_remarks?: string;
   recipient_name?: string;
   ledgers_count?: number;
+  status?: string;
 }
 
 export interface StoreDetailItem {

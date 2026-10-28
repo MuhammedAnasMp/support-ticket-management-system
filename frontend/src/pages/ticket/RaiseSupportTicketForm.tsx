@@ -419,7 +419,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
     };
 
     const MAX_WORDS = 8;
-    const MAX_CHARS = 50;
+    const MAX_CHARS = 40;
 
     return (
         <>

@@ -1224,14 +1224,14 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         status_param = self.request.query_params.get("status")
         if status_param and status_param.upper() != 'ALL':
             status_lower = status_param.lower().strip()
-            if status_lower == 'completed':
-                queryset = queryset.filter(is_completed=True).exclude(is_paid=True)
-            elif status_lower == 'paid':
+            if status_lower == 'paid':
                 queryset = queryset.filter(is_paid=True)
             elif status_lower in ('in review', 'submitted', 'pending', 'pending approval'):
                 queryset = queryset.filter(ledgers__status__in=['In Review', 'Submitted']).distinct()
-            elif status_lower == 'approved':
-                queryset = queryset.filter(ledgers__status='Approved').exclude(is_paid=True).exclude(is_completed=True).distinct()
+            elif status_lower in ('approved', 'completed'):
+                queryset = queryset.filter(
+                    Q(ledgers__status='Approved') | Q(is_completed=True)
+                ).exclude(is_paid=True).distinct()
             elif status_lower == 'rework':
                 queryset = queryset.filter(ledgers__status='Rework').distinct()
             elif status_lower == 'rejected':
@@ -1470,11 +1470,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
         status_param = self.request.query_params.get("status")
         if status_param and status_param.upper() != 'ALL':
             status_lower = status_param.lower().strip()
-            if status_lower == 'completed':
-                queryset = queryset.filter(
-                    Q(ledger_group__is_completed=True) | Q(ledger_group__completed_at__isnull=False)
-                ).exclude(status__iexact='Paid').exclude(ledger_group__is_paid=True)
-            elif status_lower == 'paid':
+            if status_lower == 'paid':
                 queryset = queryset.filter(
                     Q(status__iexact='Paid') | Q(ledger_group__is_paid=True)
                 )
@@ -1482,10 +1478,10 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(
                     Q(status__iexact='In Review') | Q(status__iexact='Submitted')
                 )
-            elif status_lower == 'approved':
+            elif status_lower in ('approved', 'completed'):
                 queryset = queryset.filter(
-                    status__iexact='Approved'
-                ).exclude(status__iexact='Paid').exclude(ledger_group__is_paid=True).exclude(ledger_group__is_completed=True)
+                    Q(status__iexact='Approved') | Q(ledger_group__is_completed=True)
+                ).exclude(status__iexact='Paid').exclude(ledger_group__is_paid=True)
             else:
                 queryset = queryset.filter(status__iexact=status_param.strip())
 

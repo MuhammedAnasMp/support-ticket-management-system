@@ -553,8 +553,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     setLoadingGroups(true);
     try {
       const url = searchTerm.trim()
-        ? `${API_URL}/finance/ledger-groups/?search=${encodeURIComponent(searchTerm.trim())}&page_size=10`
-        : `${API_URL}/finance/ledger-groups/?page_size=10`;
+        ? `${API_URL}/finance/ledger-groups/?search=${encodeURIComponent(searchTerm.trim())}&page_size=50`
+        : `${API_URL}/finance/ledger-groups/?page_size=50`;
       const res = await fetch(url, {
         headers: {
           'Authorization': `Token ${token}`,
@@ -652,21 +652,52 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     return `Ledger Group #${selectedGroupId}`;
   }, [selectedGroupId, dynamicGroups, ledgerGroups, ledgers]);
 
+  const getGroupStatus = (g: LedgerGroupItem): string => {
+    if (g.is_paid) return 'Paid';
+    const childLedgers = (ledgers || []).filter(
+      l => String(l.ledger_group || l.ledger_group_id || l.ledger_group_detail?.ledger_group_id) === String(g.ledger_group_id)
+    );
+    if (childLedgers.length > 0) {
+      if (childLedgers.every(l => l.status === 'Paid')) return 'Paid';
+      if (childLedgers.every(l => l.status === 'Approved' || l.status === 'Paid')) return 'Approved';
+      if (childLedgers.some(l => l.status === 'Rework')) return 'Rework';
+      if (childLedgers.some(l => l.status === 'In Review' || l.status === 'Submitted')) return 'In Review';
+      if (childLedgers.some(l => l.status === 'Rejected')) return 'Rejected';
+      return 'Draft';
+    }
+    if (g.is_completed || g.status === 'Completed' || g.status === 'Approved') return 'Approved';
+    if (g.status) return g.status;
+    return 'Draft';
+  };
+
   const ledgerGroupSelectOptions: SelectOption[] = useMemo(() => {
-    const list = dynamicGroups.filter(g => !g.is_completed);
+    // Show group names only if status is Draft or Rework
+    const list = dynamicGroups.filter(g => {
+      const st = getGroupStatus(g);
+      return st === 'Draft' || st === 'Rework';
+    });
+
     if (selectedGroupId && !list.some(g => String(g.ledger_group_id) === String(selectedGroupId))) {
       const foundInProp = ledgerGroups?.find(g => String(g.ledger_group_id) === String(selectedGroupId));
       if (foundInProp) {
-        list.unshift(foundInProp);
+        const st = getGroupStatus(foundInProp);
+        if (st === 'Draft' || st === 'Rework' || isAddingToExistingGroup) {
+          list.unshift(foundInProp);
+        }
       } else {
         const matchLedger = (ledgers || []).find(l => String(l.ledger_group || l.ledger_group_id || l.ledger_group_detail?.ledger_group_id) === String(selectedGroupId));
         if (matchLedger) {
-          list.unshift({
+          const item: LedgerGroupItem = {
             ledger_group_id: Number(selectedGroupId),
             group_name: matchLedger.ledger_group_detail?.group_name || `Ledger Group ${selectedGroupId}`,
             total_amount: String(matchLedger.ledger_group_detail?.total_amount || '0'),
-            is_completed: Boolean(matchLedger.ledger_group_detail?.is_completed)
-          } as LedgerGroupItem);
+            is_completed: Boolean(matchLedger.ledger_group_detail?.is_completed),
+            status: matchLedger.status || 'Draft'
+          };
+          const st = getGroupStatus(item);
+          if (st === 'Draft' || st === 'Rework' || isAddingToExistingGroup) {
+            list.unshift(item);
+          }
         }
       }
     }
@@ -674,15 +705,16 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       { value: '', label: '-- Create New Ledger Group --' },
       ...list.map(g => {
         const unused = isGroupUnused(g);
+        const st = getGroupStatus(g);
         return {
           value: String(g.ledger_group_id),
-          label: `${g.group_name} (${parseFloat(g.total_amount || '0').toFixed(3)} KD)${unused ? ' • [Unused]' : ''}`,
+          label: `${g.group_name} (${parseFloat(g.total_amount || '0').toFixed(3)} KD)${unused ? ' • [Unused]' : ` • [${st}]`}`,
           canDelete: unused,
           deleteTooltip: `Delete unused group "${g.group_name}"`
         };
       })
     ];
-  }, [dynamicGroups, ledgerGroups, selectedGroupId, ledgers]);
+  }, [dynamicGroups, ledgerGroups, selectedGroupId, ledgers, isAddingToExistingGroup]);
 
   const existingGroupWithSameName = useMemo(() => {
     const name = newGroupName.trim().toLowerCase();
@@ -1598,8 +1630,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
   const getClusterStatus = (c: LedgerGroupCluster): string => {
     if (c.isPaid || (c.ledgers.length > 0 && c.ledgers.every(l => l.status === 'Paid'))) return 'Paid';
-    if (c.isCompleted) return 'Completed';
-    if (c.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')) return 'Approved';
+    if (c.isCompleted || (c.ledgers.length > 0 && c.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid'))) return 'Approved';
     if (c.ledgers.some(l => l.status === 'Rework')) return 'Rework';
     if (c.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')) return 'In Review';
     if (c.ledgers.some(l => l.status === 'Rejected')) return 'Rejected';
@@ -2564,17 +2595,15 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     const isGroupPaid = cluster.isPaid || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Paid'));
                     const groupStatus = isGroupPaid
                       ? 'Paid'
-                      : cluster.isCompleted
-                        ? 'Completed'
-                        : cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')
-                          ? 'Approved'
-                          : cluster.ledgers.some(l => l.status === 'Rework')
-                            ? 'Rework'
-                            : cluster.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')
-                              ? 'In Review'
-                              : cluster.ledgers.some(l => l.status === 'Rejected')
-                                ? 'Rejected'
-                                : 'Draft';
+                      : (cluster.isCompleted || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')))
+                        ? 'Approved'
+                        : cluster.ledgers.some(l => l.status === 'Rework')
+                          ? 'Rework'
+                          : cluster.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')
+                            ? 'In Review'
+                            : cluster.ledgers.some(l => l.status === 'Rejected')
+                              ? 'Rejected'
+                              : 'Draft';
 
                     const canUserApproveGroup = cluster.ledgers.some(l => {
                       const st = (l.status || '').toLowerCase().replace('_', ' ');
@@ -2649,11 +2678,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               </div>
                               <div className="flex flex-col">
                                 <span className={`text-xs ${!isGroupCollapsed ? 'font-bold text-indigo-950 dark:text-indigo-100' : 'font-bold text-on-surface'}`}>
-                                  {cluster.groupName}
+                                  {cluster.groupId}  |   {cluster.groupName}
                                 </span>
-                                <span className="text-[10px] font-mono text-on-surface-variant">
-                                  Ledger-{cluster.groupId}
-                                </span>
+
                               </div>
                             </div>
                           </td>
@@ -2664,13 +2691,19 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               const breakdown = getGroupBundleBreakdown(cluster);
                               const settledCount = breakdown.filter(b => b.status === 'Paid' || isGroupPaid).length;
                               const totalCount = breakdown.length;
+
                               return (
-                                <div className="flex flex-col items-start gap-0.5">
-                                  <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium border border-outline-variant/60 text-[11px] whitespace-nowrap">
+                                <div className="flex items-center gap-2 whitespace-nowrap">
+                                  <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium border border-outline-variant/60 text-[11px]">
                                     {totalCount} Bundle{totalCount !== 1 ? 's' : ''}
                                   </span>
                                   {totalCount > 0 && (
-                                    <span className={`text-[10px] font-bold ${settledCount === totalCount && totalCount > 0 ? 'text-teal-600 dark:text-teal-400' : settledCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-on-surface-variant'}`}>
+                                    <span className={`text-[10px] font-bold ${settledCount === totalCount
+                                      ? 'text-teal-600 dark:text-teal-400'
+                                      : settledCount > 0
+                                        ? 'text-amber-600 dark:text-amber-400'
+                                        : 'text-on-surface-variant'
+                                      }`}>
                                       {settledCount}/{totalCount} Settled
                                     </span>
                                   )}
@@ -2678,7 +2711,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               );
                             })() : (
                               <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium border border-outline-variant/60 text-[11px] whitespace-nowrap">
-                                {cluster.ledgers.length} Batch${cluster.ledgers.length !== 1 ? 'es' : ''}
+                                {cluster.ledgers.length} Batch{cluster.ledgers.length !== 1 ? 'es' : ''}
                               </span>
                             )}
                           </td>
@@ -4558,7 +4591,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 <div className="relative z-30">
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-medium text-on-surface block">
-                      Select Existing Ledger
+                      Select Existing Ledger Group (Draft / Rework)
                     </label>
                     {isAddingToExistingGroup && (
                       <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-medium inline-flex items-center gap-1 bg-indigo-500/10 dark:bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">
@@ -4580,7 +4613,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     loading={loadingGroups}
                     disableLocalFilter={true}
                     onDeleteOption={isAddingToExistingGroup ? undefined : handleDeleteUnusedGroup}
-                    placeholder="Search or select a ledger ..."
+                    placeholder="Search or select a Draft or Rework ledger group..."
                   />
                 </div>
 
