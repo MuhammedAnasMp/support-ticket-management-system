@@ -73,6 +73,7 @@ export const FinanceView: React.FC = () => {
   // Loading States
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingBundleId, setDeletingBundleId] = useState<number | null>(null);
 
   // Global Filter States (Default: Current Month or from localStorage)
   // Per-subpage search queries to keep search state tied with each view (Expenses, Bundles, Ledgers, etc.)
@@ -491,6 +492,7 @@ export const FinanceView: React.FC = () => {
     });
 
     if (!confirmed) return;
+    setDeletingBundleId(claimId);
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -502,13 +504,17 @@ export const FinanceView: React.FC = () => {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || 'Failed to delete bundle');
       }
-      setSuccessMessage(`Bundle ${claimId} deleted. All tied expenses have been released back to unclaimed status.`);
       setSelectedBundleForView(null);
       setSelectedBundleForEdit(null);
-      fetchData(true, true);
+      // Optimistically remove from state so UI updates immediately
+      setBundles(prev => prev.filter(b => b.claim_id !== claimId));
+      setBundleTotalCount(prev => Math.max(0, prev - 1));
+      setSuccessMessage(`Bundle ${claimId} deleted. All tied expenses have been released back to unclaimed status.`);
+      await fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
+      setDeletingBundleId(null);
       setSubmitting(false);
     }
   };
@@ -1657,7 +1663,19 @@ export const FinanceView: React.FC = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-      setSuccessMessage(`Ledger ${data.ledger_id} assembled successfully.`);
+      const createdIds = Array.isArray(data)
+        ? data.map((l: any) => l.ledger_id).filter(Boolean)
+        : data?.ledger_id
+          ? [data.ledger_id]
+          : Array.isArray(data?.ledgers)
+            ? data.ledgers.map((l: any) => l.ledger_id).filter(Boolean)
+            : [];
+      const ledgerMsg = createdIds.length > 1
+        ? `Ledgers (${createdIds.join(', ')}) assembled successfully.`
+        : createdIds.length === 1
+          ? `Ledger ${createdIds[0]} assembled successfully.`
+          : `Ledger batch assembled successfully.`;
+      setSuccessMessage(ledgerMsg);
       setShowCreateLedgerModal(false);
       setSelectedBundleIds([]);
       setNewGroupName('');
@@ -2474,6 +2492,7 @@ export const FinanceView: React.FC = () => {
           isSyncingNewBundle={isSyncingNewBundle}
           syncingBundleInfo={syncingBundleInfo}
           updatingBundleId={updatingBundleId}
+          deletingBundleId={deletingBundleId}
           selectedWorkerId={selectedWorkerId}
           setSelectedWorkerId={setSelectedWorkerId}
           currentPage={bundlePage}

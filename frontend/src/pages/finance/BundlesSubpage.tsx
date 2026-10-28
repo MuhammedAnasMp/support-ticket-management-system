@@ -85,6 +85,7 @@ interface BundlesSubpageProps {
     amount?: number;
   } | null;
   updatingBundleId?: number | null;
+  deletingBundleId?: number | null;
   selectedWorkerId?: number | null;
   setSelectedWorkerId?: (id: number | null) => void;
   serverBundleStats?: {
@@ -152,6 +153,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   isSyncingNewBundle = false,
   syncingBundleInfo = null,
   updatingBundleId = null,
+  deletingBundleId = null,
   selectedWorkerId,
   setSelectedWorkerId,
   serverBundleStats,
@@ -161,6 +163,17 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   // Inline Approval State
   const [reworkComments, setReworkComments] = useState<Record<number, string>>({});
   const [reworkErrors, setReworkErrors] = useState<Record<number, string>>({});
+  const [localDeletingBundleId, setLocalDeletingBundleId] = useState<number | null>(null);
+  const activeDeletingId = deletingBundleId ?? localDeletingBundleId;
+
+  const onDeleteBundle = async (claimId: number) => {
+    setLocalDeletingBundleId(claimId);
+    try {
+      await handleDeleteBundle(claimId);
+    } finally {
+      setLocalDeletingBundleId(null);
+    }
+  };
   const [actioningBundleId, setActioningBundleId] = useState<number | null>(null);
   const [actioningActionType, setActioningActionType] = useState<'APPROVED' | 'REWORK' | null>(null);
 
@@ -1736,6 +1749,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
                       const isLastActive = lastActiveRowId === b.claim_id;
 
+                      const isDeletingThisBundle = activeDeletingId === b.claim_id;
+
                       return (
                         <React.Fragment key={b.claim_id ?? `bundle-${idx}`}>
                           <tr
@@ -1743,7 +1758,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               setLastActiveRowId(b.claim_id);
                               toggleExpandBundle(b.claim_id);
                             }}
-                            className={`cursor-pointer transition-colors ${isLastActive
+                            className={`cursor-pointer transition-colors ${isDeletingThisBundle ? 'opacity-60 pointer-events-none bg-rose-500/5 select-none' : ''} ${isLastActive
                               ? 'bg-blue-100/75 dark:bg-blue-900/40 border-l-4 border-l-blue-600 dark:border-l-blue-400 ring-1 ring-inset ring-blue-500/30'
                               : isExpanded
                                 ? 'bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary'
@@ -1852,24 +1867,42 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       )}
                                     </button>
                                   </Can>
+                                  <Can permission={isAdmin || ["finance.delete_bundle", "finance.delete_workerclaim", "finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setLastActiveRowId(b.claim_id);
+                                        onDeleteBundle(b.claim_id);
+                                      }}
+                                      disabled={isDeletingThisBundle || Boolean(activeDeletingId) || updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                      className={`p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 transition-colors inline-flex items-center ${isDeletingThisBundle ? 'bg-rose-500/10 cursor-not-allowed opacity-100' : 'hover:bg-rose-500/10 cursor-pointer disabled:opacity-50'}`}
+                                      title={isDeletingThisBundle ? "Deleting bundle..." : "Delete Bundle & Release Tied Expenses"}
+                                    >
+                                      {isDeletingThisBundle ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  </Can>
                                 </div>
                               ) : (b.status === 'Draft') ? (
                                 <div className="inline-flex items-center gap-1.5">
                                   {!isLedgerApproved && (
                                     <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setLastActiveRowId(b.claim_id);
-                                        setSelectedBundleForReport(b);
-                                      }}
-                                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
-                                      title="Print bundle settlement report"
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      <span>Report</span>
-                                    </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setLastActiveRowId(b.claim_id);
+                                          setSelectedBundleForReport(b);
+                                        }}
+                                        className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-medium transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                                        title="Print bundle settlement report"
+                                      >
+                                        <FileText className="w-3.5 h-3.5" />
+                                        <span>Report</span>
+                                      </button>
                                     </Can>
                                   )}
                                   <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
@@ -1904,24 +1937,29 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                       )}
                                     </button>
                                   </Can>
-                                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                  <Can permission={isAdmin || ["finance.delete_bundle", "finance.delete_workerclaim", "finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                     <button
+                                      type="button"
                                       onClick={() => {
                                         setLastActiveRowId(b.claim_id);
-                                        handleDeleteBundle(b.claim_id);
+                                        onDeleteBundle(b.claim_id);
                                       }}
-                                      disabled={submitting}
-                                      className="p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer inline-flex items-center disabled:opacity-50"
-                                      title="Delete Bundle & Release Tied Expenses"
+                                      disabled={isDeletingThisBundle || Boolean(activeDeletingId) || submitting}
+                                      className={`p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 transition-colors inline-flex items-center ${isDeletingThisBundle ? 'bg-rose-500/10 cursor-not-allowed opacity-100' : 'hover:bg-rose-500/10 cursor-pointer disabled:opacity-50'}`}
+                                      title={isDeletingThisBundle ? "Deleting bundle..." : "Delete Bundle & Release Tied Expenses"}
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      {isDeletingThisBundle ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      )}
                                     </button>
                                   </Can>
                                 </div>
                               ) : (b.status === 'Submitted' || b.status === 'In Review') ? (
                                 <div className="inline-flex items-center gap-1.5">
                                   {isFirstApproval && !isLedgerApproved && (
-                                      <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
+                                    <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -1935,7 +1973,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                         <FileText className="w-3.5 h-3.5" />
                                         <span>Report</span>
                                       </button>
-                                      </Can>
+                                    </Can>
                                   )}
                                   {canActionBundle ? (
                                     <button
@@ -1998,7 +2036,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 : isOdd
                                   ? 'bg-slate-100/90 dark:bg-slate-800/45'
                                   : 'bg-white dark:bg-surface-container-lowest'
-                              }`}
+                                }`}
                             >
                               <td colSpan={8} className="px-4 py-2.5">
                                 <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 p-2.5 rounded border ${isOdd
@@ -2136,6 +2174,30 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                             )}
                                           </button>
                                         </Can>
+                                        <Can permission={isAdmin || ["finance.delete_bundle", "finance.delete_workerclaim", "finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setLastActiveRowId(b.claim_id);
+                                              onDeleteBundle(b.claim_id);
+                                            }}
+                                            disabled={isDeletingThisBundle || Boolean(activeDeletingId) || updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                            className={`px-2.5 py-1.5 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 transition-colors inline-flex items-center gap-1 text-xs font-medium ${isDeletingThisBundle ? 'bg-rose-500/10 cursor-not-allowed opacity-100' : 'hover:bg-rose-500/10 cursor-pointer disabled:opacity-50'}`}
+                                            title={isDeletingThisBundle ? "Deleting bundle..." : "Delete Bundle & Release Tied Expenses"}
+                                          >
+                                            {isDeletingThisBundle ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Deleting...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                <span>Delete</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </Can>
                                       </div>
                                     ) : b.status === 'Approved' ? (
                                       <div className="flex items-center gap-1.5">
@@ -2161,7 +2223,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                               className={`transition-colors ${isLastActive
                                 ? 'bg-blue-50/40 dark:bg-blue-950/20 border-l-4 border-l-blue-600 dark:border-l-blue-400'
                                 : 'bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary'
-                              }`}
+                                }`}
                             >
                               <td colSpan={8} className="px-6 py-4 border-b border-outline-variant space-y-4">
                                 {/* Visual Stepper Pipeline with "Approval Progress Steps" header */}
@@ -2252,6 +2314,30 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                             <>
                                               <RotateCcw className="w-3.5 h-3.5" />
                                               <span>Submit Bundle</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </Can>
+                                      <Can permission={isAdmin || ["finance.delete_bundle", "finance.delete_workerclaim", "finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                                        <button
+                                          type="button"
+                                          disabled={isDeletingThisBundle || Boolean(activeDeletingId) || updatingBundleId === b.claim_id || Boolean(submittingBundleIds[b.claim_id]) || submitting}
+                                          onClick={() => {
+                                            setLastActiveRowId(b.claim_id);
+                                            onDeleteBundle(b.claim_id);
+                                          }}
+                                          className={`px-3.5 py-1.5 rounded border border-rose-500/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs ${isDeletingThisBundle ? 'bg-rose-500/10 cursor-not-allowed opacity-100' : 'hover:bg-rose-500/10 cursor-pointer disabled:opacity-50'}`}
+                                          title={isDeletingThisBundle ? "Deleting Bundle..." : "Delete Bundle & Release Tied Expenses"}
+                                        >
+                                          {isDeletingThisBundle ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              <span>Deleting Bundle...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                              <span>Delete Bundle</span>
                                             </>
                                           )}
                                         </button>
@@ -2936,7 +3022,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     })()}
                   </h3>
                   <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-normal mt-0.5">
-                    <span>Worker:</span>
+
                     <AvatarCircle
                       user={selectedBundleForView.worker_detail}
                       name={selectedBundleForView.worker_detail?.full_name || selectedBundleForView.worker_detail?.username || 'Technician'}
@@ -2955,7 +3041,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                     (Array.isArray((selectedBundleForView as any).ledgers) && (selectedBundleForView as any).ledgers.some((l: any) => l.status === 'Approved' || l.status === 'Paid'))
                   );
                   if (isModalLedgerApproved) return null;
-                  return (selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted') && (
+                  // return (selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'In Review' || selectedBundleForView.status === 'Submitted') && 
+                  return (
                     <Can permission={["finance.view_bundle_report", "reports.can_generate_report"] as any}>
                       <button
                         type="button"
@@ -3183,36 +3270,61 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             {/* View Modal Footer & Actions */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3.5 border-t border-outline-variant/80">
               <div className="flex items-center gap-2">
-                {(selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'Rework') && (
-                  <Can permission={["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
-                    <button
-                      onClick={() => {
-                        const b = selectedBundleForView;
-                        setSelectedBundleForView(null);
-                        openEditBundleModal(b);
-                      }}
-                      className="px-3.5 py-2 rounded border border-primary text-primary hover:bg-primary/10 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <PlusCircle className="w-4 h-4" />
-                      <span>Edit Bundle</span>
-                    </button>
-                  </Can>
-                )}
-                {selectedBundleForView.status !== 'Approved' && selectedBundleForView.status !== 'Paid' && (
-                  <Can permission={["finance.delete_bundle", "finance.delete_workerclaim"] as any}>
-                    <button
-                      onClick={() => {
-                        const id = selectedBundleForView.claim_id;
-                        setSelectedBundleForView(null);
-                        handleDeleteBundle(id);
-                      }}
-                      className="px-3.5 py-2 rounded border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span>Delete Bundle</span>
-                    </button>
-                  </Can>
-                )}
+                {(() => {
+                  const modalApprovalData = getBundleApprovalGroup(selectedBundleForView);
+                  const isModalRework = selectedBundleForView.status === 'Rework' ||
+                    (selectedBundleForView.status as string) === 'Rework Needed' ||
+                    (selectedBundleForView as any).status_display === 'Rework' ||
+                    (selectedBundleForView as any).status_display === 'Rework Needed' ||
+                    modalApprovalData?.group?.items?.some((i: any) => i.status === 'Rework') ||
+                    modalApprovalData?.app?.status === 'Rework';
+
+                  return (
+                    <>
+                      {(selectedBundleForView.status === 'Draft' || isModalRework) && (
+                        <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                          <button
+                            onClick={() => {
+                              const b = selectedBundleForView;
+                              setSelectedBundleForView(null);
+                              openEditBundleModal(b);
+                            }}
+                            className="px-3.5 py-2 rounded border border-primary text-primary hover:bg-primary/10 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                            <span>Edit Bundle</span>
+                          </button>
+                        </Can>
+                      )}
+                      {(selectedBundleForView.status === 'Draft' || isModalRework || (selectedBundleForView.status !== 'Approved' && selectedBundleForView.status !== 'Paid')) && (
+                        <Can permission={isAdmin || ["finance.delete_bundle", "finance.delete_workerclaim", "finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
+                          <button
+                            type="button"
+                            disabled={activeDeletingId === selectedBundleForView.claim_id || submitting}
+                            onClick={async () => {
+                              const id = selectedBundleForView.claim_id;
+                              await onDeleteBundle(id);
+                              setSelectedBundleForView(null);
+                            }}
+                            className={`px-3.5 py-2 rounded border border-rose-500/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition-colors flex items-center gap-1.5 ${activeDeletingId === selectedBundleForView.claim_id ? 'bg-rose-500/10 cursor-not-allowed opacity-100' : 'hover:bg-rose-500/10 cursor-pointer disabled:opacity-50'}`}
+                          >
+                            {activeDeletingId === selectedBundleForView.claim_id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Deleting Bundle...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Trash2 className="w-4 h-4" />
+                                <span>Delete Bundle</span>
+                              </>
+                            )}
+                          </button>
+                        </Can>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="flex items-center gap-2.5">
@@ -3268,27 +3380,39 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                   );
                 })()}
 
-                {(selectedBundleForView.status === 'Draft' || selectedBundleForView.status === 'Rework') && (
-                  <Can permission={["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
-                    <button
-                      onClick={async () => {
-                        await onHandleSubmitBundle(selectedBundleForView.claim_id);
-                        setSelectedBundleForView(null);
-                      }}
-                      disabled={Boolean(submittingBundleIds[selectedBundleForView.claim_id])}
-                      className="px-4 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98] inline-flex items-center gap-1.5"
-                    >
-                      {submittingBundleIds[selectedBundleForView.claim_id] ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Submitting...</span>
-                        </>
-                      ) : (
-                        <span>{selectedBundleForView.status === 'Rework' ? 'Resubmit Approval' : 'Submit Approval'}</span>
-                      )}
-                    </button>
-                  </Can>
-                )}
+                {(() => {
+                  const modalApprovalData = getBundleApprovalGroup(selectedBundleForView);
+                  const isModalRework = selectedBundleForView.status === 'Rework' ||
+                    (selectedBundleForView.status as string) === 'Rework Needed' ||
+                    (selectedBundleForView as any).status_display === 'Rework' ||
+                    (selectedBundleForView as any).status_display === 'Rework Needed' ||
+                    modalApprovalData?.group?.items?.some((i: any) => i.status === 'Rework') ||
+                    modalApprovalData?.app?.status === 'Rework';
+
+                  if (selectedBundleForView.status !== 'Draft' && !isModalRework) return null;
+
+                  return (
+                    <Can permission={isAdmin || ["finance.submit_bundle", "finance.submit_workerclaim"] as any}>
+                      <button
+                        onClick={async () => {
+                          await onHandleSubmitBundle(selectedBundleForView.claim_id);
+                          setSelectedBundleForView(null);
+                        }}
+                        disabled={Boolean(submittingBundleIds[selectedBundleForView.claim_id])}
+                        className="px-4 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98] inline-flex items-center gap-1.5"
+                      >
+                        {submittingBundleIds[selectedBundleForView.claim_id] ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Submitting...</span>
+                          </>
+                        ) : (
+                          <span>{isModalRework ? 'Resubmit Approval' : 'Submit Approval'}</span>
+                        )}
+                      </button>
+                    </Can>
+                  );
+                })()}
                 <button
                   onClick={() => setSelectedBundleForView(null)}
                   className="px-4 py-2 rounded border border-outline-variant text-xs text-on-surface hover:bg-surface-container-high transition-colors font-semibold cursor-pointer"

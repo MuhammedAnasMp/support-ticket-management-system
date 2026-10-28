@@ -409,15 +409,15 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
       const getTableTheadHtml = (showUploadedBy: boolean) => `
         <thead>
           <tr style="background:#f3f4f6;border-bottom:1px solid #d1d5db;">
-            <th style="width:28px;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">SL</th>
-            <th style="width:115px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">TICKET NO / WO#</th>
-            <th style="width:115px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">STORE / LOCATION</th>
-            <th style="width:80px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">SUB DEPT</th>
-            <th style="width:90px;text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">CATEGORY</th>
-            ${showUploadedBy ? `<th style="width:80px;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">UPLOADED BY</th>` : ''}
-            <th style="width:65px;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">DATE</th>
-            <th style="text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">REMARKS</th>
-            <th style="width:75px;text-align:right;border:1px solid #d1d5db;padding:4px 5px;font-size:9px;font-weight:700;color:#111827;">AMOUNT</th>
+            <th style="width:4%;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">SL</th>
+            <th style="width:${showUploadedBy ? '16%' : '18%'};text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">TICKET NO / WO#</th>
+            <th style="width:${showUploadedBy ? '15%' : '17%'};text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">STORE / LOCATION</th>
+            <th style="width:${showUploadedBy ? '10%' : '11%'};text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">SUB DEPT</th>
+            <th style="width:${showUploadedBy ? '11%' : '12%'};text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">CATEGORY</th>
+            ${showUploadedBy ? `<th style="width:10%;text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">UPLOADED BY</th>` : ''}
+            <th style="width:${showUploadedBy ? '8%' : '9%'};text-align:center;border:1px solid #d1d5db;padding:4px 3px;font-size:8.5px;font-weight:700;color:#111827;">DATE</th>
+            <th style="width:${showUploadedBy ? '16%' : '19%'};text-align:left;border:1px solid #d1d5db;padding:4px 5px;font-size:8.5px;font-weight:700;color:#111827;">REMARKS</th>
+            <th style="width:10%;text-align:right;border:1px solid #d1d5db;padding:4px 5px;font-size:9px;font-weight:700;color:#111827;">AMOUNT</th>
           </tr>
         </thead>
       `;
@@ -466,21 +466,21 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
             rowsHtml += `
               <tr style="border:1px solid #e5e7eb;page-break-inside:avoid;break-inside:avoid;">
                 <td style="text-align:center;padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;">${sl++}</td>
-                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;font-weight:600;color:#1e40af;line-height:1.2;white-space:nowrap;">
-                  ${exp.ticketNo}
-                  ${exp.ticketTitle ? `<br/><span style="font-weight:normal;color:#6b7280;font-size:8px;">${exp.ticketTitle}</span>` : ''}
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;font-weight:600;color:#1e40af;line-height:1.2;">
+                  <span style="white-space:nowrap;">${exp.ticketNo}</span>
+                  ${exp.ticketTitle ? `<br/><span style="font-weight:normal;color:#6b7280;font-size:8px;white-space:normal;word-break:break-word;">${exp.ticketTitle}</span>` : ''}
                 </td>
-                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;font-weight:700;color:#111827;">${exp.location}</td>
-                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;">${exp.subDepartment}</td>
-                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#111827;">${exp.category}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;font-weight:700;color:#111827;word-break:break-word;">${exp.location}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;word-break:break-word;">${exp.subDepartment}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#111827;word-break:break-word;">${exp.category}</td>
                 ${showUploadedBy ? `
-                <td style="padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;text-align:center;${exp.isOfficeAdmin ? 'background:#fef3c7;color:#92400e;font-weight:700;' : 'color:#374151;'}">
+                <td style="padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;text-align:center;word-break:break-word;${exp.isOfficeAdmin ? 'background:#fef3c7;color:#92400e;font-weight:700;' : 'color:#374151;'}">
                   ${exp.creatorDisplayName ? `<span>${exp.creatorDisplayName}</span>` : '-'}
                 </td>
                 ` : ''}
-                <td style="text-align:center;padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;">${exp.date || '-'}</td>
-                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#374151;line-height:1.2;">${exp.remarks || '-'}</td>
-                <td style="text-align:right;padding:2.5px 5px;border:1px solid #e5e7eb;font-size:9px;font-weight:700;color:#111827;">KD ${exp.amount.toFixed(3)}</td>
+                <td style="text-align:center;padding:2.5px 4px;border:1px solid #e5e7eb;font-size:8.5px;color:#4b5563;white-space:nowrap;">${exp.date || '-'}</td>
+                <td style="padding:2.5px 5px;border:1px solid #e5e7eb;font-size:8.5px;color:#374151;line-height:1.2;word-break:break-word;">${exp.remarks || '-'}</td>
+                <td style="text-align:right;padding:2.5px 5px;border:1px solid #e5e7eb;font-size:9px;font-weight:700;color:#111827;white-space:nowrap;">KD ${exp.amount.toFixed(3)}</td>
               </tr>
             `;
           }
@@ -491,7 +491,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
               <td colspan="${showUploadedBy ? 8 : 7}" style="text-align:right;padding:3px 6px;font-size:8.5px;color:#374151;border:1px solid #d1d5db;">
                 Subtotal (${batch.batchName}):
               </td>
-              <td style="text-align:right;padding:3px 6px;font-size:9px;font-weight:700;color:#111827;border:1px solid #d1d5db;">
+              <td style="text-align:right;padding:3px 6px;font-size:9px;font-weight:700;color:#111827;border:1px solid #d1d5db;white-space:nowrap;">
                 KD ${batch.totalAmount.toFixed(3)}
               </td>
             </tr>
@@ -504,7 +504,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
             <td colspan="${showUploadedBy ? 8 : 7}" style="text-align:right;padding:4px 6px;font-size:9.5px;color:#111827;border:1px solid #d1d5db;text-transform:uppercase;letter-spacing:0.3px;">
               Grand Total (${worker.workerName}):
             </td>
-            <td style="text-align:right;padding:4px 6px;font-size:10px;font-weight:800;color:#111827;border:1px solid #d1d5db;">
+            <td style="text-align:right;padding:4px 6px;font-size:10px;font-weight:800;color:#111827;border:1px solid #d1d5db;white-space:nowrap;">
               KD ${worker.totalAmount.toFixed(3)}
             </td>
           </tr>
@@ -544,7 +544,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
               </div>
             </div>
 
-            <table style="width:100%;border-collapse:collapse;margin-top:6px;background:#ffffff;border:1px solid #d1d5db;">
+            <table style="width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;margin-top:6px;background:#ffffff;border:1px solid #d1d5db;">
               ${getTableTheadHtml(showUploadedBy)}
               <tbody>
                 ${rowsHtml}
@@ -583,14 +583,17 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 box-sizing: border-box;
               }
               html, body {
-                height: 100%;
                 margin: 0;
                 padding: 0;
+                width: 100%;
+                max-width: 100%;
               }
               body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                 margin: 0;
                 padding: 0;
+                width: 100%;
+                max-width: 100%;
                 color: #111827;
                 background: #ffffff;
                 -webkit-print-color-adjust: exact !important;
@@ -603,27 +606,34 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
               .print-page-intermediate {
                 page-break-after: always;
                 break-after: page;
-                min-height: 100%;
-                height: 100%;
                 box-sizing: border-box;
               }
               .print-page-last {
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
-                min-height: 100%;
-                height: 100%;
+                min-height: ${isVerticalOrientation ? '276mm' : '185mm'};
                 page-break-after: avoid;
                 break-after: avoid;
                 box-sizing: border-box;
               }
+              .page-bottom-signatures {
+                margin-top: auto;
+                page-break-inside: avoid;
+                break-inside: avoid;
+                width: 100%;
+              }
               table {
                 font-size: 8.5px !important;
                 border-collapse: collapse;
-                width: 100%;
+                table-layout: fixed !important;
+                width: 100% !important;
+                max-width: 100% !important;
               }
               th, td {
                 padding: 2.5px 4.5px !important;
+                overflow-wrap: break-word;
+                word-wrap: break-word;
               }
               .report-header {
                 position: relative;
@@ -693,9 +703,10 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 display: flex;
                 justify-content: space-between;
                 gap: 12px;
-                margin-top: auto;
-                padding-top: 8px;
+                padding-top: 12px;
                 width: 100%;
+                page-break-inside: avoid;
+                break-inside: avoid;
               }
               .sign-box {
                 flex: 1;
@@ -720,37 +731,42 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
               }
               @media print {
                 html, body {
-                  height: 100% !important;
                   margin: 0 !important;
                   padding: 0 !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
                 }
                 .print-page-intermediate {
                   page-break-after: always !important;
                   break-after: page !important;
-                  min-height: 100% !important;
-                  height: 100% !important;
                   box-sizing: border-box !important;
                 }
                 .print-page-last {
                   display: flex !important;
                   flex-direction: column !important;
                   justify-content: space-between !important;
-                  min-height: 100% !important;
-                  height: 100% !important;
+                  min-height: ${isVerticalOrientation ? '276mm' : '185mm'} !important;
                   page-break-after: avoid !important;
                   break-after: avoid !important;
                   box-sizing: border-box !important;
                 }
-                .signatures {
+                .page-bottom-signatures {
                   margin-top: auto !important;
-                  padding-top: 8px !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                  width: 100% !important;
+                }
+                .signatures {
+                  padding-top: 12px !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
               }
             </style>
           </head>
           <body>
-            <!-- Printable Page Ruler (measures exact printable height) -->
-            <div id="print-ruler" style="height: ${isVerticalOrientation ? '285mm' : '194mm'}; width: 10px; position: absolute; left: -9999px; visibility: hidden;"></div>
+            <!-- Printable Page Ruler matching exact A4 printable height at 1:1 scale -->
+            <div id="print-ruler" style="height: ${isVerticalOrientation ? '276mm' : '185mm'}; width: 10px; position: absolute; left: -9999px; visibility: hidden;"></div>
 
             <!-- Raw Source Content for measurement -->
             <div id="report-source" style="width: 100%;">
@@ -767,17 +783,17 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                 if (!ruler || !reportSource) return;
 
                 const pageHeight = ruler.offsetHeight;
-                const pageBudget = pageHeight - 16; // 16px safety cushion against subpixel overflow
+                const pageBudget = pageHeight - 8;
 
                 const workerSections = Array.from(reportSource.querySelectorAll('.worker-section'));
                 const bundleTotalEl = reportSource.querySelector('.bundle-overall-total');
                 const signaturesEl = reportSource.querySelector('.signatures');
 
                 const bundleTotalHtml = bundleTotalEl ? bundleTotalEl.outerHTML : '';
-                const bundleTotalH = bundleTotalEl ? bundleTotalEl.offsetHeight : 0;
+                const bundleTotalH = bundleTotalEl ? (bundleTotalEl.offsetHeight + 10) : 0;
 
                 const signaturesHtml = signaturesEl ? signaturesEl.outerHTML : '';
-                const signaturesH = signaturesEl ? (signaturesEl.offsetHeight + 14) : 70;
+                const signaturesH = signaturesEl ? (signaturesEl.offsetHeight + 16) : 68;
 
                 const items = [];
                 workerSections.forEach(function(sec, sIdx) {
@@ -786,17 +802,17 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                   const workerName = sec.getAttribute('data-worker-name') || 'Technician';
 
                   const headerHtml = headerEl ? headerEl.innerHTML : '';
-                  const headerH = headerEl ? headerEl.offsetHeight : 0;
+                  const headerH = headerEl ? (headerEl.offsetHeight + 8) : 0;
 
                   const theadHtml = theadEl ? theadEl.outerHTML : '';
-                  const theadH = theadEl ? theadEl.offsetHeight : 22;
+                  const theadH = theadEl ? theadEl.offsetHeight : 24;
 
                   items.push({
                     type: 'worker-header',
                     workerIdx: sIdx,
                     workerName: workerName,
                     html: headerHtml,
-                    height: headerH,
+                    height: headerH + theadH + 8,
                     theadHtml: theadHtml,
                     theadHeight: theadH
                   });
@@ -823,7 +839,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                   });
                 }
 
-                // Paginate items into pages
+                // Paginate items into pages filling the full printable A4 height
                 const pages = [];
                 let itemIdx = 0;
                 let isFirstPage = true;
@@ -832,14 +848,16 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                   let pageItems = [];
                   let pageUsedH = 0;
 
+                  const firstItem = items[itemIdx];
+                  const continuationHeaderH = (!isFirstPage && firstItem && firstItem.type === 'row')
+                    ? (24 + (firstItem.theadHeight || 24) + 6)
+                    : 0;
+                  const availH = pageBudget - continuationHeaderH;
+
                   let totalRemH = 0;
                   for (let k = itemIdx; k < items.length; k++) {
                     totalRemH += items[k].height;
                   }
-
-                  const continuationHeaderH = 26;
-                  const pageTopAllowance = isFirstPage ? 0 : (continuationHeaderH + 22);
-                  const availH = pageBudget - pageTopAllowance;
 
                   // Check if all remaining items + signatures fit on this page
                   if (totalRemH + signaturesH <= availH) {
@@ -851,11 +869,18 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                     break;
                   }
 
-                  // Fill this page
+                  // Fill this page completely up to availH
                   while (itemIdx < items.length) {
                     const item = items[itemIdx];
                     if (pageUsedH + item.height > availH) {
                       break;
+                    }
+                    // Never leave a worker-header alone at the bottom of a page without at least 1 row
+                    if (item.type === 'worker-header' && (itemIdx + 1 < items.length)) {
+                      const nextRowH = items[itemIdx + 1].height;
+                      if (pageItems.length > 0 && (pageUsedH + item.height + nextRowH > availH)) {
+                        break;
+                      }
                     }
                     pageItems.push(item);
                     pageUsedH += item.height;
@@ -876,6 +901,10 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                       });
                       break;
                     } else {
+                      const trailingItems = [];
+                      while (pageItems.length > 2 && trailingItems.length < 2) {
+                        trailingItems.unshift(pageItems.pop());
+                      }
                       pages.push({
                         isFirst: isFirstPage,
                         isLast: false,
@@ -884,7 +913,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                       pages.push({
                         isFirst: false,
                         isLast: true,
-                        items: []
+                        items: trailingItems
                       });
                       break;
                     }
@@ -898,63 +927,126 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
                   }
                 }
 
-                // Render the paginated output directly into document.body.innerHTML
-                document.body.innerHTML = pages.map(function(pg, pIdx) {
-                  const isLast = (pIdx === pages.length - 1);
+                function renderPagesToDom() {
+                  document.body.innerHTML = pages.map(function(pg, pIdx) {
+                    const isLast = (pIdx === pages.length - 1);
+                    pg.isFirst = (pIdx === 0);
+                    pg.isLast = isLast;
 
-                  let contentHtml = '';
-                  let currentTableRows = [];
-                  let activeThead = '';
+                    let contentHtml = '';
+                    let currentTableRows = [];
+                    let activeThead = '';
 
-                  const flushTable = function() {
-                    if (currentTableRows.length > 0) {
-                      contentHtml += '<table style="width: 100%; border-collapse: collapse; border: 1px solid #d1d5db; margin-bottom: 6px;">' +
-                        activeThead +
-                        '<tbody>' +
-                        currentTableRows.join('') +
-                        '</tbody>' +
-                        '</table>';
-                      currentTableRows = [];
-                    }
-                  };
-
-                  if (!pg.isFirst && pg.items.length > 0 && pg.items[0].type === 'row') {
-                    contentHtml += '<div style="border-bottom: 1.5px solid #111827; padding-bottom: 3px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 9px; font-weight: 700;">' +
-                      '<span>Worker Statement (Continued): ' + pg.items[0].workerName + '</span>' +
-                      '<span style="color: #4b5563;">Bundle ' + ${JSON.stringify(bundle.claim_id)} + '</span>' +
-                      '</div>';
-                    activeThead = pg.items[0].theadHtml;
-                  }
-
-                  pg.items.forEach(function(it) {
-                    if (it.type === 'worker-header') {
-                      flushTable();
-                      contentHtml += '<div class="worker-header-block" style="margin-bottom: 6px;">' + it.html + '</div>';
-                      activeThead = it.theadHtml;
-                    } else if (it.type === 'row') {
-                      if (activeThead !== it.theadHtml) {
-                        flushTable();
-                        activeThead = it.theadHtml;
+                    const flushTable = function() {
+                      if (currentTableRows.length > 0) {
+                        contentHtml += '<table style="width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #d1d5db; margin-bottom: 6px;">' +
+                          activeThead +
+                          '<tbody>' +
+                          currentTableRows.join('') +
+                          '</tbody>' +
+                          '</table>';
+                        currentTableRows = [];
                       }
-                      currentTableRows.push(it.html);
-                    } else if (it.type === 'bundle-total') {
-                      flushTable();
-                      contentHtml += it.html;
-                    }
-                  });
-                  flushTable();
+                    };
 
-                  if (isLast) {
-                    return '<div class="print-page print-page-last">' +
-                      '<div class="page-top-content">' + contentHtml + '</div>' +
-                      '<div class="page-bottom-signatures">' + signaturesHtml + '</div>' +
-                      '</div>';
-                  } else {
-                    return '<div class="print-page print-page-intermediate">' +
-                      '<div class="page-top-content">' + contentHtml + '</div>' +
-                      '</div>';
+                    if (!pg.isFirst && pg.items.length > 0 && pg.items[0].type === 'row') {
+                      contentHtml += '<div style="border-bottom: 1.5px solid #111827; padding-bottom: 3px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 9px; font-weight: 700;">' +
+                        '<span>Worker Statement (Continued): ' + pg.items[0].workerName + '</span>' +
+                        '<span style="color: #4b5563;">Bundle ' + ${JSON.stringify(bundle.claim_id)} + '</span>' +
+                        '</div>';
+                      activeThead = pg.items[0].theadHtml;
+                    }
+
+                    pg.items.forEach(function(it) {
+                      if (it.type === 'worker-header') {
+                        flushTable();
+                        contentHtml += '<div class="worker-header-block" style="margin-bottom: 6px;">' + it.html + '</div>';
+                        activeThead = it.theadHtml;
+                      } else if (it.type === 'row') {
+                        if (activeThead !== it.theadHtml) {
+                          flushTable();
+                          activeThead = it.theadHtml;
+                        }
+                        currentTableRows.push(it.html);
+                      } else if (it.type === 'bundle-total') {
+                        flushTable();
+                        contentHtml += it.html;
+                      }
+                    });
+                    flushTable();
+
+                    if (isLast) {
+                      return '<div class="print-page print-page-last">' +
+                        '<div class="page-top-content">' + contentHtml + '</div>' +
+                        '<div class="page-bottom-signatures">' + signaturesHtml + '</div>' +
+                        '</div>';
+                    } else {
+                      return '<div class="print-page print-page-intermediate">' +
+                        '<div class="page-top-content">' + contentHtml + '</div>' +
+                        '</div>';
+                    }
+                  }).join('');
+                }
+
+                renderPagesToDom();
+
+                // Post-render DOM height verification pass:
+                // Guarantee no rendered page exceeds pageBudget so Chrome never breaks a page mid-div
+                for (let pass = 0; pass < 6; pass++) {
+                  let changed = false;
+                  const pageEls = Array.from(document.querySelectorAll('.print-page'));
+
+                  for (let pIdx = 0; pIdx < pageEls.length; pIdx++) {
+                    const pageEl = pageEls[pIdx];
+                    const topEl = pageEl.querySelector('.page-top-content');
+                    const sigEl = pageEl.querySelector('.page-bottom-signatures');
+                    const topH = topEl ? topEl.offsetHeight : 0;
+                    const sigH = sigEl ? sigEl.offsetHeight : 0;
+                    const isLast = (pIdx === pageEls.length - 1);
+
+                    if (!isLast && topH > pageBudget && pages[pIdx].items.length > 1) {
+                      const moved = pages[pIdx].items.pop();
+                      pages[pIdx + 1].items.unshift(moved);
+                      // If we left a worker-header alone at the end of pages[pIdx], move it too
+                      if (pages[pIdx].items.length > 1 && pages[pIdx].items[pages[pIdx].items.length - 1].type === 'worker-header') {
+                        pages[pIdx + 1].items.unshift(pages[pIdx].items.pop());
+                      }
+                      changed = true;
+                      break;
+                    } else if (isLast && (topH + sigH + 12 > pageBudget) && pages[pIdx].items.length > 1) {
+                      const trailing = [];
+                      while (pages[pIdx].items.length > 1 && trailing.length < 2) {
+                        trailing.unshift(pages[pIdx].items.pop());
+                      }
+                      if (pages[pIdx].items.length > 1 && pages[pIdx].items[pages[pIdx].items.length - 1].type === 'worker-header') {
+                        trailing.unshift(pages[pIdx].items.pop());
+                      }
+                      pages.push({
+                        isFirst: false,
+                        isLast: true,
+                        items: trailing
+                      });
+                      changed = true;
+                      break;
+                    }
                   }
-                }).join('');
+
+                  if (!changed) break;
+                  renderPagesToDom();
+                }
+
+                // Anchor signatures to the exact bottom of the final page
+                const lastPageEl = document.querySelector('.print-page-last');
+                if (lastPageEl) {
+                  const topContentEl = lastPageEl.querySelector('.page-top-content');
+                  const bottomSigEl = lastPageEl.querySelector('.page-bottom-signatures');
+                  if (topContentEl && bottomSigEl) {
+                    const topH = topContentEl.offsetHeight;
+                    const sigH = bottomSigEl.offsetHeight;
+                    const remainingSpace = Math.max(16, Math.floor(pageBudget - topH - sigH));
+                    bottomSigEl.style.setProperty('margin-top', remainingSpace + 'px', 'important');
+                  }
+                }
 
                 window.__PAGINATED__ = true;
               }
@@ -970,13 +1062,13 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
         </html>
       `;
 
-      // Use off-screen iframe to render and trigger print
+      // Use off-screen iframe sized to exact printable A4 width (198mm Portrait / 281mm Landscape)
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.left = '-10000px';
       iframe.style.top = '0';
-      iframe.style.width = isVerticalOrientation ? '750px' : '1060px';
-      iframe.style.height = isVerticalOrientation ? '1123px' : '794px';
+      iframe.style.width = isVerticalOrientation ? '198mm' : '281mm';
+      iframe.style.height = isVerticalOrientation ? '285mm' : '194mm';
       iframe.style.border = 'none';
       iframe.style.zIndex = '-9999';
       document.body.appendChild(iframe);

@@ -1736,7 +1736,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
               const sds = (batchObj?.sub_departments || []).map(sd => typeof sd === 'number' ? sd : (sd as any).sub_department_id);
               const expSdId = exp.ticket_details?.sub_department_id ?? exp.sub_department_id;
               return expSdId && sds.includes(Number(expSdId));
-            })?.batchName || 'General Batch';
+            })?.batchName || bundleItem.ledgerBatches[0]?.batchName || 'Unassigned';
           };
           comparison = getBatch(a).localeCompare(getBatch(b), undefined, { sensitivity: 'base' });
           break;
@@ -3331,14 +3331,16 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                             <tbody className="divide-y divide-outline-variant/40">
                                               {getSortedBundleExpenses(bundleItem).map((exp, eIdx) => {
                                                 const expSubDept = exp.ticket_details?.sub_department_name || (exp as any).sub_department_name || '-';
-                                                const matchingBatch = bundleItem.ledgerBatches.find(bb => {
-                                                  const batchObj = (ledgerBatches || internalBatches || []).find(b => b.batch_name === bb.batchName);
-                                                  const sds = (batchObj?.sub_departments || []).map(sd => typeof sd === 'number' ? sd : (sd as any).sub_department_id);
-                                                  const expSdId = exp.ticket_details?.sub_department_id ?? exp.sub_department_id;
-                                                  return expSdId && sds.includes(Number(expSdId));
-                                                })?.batchName || 'General Batch';
-
                                                 const parentLedger = cluster.ledgers.find(l => (l.expenses || []).some(e => e.expense_id === exp.expense_id));
+                                                const matchingBatch = parentLedger?.ledger_batch_detail?.batch_name
+                                                  || bundleItem.ledgerBatches.find(bb => {
+                                                    const batchObj = (ledgerBatches || internalBatches || []).find(b => b.batch_name === bb.batchName);
+                                                    const sds = (batchObj?.sub_departments || []).map(sd => typeof sd === 'number' ? sd : (sd as any).sub_department_id);
+                                                    const expSdId = exp.ticket_details?.sub_department_id ?? exp.sub_department_id;
+                                                    return expSdId && sds.includes(Number(expSdId));
+                                                  })?.batchName
+                                                  || bundleItem.ledgerBatches[0]?.batchName
+                                                  || 'Unassigned';
                                                 const isExpEditable = parentLedger ? (!cluster.isCompleted && parentLedger.status !== 'Paid') : (!cluster.isCompleted);
 
                                                 const isLastActiveExp = lastActiveRowKey === `exp_${exp.expense_id}`;
@@ -3366,7 +3368,18 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                       </span>
                                                     </td>
                                                     <td className="px-3 py-2 text-on-surface-variant font-medium">{expSubDept}</td>
-                                                    <td className="px-3 py-2 font-mono text-[11px] text-on-surface-variant">{formatTicketDisplay(exp)}</td>
+                                                    <td className="px-3 py-2" >
+
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => setSelectedTicketForModal && setSelectedTicketForModal(getTicketForModal(exp))}
+                                                        className="font-mono font-medium text-primary hover:underline text-[11px] cursor-pointer"
+                                                      >
+                                                        {formatTicketDisplay(exp)}
+                                                      </button>
+                                                    </td>
+
+
                                                     <td className="px-3 py-2">
                                                       <span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-container-highest text-on-surface font-medium">
                                                         {exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : ((exp as any).expense_type_name || (exp as any).category_name || 'Expense'))}
@@ -3431,7 +3444,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                               <th className="px-4 py-2">Expenses</th>
                               <th className="px-4 py-2">Created By</th>
                               <th className="px-4 py-2 text-right">Batch Total</th>
-                              <th className="px-4 py-2 text-center">Details</th>
+                              {/* <th className="px-4 py-2 text-center">Details</th> */}
                             </tr>
                             {cluster.ledgers.map((l, lIdx) => {
                               const isExpanded = !!expandedLedgerIds[l.ledger_id];
@@ -3481,7 +3494,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                           <span>{l.ledger_batch_detail.batch_name}</span>
                                         </span>
                                       ) : (
-                                        <span className="text-on-surface-variant italic text-[11px]">General Batch</span>
+                                        <span className="text-on-surface-variant italic text-[11px]">Unassigned</span>
                                       )}
                                     </td>
                                     <td className="px-4 py-2.5">
@@ -3501,11 +3514,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                       {parseFloat(l.total_amount).toFixed(3)}
                                     </td>
 
-                                    <td className="px-4 py-2.5 text-center text-on-surface-variant text-[11px]" onClick={(e) => e.stopPropagation()}>
+                                    {/* <td className="px-4 py-2.5 text-center text-on-surface-variant text-[11px]" onClick={(e) => {
+
+                                      e.stopPropagation()
+                                      setLastActiveRowKey(`ledger_${l.ledger_id}`);
+                                      toggleExpandLedger(l.ledger_id);
+                                    }
+                                    }>
                                       <span className="text-[10px] text-on-surface-variant font-medium">
                                         {isExpanded ? 'Expanded' : 'Click to view'}
                                       </span>
-                                    </td>
+                                    </td> */}
                                   </tr>
 
                                   {/* MULTI-LINE VIEW SECOND ROW (Batch summary) */}
@@ -3526,7 +3545,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                           }`}>
                                           <div className="flex items-center gap-3 text-on-surface-variant text-[11px]">
                                             <span className="font-semibold text-on-surface">Batch {l.ledger_id} Details:</span>
-                                            <span>{l.ledger_batch_detail?.batch_name || 'General Batch'}</span>
+                                            <span>{l.ledger_batch_detail?.batch_name || 'Unassigned'}</span>
                                             <span>•</span>
                                             <span>{l.bundles?.length || 0} Bundle(s)</span>
                                             <span>•</span>

@@ -967,34 +967,45 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       }
 
       // Build Consolidated Table Rows HTML
+      const totalSummaryWorkerRows = showWorkerDetailsInSummary
+        ? consolidatedBatchData.list.reduce((sum, item) => sum + (item.workerList?.length || 0), 0)
+        : 0;
+      const totalSummaryRows = consolidatedBatchData.list.length + totalSummaryWorkerRows;
+      const isCompactSummary = totalSummaryRows > 18;
+      const batchRowPad = isCompactSummary ? '3px 8px' : '5px 10px';
+      const batchFontSize = isCompactSummary ? '9.5px' : '10.5px';
+      const workerRowPad = isCompactSummary ? '2px 8px 2px 18px' : '3.5px 10px 3.5px 24px';
+      const workerCellPad = isCompactSummary ? '2px 8px' : '3.5px 10px';
+      const workerFontSize = isCompactSummary ? '8.5px' : '9.5px';
+
       let consolidatedRowsHtml = '';
       let cSl = 1;
       for (const item of consolidatedBatchData.list) {
         consolidatedRowsHtml += `
-          <tr style="border:1px solid #d1d5db;background:#f9fafb;">
-            <td style="text-align:center;padding:5px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#4b5563;">${cSl++}</td>
-            <td style="padding:5px 10px;border:1px solid #d1d5db;font-size:10.5px;font-weight:700;color:#111827;">${item.section}</td>
-            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10.5px;font-weight:700;color:#1f2937;">${item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-'}</td>
-            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10.5px;font-weight:700;color:#1f2937;">KD ${item.expense.toFixed(3)}</td>
-            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:11px;font-weight:800;color:#065f46;background:#ecfdf5;">KD ${item.total.toFixed(3)}</td>
+          <tr style="border:1px solid #d1d5db;background:#f9fafb;line-height:1.2;">
+            <td style="text-align:center;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#4b5563;">${cSl++}</td>
+            <td style="padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#111827;">${item.section}</td>
+            <td style="text-align:right;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#1f2937;">${item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-'}</td>
+            <td style="text-align:right;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#1f2937;">KD ${item.expense.toFixed(3)}</td>
+            <td style="text-align:right;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:800;color:#065f46;background:#ecfdf5;">KD ${item.total.toFixed(3)}</td>
           </tr>
         `;
 
         if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
           for (const w of item.workerList) {
             consolidatedRowsHtml += `
-              <tr style="border:1px solid #e5e7eb;background:#ffffff;">
-                <td style="text-align:center;padding:3.5px 6px;border:1px solid #e5e7eb;font-size:9px;color:#9ca3af;">•</td>
-                <td style="padding:3.5px 10px 3.5px 24px;border:1px solid #e5e7eb;font-size:9.5px;color:#1e40af;font-weight:600;">
-                  👷 ${w.workerName} ${w.workerEmployeeNo ? `<span style="font-size:8.5px;color:#6b7280;font-weight:normal;">(${w.workerEmployeeNo})</span>` : ''}
+              <tr style="border:1px solid #e5e7eb;background:#ffffff;line-height:1.15;">
+                <td style="text-align:center;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:8.5px;color:#9ca3af;">•</td>
+                <td style="padding:${workerRowPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:#1e40af;font-weight:600;">
+                  ▸ ${w.workerName} ${w.workerEmployeeNo ? `<span style="font-size:8px;color:#6b7280;font-weight:normal;">(${w.workerEmployeeNo})</span>` : ''}
                 </td>
-                <td style="text-align:right;padding:3.5px 10px;border:1px solid #e5e7eb;font-size:9.5px;color:#374151;">
+                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:#374151;">
                   ${w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-'}
                 </td>
-                <td style="text-align:right;padding:3.5px 10px;border:1px solid #e5e7eb;font-size:9.5px;color:#374151;">
+                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:#374151;">
                   ${w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-'}
                 </td>
-                <td style="text-align:right;padding:3.5px 10px;border:1px solid #e5e7eb;font-size:9.5px;font-weight:600;color:#065f46;">
+                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};font-weight:600;color:#065f46;">
                   KD ${w.total.toFixed(3)}
                 </td>
               </tr>
@@ -1003,11 +1014,11 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         }
       }
       consolidatedRowsHtml += `
-        <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;">
-          <td colspan="2" style="text-align:right;padding:6px 10px;font-size:11px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
-          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11px;font-weight:800;color:#111827;">${consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-'}</td>
-          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11px;font-weight:800;color:#111827;">KD ${consolidatedBatchData.grandExpense.toFixed(3)}</td>
-          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedBatchData.grandTotal.toFixed(3)}</td>
+        <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;line-height:1.2;">
+          <td colspan="2" style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};font-size:${isCompactSummary ? '10px' : '11px'};color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
+          <td style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10px' : '11px'};font-weight:800;color:#111827;">${consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-'}</td>
+          <td style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10px' : '11px'};font-weight:800;color:#111827;">KD ${consolidatedBatchData.grandExpense.toFixed(3)}</td>
+          <td style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10.5px' : '11.5px'};font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedBatchData.grandTotal.toFixed(3)}</td>
         </tr>
       `;
 
@@ -1351,7 +1362,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       if (isAllOrActiveTab === 'userwise') {
         mainBodyHtml = `
   
-          <div class="print-page first-page" style="page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '240mm' : '155mm'}; display: flex; flex-direction: column; justify-content: space-between;">
+          <div class="print-page first-page" style="page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '276mm' : '185mm'}; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
               ${getHeaderHtml('Worker Summary Report', undefined, true)}
               ${metaGridHtml}
@@ -1416,19 +1427,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         // Each subsequent page is a dedicated Ledger Batch page (Store & Department Expense Statement)
         mainBodyHtml = `
           <!-- PAGE 1: Consolidated Financial Settlement Report -->
-          <div class="print-page first-page" style="page-break-inside: avoid; break-inside: avoid; page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '240mm' : '155mm'}; display: flex; flex-direction: column; justify-content: space-between;">
+          <div class="print-page first-page" style="page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '276mm' : '185mm'}; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
               ${getHeaderHtml('Sub-Department Wise Summery', undefined, true)}
               ${metaGridHtml}
-              <div style="margin-top:12px;">
-                <table style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
+              <div style="margin-top:${isCompactSummary ? '8px' : '12px'};">
+                <table class="summary-table" style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
                   <thead>
                     <tr style="background:#e5e7eb;border:1.5px solid #374151;">
-                      <th style="width:50px;text-align:center;padding:6px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">SL</th>
-                      <th style="text-align:left;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">SECTION (LEDGER BATCH)</th>
-                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">LABOUR CHARGE</th>
-                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:700;color:#111827;">EXPENSE</th>
-                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
+                      <th style="width:50px;text-align:center;padding:${isCompactSummary ? '4px 6px' : '6px 6px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">SL</th>
+                      <th style="text-align:left;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">SECTION (LEDGER BATCH)</th>
+                      <th style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">LABOUR CHARGE</th>
+                      <th style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">EXPENSE</th>
+                      <th style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1470,18 +1481,18 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 print-color-adjust: exact !important;
               }
               ${isVerticalOrientation ? `
-                table {
+                .batch-page table {
                   font-size: 8.5px !important;
                 }
-                th, td {
+                .batch-page th, .batch-page td {
                   padding: 3px 2.5px !important;
                 }
               ` : ''}
               .report-header {
                 position: relative;
                 border-bottom: 2px solid #111827;
-                padding-bottom: 10px;
-                margin-bottom: 12px;
+                padding-bottom: ${isCompactSummary ? '7px' : '10px'};
+                margin-bottom: ${isCompactSummary ? '8px' : '12px'};
                 display: flex;
                 justify-content: space-between;
                 align-items: flex-start;
@@ -1497,7 +1508,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 justify-content: center;
               }
               .report-header-logo img {
-                height: 64px;
+                height: ${isCompactSummary ? '52px' : '64px'};
                 width: auto;
                 max-width: 160px;
                 object-fit: contain;
@@ -1523,8 +1534,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 background: #f9fafb;
                 border: 1px solid #e5e7eb;
                 border-radius: 6px;
-                padding: 8px 12px;
-                margin-bottom: 14px;
+                padding: ${isCompactSummary ? '6px 10px' : '8px 12px'};
+                margin-bottom: ${isCompactSummary ? '8px' : '14px'};
               }
               .meta-item {
                 font-size: 10px;
@@ -1550,23 +1561,28 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 justify-content: space-between;
                 gap: 8px;
                 page-break-inside: avoid;
-                padding-top: 15px;
+                break-inside: avoid;
+                padding-top: 24px;
               }
               .first-page {
                 box-sizing: border-box;
                 height: auto;
-                min-height: ${isVerticalOrientation ? '240mm' : '155mm'};
+                min-height: ${isVerticalOrientation ? '276mm' : '185mm'};
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 page-break-after: always;
                 break-after: page;
-                page-break-inside: avoid;
-                break-inside: avoid;
+              }
+              .first-page.multi-page {
+                display: block !important;
+                min-height: 0 !important;
+                page-break-inside: auto !important;
+                break-inside: auto !important;
               }
               .first-page .signatures {
                 margin-top: auto;
-                padding-top: 12px;
+                padding-top: 24px;
                 page-break-inside: avoid;
                 break-inside: avoid;
               }
@@ -1601,21 +1617,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                   margin: 0;
                   padding: 0;
                 }
-                .first-page {
+                .first-page:not(.multi-page) {
                   box-sizing: border-box !important;
                   height: auto !important;
-                  min-height: ${isVerticalOrientation ? '240mm' : '155mm'} !important;
+                  min-height: ${isVerticalOrientation ? '276mm' : '185mm'} !important;
                   display: flex !important;
                   flex-direction: column !important;
                   justify-content: space-between !important;
                   page-break-after: always !important;
                   break-after: page !important;
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
                 }
-                .first-page .signatures {
+                .first-page:not(.multi-page) .signatures {
                   margin-top: auto !important;
-                  padding-top: 12px !important;
+                  padding-top: 24px !important;
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
                 }
@@ -1632,6 +1646,63 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           </head>
           <body>
             ${mainBodyHtml}
+            <script>
+              (function() {
+                function alignFirstPageSignatures() {
+                  var firstPage = document.querySelector('.first-page');
+                  if (!firstPage) return;
+                  var sig = firstPage.querySelector('.signatures');
+                  if (!sig) return;
+                  var topWrap = firstPage.firstElementChild;
+                  if (!topWrap || topWrap === sig) return;
+
+                  firstPage.classList.remove('multi-page');
+                  sig.style.removeProperty('margin-top');
+
+                  var pxPerMm = 3.779527559;
+                  var isPortrait = ${isVerticalOrientation ? 'true' : 'false'};
+                  var pageHeightPx = (isPortrait ? 276 : 185) * pxPerMm;
+
+                  var topH = topWrap.offsetHeight;
+                  var sigH = sig.offsetHeight || 52;
+
+                  if (topH + sigH + 8 <= pageHeightPx) {
+                    firstPage.classList.remove('multi-page');
+                    sig.style.setProperty('margin-top', 'auto', 'important');
+                  } else {
+                    firstPage.classList.add('multi-page');
+                    var headerEl = firstPage.querySelector('.report-header');
+                    var metaEl = firstPage.querySelector('.meta-grid');
+                    var tableEl = firstPage.querySelector('table');
+                    var theadEl = tableEl ? tableEl.querySelector('thead') : null;
+                    var rows = tableEl ? Array.prototype.slice.call(tableEl.querySelectorAll('tbody > tr')) : [];
+
+                    var theadH = theadEl ? theadEl.offsetHeight : 26;
+                    var usedPx = (headerEl ? headerEl.offsetHeight + 10 : 0) + (metaEl ? metaEl.offsetHeight + 10 : 0) + 10 + theadH;
+
+                    for (var i = 0; i < rows.length; i++) {
+                      var rH = rows[i].offsetHeight;
+                      if (usedPx + rH > pageHeightPx) {
+                        usedPx = theadH + rH;
+                      } else {
+                        usedPx += rH;
+                      }
+                    }
+
+                    if (usedPx + sigH + 16 > pageHeightPx) {
+                      usedPx = 0;
+                    }
+
+                    var fillerPx = Math.max(20, Math.floor(pageHeightPx - usedPx - sigH - 8));
+                    sig.style.setProperty('margin-top', fillerPx + 'px', 'important');
+                  }
+                }
+
+                window.addEventListener('load', alignFirstPageSignatures);
+                window.addEventListener('beforeprint', alignFirstPageSignatures);
+                alignFirstPageSignatures();
+              })();
+            </script>
           </body>
         </html>
       `;
@@ -1806,7 +1877,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         ];
 
         const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
-        const sigStartY = Math.max(finalTableY + 8, 160);
+        const targetBottomSigY = pageHeight - 28;
+        let sigStartY = targetBottomSigY;
+        if (finalTableY + 6 > targetBottomSigY) {
+          doc.addPage();
+          sigStartY = targetBottomSigY;
+        }
 
         autoTable(doc, {
           startY: sigStartY,
