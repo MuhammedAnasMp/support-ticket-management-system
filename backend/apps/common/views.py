@@ -70,7 +70,7 @@ def replace_or_copy(temp_path, target_path):
 
 def rotate_video_file(file_path, angle):
     """
-    Physically transposes video frame pixels upright using FFmpeg so watermark is stamped at the correct bottom-right location.
+    Physically transposes video frame pixels upright using FFmpeg so watermark is stamped at the correct bottom-left location.
     """
     if not os.path.exists(file_path):
         return False
@@ -125,7 +125,7 @@ def rotate_video_file(file_path, angle):
 
 def add_image_watermark(file_path, firstname, date_str, location, ticket_no=""):
     """
-    Stamps proof text (Ticket , First Name, Date/Time, Location) onto the bottom-right corner of an image file.
+    Stamps proof text (Ticket , First Name, Date/Time, Location) onto the bottom-left corner of an image file.
     """
     if not os.path.exists(file_path):
         return False
@@ -169,12 +169,12 @@ def add_image_watermark(file_path, firstname, date_str, location, ticket_no=""):
             total_h = sum(line_heights)
 
             padding = max(4, font_size // 3)
-            margin_right = max(6, W // 120)
+            margin_left = max(6, W // 120)
             margin_bottom = max(6, H // 120)
 
-            box_x2 = W - margin_right
+            box_x1 = margin_left
             box_y2 = H - margin_bottom
-            box_x1 = max(0, box_x2 - max_w - (padding * 2))
+            box_x2 = min(W, box_x1 + max_w + (padding * 2))
             box_y1 = max(0, box_y2 - total_h - (padding * 2))
 
             overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
@@ -204,7 +204,7 @@ def add_image_watermark(file_path, firstname, date_str, location, ticket_no=""):
 
 def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticket_no=""):
     """
-    Stamps proof text (Ticket, First Name, Date/Time, Location) onto the bottom-right corner of a video file using FFmpeg,
+    Stamps proof text (Ticket, First Name, Date/Time, Location) onto the bottom-left corner of a video file using FFmpeg,
     applying physical frame rotation FIRST if angle is non-zero so watermark is stamped on the upright video.
     """
     if not os.path.exists(file_path):
@@ -232,7 +232,7 @@ def add_video_watermark(file_path, firstname, date_str, location, angle=0, ticke
 
     watermark_draw = (
         f"drawtext=fontfile='{font_path}':text='{full_text}':fontcolor=white:fontsize=h/30:"
-        f"line_spacing=5:box=1:boxcolor=black@0.65:boxborderw=5:x=w-tw-12:y=h-th-12"
+        f"line_spacing=5:box=1:boxcolor=black@0.65:boxborderw=5:x=12:y=h-th-12"
     )
 
     angle = (angle or 0) % 360
