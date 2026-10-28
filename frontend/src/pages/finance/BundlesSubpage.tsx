@@ -1958,12 +1958,30 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 </div>
                               ) : isBundleApproved ? (
                                 <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
-                                  {/* Paid Badge if already settled */}
-                                  {b.status === 'Paid' && (
+                                  {/* Paid Badge if already settled, otherwise Cash Settlement button */}
+                                  {b.status === 'Paid' ? (
                                     <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
                                       <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                                       <span>Settled</span>
                                     </span>
+                                  ) : (
+                                    setShowPaymentModal && (
+                                      <Can permission={["finance.add_payment", "finance.change_payment", "finance.single_payment_process"] as any}>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setLastActiveRowId(b.claim_id);
+                                            setShowPaymentModal(b);
+                                          }}
+                                          className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer shrink-0"
+                                          title={`Perform Cash Settlement for Bundle #${b.claim_id}`}
+                                        >
+                                          <Banknote className="w-3.5 h-3.5" />
+                                          <span>Cash Settlement</span>
+                                        </button>
+                                      </Can>
+                                    )
                                   )}
                                 </div>
                               ) : null}

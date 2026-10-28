@@ -1,7 +1,22 @@
-import React, { useEffect } from 'react';
-import { X, Banknote, Loader2, AlertCircle, Package, Layers, Lock } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  X,
+  Banknote,
+  Loader2,
+  AlertCircle,
+  Package,
+  Layers,
+  Lock,
+  User,
+  UserCheck,
+  ShieldCheck,
+  ZoomIn,
+  Calendar,
+  Receipt
+} from 'lucide-react';
 import type { PaymentItem, WorkerClaimItem, LedgerItem } from './types';
 import { formatDateDMY } from './types';
+import { getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 
 interface PaymentModalProps {
   showPaymentModal: PaymentItem | WorkerClaimItem | LedgerItem | null;
@@ -26,24 +41,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   submitting,
   errorMessage,
 }) => {
-  if (!showPaymentModal) return null;
+  const [showPhotoZoom, setShowPhotoZoom] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
-  const isClaim = 'claim_id' in showPaymentModal;
-  const isLedger = 'ledger_id' in showPaymentModal;
+  // Reset local state when target modal changes
+  useEffect(() => {
+    setImgError(false);
+    setShowPhotoZoom(false);
+  }, [showPaymentModal]);
+
+  const isClaim = Boolean(showPaymentModal && 'claim_id' in showPaymentModal);
+  const isLedger = Boolean(showPaymentModal && 'ledger_id' in showPaymentModal);
 
   const claimItem = isClaim ? (showPaymentModal as WorkerClaimItem) : null;
   const ledgerItem = isLedger ? (showPaymentModal as LedgerItem) : null;
 
-  const targetAmount = parseFloat(
-    (isClaim
-      ? claimItem?.total_claimed_amount
-      : isLedger
-        ? ledgerItem?.total_amount
-        : (showPaymentModal as PaymentItem)?.amount_paid) || '0'
-  );
-
   // Automatically initialize default recipient when opened
   useEffect(() => {
+    if (!showPaymentModal) return;
     if (claimItem) {
       const defaultName =
         claimItem.worker_detail?.full_name ||
@@ -60,142 +75,268 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         '';
       if (!paymentRecipient) setPaymentRecipient(defaultName);
     }
-  }, [claimItem?.claim_id, ledgerItem?.ledger_id]);
+  }, [claimItem?.claim_id, ledgerItem?.ledger_id, showPaymentModal]);
+
+  if (!showPaymentModal) return null;
+
+  const targetAmount = parseFloat(
+    (isClaim
+      ? claimItem?.total_claimed_amount
+      : isLedger
+        ? ledgerItem?.total_amount
+        : (showPaymentModal as PaymentItem)?.amount_paid) || '0'
+  );
+
+  // Extract worker object and details for identity verification
+  const workerObj =
+    claimItem?.worker_detail ||
+    (typeof (claimItem as any)?.worker === 'object' ? (claimItem as any)?.worker : null) ||
+    (claimItem?.expenses && claimItem.expenses[0]?.worker_detail) ||
+    null;
+
+  const rawWorkerImage =
+    workerObj?.profile_image ||
+    (claimItem as any)?.profile_image ||
+    (claimItem as any)?.worker_profile_image ||
+    (claimItem?.expenses && (claimItem.expenses[0] as any)?.profile_image) ||
+    null;
+
+  const workerImage = rawWorkerImage && !imgError ? getMediaUrl(rawWorkerImage) : null;
+
+  const workerName =
+    workerObj?.full_name ||
+    workerObj?.username ||
+    (claimItem as any)?.worker_name ||
+    'Worker';
+
+  const workerEmpNo =
+    workerObj?.employee_no ||
+    (claimItem as any)?.employee_no ||
+    '';
+
+  const workerSubDept =
+    workerObj?.sub_departments?.[0]?.name ||
+    (claimItem as any)?.ticket_details?.sub_department_name ||
+    '';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-surface-container rounded border border-outline-variant max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in-50 zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-outline-variant pb-3.5">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25">
-              <Banknote className="w-5 h-5" />
+    <>
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-surface-container rounded border border-outline-variant max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in-50 zoom-in-95 duration-150 my-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-outline-variant pb-3.5">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25">
+                <Banknote className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-on-surface">
+                  {isClaim
+                    ? `Cash Settlement: Bundle #${claimItem?.claim_id}`
+                    : isLedger
+                      ? `Cash Settlement: Ledger #${ledgerItem?.ledger_id}`
+                      : `Cash Settlement`}
+                </h3>
+                <p className="text-[11px] text-on-surface-variant font-medium">
+                  {isClaim
+                    ? 'Disburse full cash settlement for this approved worker claim bundle'
+                    : isLedger
+                      ? 'Disburse full cash settlement for this approved ledger and its attached bundles'
+                      : 'Record cash settlement'}
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowPaymentModal(null)}
+              disabled={submitting}
+              className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* 1. BIG WORKER IDENTITY VERIFICATION CARD (BEFORE DISBURSING MONEY) */}
+          {isClaim && (
+            <div className="p-4 rounded bg-gradient-to-br from-teal-500/10 via-surface-container-low to-surface-container-low border-2 border-teal-500/40 dark:border-teal-400/30 space-y-3 shadow-xs">
+              {/* Card Header Alert / Verification Badge */}
+              <div className="flex items-center justify-between pb-2 border-b border-teal-500/20">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-teal-700 dark:text-teal-300">
+                  <ShieldCheck className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span className="uppercase tracking-wider text-[11px]">Worker Verification</span>
+                </div>
+
+              </div>
+
+              {/* Worker Photo + Verification Meta */}
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                {/* BIG WORKER PHOTO */}
+                <div className="relative group shrink-0">
+                  {workerImage ? (
+                    <div
+                      onClick={() => setShowPhotoZoom(true)}
+                      className="relative w-28 h-28 sm:w-32 sm:h-32 rounded overflow-hidden border-2 border-teal-500 dark:border-teal-400 shadow-md cursor-pointer group bg-surface-container-high transition-transform duration-150 hover:scale-[1.02]"
+                      title="Click to inspect large photo"
+                    >
+                      <img
+                        src={workerImage}
+                        alt={workerName}
+                        className="w-full h-full object-cover"
+                        onError={() => setImgError(true)}
+                      />
+                      <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-semibold gap-1">
+                        <ZoomIn className="w-5 h-5" />
+                        <span>Enlarge Photo</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-28 h-28 sm:w-32 sm:h-32 rounded bg-surface-container border-2 border-dashed border-outline-variant flex flex-col items-center justify-center text-on-surface-variant gap-1.5 p-2 text-center shadow-xs">
+                      <User className="w-10 h-10 opacity-40 text-on-surface-variant" />
+                      <span className="text-[10px] font-medium leading-tight">No Photo on File</span>
+                      <span className="text-[9px] opacity-75">Check Civil ID</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Worker Identity Details */}
+                <div className="flex-1 min-w-0 text-center sm:text-left space-y-1.5">
+                  <div>
+
+                    <h4 className="text-base sm:text-lg font-black text-on-surface truncate" title={workerName}>
+                      {workerName}
+                    </h4>
+
+                  </div>
+
+                  <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap pt-0.5">
+                    {workerEmpNo && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface font-mono">
+                        <span>ID:</span>
+                        <span className="text-primary">{workerEmpNo}</span>
+                      </span>
+                    )}
+                    {workerSubDept && (
+                      <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded bg-surface-container border border-outline-variant text-on-surface-variant">
+                        {workerSubDept}
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                      <Package className="w-3 h-3" />
+                      <span>Bundle #{claimItem?.claim_id}</span>
+                    </span>
+                  </div>
+
+                  <div className="pt-2 mt-1 border-t border-teal-500/20 flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-on-surface-variant">
+                      Total Handover Cash:
+                    </span>
+                    <span className="text-lg font-black text-teal-600 dark:text-teal-400">
+                      KD {targetAmount.toFixed(3)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Target Details Summary Box */}
+          <div className="p-3.5 rounded bg-surface-container-low border border-outline-variant/80 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isClaim ? (
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                    <Package className="w-3.5 h-3.5" />
+                    <span>Bundle {claimItem?.claim_id}</span>
+                  </div>
+                ) : isLedger ? (
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>{ledgerItem?.ledger_group_detail?.group_name || `Ledger #${ledgerItem?.ledger_id}`}</span>
+                  </div>
+                ) : null}
+
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-on-surface-variant uppercase font-medium">Settlement Amount: </span>
+                <span className="text-sm font-extrabold text-teal-600 dark:text-teal-400">
+                  KD {targetAmount.toFixed(3)}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-outline-variant/60 text-xs">
+              {isClaim && (
+                <>
+                  <div>
+                    <div className="text-[10px] text-on-surface-variant font-medium">Worker</div>
+                    <div className="text-xs font-bold text-on-surface truncate">
+                      {workerName}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-on-surface-variant font-medium">Claim Date</div>
+                    <div className="text-xs font-semibold text-on-surface flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-on-surface-variant opacity-70" />
+                      <span>{formatDateDMY(claimItem?.claim_date)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-on-surface-variant font-medium">Expenses</div>
+                    <div className="text-xs font-semibold text-on-surface flex items-center gap-1">
+                      <Receipt className="w-3 h-3 text-on-surface-variant opacity-70" />
+                      <span>{claimItem?.expenses?.length || 0} exp</span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {isLedger && (
+                <>
+                  <div>
+                    <div className="text-[10px] text-on-surface-variant font-medium">Group</div>
+                    <div className="text-xs font-bold text-on-surface truncate">
+                      {ledgerItem?.ledger_group_detail?.group_name || 'Independent'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-on-surface-variant font-medium">Bundles</div>
+                    <div className="text-xs font-semibold text-on-surface">
+                      {ledgerItem?.bundles?.length || 0} bundles
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-on-surface-variant font-medium">Expenses</div>
+                    <div className="text-xs font-semibold text-on-surface">
+                      {ledgerItem?.expenses?.length || 0} exp
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Form Inputs */}
+          <div className="space-y-3 text-xs">
             <div>
-              <h3 className="text-sm font-bold text-on-surface">
-                {isClaim
-                  ? `Cash Settlement: Bundle #${claimItem?.claim_id}`
-                  : isLedger
-                    ? `Cash Settlement: Ledger #${ledgerItem?.ledger_id}`
-                    : `Cash Settlement`}
-              </h3>
-              <p className="text-[11px] text-on-surface-variant font-medium">
-                {isClaim
-                  ? 'Disburse full cash settlement for this approved worker claim bundle'
-                  : isLedger
-                    ? 'Disburse full cash settlement for this approved ledger and its attached bundles'
-                    : 'Record cash settlement'}
-              </p>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-semibold text-on-surface">
+                  Recipient Name <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] text-on-surface-variant">Must match official identification</span>
+              </div>
+              <input
+                type="text"
+                required
+                placeholder="Enter receiver / technician / site engineer name..."
+                value={paymentRecipient}
+                onChange={(e) => setPaymentRecipient(e.target.value)}
+                className="w-full bg-surface-container-low border border-outline text-on-surface rounded p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none"
+              />
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowPaymentModal(null)}
-            disabled={submitting}
-            className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Target Details Summary Box */}
-        <div className="p-3.5 rounded bg-surface-container-low border border-outline-variant/80 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {isClaim ? (
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Bundle {claimItem?.claim_id}</span>
-                </div>
-              ) : isLedger ? (
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{ledgerItem?.ledger_group_detail?.group_name || `Ledger #${ledgerItem?.ledger_id}`}</span>
-                </div>
-              ) : null}
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-500/30">
-                Approved
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] text-on-surface-variant uppercase font-medium">Settlement Amount: </span>
-              <span className="text-sm font-extrabold text-teal-600 dark:text-teal-400">
-                KD {targetAmount.toFixed(3)}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-outline-variant/60 text-xs">
-            {isClaim && (
-              <>
-                <div>
-                  <div className="text-[10px] text-on-surface-variant font-medium">Worker</div>
-                  <div className="text-xs font-bold text-on-surface truncate">
-                    {claimItem?.worker_detail?.full_name || claimItem?.worker_detail?.username || 'Worker'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-on-surface-variant font-medium">Claim Date</div>
-                  <div className="text-xs font-semibold text-on-surface">
-                    {formatDateDMY(claimItem?.claim_date)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-on-surface-variant font-medium">Expenses</div>
-                  <div className="text-xs font-semibold text-on-surface">
-                    {claimItem?.expenses?.length || 0} exp
-                  </div>
-                </div>
-              </>
-            )}
-
-            {isLedger && (
-              <>
-                <div>
-                  <div className="text-[10px] text-on-surface-variant font-medium">Group</div>
-                  <div className="text-xs font-bold text-on-surface truncate">
-                    {ledgerItem?.ledger_group_detail?.group_name || 'Independent'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-on-surface-variant font-medium">Bundles</div>
-                  <div className="text-xs font-semibold text-on-surface">
-                    {ledgerItem?.bundles?.length || 0} bundles
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-on-surface-variant font-medium">Expenses</div>
-                  <div className="text-xs font-semibold text-on-surface">
-                    {ledgerItem?.expenses?.length || 0} exp
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Form Inputs */}
-        <div className="space-y-3 text-xs">
-          <div>
-            <label className="block font-semibold text-on-surface mb-1">
-              Recipient Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="Enter receiver / technician / site engineer name..."
-              value={paymentRecipient}
-              onChange={(e) => setPaymentRecipient(e.target.value)}
-              className="w-full bg-surface-container-low border border-outline text-on-surface rounded p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-1 gap-3">
-
 
             <div>
               <label className="block font-semibold text-on-surface mb-1">
-                Amount to Pay
+                Amount to Hand Over
               </label>
               <div className="flex items-center justify-between p-2.5 rounded bg-surface-container-low border border-outline text-xs select-none">
                 <span className="font-extrabold text-teal-600 dark:text-teal-400 text-sm">
@@ -203,63 +344,114 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 </span>
                 <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-500/10 text-on-surface-variant font-semibold border border-outline-variant">
                   <Lock className="w-2.5 h-2.5" />
-                  <span>Fixed</span>
+                  <span>Fixed Settlement</span>
                 </span>
               </div>
             </div>
+
+            <div>
+              <label className="block font-semibold text-on-surface mb-1">
+                Settlement Notes / Remarks <span className="text-[10px] font-normal text-on-surface-variant">(Optional)</span>
+              </label>
+              <textarea
+                value={paymentRemarks}
+                onChange={(e) => setPaymentRemarks(e.target.value)}
+                placeholder="Disbursement details or handover remarks..."
+                className="w-full bg-surface-container-low border border-outline text-on-surface rounded p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none h-18 resize-none"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block font-semibold text-on-surface mb-1">
-              Settlement Notes / Remarks <span className="text-[10px] font-normal text-on-surface-variant">(Optional)</span>
-            </label>
-            <textarea
-              value={paymentRemarks}
-              onChange={(e) => setPaymentRemarks(e.target.value)}
-              placeholder="Disbursement details or handover remarks..."
-              className="w-full bg-surface-container-low border border-outline text-on-surface rounded p-2.5 text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none h-18 resize-none"
-            />
-          </div>
-        </div>
+          {/* Error message */}
+          {errorMessage && (
+            <div className="p-3 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
 
-        {/* Error message */}
-        {errorMessage && (
-          <div className="p-3 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMessage}</span>
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-outline-variant">
+            <button
+              type="button"
+              onClick={() => setShowPaymentModal(null)}
+              disabled={submitting}
+              className="px-4 py-2 rounded border border-outline text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleProcessPayment}
+              disabled={submitting || !paymentRecipient.trim()}
+              className="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Processing Cash Settlement...</span>
+                </>
+              ) : (
+                <>
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span>Confirm Cash Settlement (KD {targetAmount.toFixed(3)})</span>
+                </>
+              )}
+            </button>
           </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-outline-variant">
-          <button
-            type="button"
-            onClick={() => setShowPaymentModal(null)}
-            disabled={submitting}
-            className="px-4 py-2 rounded border border-outline text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleProcessPayment}
-            disabled={submitting || !paymentRecipient.trim()}
-            className="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Processing Cash Settlement...</span>
-              </>
-            ) : (
-              <>
-                <Banknote className="w-3.5 h-3.5" />
-                <span>Confirm Cash Settlement (KD {targetAmount.toFixed(3)})</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
-    </div>
+
+      {/* ENLARGED PHOTO LIGHTBOX MODAL */}
+      {showPhotoZoom && workerImage && (
+        <div
+          className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in-50 duration-150"
+          onClick={() => setShowPhotoZoom(false)}
+        >
+          <div
+            className="bg-surface-container rounded border border-outline-variant max-w-sm w-full p-4 space-y-3 shadow-2xl relative animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span className="text-xs font-bold text-on-surface">{workerName}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPhotoZoom(false)}
+                className="p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="w-full aspect-square rounded overflow-hidden bg-black/20 border border-outline-variant flex items-center justify-center">
+              <img
+                src={workerImage}
+                alt={workerName}
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            <div className="text-center pt-1 space-y-0.5">
+              <p className="text-xs font-bold text-on-surface">{workerName}</p>
+
+              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-bold pt-1">
+                Cash Settlement: KD {targetAmount.toFixed(3)}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPhotoZoom(false)}
+              className="w-full py-2 rounded bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors cursor-pointer"
+            >
+              Close Preview
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

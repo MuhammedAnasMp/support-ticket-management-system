@@ -105,6 +105,57 @@ export const FinanceView: React.FC = () => {
   const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'IN_LEDGER' | 'NOT_IN_LEDGER'>('ALL');
   const [bundleFilter, setBundleFilter] = useState<'ALL' | 'IN_BUNDLE' | 'NOT_IN_BUNDLE'>('ALL');
 
+  // Status filter options tailored for the active subpage's individual items and lifecycle states
+  const statusOptions = useMemo<SelectOption[]>(() => {
+    if (subpage === 'expenses') {
+      return [
+        { value: 'ALL', label: 'All Statuses' },
+        { value: 'Pending Approval', label: 'Pending Approval' },
+        { value: 'Approved', label: 'Approved' },
+        { value: 'Paid', label: 'Paid' },
+        { value: 'Rework', label: 'Rework' },
+      ];
+    }
+    if (subpage === 'bundles') {
+      return [
+        { value: 'ALL', label: 'All Statuses' },
+        { value: 'Draft', label: 'Draft' },
+        { value: 'In Review', label: 'In Review' },
+        { value: 'Approved', label: 'Approved' },
+        { value: 'Paid', label: 'Paid' },
+        { value: 'Rework', label: 'Rework' },
+      ];
+    }
+    if (subpage === 'ledgers') {
+      return [
+        { value: 'ALL', label: 'All Statuses' },
+        { value: 'Draft', label: 'Draft' },
+        { value: 'In Review', label: 'In Review' },
+        { value: 'Approved', label: 'Approved' },
+        { value: 'Completed', label: 'Completed' },
+        { value: 'Paid', label: 'Paid' },
+        { value: 'Rework', label: 'Rework' },
+      ];
+    }
+    return [
+      { value: 'ALL', label: 'All Statuses' },
+      { value: 'Draft', label: 'Draft' },
+      { value: 'In Review', label: 'In Review' },
+      { value: 'Approved', label: 'Approved' },
+      { value: 'Completed', label: 'Completed' },
+      { value: 'Rework', label: 'Rework' },
+      { value: 'Paid', label: 'Paid' },
+    ];
+  }, [subpage]);
+
+  // When subpage changes, reset statusFilter to 'ALL' if the current status is not applicable to the new subpage
+  useEffect(() => {
+    const validValues = statusOptions.map(opt => opt.value.toLowerCase());
+    if (statusFilter !== 'ALL' && !validValues.includes(statusFilter.toLowerCase())) {
+      setStatusFilter('ALL');
+    }
+  }, [subpage, statusOptions, statusFilter]);
+
   // Debounced search query for server-side expense search
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
 
@@ -528,15 +579,15 @@ export const FinanceView: React.FC = () => {
 
     const matchingBundle = claimId
       ? ((bundles || []).find(b => Number(b.claim_id || (b as any).id) === Number(claimId))
-         || (targetLedger?.bundles || []).find(b => Number(b.claim_id || (b as any).id) === Number(claimId)))
+        || (targetLedger?.bundles || []).find(b => Number(b.claim_id || (b as any).id) === Number(claimId)))
       : null;
 
     const bundleExpensesInLedger = claimId && targetLedger?.expenses
       ? targetLedger.expenses.filter(e => {
-          const c = e.claim ?? (e as any).claim_id ?? (e as any).bundle_id;
-          const cid = c && typeof c === 'object' ? c.claim_id : c;
-          return Number(cid) === Number(claimId);
-        }).length
+        const c = e.claim ?? (e as any).claim_id ?? (e as any).bundle_id;
+        const cid = c && typeof c === 'object' ? c.claim_id : c;
+        return Number(cid) === Number(claimId);
+      }).length
       : 0;
 
     const totalBundleExpenses = matchingBundle?.expenses?.length;
@@ -876,6 +927,9 @@ export const FinanceView: React.FC = () => {
         if (debouncedSearchQuery) {
           groupsUrl += `&search=${encodeURIComponent(debouncedSearchQuery)}`;
         }
+        if (statusFilter !== 'ALL') {
+          groupsUrl += `&status=${encodeURIComponent(statusFilter)}`;
+        }
 
         // 3. Fresh fetch of approved unassigned claims for Assemble Ledger directly from DB
         const claimsUrl = `${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=all`;
@@ -916,7 +970,7 @@ export const FinanceView: React.FC = () => {
           })
           .catch(() => { });
       }
- else if (subpage === 'approvals') {
+      else if (subpage === 'approvals') {
         const res = await fetch(approvalsUrl, { headers, signal });
         if (signal.aborted) return;
         if (res.ok) setApprovals(parseList(await res.json()));
@@ -1090,7 +1144,14 @@ export const FinanceView: React.FC = () => {
       return bundles;
     }
     return bundles.filter((b) => {
-      if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
+      if (statusFilter !== 'ALL') {
+        const filterLower = statusFilter.toLowerCase().trim();
+        const bStatusLower = (b.status || '').toLowerCase().trim();
+        const matchesStatus = (filterLower === 'in review' || filterLower === 'submitted')
+          ? (bStatusLower === 'in review' || bStatusLower === 'submitted')
+          : bStatusLower === filterLower;
+        if (!matchesStatus) return false;
+      }
       if (ledgerFilter === 'IN_LEDGER' && !b.ledger_details) return false;
       if (ledgerFilter === 'NOT_IN_LEDGER' && b.ledger_details) return false;
       if (!isWithinDateRange(b.claim_date, filterDateFrom, filterDateTo)) return false;
@@ -1820,8 +1881,8 @@ export const FinanceView: React.FC = () => {
       const fullAmount = 'total_claimed_amount' in showPaymentModal
         ? showPaymentModal.total_claimed_amount
         : 'total_amount' in showPaymentModal
-        ? showPaymentModal.total_amount
-        : showPaymentModal.amount_paid;
+          ? showPaymentModal.total_amount
+          : showPaymentModal.amount_paid;
 
       const res = await fetch(`${API_URL}/finance/payments/process-payment/`, {
         method: 'POST',
@@ -1965,7 +2026,12 @@ export const FinanceView: React.FC = () => {
       if (statusFilter !== 'ALL') {
         const isPaid = Boolean(e.is_paid || e.status_display === 'Paid' || (e.claim && ((e.claim as any).status === 'Paid' || (e as any).claim_status === 'Paid')));
         const st = isPaid ? 'Paid' : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
-        if (st.toLowerCase() !== statusFilter.toLowerCase()) return false;
+        const filterLower = statusFilter.toLowerCase().trim();
+        const stLower = st.toLowerCase().trim();
+        const matchesStatus = (filterLower === 'pending approval' || filterLower === 'in review' || filterLower === 'pending')
+          ? (stLower === 'pending approval' || stLower === 'in review' || stLower === 'pending')
+          : stLower === filterLower;
+        if (!matchesStatus) return false;
       }
 
       if (bundleFilter === 'IN_BUNDLE' && !e.is_claimed && !e.claim) return false;
@@ -2234,21 +2300,12 @@ export const FinanceView: React.FC = () => {
 
           {/* Status Dropdown Filter */}
           {subpage !== 'payments' && (
-            <div className="w-44 shrink-0">
+            <div className="w-48 shrink-0">
               <SearchableSelect
                 value={statusFilter}
                 onChange={(val) => setStatusFilter(val)}
                 className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
-                options={[
-                  { value: 'ALL', label: 'All Statuses' },
-                  { value: 'Draft', label: 'Draft' },
-                  { value: 'In Review', label: 'In Review' },
-                  { value: 'Approved', label: 'Approved' },
-                  { value: 'Completed', label: 'Completed' },
-                  { value: 'Rework', label: 'Rework' },
-                  { value: 'Rejected', label: 'Rejected' },
-                  { value: 'Paid', label: 'Paid' },
-                ]}
+                options={statusOptions}
                 placeholder="All Statuses"
               />
             </div>

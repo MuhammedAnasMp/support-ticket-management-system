@@ -227,13 +227,18 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         if status_param and status_param.upper() != 'ALL':
             status_lower = status_param.lower().strip()
             if status_lower == 'approved':
-                queryset = queryset.filter(Q(approved=True) | Q(expense_type__approve_required=False))
+                queryset = queryset.filter(Q(approved=True) | Q(expense_type__approve_required=False)).exclude(is_paid=True).exclude(claim__status='Paid')
             elif status_lower in ('pending approval', 'pending', 'in review'):
-                queryset = queryset.filter(approved=False, expense_type__approve_required=True)
+                queryset = queryset.filter(
+                    approved=False,
+                    expense_type__approve_required=True
+                ).exclude(is_paid=True).exclude(claim__status='Paid').exclude(
+                    approval_instances__status__in=['Rework', 'Rejected']
+                )
             elif status_lower == 'rejected':
-                queryset = queryset.filter(approval_instances__status='Rejected')
+                queryset = queryset.filter(approval_instances__status='Rejected').exclude(is_paid=True).exclude(claim__status='Paid')
             elif status_lower == 'rework':
-                queryset = queryset.filter(approval_instances__status='Rework')
+                queryset = queryset.filter(approval_instances__status='Rework').exclude(is_paid=True).exclude(claim__status='Paid')
             elif status_lower == 'paid':
                 queryset = queryset.filter(Q(is_paid=True) | Q(claim__status='Paid'))
 
@@ -761,7 +766,11 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
 
         status_param = self.request.query_params.get("status")
         if status_param and status_param.upper() != 'ALL':
-            queryset = queryset.filter(status=status_param)
+            status_lower = status_param.lower().strip()
+            if status_lower in ('in review', 'submitted', 'pending', 'pending approval'):
+                queryset = queryset.filter(Q(status__iexact='In Review') | Q(status__iexact='Submitted'))
+            else:
+                queryset = queryset.filter(status__iexact=status_param.strip())
 
         ledger_filter = self.request.query_params.get("ledger_filter")
         if ledger_filter:
@@ -1212,6 +1221,24 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         if to_date:
             queryset = queryset.filter(Q(created_at__date__lte=to_date) | Q(ledgers__created_at__date__lte=to_date)).distinct()
 
+        status_param = self.request.query_params.get("status")
+        if status_param and status_param.upper() != 'ALL':
+            status_lower = status_param.lower().strip()
+            if status_lower == 'completed':
+                queryset = queryset.filter(is_completed=True).exclude(is_paid=True)
+            elif status_lower == 'paid':
+                queryset = queryset.filter(is_paid=True)
+            elif status_lower in ('in review', 'submitted', 'pending', 'pending approval'):
+                queryset = queryset.filter(ledgers__status__in=['In Review', 'Submitted']).distinct()
+            elif status_lower == 'approved':
+                queryset = queryset.filter(ledgers__status='Approved').exclude(is_paid=True).exclude(is_completed=True).distinct()
+            elif status_lower == 'rework':
+                queryset = queryset.filter(ledgers__status='Rework').distinct()
+            elif status_lower == 'rejected':
+                queryset = queryset.filter(ledgers__status='Rejected').distinct()
+            elif status_lower == 'draft':
+                queryset = queryset.filter(ledgers__status='Draft').distinct()
+
         return queryset.annotate(
             annotated_ledgers_count=Count('ledgers', distinct=True)
         ).select_related(
@@ -1373,6 +1400,15 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
         if actioned_count == 0:
             return Response({'detail': 'You are not authorized to action the pending approval step for this Ledger Group.'}, status=status.HTTP_403_FORBIDDEN)
 
+        # Auto-complete ledger group in backend if all batches are now approved
+        if group and group.ledgers.exclude(status__in=['Approved', 'Paid']).count() == 0:
+            if not group.is_completed:
+                group.is_completed = True
+                group.completed_at = timezone.now()
+                if request.user and request.user.is_authenticated:
+                    group.completed_by = request.user
+                group.save(update_fields=['is_completed', 'completed_at', 'completed_by'])
+
         updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
         return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
 
@@ -1433,7 +1469,25 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         status_param = self.request.query_params.get("status")
         if status_param and status_param.upper() != 'ALL':
-            queryset = queryset.filter(status=status_param)
+            status_lower = status_param.lower().strip()
+            if status_lower == 'completed':
+                queryset = queryset.filter(
+                    Q(ledger_group__is_completed=True) | Q(ledger_group__completed_at__isnull=False)
+                ).exclude(status__iexact='Paid').exclude(ledger_group__is_paid=True)
+            elif status_lower == 'paid':
+                queryset = queryset.filter(
+                    Q(status__iexact='Paid') | Q(ledger_group__is_paid=True)
+                )
+            elif status_lower in ('in review', 'submitted', 'pending', 'pending approval'):
+                queryset = queryset.filter(
+                    Q(status__iexact='In Review') | Q(status__iexact='Submitted')
+                )
+            elif status_lower == 'approved':
+                queryset = queryset.filter(
+                    status__iexact='Approved'
+                ).exclude(status__iexact='Paid').exclude(ledger_group__is_paid=True).exclude(ledger_group__is_completed=True)
+            else:
+                queryset = queryset.filter(status__iexact=status_param.strip())
 
         from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from")
         if from_date:

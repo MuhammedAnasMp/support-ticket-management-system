@@ -240,6 +240,17 @@ class ApprovalService:
                             entity.approved_by = actor
                         entity.save()
 
+                        # Auto-complete group in backend if all member ledgers are now approved
+                        ledger_obj = instance.ledger or (entity if hasattr(entity, 'ledger_group') else None)
+                        if ledger_obj and getattr(ledger_obj, 'ledger_group', None):
+                            grp = ledger_obj.ledger_group
+                            if grp.ledgers.exclude(status__in=['Approved', 'Paid']).count() == 0:
+                                if not grp.is_completed:
+                                    grp.is_completed = True
+                                    grp.completed_at = timezone.now()
+                                    grp.completed_by = actor
+                                    grp.save(update_fields=['is_completed', 'completed_at', 'completed_by'])
+
                     create_audit_event(
                         audit_entity_name, entity_id, 'APPROVED_FINAL', actor=actor,
                         payload={'step_id': step.step_id,
@@ -1609,17 +1620,26 @@ class PaymentService:
         with transaction.atomic():
             group = LedgerGroup.objects.select_for_update().get(pk=group_id)
 
-            if not group.is_completed:
-                raise ValidationError(
-                    f"Cannot pay Ledger Group '{group.group_name}'. The group must be marked as Completed first."
-                )
-
             if group.is_paid:
                 raise ValidationError(
                     f"Ledger Group '{group.group_name}' is already marked as Paid."
                 )
 
+            # Auto-manage group completion in backend:
+            # Check if all batches in this group are approved before paying
+            unapproved = group.ledgers.exclude(status__in=['Approved', 'Paid'])
+            if unapproved.exists():
+                raise ValidationError(
+                    f"Cannot pay Ledger Group '{group.group_name}'. {unapproved.count()} ledger batch(es) are not yet approved."
+                )
+
             now = timezone.now()
+            # If not yet marked completed, automatically complete it in backend
+            if not group.is_completed:
+                group.is_completed = True
+                group.completed_at = now
+                group.completed_by = actor
+
             group.is_paid = True
             group.paid_at = now
             group.paid_by = actor
@@ -1627,7 +1647,11 @@ class PaymentService:
             group.payment_reference = payment_reference
             group.payment_remarks = remarks
             group.recipient_name = recipient_name
-            group.save(update_fields=['is_paid', 'paid_at', 'paid_by', 'payment_method', 'payment_reference', 'payment_remarks', 'recipient_name'])
+            group.save(update_fields=[
+                'is_completed', 'completed_at', 'completed_by',
+                'is_paid', 'paid_at', 'paid_by',
+                'payment_method', 'payment_reference', 'payment_remarks', 'recipient_name'
+            ])
 
             # Mark all ledgers in this group as Paid
             group.ledgers.update(status='Paid')

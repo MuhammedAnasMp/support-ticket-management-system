@@ -3105,11 +3105,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                 type="button"
                                                 onClick={(e) => {
                                                   e.stopPropagation();
-                                                  const targetBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId) || {
+                                                  const baseBundle = bundleItem.bundleObj || (bundles || []).find(b => b.claim_id === bundleItem.bundleId);
+                                                  const targetBundle = {
+                                                    ...(baseBundle || {}),
                                                     claim_id: bundleItem.bundleId,
-                                                    total_claimed_amount: String(bundleItem.totalAmount),
-                                                    worker_detail: bundleItem.workerDetail,
-                                                    worker_name: bundleItem.workerName,
+                                                    total_claimed_amount: String(baseBundle?.total_claimed_amount || bundleItem.totalAmount),
+                                                    worker_detail: baseBundle?.worker_detail || bundleItem.workerDetail,
+                                                    worker_name: bundleItem.workerName || baseBundle?.worker_detail?.full_name,
+                                                    profile_image: bundleItem.profileImage || baseBundle?.worker_detail?.profile_image,
                                                     status: 'Approved'
                                                   };
                                                   setShowPaymentModal(targetBundle as any);
