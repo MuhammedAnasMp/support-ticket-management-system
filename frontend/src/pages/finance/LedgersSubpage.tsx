@@ -692,7 +692,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
             group_name: matchLedger.ledger_group_detail?.group_name || `Ledger Group ${selectedGroupId}`,
             total_amount: String(matchLedger.ledger_group_detail?.total_amount || '0'),
             is_completed: Boolean(matchLedger.ledger_group_detail?.is_completed),
-            status: matchLedger.status || 'Draft'
+            status: matchLedger.status || 'Draft',
+            created_at: matchLedger.ledger_group_detail?.created_at || matchLedger.created_at || ''
           };
           const st = getGroupStatus(item);
           if (st === 'Draft' || st === 'Rework' || isAddingToExistingGroup) {

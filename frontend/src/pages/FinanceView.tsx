@@ -148,7 +148,7 @@ export const FinanceView: React.FC = () => {
 
   // When subpage changes, reset statusFilter to 'ALL' if the current status is not applicable to the new subpage
   useEffect(() => {
-    const validValues = statusOptions.map(opt => opt.value.toLowerCase());
+    const validValues = statusOptions.map(opt => String(opt.value).toLowerCase());
     if (statusFilter !== 'ALL' && !validValues.includes(statusFilter.toLowerCase())) {
       setStatusFilter('ALL');
     }
