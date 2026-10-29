@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -85,19 +85,93 @@ export const FinanceView: React.FC = () => {
       [subpage]: val
     }));
   };
-  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
-    const stored = localStorage.getItem('finance_filter_date_from');
-    if (stored !== null && stored !== undefined) return stored;
-    return getCurrentMonthRange().from;
+  // Per-subpage date filter state so Expenses, Bundles, Ledgers, etc. each maintain separate date filtering state
+  const [subpageDateFilters, setSubpageDateFilters] = useState<Record<string, { from: string; to: string; type?: string }>>(() => {
+    const currentMonth = getCurrentMonthRange();
+    const defaultDate = { from: currentMonth.from, to: currentMonth.to, type: '' };
+
+    const getStoredDate = (pageKey: string) => {
+      const storedFrom = localStorage.getItem(`finance_filter_date_from_${pageKey}`);
+      const storedTo = localStorage.getItem(`finance_filter_date_to_${pageKey}`);
+      const storedType = localStorage.getItem(`finance_filter_date_type_${pageKey}`);
+
+      if (storedFrom !== null || storedTo !== null) {
+        return {
+          from: storedFrom ?? defaultDate.from,
+          to: storedTo ?? defaultDate.to,
+          type: storedType ?? (pageKey === 'expenses' ? '' : undefined)
+        };
+      }
+
+      // Backward compatibility fallback from global storage
+      const legacyFrom = localStorage.getItem('finance_filter_date_from');
+      const legacyTo = localStorage.getItem('finance_filter_date_to');
+      const legacyType = localStorage.getItem('finance_filter_date_type');
+
+      return {
+        from: (legacyFrom !== null && legacyFrom !== undefined) ? legacyFrom : defaultDate.from,
+        to: (legacyTo !== null && legacyTo !== undefined) ? legacyTo : defaultDate.to,
+        type: pageKey === 'expenses' ? (legacyType || '') : undefined
+      };
+    };
+
+    return {
+      expenses: getStoredDate('expenses'),
+      bundles: getStoredDate('bundles'),
+      ledgers: getStoredDate('ledgers'),
+      payments: getStoredDate('payments')
+    };
   });
-  const [filterDateTo, setFilterDateTo] = useState<string>(() => {
-    const stored = localStorage.getItem('finance_filter_date_to');
-    if (stored !== null && stored !== undefined) return stored;
-    return getCurrentMonthRange().to;
-  });
-  const [filterDateType, setFilterDateType] = useState<string>(() => {
-    return localStorage.getItem('finance_filter_date_type') || '';
-  });
+
+  const activeDates = subpageDateFilters[subpage] || {
+    from: getCurrentMonthRange().from,
+    to: getCurrentMonthRange().to,
+    type: ''
+  };
+  const filterDateFrom = activeDates.from;
+  const filterDateTo = activeDates.to;
+  const filterDateType = activeDates.type || '';
+
+  const setFilterDateRange = useCallback((from: string, to: string, type?: string) => {
+    setSubpageDateFilters(prev => ({
+      ...prev,
+      [subpage]: {
+        from,
+        to,
+        type: type !== undefined ? type : (prev[subpage]?.type || '')
+      }
+    }));
+  }, [subpage]);
+
+  const setFilterDateFrom = useCallback((from: string) => {
+    setSubpageDateFilters(prev => ({
+      ...prev,
+      [subpage]: {
+        ...(prev[subpage] || { from: '', to: '', type: '' }),
+        from
+      }
+    }));
+  }, [subpage]);
+
+  const setFilterDateTo = useCallback((to: string) => {
+    setSubpageDateFilters(prev => ({
+      ...prev,
+      [subpage]: {
+        ...(prev[subpage] || { from: '', to: '', type: '' }),
+        to
+      }
+    }));
+  }, [subpage]);
+
+  const setFilterDateType = useCallback((type: string) => {
+    setSubpageDateFilters(prev => ({
+      ...prev,
+      [subpage]: {
+        ...(prev[subpage] || { from: '', to: '', type: '' }),
+        type
+      }
+    }));
+  }, [subpage]);
   const [ledgerBatches, setLedgerBatches] = useState<any[]>([]);
   const [ledgerBatchFilter, setLedgerBatchFilter] = useState<string>(() => {
     return localStorage.getItem('finance_filter_ledger_batch') || 'ALL';
@@ -105,6 +179,33 @@ export const FinanceView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'IN_LEDGER' | 'NOT_IN_LEDGER'>('ALL');
   const [bundleFilter, setBundleFilter] = useState<'ALL' | 'IN_BUNDLE' | 'NOT_IN_BUNDLE'>('ALL');
+  const [expenseWorkerFilter, setExpenseWorkerFilter] = useState<string>('ALL');
+  const [allWorkersList, setAllWorkersList] = useState<any[]>([]);
+
+  // Load all workers / users for worker-wise search & dropdown
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_URL}/accounts/customuser/?page_size=all`, {
+      headers: { Authorization: `Token ${token}` }
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.results || []);
+        setAllWorkersList(list);
+      })
+      .catch(() => {});
+  }, [token, API_URL]);
+
+  const expenseWorkerOptions = useMemo<SelectOption[]>(() => {
+    const options: SelectOption[] = [{ value: 'ALL', label: 'All Workers / Technicians' }];
+    (allWorkersList || []).forEach(w => {
+      const name = w.full_name || w.username;
+      if (!name) return;
+      const label = w.employee_no ? `${name} (${w.employee_no})` : name;
+      options.push({ value: String(w.id || w.user_id), label });
+    });
+    return options;
+  }, [allWorkersList]);
 
   // Status filter options tailored for the active subpage's individual items and lifecycle states
   const statusOptions = useMemo<SelectOption[]>(() => {
@@ -181,8 +282,10 @@ export const FinanceView: React.FC = () => {
 
   // Reset expensePage to 1 whenever search, filters, or sorting change
   useEffect(() => {
-    setExpensePage(1);
-  }, [debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, filterDateFrom, filterDateTo, filterDateType, expensePageSize, expenseOrdering]);
+    if (subpage === 'expenses') {
+      setExpensePage(1);
+    }
+  }, [subpage, debouncedSearchQuery, statusFilter, bundleFilter, ledgerBatchFilter, expenseWorkerFilter, filterDateFrom, filterDateTo, filterDateType, expensePageSize, expenseOrdering]);
 
   // Bundles server-side pagination state
   const [bundlePage, setBundlePage] = useState<number>(1);
@@ -197,8 +300,10 @@ export const FinanceView: React.FC = () => {
 
   // Reset bundlePage to 1 whenever search or filters change
   useEffect(() => {
-    setBundlePage(1);
-  }, [debouncedSearchQuery, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, bundlePageSize]);
+    if (subpage === 'bundles') {
+      setBundlePage(1);
+    }
+  }, [subpage, debouncedSearchQuery, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, bundlePageSize]);
 
   // Ledgers server-side pagination state
   const [ledgerPage, setLedgerPage] = useState<number>(1);
@@ -207,8 +312,10 @@ export const FinanceView: React.FC = () => {
 
   // Reset ledgerPage to 1 whenever search or filters change
   useEffect(() => {
-    setLedgerPage(1);
-  }, [debouncedSearchQuery, statusFilter, filterDateFrom, filterDateTo, ledgerPageSize]);
+    if (subpage === 'ledgers') {
+      setLedgerPage(1);
+    }
+  }, [subpage, debouncedSearchQuery, statusFilter, filterDateFrom, filterDateTo, ledgerPageSize]);
 
 
   // Fetch LedgerBatches for filtering and subpages
@@ -225,30 +332,30 @@ export const FinanceView: React.FC = () => {
       .catch(err => console.error("Failed to fetch ledger batches", err));
   }, [token, API_URL]);
 
-  // Sync date filter changes with localStorage
+  // Sync date filter changes with localStorage per active subpage
   useEffect(() => {
     if (filterDateFrom) {
-      localStorage.setItem('finance_filter_date_from', filterDateFrom);
+      localStorage.setItem(`finance_filter_date_from_${subpage}`, filterDateFrom);
     } else {
-      localStorage.removeItem('finance_filter_date_from');
+      localStorage.removeItem(`finance_filter_date_from_${subpage}`);
     }
-  }, [filterDateFrom]);
+  }, [subpage, filterDateFrom]);
 
   useEffect(() => {
     if (filterDateTo) {
-      localStorage.setItem('finance_filter_date_to', filterDateTo);
+      localStorage.setItem(`finance_filter_date_to_${subpage}`, filterDateTo);
     } else {
-      localStorage.removeItem('finance_filter_date_to');
+      localStorage.removeItem(`finance_filter_date_to_${subpage}`);
     }
-  }, [filterDateTo]);
+  }, [subpage, filterDateTo]);
 
   useEffect(() => {
     if (filterDateType) {
-      localStorage.setItem('finance_filter_date_type', filterDateType);
+      localStorage.setItem(`finance_filter_date_type_${subpage}`, filterDateType);
     } else {
-      localStorage.removeItem('finance_filter_date_type');
+      localStorage.removeItem(`finance_filter_date_type_${subpage}`);
     }
-  }, [filterDateType]);
+  }, [subpage, filterDateType]);
 
   useEffect(() => {
     if (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') {
@@ -844,11 +951,12 @@ export const FinanceView: React.FC = () => {
         const batchQuery = (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') ? `&ledger_batch=${encodeURIComponent(ledgerBatchFilter)}` : '';
         const statusQuery = (statusFilter && statusFilter !== 'ALL') ? `&status=${encodeURIComponent(statusFilter)}` : '';
         const bundleQuery = (bundleFilter && bundleFilter !== 'ALL') ? `&bundle_filter=${encodeURIComponent(bundleFilter)}` : '';
+        const workerQuery = (expenseWorkerFilter && expenseWorkerFilter !== 'ALL') ? `&worker=${encodeURIComponent(expenseWorkerFilter)}` : '';
         const searchParam = debouncedSearchQuery ? `&search=${encodeURIComponent(debouncedSearchQuery)}` : '';
         const paginationParams = `&page=${expensePage}&page_size=${expensePageSize}`;
         const orderingParam = expenseOrdering ? `&ordering=${encodeURIComponent(expenseOrdering)}` : '';
 
-        const resExp = await fetch(`${API_URL}/finance/expense/?${paginationParams}${dateParams}${dateTypeQuery}${batchQuery}${statusQuery}${bundleQuery}${searchParam}${orderingParam}`, { headers, signal });
+        const resExp = await fetch(`${API_URL}/finance/expense/?${paginationParams}${dateParams}${dateTypeQuery}${batchQuery}${statusQuery}${bundleQuery}${workerQuery}${searchParam}${orderingParam}`, { headers, signal });
         if (signal.aborted) return;
         if (resExp.ok) {
           const expData = await resExp.json();
@@ -1046,6 +1154,7 @@ export const FinanceView: React.FC = () => {
     debouncedSearchQuery,
     statusFilter,
     bundleFilter,
+    expenseWorkerFilter,
     ledgerFilter,
     expensePage,
     expensePageSize,
@@ -2324,17 +2433,11 @@ export const FinanceView: React.FC = () => {
             emptyDateTypeLabel="Select Option"
             hideDateType={subpage !== 'expenses'}
             onDateRangeChange={(from, to, type) => {
-              setFilterDateFrom(from);
-              setFilterDateTo(to);
-              if (subpage === 'expenses') {
-                setFilterDateType(type || '');
-              }
+              setFilterDateRange(from, to, subpage === 'expenses' ? (type || '') : '');
             }}
             onReset={() => {
               const currentMonth = getCurrentMonthRange();
-              setFilterDateFrom(currentMonth.from);
-              setFilterDateTo(currentMonth.to);
-              setFilterDateType('');
+              setFilterDateRange(currentMonth.from, currentMonth.to, '');
             }}
           />
 
@@ -2347,6 +2450,22 @@ export const FinanceView: React.FC = () => {
                 className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
                 options={statusOptions}
                 placeholder="All Statuses"
+              />
+            </div>
+          )}
+
+          {/* Worker / Technician Filter (Applicable for Expenses subpage) */}
+          {subpage === 'expenses' && (
+            <div className="w-52 shrink-0">
+              <SearchableSelect
+                value={expenseWorkerFilter}
+                onChange={(val) => {
+                  setExpenseWorkerFilter(val);
+                  setExpensePage(1);
+                }}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={expenseWorkerOptions}
+                placeholder="All Workers"
               />
             </div>
           )}

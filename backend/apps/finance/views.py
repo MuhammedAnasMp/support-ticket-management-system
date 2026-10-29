@@ -473,9 +473,15 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             search = search.strip()
             q_search = (
                 Q(expense_type__expense_name__icontains=search) |
+                Q(worker__full_name__icontains=search) |
+                Q(worker__username__icontains=search) |
+                Q(worker__employee_no__icontains=search) |
                 Q(worker__first_name__icontains=search) |
                 Q(worker__last_name__icontains=search) |
-                Q(worker__username__icontains=search) |
+                Q(added_by__full_name__icontains=search) |
+                Q(added_by__username__icontains=search) |
+                Q(ticket__allocations__worker__full_name__icontains=search) |
+                Q(ticket__allocations__worker__username__icontains=search) |
                 Q(remarks__icontains=search) |
                 Q(ticket__work_order_no__icontains=search) |
                 Q(ticket__title__icontains=search) |
@@ -483,17 +489,29 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             )
             if search.isdigit():
                 q_search |= Q(expense_id=int(search)) | Q(
-                    ticket_id=int(search))
+                    ticket_id=int(search)) | Q(worker_id=int(search))
             try:
                 amt_val = float(search)
                 q_search |= Q(amount=amt_val)
             except ValueError:
                 pass
-            queryset = queryset.filter(q_search)
+            queryset = queryset.filter(q_search).distinct()
 
         worker = self.request.query_params.get("worker")
-        if worker:
-            queryset = queryset.filter(worker_id=worker)
+        if worker and str(worker).upper() != 'ALL':
+            if str(worker).isdigit():
+                queryset = queryset.filter(
+                    Q(worker_id=int(worker)) |
+                    Q(ticket__allocations__worker_id=int(worker))
+                ).distinct()
+            else:
+                queryset = queryset.filter(
+                    Q(worker__full_name__icontains=worker) |
+                    Q(worker__username__icontains=worker) |
+                    Q(worker__employee_no__icontains=worker) |
+                    Q(ticket__allocations__worker__full_name__icontains=worker) |
+                    Q(ticket__allocations__worker__username__icontains=worker)
+                ).distinct()
 
         ordering = self.request.query_params.get("ordering")
         order_by_fields = []
@@ -512,8 +530,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 elif field_name == 'remarks':
                     order_by_fields.append(f'{prefix}remarks')
                 elif field_name == 'worker':
-                    order_by_fields.append(f'{prefix}worker__first_name')
-                    order_by_fields.append(f'{prefix}worker__last_name')
+                    order_by_fields.append(f'{prefix}worker__full_name')
+                    order_by_fields.append(f'{prefix}worker__username')
                 elif field_name in ('ticket', 'linked_ticket'):
                     order_by_fields.append(f'{prefix}ticket__work_order_no')
                 elif field_name in ('sub_department', 'sub_dept'):

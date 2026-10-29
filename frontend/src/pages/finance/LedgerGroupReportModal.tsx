@@ -634,7 +634,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     const result = Array.from(locMap.values()).map(entry => {
       const titles = entry.rows.map(r => r.issueTitle).filter(Boolean);
       const summaryText = titles.length > 0
-        ? `${entry.rows.length} Expense${entry.rows.length > 1 ? 's' : ''}: ${titles.slice(0, 3).join('; ')}${titles.length > 3 ? ` (+${titles.length - 3} more)` : ''}`
+        ? `[${entry.rows.length}]${entry.rows.length > 1 ? '' : ''} ${titles.slice(0, 3).join('; ')}${titles.length > 3 ? ` (+${titles.length - 3} more)` : ''}`
         : `${entry.rows.length} Expense Summary`;
 
       const ticketLines: string[] = [];
@@ -1322,7 +1322,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                     <th rowspan="2" style="width:140px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
                     <th rowspan="2" style="width:115px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
                     <th rowspan="2" style="width:95px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
-                    <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">SUMMARY</th>
+                    <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">SUMMARY[Exp]</th>
                   ` : `
                     <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
                     <th rowspan="2" style="width:55px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">BUNDLE</th>
