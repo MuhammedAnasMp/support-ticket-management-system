@@ -902,42 +902,48 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     );
   };
 
-  // Helper to check if current user can approve a Ledger
+  // Helper to check if current user can approve a Ledger strictly based on the pending approval step
   const canUserApproveLedger = (ledgerId: number, ledgerApp?: ApprovalInstanceItem, fallbackLedger?: LedgerItem): boolean => {
+    const app = ledgerApp || getLedgerApproval(ledgerId, fallbackLedger);
+    if (!app) return false;
+
+    // 1. If backend evaluated can_action, trust it first
+    if (app.can_action === true) return true;
+    if (app.can_action === false) return false;
+
+    // 2. Client-side evaluation against the current pending approval step ONLY
+    const currentUsername = (currentUser?.username || '').toLowerCase().trim();
+    const currentUserFullName = (currentUser?.full_name || '').toLowerCase().trim();
+    const currentUserId = currentUser?.id ?? currentUser?.user_id;
     const userRoleStr = (
       (currentUser?.role as any)?.role_name ||
       (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
       ''
     ).toLowerCase().trim();
 
-    if (currentUser?.is_superuser || userRoleStr === 'admin' || userRoleStr === 'administrator') {
-      return true;
+    // Check if the current pending step is User-wise (assigned to specific users)
+    const pendingStepUserNames = (app.assigned_users_names || []).map((u: string) => String(u).toLowerCase().trim());
+    const pendingStepUsernames = (app.assigned_users_usernames || []).map((u: string) => String(u).toLowerCase().trim());
+    const pendingStepUserIds = (app.assigned_users_ids || []).map((id: any) => Number(id));
+
+    if (pendingStepUserNames.length > 0 || pendingStepUsernames.length > 0 || pendingStepUserIds.length > 0) {
+      const isUserAssigned = (
+        (currentUserId && pendingStepUserIds.includes(Number(currentUserId))) ||
+        (currentUsername && pendingStepUsernames.includes(currentUsername)) ||
+        (currentUsername && pendingStepUserNames.includes(currentUsername)) ||
+        (currentUserFullName && pendingStepUserNames.includes(currentUserFullName))
+      );
+      return Boolean(isUserAssigned);
     }
 
-    const app = ledgerApp || getLedgerApproval(ledgerId, fallbackLedger);
-    if (!app) {
-      if ((currentUser as any)?.is_staff) return true;
-      return false;
-    }
-
-    if (app.can_action) return true;
-
+    // Check if the current pending step is Role-wise (assigned to a specific role)
     const assignedRoleStr = (app.assigned_role_name || '').toLowerCase().trim();
-    if (userRoleStr && assignedRoleStr && userRoleStr === assignedRoleStr) return true;
+    if (assignedRoleStr) {
+      return Boolean(userRoleStr && userRoleStr === assignedRoleStr);
+    }
 
-    const currentUsername = currentUser?.username;
-    const currentUserId = currentUser?.id ?? currentUser?.user_id;
-
-    if (currentUsername && app.workflow_steps?.some(s => s.assigned_users_names?.some((u: string) => u.toLowerCase() === currentUsername.toLowerCase()))) {
-      return true;
-    }
-    if (currentUserId && app.workflow_steps?.some(s => s.assigned_users_ids?.includes(currentUserId))) {
-      return true;
-    }
-    if (currentUsername && (app as any).assigned_users_names?.some((u: string) => u.toLowerCase() === currentUsername.toLowerCase())) {
-      return true;
-    }
-    if (currentUserId && (app as any).assigned_users_ids?.includes(currentUserId)) {
+    // Fallback: If no users and no roles are assigned on the step, only superusers can action
+    if (currentUser?.is_superuser) {
       return true;
     }
 

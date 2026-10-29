@@ -59,6 +59,7 @@ def get_cached_step_info(step):
         'step_order': step.step_order,
         'assigned_role_name': step.assigned_role.role_name if (getattr(step, 'assigned_role', None)) else '',
         'assigned_users_names': [u.full_name or u.username for u in assigned_users],
+        'assigned_users_usernames': [u.username for u in assigned_users],
         'assigned_users_ids': [u.pk for u in assigned_users],
         'workflow_id': step.workflow_id
     }
@@ -148,6 +149,7 @@ def serialize_approval_instance_summary(inst, user=None):
         'step_order': step_info.get('step_order', 0),
         'assigned_role_name': step_info.get('assigned_role_name', ''),
         'assigned_users_names': step_info.get('assigned_users_names', []),
+        'assigned_users_usernames': step_info.get('assigned_users_usernames', []),
         'assigned_users_ids': step_info.get('assigned_users_ids', []),
         'workflow_steps': workflow_steps,
         'can_action': can_action,
@@ -705,6 +707,9 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
         source='step.step_order', read_only=True)
     assigned_role_name = serializers.CharField(
         source='step.assigned_role.role_name', read_only=True)
+    assigned_users_ids = serializers.SerializerMethodField()
+    assigned_users_names = serializers.SerializerMethodField()
+    assigned_users_usernames = serializers.SerializerMethodField()
     action_by_username = serializers.CharField(
         source='action_by.username', read_only=True)
     action_by_full_name = serializers.SerializerMethodField()
@@ -716,6 +721,21 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = ApprovalInstance
         fields = '__all__'
+
+    def get_assigned_users_ids(self, obj):
+        if obj.step:
+            return list(obj.step.assigned_users.values_list('pk', flat=True))
+        return []
+
+    def get_assigned_users_names(self, obj):
+        if obj.step:
+            return [u.full_name or u.username for u in obj.step.assigned_users.all()]
+        return []
+
+    def get_assigned_users_usernames(self, obj):
+        if obj.step:
+            return list(obj.step.assigned_users.values_list('username', flat=True))
+        return []
 
     def get_action_by_full_name(self, obj):
         if obj.action_by:

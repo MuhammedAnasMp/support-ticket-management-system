@@ -50,8 +50,9 @@ export interface ApprovalStepInfo {
   step_order: number;
   step_name: string;
   assigned_role_name: string;
-  assigned_users_names?: string[];
   assigned_users_ids?: number[];
+  assigned_users_names?: string[];
+  assigned_users_usernames?: string[];
   is_final_step?: boolean;
 }
 
@@ -118,6 +119,9 @@ export interface ApprovalInstanceItem {
   step_name: string;
   step_order?: number;
   assigned_role_name: string;
+  assigned_users_ids?: number[];
+  assigned_users_names?: string[];
+  assigned_users_usernames?: string[];
   claim?: number;
   ledger?: number;
   expense?: number;

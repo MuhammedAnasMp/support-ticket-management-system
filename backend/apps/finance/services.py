@@ -114,28 +114,29 @@ class ApprovalService:
     @classmethod
     def can_user_action_step(cls, actor, step, instance=None):
         """
-        Determines if a user has permission to action an approval step via:
+        Determines if a user has permission to action an approval step:
         1. Superuser
         2. User-wise: Direct assignment in step.assigned_users (takes priority if configured)
-        3. django-guardian object permission on target entity
-        4. Direct model permission (finance.approve_<entity>)
-        5. Role-based fallback matching step.assigned_role
+        3. Role-wise: Matching step.assigned_role
+        4. Fallback: Only if step has neither assigned_users nor assigned_role
         """
         if not actor or not actor.is_authenticated:
             return False
         if actor.is_superuser:
             return True
 
-        actor_role_name = (actor.role.role_name.lower().strip(
-        ) if hasattr(actor, 'role') and actor.role else '')
-        if actor_role_name in ['administrator', 'admin', 'office administrator', 'office admin', 'finance', 'accountant', 'accounts']:
-            return True
-
-        # 1. User-wise: Direct user assignment on the step
+        # 1. User-wise: If specific users are assigned to the step, ONLY those assigned users can action it
         if step.assigned_users.exists():
             return step.assigned_users.filter(pk=actor.pk).exists()
 
-        # 2. Guardian object permission and direct model permission
+        # 2. Role-wise: If a specific role is assigned to the step, ONLY users with that role can action it
+        if step.assigned_role:
+            actor_role = getattr(actor, 'role', None)
+            if actor_role:
+                return actor_role == step.assigned_role or getattr(actor_role, 'pk', None) == step.assigned_role_id
+            return False
+
+        # 3. Fallback only if step has NEITHER assigned_users NOR assigned_role
         target_entity = None
         perm_name = None
         if instance:
@@ -155,8 +156,9 @@ class ApprovalService:
             if actor.has_perm(perm_name):
                 return True
 
-        # 3. Role-based fallback (if no specific users assigned to the step)
-        if step.assigned_role and getattr(actor, 'role', None) == step.assigned_role:
+        actor_role_name = (actor.role.role_name.lower().strip(
+        ) if hasattr(actor, 'role') and actor.role else '')
+        if actor_role_name in ['administrator', 'admin']:
             return True
 
         return False
