@@ -21,6 +21,7 @@ import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
 import { SearchableSelect, type SelectOption } from '@/components/SearchableSelect';
 import { confirmPopup } from '@/components/tailgrids/core/ConfirmationPopup';
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 const EMPTY_LIST: any[] = [];
 
@@ -4980,14 +4981,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 {/* Media Display Container */}
                                 <div className="w-full flex justify-center items-center overflow-hidden rounded bg-black/35 shadow-2xl p-1">
                                     {isImage(previewItem.name) ? (
-                                        <img
+                                        <ZoomableImage
                                             src={previewItem.url}
                                             alt={previewItem.name}
-                                            style={{
-                                                transform: `rotate(${previewRotation}deg)`,
-                                                transition: isSavingPreviewRotation ? 'none' : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-                                            }}
-                                            className="max-w-full max-h-[75vh] object-contain rounded-md select-none pointer-events-none"
+                                            rotation={previewRotation}
+                                            containerClassName="w-full h-[75vh]"
+                                            className="max-w-full max-h-[75vh] object-contain rounded-md select-none"
                                         />
                                     ) : isVideo(previewItem.name) ? (
                                         <RotatableVideoPlayer

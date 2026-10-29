@@ -9,6 +9,7 @@ import type { RootState } from '../store';
 import { TicketDetailModal } from './ticket/TicketDetailModal';
 import { DateRangePickerCard } from './ticket/DateRangePickerCard';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 import { API_URL, getUserId } from './finance/types';
 import type {
@@ -193,7 +194,7 @@ export const FinanceView: React.FC = () => {
         const list = Array.isArray(data) ? data : (data.results || []);
         setAllWorkersList(list);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [token, API_URL]);
 
   const expenseWorkerOptions = useMemo<SelectOption[]>(() => {
@@ -2863,11 +2864,11 @@ export const FinanceView: React.FC = () => {
 
       {/* POPUP MODAL: RECEIPT LIGHTBOX */}
       {previewMediaUrl && (
-        <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4" onClick={() => setPreviewMediaUrl(null)}>
-          <div className="relative max-w-4xl max-h-[90vh] bg-surface-container rounded border border-outline-variant overflow-hidden p-2" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-2 border-b border-outline-variant mb-2">
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={() => setPreviewMediaUrl(null)}>
+          <div className="relative max-w-4xl w-full max-h-[90vh] bg-surface-container rounded border border-outline-variant/80 overflow-hidden p-3 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-2 border-b border-outline-variant/80 mb-2 shrink-0">
               <span className="text-xs font-semibold text-on-surface">{previewMediaUrl.title}</span>
-              <button onClick={() => setPreviewMediaUrl(null)} className="p-1 text-on-surface-variant hover:text-on-surface cursor-pointer">
+              <button onClick={() => setPreviewMediaUrl(null)} className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2875,12 +2876,13 @@ export const FinanceView: React.FC = () => {
               <iframe
                 src={previewMediaUrl.url.startsWith('http') ? previewMediaUrl.url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${previewMediaUrl.url}`}
                 title={previewMediaUrl.title}
-                className="w-[80vw] h-[75vh] border-0 rounded"
+                className="w-full h-[75vh] border-0 rounded"
               />
             ) : (
-              <img
+              <ZoomableImage
                 src={previewMediaUrl.url.startsWith('http') ? previewMediaUrl.url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${previewMediaUrl.url}`}
                 alt={previewMediaUrl.title}
+                containerClassName="w-full h-[75vh] bg-black/40 rounded"
                 className="max-h-[75vh] w-auto mx-auto object-contain rounded"
               />
             )}

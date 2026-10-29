@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Eye, FileText, Trash2, Headphones, X, Download, Play, Pause, Image as ImageIcon, Video, RotateCcw, RotateCw, RefreshCw, Save, Check, Loader2, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 export const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || window.location.origin;
@@ -716,15 +717,13 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
                         className="w-full h-full flex justify-center items-center overflow-hidden rounded-lg bg-black/85 shadow-2xl p-2 touch-pan-y"
                     >
                         {isImage(currentName) ? (
-                            <img
+                            <ZoomableImage
                                 key={currentUrl}
                                 src={currentUrl}
                                 alt={currentName}
-                                style={{
-                                    transform: `rotate(${rotation}deg)`,
-                                    transition: isSavingRotation ? 'none' : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-                                }}
-                                className="max-w-full max-h-full object-contain rounded-md select-none pointer-events-none"
+                                rotation={rotation}
+                                containerClassName="w-full h-full"
+                                className="max-w-full max-h-full object-contain rounded-md select-none"
                             />
                         ) : isAudio(currentName) ? (
                             <div className="flex flex-col items-center justify-center p-6 bg-surface-container dark:bg-dark-surface-container rounded-xl border border-outline-variant max-w-md w-full text-center shadow-lg">
