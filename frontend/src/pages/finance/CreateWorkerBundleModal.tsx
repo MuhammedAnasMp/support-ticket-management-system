@@ -1,21 +1,22 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
-  Receipt,
   AlertCircle,
   CheckCircle2,
-  Clock,
   Search,
   Check,
   Plus,
   Minus,
-  GripHorizontal,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  Paperclip,
+  Pencil,
+  Sparkles
 } from 'lucide-react';
 import type { ExpenseItem } from './types';
 import { formatDateDMY } from './types';
-import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
+import { AvatarCircle, getMediaUrl } from '../ticket/TicketsTypesAndComponents';
+import { confirmPopup } from '@/components/tailgrids/core/ConfirmationPopup';
 
 interface CreateWorkerBundleModalProps {
   isOpen: boolean;
@@ -34,7 +35,15 @@ interface CreateWorkerBundleModalProps {
   setErrorMessage?: (msg: string | null) => void;
   fromDate?: string;
   toDate?: string;
+  token?: string;
+  currentUser?: any;
+  API_URL?: string;
+  setWorkerExpenses?: React.Dispatch<React.SetStateAction<ExpenseItem[]>>;
+  setPreviewMediaUrl?: (media: { url: string; title: string } | null) => void;
+  onRefreshParent?: () => Promise<void> | void;
 }
+
+type TabType = 'unapproved' | 'available' | 'selected';
 
 export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = ({
   isOpen,
@@ -52,17 +61,33 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
   errorMessage,
   setErrorMessage,
   fromDate,
-  toDate
+  toDate,
+  token,
+  API_URL = '',
+  setWorkerExpenses,
+  setPreviewMediaUrl,
+  onRefreshParent
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeFilterTab, setActiveFilterTab] = useState<'added' | 'unadded'>('unadded');
+  const [activeFilterTab, setActiveFilterTab] = useState<TabType>('available');
+  const [approvingExpenseId, setApprovingExpenseId] = useState<number | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState<boolean>(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      setActiveFilterTab('unadded');
-      setSearchQuery('');
-    }
-  }, [isOpen, worker]);
+  // Edit Expense State
+  const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
+  const [editAmount, setEditAmount] = useState<string>('');
+  const [editRemarks, setEditRemarks] = useState<string>('');
+  const [editDate, setEditDate] = useState<string>('');
+  const [editExpenseTypeId, setEditExpenseTypeId] = useState<string>('');
+  const [isUpdatingExpense, setIsUpdatingExpense] = useState<boolean>(false);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
+
+  // Dropdown options for edit
+  const [expenseTypes, setExpenseTypes] = useState<any[]>([]);
+
+  // Dynamic Remarks Mode (Auto-generated from activity unless user custom edits)
+  const [isRemarksAuto, setIsRemarksAuto] = useState<boolean>(true);
 
   const isExpenseEligible = (exp: ExpenseItem | any): boolean => {
     if (!exp) return false;
@@ -74,6 +99,36 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     return false;
   };
 
+  useEffect(() => {
+    if (isOpen) {
+      setSearchQuery('');
+      setFeedbackMsg(null);
+      setEditingExpense(null);
+      setIsRemarksAuto(true);
+      // Auto-select tab based on available data
+      const hasAvailable = workerExpenses.some(e => !selectedExpenseIds.includes(e.expense_id) && isExpenseEligible(e));
+      const hasUnapproved = workerExpenses.some(e => !selectedExpenseIds.includes(e.expense_id) && !isExpenseEligible(e));
+      if (!hasAvailable && hasUnapproved) {
+        setActiveFilterTab('unapproved');
+      } else {
+        setActiveFilterTab('available');
+      }
+
+      // Fetch expense types for edit dropdown if not fetched
+      if (token && expenseTypes.length === 0) {
+        fetch(`${API_URL}/finance/expensetype/?page_size=all`, {
+          headers: { 'Authorization': `Token ${token}` }
+        })
+          .then(res => res.ok ? res.json() : [])
+          .then(data => {
+            const list = Array.isArray(data) ? data : (data.results || []);
+            setExpenseTypes(list);
+          })
+          .catch(err => console.error('Failed to load expense types:', err));
+      }
+    }
+  }, [isOpen, worker]);
+
   const getCleanRemarks = (raw?: string) => {
     if (!raw) return '';
     const lines = raw.split('\n');
@@ -81,16 +136,92 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     return cleanLines.join('\n').trim();
   };
 
-  // Separate expenses into added vs unadded
-  const addedExpenses = useMemo(() => {
+  // 1. UNAPPROVED: Unclaimed, unadded expenses that need approval
+  const unapprovedExpenses = useMemo(() => {
+    return workerExpenses.filter(e => !selectedExpenseIds.includes(e.expense_id) && !isExpenseEligible(e));
+  }, [workerExpenses, selectedExpenseIds]);
+
+  // 2. AVAILABLE: Unclaimed, unadded expenses that are approved and ready to add
+  const availableExpenses = useMemo(() => {
+    return workerExpenses.filter(e => !selectedExpenseIds.includes(e.expense_id) && isExpenseEligible(e));
+  }, [workerExpenses, selectedExpenseIds]);
+
+  // 3. SELECTED: Expenses currently added to this bundle
+  const selectedExpenses = useMemo(() => {
     return workerExpenses.filter(e => selectedExpenseIds.includes(e.expense_id));
   }, [workerExpenses, selectedExpenseIds]);
 
-  const unaddedExpenses = useMemo(() => {
-    return workerExpenses.filter(e => !selectedExpenseIds.includes(e.expense_id));
-  }, [workerExpenses, selectedExpenseIds]);
+  // Dynamic Remarks Generator based on activity
+  const generateDynamicRemarks = (expenses: ExpenseItem[]): string => {
+    if (!expenses || expenses.length === 0) return '';
 
-  // Search filter predicate
+    // Collect distinct activity categories
+    const categories: string[] = [];
+    expenses.forEach(exp => {
+      const name = exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name;
+      if (name && !categories.includes(name.trim())) {
+        categories.push(name.trim());
+      }
+    });
+
+    // Check if single expense
+    if (expenses.length === 1) {
+      const exp = expenses[0];
+      const cat = exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || '';
+      const cleanRem = getCleanRemarks(exp.remarks);
+      const ticketObj = (exp as any).ticket_details || (exp as any).ticket;
+      const wo = typeof ticketObj === 'object' && ticketObj ? ticketObj.work_order_no : '';
+
+      const parts: string[] = [];
+      if (wo) parts.push(`WO#${wo}`);
+      if (cat) parts.push(cat);
+      if (cleanRem && cleanRem.toLowerCase() !== cat.toLowerCase()) parts.push(cleanRem);
+
+      return parts.length > 0 ? parts.join(' - ') : (cat || 'Expense claim');
+    }
+
+    // Multiple expenses: check for common work order
+    const workOrders: string[] = [];
+    expenses.forEach(exp => {
+      const ticketObj = (exp as any).ticket_details || (exp as any).ticket;
+      const wo = typeof ticketObj === 'object' && ticketObj ? ticketObj.work_order_no : '';
+      if (wo && !workOrders.includes(wo)) {
+        workOrders.push(wo);
+      }
+    });
+
+    let activityStr = '';
+    if (categories.length === 1) {
+      activityStr = `${categories[0]} (${expenses.length} items)`;
+    } else if (categories.length === 2) {
+      activityStr = `${categories[0]} & ${categories[1]} (${expenses.length} items)`;
+    } else if (categories.length > 2) {
+      activityStr = `${categories[0]}, ${categories[1]} +${categories.length - 2} more (${expenses.length} items)`;
+    } else {
+      activityStr = `Expenses (${expenses.length} items)`;
+    }
+
+    if (workOrders.length === 1) {
+      return `WO#${workOrders[0]} - ${activityStr}`;
+    }
+
+    return activityStr;
+  };
+
+  // Sync bundle remarks dynamically based on activity
+  useEffect(() => {
+    if (!isOpen) return;
+    if (isRemarksAuto) {
+      const dyn = generateDynamicRemarks(selectedExpenses);
+      if (dyn) {
+        setBundleRemarks(dyn);
+      } else if (selectedExpenses.length === 0) {
+        setBundleRemarks('');
+      }
+    }
+  }, [selectedExpenses, isRemarksAuto, isOpen]);
+
+  // Search filter
   const matchesSearch = (exp: ExpenseItem) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
@@ -105,7 +236,6 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     return (
       expIdStr.includes(q) ||
       `#${expIdStr}`.includes(q) ||
-      `exp-${expIdStr}`.includes(q) ||
       categoryName.includes(q) ||
       remarks.includes(q) ||
       workOrderNo.includes(q) ||
@@ -115,27 +245,20 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     );
   };
 
-  const filteredAdded = useMemo(() => {
-    return addedExpenses.filter(matchesSearch);
-  }, [addedExpenses, searchQuery]);
+  const filteredUnapproved = useMemo(() => unapprovedExpenses.filter(matchesSearch), [unapprovedExpenses, searchQuery]);
+  const filteredAvailable = useMemo(() => availableExpenses.filter(matchesSearch), [availableExpenses, searchQuery]);
+  const filteredSelected = useMemo(() => selectedExpenses.filter(matchesSearch), [selectedExpenses, searchQuery]);
 
-  const filteredUnadded = useMemo(() => {
-    return unaddedExpenses.filter(matchesSearch);
-  }, [unaddedExpenses, searchQuery]);
+  // Totals
+  const unapprovedTotal = unapprovedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
+  const availableTotal = availableExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
+  const selectedTotal = selectedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
+  const totalApprovedAmount = availableTotal + selectedTotal;
 
-  // Totals calculation (only counting approved / eligible expenses for totals, never unapproved)
-  const addedTotal = addedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
-  const unaddedEligibleExpenses = useMemo(() => unaddedExpenses.filter(isExpenseEligible), [unaddedExpenses]);
-  const unaddedEligibleTotal = unaddedEligibleExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
-  const totalApprovedExpenses = useMemo(() => workerExpenses.filter(isExpenseEligible), [workerExpenses]);
-  const totalApprovedAmount = totalApprovedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
-
-  // Actions
+  // Toggle selection
   const handleToggleExpense = (exp: ExpenseItem) => {
     const isSelected = selectedExpenseIds.includes(exp.expense_id);
-    const isApproved = isExpenseEligible(exp);
-
-    if (!isSelected && !isApproved) return;
+    if (!isSelected && !isExpenseEligible(exp)) return;
 
     if (isSelected) {
       setSelectedExpenseIds(selectedExpenseIds.filter(id => id !== exp.expense_id));
@@ -144,109 +267,421 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
     }
   };
 
-  const handleAddAllEligible = () => {
-    const eligibleToAdd = filteredUnadded
-      .filter(exp => isExpenseEligible(exp))
-      .map(e => e.expense_id);
+  const handleAddAllAvailable = async () => {
 
-    if (eligibleToAdd.length === 0) return;
+    const confirmed = await confirmPopup({
+      preset: "approve",
+      title: "All All Expenses To Bundle",
+      description: `Are you sure you want to add all available expenses.`,
+      button1: "Cancel",
+      button2: "Add All",
+      variant: "warning",
+    });
 
-    setSelectedExpenseIds(Array.from(new Set([...selectedExpenseIds, ...eligibleToAdd])));
+    if (!confirmed) return;
+
+    const idsToAdd = filteredAvailable.map(e => e.expense_id);
+    if (idsToAdd.length === 0) return;
+    setSelectedExpenseIds(Array.from(new Set([...selectedExpenseIds, ...idsToAdd])));
   };
 
-  const handleRemoveAllAdded = () => {
-    const idsToRemove = filteredAdded.map(exp => exp.expense_id);
+  const handleRemoveAllSelected = () => {
+    const idsToRemove = filteredSelected.map(exp => exp.expense_id);
     if (idsToRemove.length === 0) return;
-
     setSelectedExpenseIds(selectedExpenseIds.filter(id => !idsToRemove.includes(id)));
   };
 
+  // Inline Approve
+  const handleApproveExpense = async (exp: ExpenseItem) => {
+    if (!exp || approvingExpenseId === exp.expense_id) return;
+    setApprovingExpenseId(exp.expense_id);
+    setFeedbackMsg(null);
+    if (setErrorMessage) setErrorMessage(null);
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Token ${token}`;
+      const baseApi = API_URL || '';
+
+      const pendingInstance = (exp as any).approval_instances?.find((i: any) => i.status === 'Pending') ||
+        (exp as any).active_pending_instance;
+
+      let res: Response;
+      if (pendingInstance && pendingInstance.instance_id) {
+        res = await fetch(`${baseApi}/finance/approvals/${pendingInstance.instance_id}/action/`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'APPROVED', comments: 'Approved from Create Bundle' })
+        });
+        if (!res.ok) {
+          res = await fetch(`${baseApi}/finance/expense/${exp.expense_id}/action/`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: 'APPROVED', comments: 'Approved from Create Bundle' })
+          });
+        }
+      } else {
+        res = await fetch(`${baseApi}/finance/expense/${exp.expense_id}/action/`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'APPROVED', comments: 'Approved from Create Bundle' })
+        });
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.error || 'Failed to approve expense');
+      }
+
+      const resData = await res.json().catch(() => ({}));
+      const updatedExpData = resData.expense || resData;
+
+      const updatedExpense: ExpenseItem = {
+        ...exp,
+        ...updatedExpData,
+        approved: true,
+        status_display: 'Approved'
+      };
+
+      if (setWorkerExpenses) {
+        setWorkerExpenses(prev => prev.map(e => e.expense_id === exp.expense_id ? updatedExpense : e));
+      }
+
+      setFeedbackMsg({
+        type: 'success',
+        text: `Expense #${exp.expense_id} approved and moved to Available.`
+      });
+
+      if (onRefreshParent) {
+        onRefreshParent();
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Failed to approve expense';
+      setFeedbackMsg({ type: 'error', text: msg });
+      if (setErrorMessage) setErrorMessage(msg);
+    } finally {
+      setApprovingExpenseId(null);
+    }
+  };
+
+  // Bulk Approve
+  const handleBulkApproveUnapproved = async () => {
+    const unapprovedIds = filteredUnapproved.map(exp => exp.expense_id);
+    if (unapprovedIds.length === 0) return;
+
+
+    const confirmed = await confirmPopup({
+      preset: "approve",
+      title: "Bulk Approve Expenses",
+      description: `Are you sure you want to approve all ${unapprovedIds.length} selected expense(s)? They will be moved to Available.`,
+      button1: "Cancel",
+      button2: "Approve All",
+      variant: "warning",
+    });
+
+    if (!confirmed) return;
+
+
+    setIsBulkApproving(true);
+    setFeedbackMsg(null);
+    if (setErrorMessage) setErrorMessage(null);
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Token ${token}`;
+      const baseApi = API_URL || '';
+
+      const res = await fetch(`${baseApi}/finance/expense/bulk-approve/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          expense_ids: unapprovedIds,
+          comments: 'Bulk approved from Create Bundle modal'
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.error || 'Bulk approve failed');
+      }
+
+      const approvedSet = new Set(unapprovedIds);
+      if (setWorkerExpenses) {
+        setWorkerExpenses(prev => prev.map(e => approvedSet.has(e.expense_id) ? { ...e, approved: true, status_display: 'Approved' } : e));
+      }
+
+      setFeedbackMsg({
+        type: 'success',
+        text: `Approved all ${unapprovedIds.length} expense(s). They are now in Available.`
+      });
+
+      // Switch to available tab
+      setActiveFilterTab('available');
+
+      if (onRefreshParent) {
+        onRefreshParent();
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Bulk approve failed';
+      setFeedbackMsg({ type: 'error', text: msg });
+      if (setErrorMessage) setErrorMessage(msg);
+    } finally {
+      setIsBulkApproving(false);
+    }
+  };
+
+  // Edit Expense Handlers
+  const handleOpenEdit = (exp: ExpenseItem) => {
+    setEditingExpense(exp);
+    setEditAmount(String(exp.amount || ''));
+    setEditRemarks(exp.remarks || '');
+    setEditDate(exp.expense_date || '');
+    const typeId = (exp as any).expense_type_id ||
+      (exp as any).expense_type_detail?.expense_type_id ||
+      (exp as any).expense_type?.expense_type_id ||
+      (exp as any).expense_type?.expense_id ||
+      (exp as any).expense_type?.id ||
+      (typeof exp.expense_type === 'number' ? exp.expense_type : '');
+    setEditExpenseTypeId(String(typeId || ''));
+    setEditFormError(null);
+  };
+
+  const handleCloseEdit = () => {
+    setEditingExpense(null);
+    setEditFormError(null);
+    setIsUpdatingExpense(false);
+  };
+
+  const handleSaveEditExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExpense) return;
+    setEditFormError(null);
+
+    const parsedAmount = parseFloat(editAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setEditFormError('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    if (!editDate) {
+      setEditFormError('Expense date is required.');
+      return;
+    }
+
+    setIsUpdatingExpense(true);
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) headers['Authorization'] = `Token ${token}`;
+      const baseApi = API_URL || '';
+
+      const payload: any = {
+        amount: parsedAmount,
+        expense_date: editDate,
+        remarks: editRemarks.trim() || undefined
+      };
+
+      if (editExpenseTypeId) {
+        payload.expense_type = parseInt(editExpenseTypeId, 10);
+      }
+
+      const res = await fetch(`${baseApi}/finance/expense/${editingExpense.expense_id}/`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        let errMsg = 'Failed to update expense';
+        if (data.detail) {
+          errMsg = data.detail;
+        } else if (typeof data === 'object') {
+          const entries = Object.entries(data).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+          if (entries.length) errMsg = entries.join(' • ');
+        }
+        throw new Error(errMsg);
+      }
+
+      // Selected category object
+      const selectedTypeObj = expenseTypes.find(et => String(et.expense_type_id || et.id) === String(editExpenseTypeId));
+
+      const updatedExpense: ExpenseItem = {
+        ...editingExpense,
+        ...data,
+        amount: String(parsedAmount),
+        remarks: editRemarks.trim(),
+        expense_date: editDate,
+        expense_type_detail: selectedTypeObj || editingExpense.expense_type_detail
+      };
+
+      if (setWorkerExpenses) {
+        setWorkerExpenses(prev => prev.map(e => e.expense_id === editingExpense.expense_id ? updatedExpense : e));
+      }
+
+      setFeedbackMsg({
+        type: 'success',
+        text: `Expense #${editingExpense.expense_id} updated successfully.`
+      });
+
+      handleCloseEdit();
+
+      if (onRefreshParent) {
+        onRefreshParent();
+      }
+    } catch (err: any) {
+      setEditFormError(err.message || 'Failed to update expense');
+    } finally {
+      setIsUpdatingExpense(false);
+    }
+  };
+
   // Render individual expense card
-  const renderExpenseCard = (exp: ExpenseItem, isAdded: boolean) => {
+  const renderExpenseCard = (exp: ExpenseItem, type: 'unapproved' | 'available' | 'selected') => {
     const isSelected = selectedExpenseIds.includes(exp.expense_id);
-    const isExpApproved = isExpenseEligible(exp);
-    const isSelectable = isExpApproved;
     const cleanRemarks = getCleanRemarks(exp.remarks);
+
+    const firstReceipt = exp.receipts && exp.receipts.length > 0
+      ? exp.receipts[0]
+      : (exp.receipt ? { file: exp.receipt } : null);
 
     return (
       <div
         key={exp.expense_id}
-        onClick={() => isSelectable && handleToggleExpense(exp)}
-        className={`p-2.5 rounded border text-xs flex items-center justify-between gap-2.5 transition-all select-none ${!isSelectable
-          ? 'bg-surface-container-low/50 border-outline-variant/40 opacity-70 cursor-not-allowed'
-          : isSelected
-            ? 'bg-primary/5 hover:bg-primary/10 border-primary/40 cursor-pointer shadow-2xs'
-            : 'bg-surface-container-low hover:bg-surface-container border-outline-variant/70 cursor-pointer shadow-2xs'
+        className={`px-3 py-2.5 rounded border text-xs flex items-center justify-between gap-3 transition-colors ${type === 'selected'
+          ? 'bg-primary/5 border-primary/30'
+          : type === 'unapproved'
+            ? 'bg-surface-container-low border-amber-500/20'
+            : 'bg-surface-container-low border-outline-variant/60 hover:bg-surface-container/60'
           }`}
       >
-        <div className="flex items-center min-w-0 flex-1 pr-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-on-surface truncate">
-                {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense #${exp.expense_id}`}
-              </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant font-bold">
-                #{exp.expense_id}
-              </span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-auto sm:ml-0">
-                {parseFloat(exp.amount).toFixed(3)} KD
-              </span>
+        {/* Left Info: Category, ID, Receipt, Date, WO, Remarks */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-on-surface truncate">
+              {exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || `Expense #${exp.expense_id}`}
+            </span>
+            <span className="text-[10px] text-on-surface-variant font-mono">
+              #{exp.expense_id}
+            </span>
 
-              {/* Status Badges */}
-              {!isExpApproved ? (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold border border-amber-500/20 inline-flex items-center gap-0.5">
-                  <Clock className="w-2.5 h-2.5" /> Needs Approval
-                </span>
-              ) : (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20 inline-flex items-center gap-0.5">
-                  <CheckCircle2 className="w-2.5 h-2.5" /> Approved
-                </span>
-              )}
-            </div>
+            {firstReceipt && (
+              <button
+                type="button"
+                onClick={() => {
+                  const fileUrl = (firstReceipt as any).file || (firstReceipt as any).file_path || (firstReceipt as any).url;
+                  const resolvedUrl = getMediaUrl(fileUrl);
+                  if (setPreviewMediaUrl && resolvedUrl) {
+                    setPreviewMediaUrl({ url: resolvedUrl, title: `Receipt for Expense #${exp.expense_id}` });
+                  } else if (resolvedUrl) {
+                    window.open(resolvedUrl, '_blank');
+                  }
+                }}
+                className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline font-medium cursor-pointer"
+                title="View receipt"
+              >
+                <Paperclip className="w-2.5 h-2.5" />
+                <span>Receipt</span>
+              </button>
+            )}
+          </div>
 
-            <div className="flex items-center gap-2 text-[10px] text-on-surface-variant truncate mt-0.5">
-              <span>{formatDateDMY(exp.expense_date)}</span>
-              {exp.ticket_details?.work_order_no && (
-                <span>• WO: <strong className="text-on-surface">{exp.ticket_details.work_order_no}</strong></span>
-              )}
-              {cleanRemarks && (
-                <span className="truncate" title={cleanRemarks}>• {cleanRemarks}</span>
-              )}
-            </div>
+          <div className="flex items-center gap-2 text-[10px] text-on-surface-variant truncate mt-0.5">
+            <span>{formatDateDMY(exp.expense_date)}</span>
+            {exp.ticket_details?.work_order_no && (
+              <span>• WO: <strong className="text-on-surface">{exp.ticket_details.work_order_no}</strong></span>
+            )}
+            {cleanRemarks && (
+              <span className="truncate" title={cleanRemarks}>• {cleanRemarks}</span>
+            )}
           </div>
         </div>
 
-        {/* Right Action Button */}
-        <div className="shrink-0 ml-2">
-          {!isSelectable ? (
-            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium italic">
-              Unapproved
-            </span>
-          ) : isAdded ? (
+        {/* Middle: Amount & Status */}
+        <div className="text-right shrink-0">
+          <div className="text-xs font-bold text-on-surface">
+            {parseFloat(exp.amount).toFixed(3)} KD
+          </div>
+          <div className="text-[10px]">
+            {type === 'unapproved' ? (
+              <span className="text-amber-600 dark:text-amber-400 font-medium">Needs Approval</span>
+            ) : (
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Approved</span>
+            )}
+          </div>
+        </div>
+
+        {/* Right Action Buttons */}
+        <div className="shrink-0 pl-1 flex items-center gap-1.5">
+          {type === 'unapproved' ? (
+            <>
+              {/* Edit button in Unapproved */}
+              <button
+                type="button"
+                onClick={() => handleOpenEdit(exp)}
+                className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer border border-outline-variant/60"
+                title="Edit expense details"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Approve button */}
+              <button
+                type="button"
+                disabled={approvingExpenseId === exp.expense_id}
+                onClick={() => handleApproveExpense(exp)}
+                className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                title="Approve this expense"
+              >
+                {approvingExpenseId === exp.expense_id ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Approving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3 h-3" />
+                    <span>Approve</span>
+                  </>
+                )}
+              </button>
+            </>
+          ) : type === 'available' ? (
+            <>
+              {/* Edit button in Available */}
+              <button
+                type="button"
+                onClick={() => handleOpenEdit(exp)}
+                className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer border border-outline-variant/60"
+                title="Edit expense details"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Add button */}
+              <button
+                type="button"
+                onClick={() => handleToggleExpense(exp)}
+                className="px-3 py-1.5 rounded bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                title="Add to bundle"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Add</span>
+              </button>
+            </>
+          ) : (
+            /* Remove button in Selected */
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleToggleExpense(exp);
-              }}
-              className="px-2.5 py-1 rounded border border-rose-500/40 text-rose-600 dark:text-rose-400 text-[10px] font-semibold hover:bg-rose-500/10 cursor-pointer transition-colors inline-flex items-center gap-1 shadow-2xs"
-              title="Remove expense from this bundle"
+              onClick={() => handleToggleExpense(exp)}
+              className="px-3 py-1.5 rounded border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+              title="Remove from bundle"
             >
               <Minus className="w-3 h-3" />
               <span>Remove</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleToggleExpense(exp);
-              }}
-              className="px-2.5 py-1 rounded bg-primary text-on-primary text-[10px] font-semibold hover:bg-primary/90 cursor-pointer transition-colors shadow-2xs inline-flex items-center gap-1 active:scale-95"
-              title="Add expense to this bundle"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add</span>
             </button>
           )}
         </div>
@@ -259,17 +694,17 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
   const workerName = worker?.name || worker?.full_name || worker?.username || 'Technician';
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
-      <div className="bg-surface-container rounded border border-outline-variant/80 max-w-3xl w-full h-[88vh] max-h-[92vh] flex flex-col shadow-2xl text-on-surface relative overflow-hidden transition-all">
+    <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+      <div className="bg-surface-container rounded border border-outline-variant/80 max-w-3xl w-full h-[86vh] max-h-[90vh] flex flex-col shadow-2xl text-on-surface relative overflow-hidden">
 
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-outline-variant/80 px-4 py-3 shrink-0 bg-surface-container-high/40">
+        <div className="flex items-center justify-between border-b border-outline-variant/70 px-4 py-3 shrink-0 bg-surface-container-high/40">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg border border-outline-variant text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer mr-0.5"
-              title="Back to technician list"
+              className="p-1.5 rounded border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer mr-0.5"
+              title="Back"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -280,26 +715,20 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
               size="sm"
             />
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm sm:text-base font-bold text-on-surface tracking-tight truncate">
-                  Create Claim Bundle
-                </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-bold border border-primary/20 shrink-0">
-                  New Bundle
-                </span>
-              </div>
-              <div className="text-xs text-on-surface-variant font-normal truncate flex items-center flex-wrap gap-1">
-                <span>Technician: <strong className="text-on-surface font-semibold">{workerName}</strong></span>
-                {worker?.employee_no && (
-                  <span className="text-on-surface-variant/80">• EMP: {worker.employee_no}</span>
-                )}
+              <h3 className="text-sm sm:text-base font-bold text-on-surface tracking-tight truncate">
+                Create Claim Bundle
+              </h3>
+              <div className="text-xs text-on-surface-variant truncate">
+                <span>{workerName}</span>
+                <span className="mx-1.5">•</span>
                 <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                  • Approved Total: {totalApprovedAmount.toFixed(3)} KD
+                  Approved Total: {totalApprovedAmount.toFixed(3)} KD
                 </span>
                 {(fromDate || toDate) && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant font-medium border border-outline-variant/60 ml-0.5">
-                    Filter: {formatDateDMY(fromDate) || 'Any'} → {formatDateDMY(toDate) || 'Present'}
-                  </span>
+                  <>
+                    <span className="mx-1.5">•</span>
+                    <span>{formatDateDMY(fromDate) || 'Any'} → {formatDateDMY(toDate) || 'Present'}</span>
+                  </>
                 )}
               </div>
             </div>
@@ -315,21 +744,20 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin flex flex-col min-h-0">
 
-          {/* Modal Error Banner */}
+          {/* Error Message */}
           {errorMessage && (
-            <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs animate-in fade-in shrink-0">
+            <div className="p-2.5 rounded bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
-                <span className="font-semibold">{errorMessage}</span>
+                <span className="font-medium truncate">{errorMessage}</span>
               </div>
               {setErrorMessage && (
                 <button
                   type="button"
                   onClick={() => setErrorMessage(null)}
                   className="p-1 hover:bg-red-500/10 rounded transition-colors text-red-500 shrink-0 cursor-pointer"
-                  title="Dismiss error"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -337,159 +765,223 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
             </div>
           )}
 
-          {/* Remarks input */}
-          <div className="shrink-0">
-            <label className="block font-semibold text-on-surface mb-1 text-xs">
-              Bundle Remarks <span className="text-red-500 font-bold">*</span>
-            </label>
-            <textarea
-              required
-              rows={2}
-              value={bundleRemarks}
-              onChange={(e) => setBundleRemarks(e.target.value)}
-              placeholder="Notes or description for this worker claim bundle (Required)..."
-              className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-2.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline resize-none"
-            />
-          </div>
-
-          {/* Search bar & View Filter Tabs */}
-          <div className="pt-2 border-t border-outline-variant/70 space-y-2 shrink-0">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
-
-              {/* Search input */}
-              <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/70" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by ID, Category, WO#, Remarks, Amount..."
-                  className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded pl-8 pr-8 py-2 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-2xs hover:border-outline placeholder:text-on-surface-variant/50"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer"
-                    title="Clear search"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+          {/* Feedback Notification */}
+          {feedbackMsg && (
+            <div
+              className={`p-2.5 rounded text-xs flex items-center justify-between shadow-2xs shrink-0 ${feedbackMsg.type === 'success'
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                : 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
+                }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {feedbackMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
                 )}
+                <span className="font-medium truncate">{feedbackMsg.text}</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackMsg(null)}
+                className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
-              {/* View filter toggles: Added & Unadded */}
-              <div className="flex items-center gap-1 bg-surface-container-low border border-outline-variant p-0.5 rounded shrink-0 text-xs font-semibold self-start sm:self-auto">
+          {/* Search bar & 3 Distinct Tabs: Unapproved, Available, Selected */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 justify-between shrink-0">
+            {/* Search input */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by category, WO#, remarks..."
+                className="w-full bg-surface-container-low border border-outline-variant/70 text-on-surface text-xs rounded pl-8 pr-8 py-2 focus:outline-none focus:border-primary transition-all placeholder:text-on-surface-variant/50"
+              />
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setActiveFilterTab('unadded')}
-                  className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'unadded'
-                    ? 'bg-amber-600 text-white shadow-xs font-bold'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer"
                 >
-                  <span>Unadded</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'unadded' ? 'bg-white/20 text-white' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                    }`}>
-                    {unaddedExpenses.length}
-                  </span>
+                  <X className="w-3.5 h-3.5" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterTab('added')}
-                  className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'added'
-                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
-                >
-                  <span>Added</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'added' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                    }`}>
-                    {addedExpenses.length}
-                  </span>
-                </button>
-              </div>
+              )}
+            </div>
 
+            {/* 3 Separate Sections / Tabs */}
+            <div className="flex items-center bg-surface-container-low border border-outline-variant/70 p-0.5 rounded shrink-0 text-xs font-semibold self-start sm:self-auto">
+              {/* Tab 1: Unapproved */}
+              <button
+                type="button"
+                onClick={() => setActiveFilterTab('unapproved')}
+                className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'unapproved'
+                  ? 'bg-amber-600 text-white shadow-xs font-bold'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+              >
+                <span>Unapproved</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'unapproved'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                    }`}
+                >
+                  {unapprovedExpenses.length}
+                </span>
+              </button>
+
+              {/* Tab 2: Available */}
+              <button
+                type="button"
+                onClick={() => setActiveFilterTab('available')}
+                className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'available'
+                  ? 'bg-surface-container-high text-on-surface shadow-xs font-bold'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+              >
+                <span>Available</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant font-bold">
+                  {availableExpenses.length}
+                </span>
+              </button>
+
+              {/* Tab 3: Selected */}
+              <button
+                type="button"
+                onClick={() => setActiveFilterTab('selected')}
+                className={`px-3 py-1.5 rounded transition-all cursor-pointer flex items-center gap-1.5 ${activeFilterTab === 'selected'
+                  ? 'bg-primary text-on-primary shadow-xs font-bold'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+              >
+                <span>Selected</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeFilterTab === 'selected'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    }`}
+                >
+                  {selectedExpenses.length}
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* Main List Container (No Divider, Single Tab View) */}
-          <div className="flex-1 min-h-[320px] flex flex-col relative rounded border border-outline-variant/80 bg-surface-container-lowest overflow-hidden">
+          {/* List Container for Selected Tab */}
+          <div className="flex-1 min-h-[300px] flex flex-col rounded border border-outline-variant/70 bg-surface-container-lowest overflow-hidden">
             {isLoadingExpenses ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-on-surface-variant text-xs">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                <span>Loading technician expenses...</span>
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span>Loading expenses...</span>
               </div>
             ) : workerExpenses.length === 0 ? (
               <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-on-surface-variant">
                 No unclaimed expenses found for this technician.
               </div>
-            ) : activeFilterTab === 'added' ? (
-              /* ONLY ADDED TAB VIEW */
+            ) : activeFilterTab === 'unapproved' ? (
+              /* UNAPPROVED SECTION */
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-surface-container-high/60 border-b border-outline-variant/60 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-on-surface">Added Expenses</span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      {addedExpenses.length} ({addedTotal.toFixed(3)} KD)
-                    </span>
-                  </div>
-                  {filteredAdded.length > 0 && (
+                <div className="flex items-center justify-between px-3.5 py-2 bg-amber-500/[0.06] border-b border-amber-500/20 shrink-0">
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    Unapproved Expenses ({unapprovedExpenses.length}) • {unapprovedTotal.toFixed(3)} KD
+                  </span>
+                  {filteredUnapproved.length > 0 && (
                     <button
                       type="button"
-                      onClick={handleRemoveAllAdded}
-                      className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
+                      disabled={isBulkApproving}
+                      onClick={handleBulkApproveUnapproved}
+                      className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-semibold cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                      title="Approve all unapproved expenses"
+                    >
+                      {isBulkApproving ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Approving all...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Approve All ({filteredUnapproved.length})</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
+                  {filteredUnapproved.length === 0 ? (
+                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70">
+                      {searchQuery
+                        ? 'No unapproved expenses match your search.'
+                        : 'No unapproved expenses. All available expenses are approved.'}
+                    </div>
+                  ) : (
+                    filteredUnapproved.map(exp => renderExpenseCard(exp, 'unapproved'))
+                  )}
+                </div>
+              </div>
+            ) : activeFilterTab === 'available' ? (
+              /* AVAILABLE SECTION */
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex items-center justify-between px-3.5 py-2 bg-surface-container-high/40 border-b border-outline-variant/60 shrink-0">
+                  <span className="text-xs font-semibold text-on-surface">
+                    Available Expenses ({availableExpenses.length}) • {availableTotal.toFixed(3)} KD
+                  </span>
+                  {filteredAvailable.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleAddAllAvailable}
+                      className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                      Add All ({filteredAvailable.length})
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
+                  {filteredAvailable.length === 0 ? (
+                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70">
+                      {searchQuery
+                        ? 'No available expenses match your search.'
+                        : unapprovedExpenses.length > 0
+                          ? 'No approved expenses available yet. Check the "Unapproved" tab to approve expenses.'
+                          : 'All available expenses have been added to the bundle.'}
+                    </div>
+                  ) : (
+                    filteredAvailable.map(exp => renderExpenseCard(exp, 'available'))
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* SELECTED SECTION */
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex items-center justify-between px-3.5 py-2 bg-surface-container-high/40 border-b border-outline-variant/60 shrink-0">
+                  <span className="text-xs font-semibold text-on-surface">
+                    Selected in Bundle ({selectedExpenses.length}) • {selectedTotal.toFixed(3)} KD
+                  </span>
+                  {filteredSelected.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAllSelected}
+                      className="text-xs text-rose-600 dark:text-rose-400 hover:underline font-medium cursor-pointer"
                     >
                       Remove All
                     </button>
                   )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
-                  {filteredAdded.length === 0 ? (
-                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70 italic">
+                  {filteredSelected.length === 0 ? (
+                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70">
                       {searchQuery
-                        ? 'No added expenses match your search.'
-                        : 'No expenses added yet. Switch to "Unadded" tab to choose and add expenses.'}
+                        ? 'No selected expenses match your search.'
+                        : 'No expenses selected yet. Switch to "Available" or "Unapproved" tab to add expenses.'}
                     </div>
                   ) : (
-                    filteredAdded.map(exp => renderExpenseCard(exp, true))
-                  )}
-                </div>
-              </div>
-            ) : (
-              /* ONLY UNADDED TAB VIEW */
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-surface-container-high/60 border-b border-outline-variant/60 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-on-surface">Available / Unadded Expenses</span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant/60">
-                      {unaddedEligibleExpenses.length} Eligible ({unaddedEligibleTotal.toFixed(3)} KD)
-                    </span>
-                    {unaddedExpenses.length > unaddedEligibleExpenses.length && (
-                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                        • {unaddedExpenses.length - unaddedEligibleExpenses.length} unapproved
-                      </span>
-                    )}
-                  </div>
-                  {filteredUnadded.some(isExpenseEligible) && (
-                    <button
-                      type="button"
-                      onClick={handleAddAllEligible}
-                      className="text-[11px] text-primary hover:underline font-bold cursor-pointer"
-                    >
-                      Add All Eligible
-                    </button>
-                  )}
-                </div>
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
-                  {filteredUnadded.length === 0 ? (
-                    <div className="h-full flex items-center justify-center p-6 text-center text-xs text-on-surface-variant/70 italic">
-                      {searchQuery
-                        ? 'No available expenses match your search.'
-                        : 'All available expenses have been added to the bundle.'}
-                    </div>
-                  ) : (
-                    filteredUnadded.map(exp => renderExpenseCard(exp, false))
+                    filteredSelected.map(exp => renderExpenseCard(exp, 'selected'))
                   )}
                 </div>
               </div>
@@ -497,17 +989,53 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
           </div>
         </div>
 
-        {/* Fixed Modal Footer */}
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-outline-variant/80 bg-surface-container-high/30 shrink-0">
+        {/* Bundle Remarks Row */}
+        <div className="px-4 py-2.5 bg-surface-container border-t border-outline-variant/60 flex items-center gap-3 shrink-0">
+          <label className="text-xs font-semibold text-on-surface shrink-0 flex items-center gap-1.5">
+            <span>Remarks</span>
+            <span className="text-red-500 font-bold">*</span>
+
+          </label>
+          <div className="flex-1 flex items-center gap-2">
+            <input
+              type="text"
+              required
+              value={bundleRemarks}
+              onChange={(e) => {
+                setBundleRemarks(e.target.value);
+                setIsRemarksAuto(false);
+              }}
+              placeholder={selectedExpenses.length === 0 ? "Select expenses to generate remarks dynamically..." : "Dynamic remarks based on activity..."}
+              className="flex-1 bg-surface-container-low border border-outline-variant/80 text-on-surface text-xs rounded px-3 py-1.5 focus:outline-none focus:border-primary placeholder:text-on-surface-variant/50"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setIsRemarksAuto(true);
+                const dyn = generateDynamicRemarks(selectedExpenses);
+                if (dyn) setBundleRemarks(dyn);
+              }}
+              title="Regenerate dynamic remarks from activity"
+              className={`px-2.5 py-1.5 rounded text-xs font-medium border inline-flex items-center gap-1 cursor-pointer transition-colors shrink-0 ${isRemarksAuto
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-outline-variant/80 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                }`}
+            >
+
+              <span className="text-[11px]">Auto</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-outline-variant/70 bg-surface-container-high/30 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-on-surface-variant">
-              Selected Bundle Total:
-            </span>
+            <span className="text-xs text-on-surface-variant">Selected:</span>
             <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-              {addedTotal.toFixed(3)} KD
+              {selectedTotal.toFixed(3)} KD
             </span>
             <span className="text-xs text-on-surface-variant hidden sm:inline">
-              ({addedExpenses.length} {addedExpenses.length === 1 ? 'expense selected' : 'expenses selected'})
+              ({selectedExpenses.length} {selectedExpenses.length === 1 ? 'item' : 'items'})
             </span>
           </div>
 
@@ -515,25 +1043,34 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 rounded border border-outline-variant text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded border border-outline-variant/70 text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
             >
-              Back to Technicians
+              Cancel
             </button>
             <button
               type="button"
-              onClick={handleCreateBundle}
-              disabled={submitting || isSyncingNewBundle || addedExpenses.length === 0 || !bundleRemarks.trim()}
+              onClick={() => {
+                if (selectedExpenses.length === 0) return;
+                if (!bundleRemarks.trim()) {
+                  const fallback = generateDynamicRemarks(selectedExpenses) || 'Worker Expense Claim';
+                  setBundleRemarks(fallback);
+                  setTimeout(() => handleCreateBundle(), 50);
+                  return;
+                }
+                handleCreateBundle();
+              }}
+              disabled={submitting || isSyncingNewBundle || selectedExpenses.length === 0 || (!bundleRemarks.trim() && !generateDynamicRemarks(selectedExpenses))}
               className="px-4 py-2 rounded bg-primary text-on-primary text-xs font-bold hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer shadow-md hover:shadow-primary/25 active:scale-[0.98] flex items-center gap-2"
             >
               {isSyncingNewBundle ? (
                 <span className="flex items-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Finalizing Bundle...</span>
+                  <span>Finalizing...</span>
                 </span>
               ) : submitting ? (
                 <span className="flex items-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Creating Bundle...</span>
+                  <span>Creating...</span>
                 </span>
               ) : (
                 'Create Claim Bundle'
@@ -543,6 +1080,137 @@ export const CreateWorkerBundleModal: React.FC<CreateWorkerBundleModalProps> = (
         </div>
 
       </div>
+
+      {/* POPUP MODAL: EDIT EXPENSE */}
+      {editingExpense && (
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-surface-container rounded border border-outline-variant/80 max-w-md w-full p-5 shadow-2xl space-y-4 text-on-surface animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-outline-variant/70 pb-3">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-primary" />
+                <h4 className="text-sm font-bold text-on-surface">
+                  Edit Expense #{editingExpense.expense_id}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseEdit}
+                className="p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editFormError && (
+              <div className="p-2.5 rounded bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{editFormError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditExpense} className="space-y-3.5 text-xs">
+              {/* Category */}
+              <div>
+                <label className="block font-semibold text-on-surface mb-1">
+                  Expense Category
+                </label>
+                {expenseTypes.length > 0 ? (
+                  <select
+                    value={editExpenseTypeId}
+                    onChange={(e) => setEditExpenseTypeId(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-2 focus:outline-none focus:border-primary"
+                  >
+                    <option value="">Select Category...</option>
+                    {expenseTypes.map((et: any) => (
+                      <option key={et.expense_type_id || et.id} value={String(et.expense_type_id || et.id)}>
+                        {et.expense_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    disabled
+                    value={editingExpense.expense_type_detail?.expense_name || editingExpense.expense_type?.expense_name || 'General Expense'}
+                    className="w-full bg-surface-container-high border border-outline-variant text-on-surface-variant text-xs rounded p-2 cursor-not-allowed opacity-80"
+                  />
+                )}
+              </div>
+
+              {/* Amount & Date side-by-side */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-on-surface mb-1">
+                    Amount (KD) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0.001"
+                    required
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    placeholder="0.000"
+                    className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-2 focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-on-surface mb-1">
+                    Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-2 focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block font-semibold text-on-surface mb-1">
+                  Remarks / Description
+                </label>
+                <textarea
+                  rows={2}
+                  value={editRemarks}
+                  onChange={(e) => setEditRemarks(e.target.value)}
+                  placeholder="Notes or details about this expense..."
+                  className="w-full bg-surface-container-low border border-outline-variant text-on-surface text-xs rounded p-2 focus:outline-none focus:border-primary resize-none"
+                />
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-outline-variant/60">
+                <button
+                  type="button"
+                  onClick={handleCloseEdit}
+                  className="px-3.5 py-1.5 rounded border border-outline-variant text-xs font-semibold text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingExpense}
+                  className="px-4 py-1.5 rounded bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isUpdatingExpense ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

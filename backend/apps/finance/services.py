@@ -128,7 +128,7 @@ class ApprovalService:
 
         actor_role_name = (actor.role.role_name.lower().strip(
         ) if hasattr(actor, 'role') and actor.role else '')
-        if actor_role_name in ['administrator', 'admin']:
+        if actor_role_name in ['administrator', 'admin', 'office administrator', 'office admin', 'finance', 'accountant', 'accounts']:
             return True
 
         # 1. User-wise: Direct user assignment on the step

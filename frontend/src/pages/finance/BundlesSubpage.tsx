@@ -2634,7 +2634,11 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                           const catName = exp.expense_type_detail?.expense_name || (typeof exp.expense_type === 'object' && exp.expense_type ? exp.expense_type.expense_name : 'General');
                                           const cleanRemarks = getCleanRemarks(exp.remarks);
                                           return (
-                                            <tr key={exp.expense_id ?? `exp-${expIdx}`} className="hover:bg-surface-container-high transition-colors">
+                                            <tr
+                                              key={exp.expense_id ?? `exp-${expIdx}`}
+                                              onClick={() => setPreviewExpense(exp)}
+                                              className="hover:bg-surface-container-high transition-colors cursor-pointer"
+                                            >
                                               <td className="px-3 py-2 font-semibold text-primary">{exp.expense_id}</td>
                                               <td className="px-3 py-2 text-on-surface font-medium">{catName}</td>
                                               <td className="px-3 py-2 text-on-surface-variant max-w-[200px]" title={cleanRemarks || undefined}>
@@ -2664,7 +2668,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                               <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
                                                 {parseFloat(exp.amount || '0').toFixed(3)}
                                               </td>
-                                              <td className="px-3 py-2 text-right">
+                                              <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                                                 <div className="inline-flex items-center justify-end gap-1.5">
                                                   <button
                                                     onClick={(e) => {
@@ -3039,6 +3043,12 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
         setErrorMessage={setErrorMessage}
         fromDate={expenseFilterFrom || filterDateFrom}
         toDate={expenseFilterTo || filterDateTo}
+        token={token}
+        currentUser={currentUser}
+        API_URL={API_URL}
+        setWorkerExpenses={setWorkerExpenses}
+        setPreviewMediaUrl={setPreviewMediaUrl}
+        onRefreshParent={onRefresh}
       />
 
       {/* POPUP MODAL 1: VIEW BUNDLE BILLS & MEDIA */}
