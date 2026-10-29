@@ -472,8 +472,14 @@ export const FinanceView: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Failed to remove expense from bundle');
 
+      // Instantly update bundle in memory so status and expenses list update immediately
+      if (data && data.claim_id) {
+        setBundles(prev => prev.map(b => (b.claim_id === bundleId ? { ...b, ...data } : b)));
+        setSelectedBundleForView(prev => (prev?.claim_id === bundleId ? { ...prev, ...data } : prev));
+      }
+
       setSuccessMessage(`Expense ${expenseId} removed from Bundle ${bundleId}. Bundle status reset to Draft.`);
-      fetchData(true, true);
+      await fetchData(true, true);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -795,7 +801,7 @@ export const FinanceView: React.FC = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Fetch API data directly from DB (with silent background mode and cancellation support)
-  const fetchData = async (isSilent = false, _bypassCache = false) => {
+  const fetchData = async (isSilent = false, bypassCache = false) => {
     if (!token) return;
 
     // Cancel any previous in-flight fetch request
@@ -812,6 +818,12 @@ export const FinanceView: React.FC = () => {
     const headers = {
       'Authorization': `Token ${token}`,
       'Content-Type': 'application/json'
+    };
+
+    const fetchOptions: RequestInit = {
+      headers,
+      signal,
+      ...(bypassCache ? { cache: 'no-store' as RequestCache } : {})
     };
 
     const dateParams = (filterDateFrom && filterDateTo)
@@ -884,13 +896,23 @@ export const FinanceView: React.FC = () => {
           claimsUrl += `&search=${encodeURIComponent(debouncedSearchQuery)}`;
         }
 
-        const resClaims = await fetch(claimsUrl, { headers, signal });
+        const bundleApprovalsUrl = `${API_URL}/finance/approvals/?page_size=100${dateParams}`;
+
+        const [resClaims, resApps] = await Promise.all([
+          fetch(claimsUrl, fetchOptions),
+          fetch(bundleApprovalsUrl, fetchOptions)
+        ]);
         if (signal.aborted) return;
         if (resClaims.ok) {
           const claimData = await resClaims.json();
           if (claimData && Array.isArray(claimData.results)) {
             const count = typeof claimData.count === 'number' ? claimData.count : claimData.results.length;
             setBundles(claimData.results);
+            setSelectedBundleForView(prev => {
+              if (!prev) return null;
+              const updated = claimData.results.find((b: WorkerClaimItem) => b.claim_id === prev.claim_id);
+              return updated ? { ...prev, ...updated } : prev;
+            });
             setBundleTotalCount(count);
             const stats = {
               total_bundles: claimData.total_bundles_count ?? count,
@@ -902,14 +924,22 @@ export const FinanceView: React.FC = () => {
           } else {
             const list = parseList(claimData);
             setBundles(list);
+            setSelectedBundleForView(prev => {
+              if (!prev) return null;
+              const updated = list.find((b: WorkerClaimItem) => b.claim_id === prev.claim_id);
+              return updated ? { ...prev, ...updated } : prev;
+            });
             setBundleTotalCount(list.length);
           }
         }
+        if (resApps.ok) {
+          setApprovals(parseList(await resApps.json()));
+        }
         if (!isSilent) setLoading(false);
 
-        // Fetch unclaimed expenses in the background for Create Bundle modal without freezing UI
-        if (unclaimedExpenses.length === 0) {
-          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, { headers, signal })
+        // Fetch unclaimed expenses in the background for Create/Edit Bundle modal without freezing UI
+        if (unclaimedExpenses.length === 0 || bypassCache) {
+          fetch(`${API_URL}/finance/expense/?is_claimed=false&page_size=all`, fetchOptions)
             .then(res => res.ok ? res.json() : null)
             .then(data => {
               if (data && !signal.aborted) setUnclaimedExpenses(parseList(data));
@@ -937,11 +967,13 @@ export const FinanceView: React.FC = () => {
 
         // 3. Fresh fetch of approved unassigned claims for Assemble Ledger directly from DB
         const claimsUrl = `${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=all`;
+        const ledgerApprovalsUrl = `${API_URL}/finance/approvals/?page_size=100${dateParams}`;
 
-        const [resL, resG, resClaims] = await Promise.all([
-          fetch(ledgersUrl, { headers, signal }),
-          fetch(groupsUrl, { headers, signal }),
-          fetch(claimsUrl, { headers, signal })
+        const [resL, resG, resClaims, resApps] = await Promise.all([
+          fetch(ledgersUrl, fetchOptions),
+          fetch(groupsUrl, fetchOptions),
+          fetch(claimsUrl, fetchOptions),
+          fetch(ledgerApprovalsUrl, fetchOptions)
         ]);
         if (signal.aborted) return;
 
@@ -966,13 +998,9 @@ export const FinanceView: React.FC = () => {
           setBundles(parseList(await resClaims.json()));
         }
 
-        // Background: Fetch approvals asynchronously without blocking initial render
-        fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
-          .then(res => res.ok ? res.json() : null)
-          .then(data => {
-            if (data && !signal.aborted) setApprovals(parseList(data));
-          })
-          .catch(() => { });
+        if (resApps.ok) {
+          setApprovals(parseList(await resApps.json()));
+        }
       }
       else if (subpage === 'approvals') {
         const res = await fetch(approvalsUrl, { headers, signal });
@@ -1204,14 +1232,14 @@ export const FinanceView: React.FC = () => {
       let groupStatus = 'Draft';
       if (isPaid) {
         groupStatus = 'Paid';
-      } else if (isCompleted || (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid'))) {
-        groupStatus = 'Approved';
       } else if (groupBatches.some(b => b.status === 'Rework')) {
         groupStatus = 'Rework';
       } else if (groupBatches.some(b => b.status === 'In Review' || b.status === 'Submitted')) {
         groupStatus = 'In Review';
       } else if (groupBatches.some(b => b.status === 'Rejected')) {
         groupStatus = 'Rejected';
+      } else if (isCompleted || (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid'))) {
+        groupStatus = 'Approved';
       } else {
         groupStatus = 'Draft';
       }
@@ -2513,6 +2541,8 @@ export const FinanceView: React.FC = () => {
           ledgers={ledgers}
           bundles={bundles}
           ledgerGroups={ledgerGroups}
+          ledgerBatches={ledgerBatches}
+          currentUser={currentUser}
           loading={loading}
           submitting={submitting}
           renderStatusBadge={renderStatusBadge}

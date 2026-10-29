@@ -601,22 +601,22 @@ class LedgerGroupSerializer(serializers.ModelSerializer):
     def get_status(self, obj):
         if getattr(obj, 'is_paid', False):
             return 'Paid'
+        ledgers = list(obj.ledgers.all()) if hasattr(obj, 'ledgers') else []
+        if ledgers:
+            statuses = [getattr(l, 'status', 'Draft') for l in ledgers]
+            if all(s == 'Paid' for s in statuses):
+                return 'Paid'
+            if any(s == 'Rework' for s in statuses):
+                return 'Rework'
+            if any(s in ('In Review', 'Submitted', 'Pending') for s in statuses):
+                return 'In Review'
+            if any(s == 'Rejected' for s in statuses):
+                return 'Rejected'
+            if all(s in ('Approved', 'Paid') for s in statuses):
+                return 'Approved'
+            return 'Draft'
         if getattr(obj, 'is_completed', False):
             return 'Approved'
-        ledgers = list(obj.ledgers.all()) if hasattr(obj, 'ledgers') else []
-        if not ledgers:
-            return 'Draft'
-        statuses = [getattr(l, 'status', 'Draft') for l in ledgers]
-        if all(s == 'Paid' for s in statuses):
-            return 'Paid'
-        if all(s in ('Approved', 'Paid') for s in statuses):
-            return 'Approved'
-        if any(s == 'Rework' for s in statuses):
-            return 'Rework'
-        if any(s in ('In Review', 'Submitted', 'Pending') for s in statuses):
-            return 'In Review'
-        if any(s == 'Rejected' for s in statuses):
-            return 'Rejected'
         return 'Draft'
 
     def get_paid_by_detail(self, obj):

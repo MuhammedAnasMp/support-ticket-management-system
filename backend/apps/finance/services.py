@@ -271,6 +271,12 @@ class ApprovalService:
                         entity.reject_reason = comments
                     entity.save()
 
+                if instance.ledger and instance.ledger.ledger_group and instance.ledger.ledger_group.is_completed:
+                    instance.ledger.ledger_group.is_completed = False
+                    instance.ledger.ledger_group.completed_at = None
+                    instance.ledger.ledger_group.completed_by = None
+                    instance.ledger.ledger_group.save(update_fields=['is_completed', 'completed_at', 'completed_by'])
+
                 # When a bundle or ledger is rejected, retain tied expenses in the bundle and mark status as Rejected
                 if instance.claim:
                     instance.claim.status = 'Rejected'
@@ -314,6 +320,12 @@ class ApprovalService:
                     instance.claim.save()
 
                 if instance.ledger:
+                    if instance.ledger.ledger_group and instance.ledger.ledger_group.is_completed:
+                        instance.ledger.ledger_group.is_completed = False
+                        instance.ledger.ledger_group.completed_at = None
+                        instance.ledger.ledger_group.completed_by = None
+                        instance.ledger.ledger_group.save(update_fields=['is_completed', 'completed_at', 'completed_by'])
+
                     # If group reassignment is specified during Ledger rework
                     if ledger_group_id or (new_group_name and str(new_group_name).strip()):
                         LedgerService.change_ledger_group(
@@ -648,6 +660,8 @@ class LedgerService:
         if not bundle_ids:
             raise ValidationError("Cannot create a ledger without bundles.")
 
+        bundle_ids = list(dict.fromkeys(int(bid) for bid in bundle_ids if bid is not None))
+
         with transaction.atomic():
             bundles = list(WorkerClaim.objects.select_for_update().filter(
                 claim_id__in=bundle_ids))
@@ -665,11 +679,15 @@ class LedgerService:
                         raise ValidationError(
                             f"Bundle #{b.claim_id} is already attached to a Ledger batch and cannot be added to another Ledger.")
 
-            # Load all expenses linked to these bundles
-            expenses = list(Expense.objects.select_for_update().filter(claim__in=bundles).select_related(
+            # Lock expense rows first without nullable outer joins (PostgreSQL rejects FOR UPDATE on outer joins)
+            list(Expense.objects.select_for_update().filter(claim__in=bundles).values_list('pk', flat=True))
+
+            # Load all expenses linked to these bundles with related sub_department details
+            expenses = list(Expense.objects.filter(claim__in=bundles).select_related(
                 'ticket__nature__sub_department',
                 'ticket__department',
-                'expense_type'
+                'expense_type',
+                'claim'
             ))
 
             if not expenses:
@@ -729,7 +747,10 @@ class LedgerService:
 
             ledger_group = None
             if ledger_group_id:
-                ledger_group = LedgerGroup.objects.get(pk=ledger_group_id)
+                try:
+                    ledger_group = LedgerGroup.objects.select_for_update().get(pk=ledger_group_id)
+                except LedgerGroup.DoesNotExist:
+                    raise ValidationError(f"Ledger Group #{ledger_group_id} does not exist.")
 
             existing_batch_map = {}
             if ledger_group:
@@ -1070,11 +1091,15 @@ class LedgerService:
                     raise ValidationError(
                         f"Bundle #{b.claim_id} is in status '{b.status}'. Only 'Approved' bundles can be added.")
 
+            # Lock expense rows first without nullable outer joins (PostgreSQL rejects FOR UPDATE on outer joins)
+            list(Expense.objects.select_for_update().filter(claim__in=bundles).values_list('pk', flat=True))
+
             # Load all bundle expenses in a single query
-            bundle_expenses = list(Expense.objects.select_for_update().filter(claim__in=bundles).select_related(
+            bundle_expenses = list(Expense.objects.filter(claim__in=bundles).select_related(
                 'ticket__nature__sub_department',
                 'ticket__department',
-                'expense_type'
+                'expense_type',
+                'claim'
             ))
             if not bundle_expenses:
                 raise ValidationError("Selected bundle(s) have no expenses.")

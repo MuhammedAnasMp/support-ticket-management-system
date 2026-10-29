@@ -307,7 +307,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
   // Helper to extract approval data and workflow pipeline for a bundle
   const getBundleApprovalGroup = (bundle: WorkerClaimItem) => {
-    // 1. Direct approval instances on the bundle object from API serializer
+    // 1. Direct approval instances on the bundle object from API serializer (always freshest from /finance/claim/)
     const bundleDirectInstances: ApprovalInstanceItem[] =
       (bundle as any).approval_history || (bundle as any).approval_instances || [];
 
@@ -318,25 +318,51 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       ...(approvalsProps?.roleFilteredApprovals || [])
     ];
 
-    const matchingApp = allApprovals.find(a =>
+    const isBundleInReview = bundle.status === 'In Review' || bundle.status === 'Submitted';
+    const isBundleRework = bundle.status === 'Rework' || (bundle.status as string) === 'Rework Needed';
+    const isBundleRejected = bundle.status === 'Rejected';
+
+    const directMatch = bundleDirectInstances.length > 0
+      ? (isBundleInReview
+          ? bundleDirectInstances.find(a => a.status === 'Pending')
+          : isBundleRework
+            ? [...bundleDirectInstances].reverse().find(a => a.status === 'Rework')
+            : isBundleRejected
+              ? [...bundleDirectInstances].reverse().find(a => a.status === 'Rejected')
+              : undefined) || bundleDirectInstances[bundleDirectInstances.length - 1]
+      : null;
+
+    const matchingFromAll = (isBundleInReview ? allApprovals.find(a =>
       (a.claim === bundle.claim_id ||
         a.claim_id === bundle.claim_id ||
         (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)) &&
       a.status === 'Pending'
-    ) || allApprovals.find(a =>
-      a.claim === bundle.claim_id ||
-      a.claim_id === bundle.claim_id ||
-      (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)
-    ) || (bundleDirectInstances.length > 0 ? bundleDirectInstances.find(a => a.status === 'Pending') || bundleDirectInstances[0] : null);
+    ) : null) || allApprovals.find(a =>
+      (a.claim === bundle.claim_id ||
+        a.claim_id === bundle.claim_id ||
+        (a.target_summary?.type === 'Bundle' && a.target_summary?.id === bundle.claim_id)) &&
+      (isBundleRework ? a.status === 'Rework' : isBundleRejected ? a.status === 'Rejected' : true)
+    );
 
-    // Combine history items
+    const matchingApp = directMatch || matchingFromAll;
+
+    // Combine history items — prefer fresh bundleDirectInstances over potentially stale matchingApp.approval_history
     let historyItems: ApprovalInstanceItem[] = [];
-    if (matchingApp?.approval_history && matchingApp.approval_history.length > 0) {
-      historyItems = matchingApp.approval_history as any;
-    } else if (bundleDirectInstances.length > 0) {
-      historyItems = bundleDirectInstances;
+    if (bundleDirectInstances.length > 0) {
+      historyItems = [...bundleDirectInstances];
+    } else if (matchingApp?.approval_history && matchingApp.approval_history.length > 0) {
+      historyItems = [...(matchingApp.approval_history as any)];
     } else if (matchingApp) {
       historyItems = [matchingApp];
+    }
+
+    // If bundle is in Rework/Rejected/Draft, ensure no stale Pending status remains in historyItems
+    if (!isBundleInReview && (isBundleRework || isBundleRejected || bundle.status === 'Draft')) {
+      historyItems = historyItems.map(item =>
+        item.status === 'Pending'
+          ? { ...item, status: (isBundleRework ? 'Rework' : isBundleRejected ? 'Rejected' : item.status) as any }
+          : item
+      );
     }
 
     // Try to find full workflow steps (e.g. all levels)
@@ -560,7 +586,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       }
 
       setReworkComments(prev => ({ ...prev, [bundle.claim_id]: '' }));
-      if (onRefresh && !actionDone) {
+      if (onRefresh) {
         await onRefresh();
       }
     } catch (err: any) {
@@ -625,10 +651,17 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     }
 
     // Is the overall pipeline completely finished/approved?
-    const isFinished = group.isApproved || (steps.length > 0 && group.items.some(i => i.status === 'Approved' && ((i as any).is_final_step || i.step_order === steps.length))) || (group.items.length > 0 && group.items.every(i => i.status === 'Approved'));
+    const isGroupReworkOrRejectedOrPending = group.status === 'Rework' || group.status === 'Rejected' || group.status === 'In Review' || group.status === 'Submitted' || group.status === 'Draft';
+    const isFinished = !isGroupReworkOrRejectedOrPending && (
+      group.isApproved ||
+      (steps.length > 0 && group.items.some(i => i.status === 'Approved' && ((i as any).is_final_step || i.step_order === steps.length))) ||
+      (group.items.length > 0 && group.items.every(i => i.status === 'Approved'))
+    );
 
     // Find the current active step index if pending
-    const activePendingItem = group.items.find(i => i.status === 'Pending');
+    const activePendingItem = (group.status === 'In Review' || group.status === 'Submitted')
+      ? group.items.find(i => i.status === 'Pending')
+      : undefined;
     const activePendingOrder: number = (activePendingItem && typeof activePendingItem.step_order === 'number') ? activePendingItem.step_order : (isFinished ? steps.length + 1 : 1);
 
     return (
@@ -645,8 +678,12 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
           {/* STEP NODES & CONNECTORS */}
           {steps.map((step, idx) => {
             const stepOrderNum = typeof step.step_order === 'number' ? step.step_order : (idx + 1);
-            const stepInst = group.items.find(i => (i.step_name === step.step_name || i.step_order === step.step_order) && i.status === 'Pending')
-              || group.items.find(i => i.step_name === step.step_name || i.step_order === step.step_order);
+            const matchingStepItems = group.items.filter(i => i.step_name === step.step_name || i.step_order === step.step_order);
+            const stepInst = matchingStepItems.length > 0
+              ? (matchingStepItems.find(i => i.status === 'Pending' && (group.status === 'In Review' || group.status === 'Submitted')) ||
+                 (group.status === 'Rework' ? [...matchingStepItems].reverse().find(i => i.status === 'Rework') : undefined) ||
+                 matchingStepItems[matchingStepItems.length - 1])
+              : undefined;
 
             const isPending = !isFinished && (activePendingItem ? (stepOrderNum === activePendingOrder) : (stepInst?.status === 'Pending'));
             const isApproved = !isPending && (isFinished || (activePendingItem ? (stepOrderNum < activePendingOrder && stepInst?.status === 'Approved') : (stepInst?.status === 'Approved')));
@@ -1670,34 +1707,48 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                       const bundleExpenses = Array.isArray(b.expenses) ? b.expenses : [];
                       const approvalData = getBundleApprovalGroup(b);
 
-                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending') ||
-                        (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.find((i: any) => i.status === 'Pending'));
-                      const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
-                      const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
-                      const latestInstance = activePendingInstance || approvalData?.app || approvalData?.group?.items?.[0];
+                      const isBundleStatusRework = (
+                        b.status === 'Rework' ||
+                        (b.status as string) === 'Rework Needed' ||
+                        (b as any).status_display === 'Rework' ||
+                        (b as any).status_display === 'Rework Needed'
+                      );
+                      const isBundleStatusRejected = (
+                        b.status === 'Rejected' ||
+                        (b as any).status_display === 'Rejected'
+                      );
+
+                      const activePendingInstance = (!isBundleStatusRework && !isBundleStatusRejected && b.status !== 'Draft')
+                        ? (approvalData?.group?.items?.find(i => i.status === 'Pending') ||
+                          (Array.isArray((b as any).approval_instances) && (b as any).approval_instances.find((i: any) => i.status === 'Pending')))
+                        : undefined;
+                      const reworkInstance = [...(approvalData?.group?.items || [])].reverse().find((i: any) => i.status === 'Rework');
+                      const rejectedInstance = [...(approvalData?.group?.items || [])].reverse().find((i: any) => i.status === 'Rejected');
+                      const itemsList = approvalData?.group?.items || [];
+                      const latestInstance = activePendingInstance || approvalData?.app || itemsList[itemsList.length - 1];
 
                       const isBundleApproved = b.status === 'Approved' || b.status === 'Paid';
                       const isLedgerApproved = Boolean(
-                        (b.ledger_details && (b.ledger_details.status === 'Approved' || b.ledger_details.status === 'Paid')) ||
+                        (b.ledger_details && (b.ledger_details.status === 'Approved' || b.ledger_details.status === 'Paid' || b.ledger_details.is_completed)) ||
                         ((b as any).ledger_status === 'Approved' || (b as any).ledger_status === 'Paid') ||
                         (Array.isArray((b as any).ledgers) && (b as any).ledgers.some((l: any) => l.status === 'Approved' || l.status === 'Paid'))
                       );
 
-                      // A bundle is ONLY in Rework if its backend status is Rework or latest step is Rework AND it is not actively In Review / Pending
-                      const isRework = !isBundleApproved && !activePendingInstance && b.status !== 'In Review' && b.status !== 'Submitted' && (
-                        b.status === 'Rework' ||
-                        (b.status as string) === 'Rework Needed' ||
-                        (b as any).status_display === 'Rework' ||
-                        (b as any).status_display === 'Rework Needed' ||
-                        (latestInstance?.status === 'Rework') ||
-                        (approvalData?.app?.status === 'Rework')
+                      // A bundle is in Rework if its backend status is Rework or latest step is Rework AND it is not actively In Review / Pending
+                      const isRework = !isBundleApproved && b.status !== 'In Review' && b.status !== 'Submitted' && (
+                        isBundleStatusRework ||
+                        (!activePendingInstance && (
+                          (latestInstance?.status === 'Rework') ||
+                          (approvalData?.app?.status === 'Rework')
+                        ))
                       );
 
-                      const isCurrentlyRejected = !isBundleApproved && !isRework && !activePendingInstance && b.status !== 'In Review' && b.status !== 'Submitted' && (
-                        b.status === 'Rejected' ||
-                        (b as any).status_display === 'Rejected' ||
-                        (latestInstance?.status === 'Rejected') ||
-                        (approvalData?.app?.status === 'Rejected')
+                      const isCurrentlyRejected = !isBundleApproved && !isRework && b.status !== 'In Review' && b.status !== 'Submitted' && (
+                        isBundleStatusRejected ||
+                        (!activePendingInstance && (
+                          (latestInstance?.status === 'Rejected') ||
+                          (approvalData?.app?.status === 'Rejected')
+                        ))
                       );
 
                       const isRejected = isCurrentlyRejected;
@@ -2626,8 +2677,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                                     {/* <Eye className="w-3 h-3" /> */}
                                                     <span>Receipt</span>
                                                   </button>
-                                                  {b.status !== 'Paid' && !b.ledger_details && !(b as any).ledger_id && handleRemoveExpenseFromBundle && (
-                                                    <Can permission='finance.edit_bundle' >
+                                                  {b.status !== 'Paid' && !isLedgerApproved && (!b.ledger_details || isRejectedOrRework || b.status === 'Draft' || b.ledger_details.status === 'Rework' || b.ledger_details.status === 'Draft' || b.ledger_details.status === 'Rejected') && handleRemoveExpenseFromBundle && (
+                                                    <Can permission={isAdmin || ["finance.edit_bundle", "finance.edit_workerclaim", "finance.change_workerclaim"] as any}>
                                                       <button
                                                         type="button"
                                                         onClick={async (e) => {
@@ -3193,7 +3244,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                             <span className="font-bold text-sm text-on-surface shrink-0">
                               KD {parseFloat(exp.amount).toFixed(3)}
                             </span>
-                            {selectedBundleForView?.status !== 'Paid' && !selectedBundleForView?.ledger_details && !(selectedBundleForView as any)?.ledger_id && handleRemoveExpenseFromBundle && (
+                            {selectedBundleForView?.status !== 'Paid' && !(selectedBundleForView?.ledger_details && (selectedBundleForView.ledger_details.status === 'Approved' || selectedBundleForView.ledger_details.status === 'Paid' || selectedBundleForView.ledger_details.is_completed)) && handleRemoveExpenseFromBundle && (
                               <button
                                 type="button"
                                 onClick={async (e) => {

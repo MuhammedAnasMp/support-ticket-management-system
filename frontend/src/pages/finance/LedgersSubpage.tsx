@@ -144,6 +144,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     setIsRefreshing(true);
     try {
       await onRefresh();
+      if (showCreateLedgerModal) {
+        await fetchLedgerGroups('');
+      }
     } finally {
       setIsRefreshing(false);
     }
@@ -543,7 +546,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   }, [showCreateLedgerModal, ledgerBatches]);
 
   useEffect(() => {
-    if (ledgerGroups && ledgerGroups.length > 0) {
+    if (ledgerGroups) {
       setDynamicGroups(ledgerGroups);
     }
   }, [ledgerGroups]);
@@ -556,6 +559,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         ? `${API_URL}/finance/ledger-groups/?search=${encodeURIComponent(searchTerm.trim())}&page_size=50`
         : `${API_URL}/finance/ledger-groups/?page_size=50`;
       const res = await fetch(url, {
+        cache: 'no-store',
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json'
@@ -659,11 +663,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     );
     if (childLedgers.length > 0) {
       if (childLedgers.every(l => l.status === 'Paid')) return 'Paid';
-      if (childLedgers.every(l => l.status === 'Approved' || l.status === 'Paid')) return 'Approved';
       if (childLedgers.some(l => l.status === 'Rework')) return 'Rework';
       if (childLedgers.some(l => l.status === 'In Review' || l.status === 'Submitted')) return 'In Review';
       if (childLedgers.some(l => l.status === 'Rejected')) return 'Rejected';
+      if (childLedgers.every(l => l.status === 'Approved' || l.status === 'Paid')) return 'Approved';
       return 'Draft';
+    }
+    if (g.status === 'Rework' || g.status === 'In Review' || g.status === 'Rejected' || g.status === 'Draft') {
+      return g.status;
     }
     if (g.is_completed || g.status === 'Completed' || g.status === 'Approved') return 'Approved';
     if (g.status) return g.status;
@@ -1058,11 +1065,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
     const instancesFromHistory = cluster.ledgers.flatMap(l => ((l as any).approval_history || (l as any).approval_instances || []));
 
-    // Combine unique instances
+    // Combine unique instances (prefer fresh approval_history on the ledger over background approvalsProps)
     const allInstancesMap = new Map<string | number, ApprovalInstanceItem>();
     [...instancesFromProps, ...instancesFromHistory].forEach((inst: any) => {
-      if (inst && (inst.approval_id || inst.id || inst.step_name)) {
-        const key = inst.approval_id || inst.id || `${inst.step_name}_${inst.step_order}`;
+      if (inst && (inst.instance_id || inst.approval_id || inst.id || inst.step_name)) {
+        const key = inst.instance_id || inst.approval_id || inst.id || `${inst.ledger || ''}_${inst.step_name}_${inst.step_order}`;
         allInstancesMap.set(key, inst);
       }
     });
@@ -1121,7 +1128,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
     const isGroupPaid = cluster.isPaid || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Paid'));
     const isDraft = cluster.ledgers.every(l => l.status === 'Draft') || (cluster.ledgers.length === 0);
-    const isFinished = cluster.allApproved || cluster.isCompleted || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid'));
+    const hasReworkOrRejectedOrReview = cluster.ledgers.some(l => l.status === 'Rework' || l.status === 'Rejected' || l.status === 'In Review' || l.status === 'Submitted' || l.status === 'Draft');
+    const isFinished = !hasReworkOrRejectedOrReview && (cluster.allApproved || cluster.isCompleted || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')));
     const activePendingItem = allInstances.find(i => i.status === 'Pending');
     const activePendingOrder: number = (activePendingItem && typeof activePendingItem.step_order === 'number')
       ? activePendingItem.step_order
@@ -1146,7 +1154,23 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           {/* STEP NODES */}
           {steps.map((step, idx) => {
             const stepOrderNum = typeof step.step_order === 'number' ? step.step_order : (idx + 1);
-            const stepInst = allInstances.find(i => i.step_name === step.step_name || i.step_order === step.step_order);
+            const matchingStepInstances = allInstances.filter(i => i.step_name === step.step_name || i.step_order === step.step_order);
+            // Sort matching instances so the latest (or Rework/Rejected/Pending when group has rework) wins
+            const stepInst = matchingStepInstances.length > 0
+              ? [...matchingStepInstances].sort((a: any, b: any) => {
+                  const groupHasRework = cluster.ledgers.some(l => l.status === 'Rework');
+                  if (groupHasRework) {
+                    if (a.status === 'Rework' && b.status !== 'Rework') return 1;
+                    if (b.status === 'Rework' && a.status !== 'Rework') return -1;
+                  }
+                  const idA = Number(a.instance_id || a.approval_id || a.id || 0);
+                  const idB = Number(b.instance_id || b.approval_id || b.id || 0);
+                  if (idA !== idB) return idA - idB;
+                  const timeA = a.actioned_at ? new Date(a.actioned_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0);
+                  const timeB = b.actioned_at ? new Date(b.actioned_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0);
+                  return timeA - timeB;
+                })[matchingStepInstances.length - 1]
+              : undefined;
             const isApproved = isFinished || (stepInst && stepInst.status === 'Approved') || (!isDraft && stepOrderNum < activePendingOrder && !stepInst);
             const isPending = !isFinished && !isDraft && ((stepInst && stepInst.status === 'Pending') || (!stepInst && stepOrderNum === activePendingOrder));
             const isRejected = !isDraft && (stepInst && stepInst.status === 'Rejected');
@@ -1486,6 +1510,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       cluster.totalCount = cluster.ledgers.length;
       cluster.approvedCount = cluster.ledgers.filter(l => l.status === 'Approved' || l.status === 'Paid').length;
       cluster.allApproved = cluster.totalCount > 0 && cluster.approvedCount === cluster.totalCount;
+      if (cluster.ledgers.some(l => l.status === 'Rework' || l.status === 'Rejected' || l.status === 'In Review' || l.status === 'Submitted' || l.status === 'Draft')) {
+        if (!cluster.isPaid) {
+          cluster.isCompleted = false;
+        }
+      }
       if (cluster.totalCount > 0 && cluster.ledgers.every(l => l.status === 'Paid')) {
         cluster.isPaid = true;
         cluster.isCompleted = true;
@@ -1631,10 +1660,10 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
   const getClusterStatus = (c: LedgerGroupCluster): string => {
     if (c.isPaid || (c.ledgers.length > 0 && c.ledgers.every(l => l.status === 'Paid'))) return 'Paid';
-    if (c.isCompleted || (c.ledgers.length > 0 && c.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid'))) return 'Approved';
     if (c.ledgers.some(l => l.status === 'Rework')) return 'Rework';
     if (c.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')) return 'In Review';
     if (c.ledgers.some(l => l.status === 'Rejected')) return 'Rejected';
+    if (c.isCompleted || (c.ledgers.length > 0 && c.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid'))) return 'Approved';
     return 'Draft';
   };
 
@@ -1930,9 +1959,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     if (isRefreshingAssemble) return;
     setIsRefreshingAssemble(true);
     try {
-      if (onRefresh) {
-        await onRefresh();
-      }
+      await Promise.all([
+        onRefresh ? onRefresh() : Promise.resolve(),
+        fetchLedgerGroups(''),
+        fetchLedgerBatches()
+      ]);
     } finally {
       setIsRefreshingAssemble(false);
     }
@@ -2596,14 +2627,14 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     const isGroupPaid = cluster.isPaid || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Paid'));
                     const groupStatus = isGroupPaid
                       ? 'Paid'
-                      : (cluster.isCompleted || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')))
-                        ? 'Approved'
-                        : cluster.ledgers.some(l => l.status === 'Rework')
-                          ? 'Rework'
-                          : cluster.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')
-                            ? 'In Review'
-                            : cluster.ledgers.some(l => l.status === 'Rejected')
-                              ? 'Rejected'
+                      : cluster.ledgers.some(l => l.status === 'Rework')
+                        ? 'Rework'
+                        : cluster.ledgers.some(l => l.status === 'In Review' || l.status === 'Submitted')
+                          ? 'In Review'
+                          : cluster.ledgers.some(l => l.status === 'Rejected')
+                            ? 'Rejected'
+                            : (cluster.isCompleted || (cluster.ledgers.length > 0 && cluster.ledgers.every(l => l.status === 'Approved' || l.status === 'Paid')))
+                              ? 'Approved'
                               : 'Draft';
 
                     const canUserApproveGroup = cluster.ledgers.some(l => {

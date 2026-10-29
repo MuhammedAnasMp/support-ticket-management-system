@@ -105,7 +105,14 @@ export const EditBundleModal: React.FC<EditBundleModalProps> = ({
     );
   }, [currentExpenses, availableForWorker]);
 
-  const isConnectedToLedger = Boolean(selectedBundleForEdit?.ledger_details || (selectedBundleForEdit as any)?.ledger_id);
+  const isConnectedToLedger = Boolean(
+    selectedBundleForEdit?.ledger_details &&
+    (selectedBundleForEdit.ledger_details.status === 'Approved' ||
+      selectedBundleForEdit.ledger_details.status === 'Paid' ||
+      selectedBundleForEdit.ledger_details.status === 'In Review' ||
+      selectedBundleForEdit.ledger_details.status === 'Submitted' ||
+      selectedBundleForEdit.ledger_details.is_completed)
+  );
 
   // Separate expenses into added vs unadded
   const addedExpenses = useMemo(() => {

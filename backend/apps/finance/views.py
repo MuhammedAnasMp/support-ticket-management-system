@@ -1064,7 +1064,7 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            return Response(WorkerClaimSerializer(bundle).data, status=status.HTTP_200_OK)
+            return Response(WorkerClaimSerializer(bundle, context={'request': request}).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
@@ -1078,7 +1078,7 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
-            return Response(WorkerClaimSerializer(bundle).data, status=status.HTTP_200_OK)
+            return Response(WorkerClaimSerializer(bundle, context={'request': request}).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
@@ -1105,7 +1105,7 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                     ip_address=request.META.get('REMOTE_ADDR')
                 )
                 bundle.refresh_from_db()
-                return Response({'status': 'success', 'approval': ApprovalInstanceSerializer(instance).data, 'bundle': WorkerClaimSerializer(bundle).data}, status=status.HTTP_200_OK)
+                return Response({'status': 'success', 'approval': ApprovalInstanceSerializer(instance, context={'request': request}).data, 'bundle': WorkerClaimSerializer(bundle, context={'request': request}).data}, status=status.HTTP_200_OK)
             except DjangoValidationError as e:
                 msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
                 raise exceptions.ValidationError({'detail': msg})
@@ -1130,7 +1130,7 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             create_audit_event('WorkerClaim', bundle.pk, 'MANUALLY_REJECTED', actor=user, payload={'comments': comments}, ip_address=request.META.get('REMOTE_ADDR'))
 
         bundle.refresh_from_db()
-        return Response({'status': 'success', 'bundle': WorkerClaimSerializer(bundle).data}, status=status.HTTP_200_OK)
+        return Response({'status': 'success', 'bundle': WorkerClaimSerializer(bundle, context={'request': request}).data}, status=status.HTTP_200_OK)
 
 
     def perform_destroy(self, instance):
@@ -1358,7 +1358,7 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
             raise exceptions.ValidationError({'detail': msg})
 
         updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
-        return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
+        return Response(LedgerSerializer(updated_ledgers, many=True, context={'request': request}).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='action')
     def action_group(self, request, pk=None):
@@ -1410,7 +1410,7 @@ class LedgerGroupViewSet(viewsets.ModelViewSet):
                 group.save(update_fields=['is_completed', 'completed_at', 'completed_by'])
 
         updated_ledgers = list(get_optimized_ledger_queryset().filter(ledger_group=group)) if group else []
-        return Response(LedgerSerializer(updated_ledgers, many=True).data, status=status.HTTP_200_OK)
+        return Response(LedgerSerializer(updated_ledgers, many=True, context={'request': request}).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='add-bundle')
     def add_bundle(self, request, pk=None):
@@ -1573,21 +1573,24 @@ class LedgerViewSet(viewsets.ModelViewSet):
         ledger_group = serializer.validated_data.get('ledger_group')
         remarks = serializer.validated_data.get('remarks')
 
-        from django.core.exceptions import ValidationError as DjangoValidationError
+        from django.core.exceptions import ValidationError as DjangoValidationError, ObjectDoesNotExist
         try:
             ledgers = LedgerService.create_ledger(
                 bundle_ids=bundle_ids,
-                created_by=request.user,
+                created_by=request.user if request.user and request.user.is_authenticated else None,
                 ledger_group_id=ledger_group.ledger_group_id if ledger_group else None,
                 remarks=remarks,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
             if isinstance(ledgers, list):
-                if len(ledgers) == 1:
-                    return Response(LedgerSerializer(ledgers[0]).data, status=status.HTTP_201_CREATED)
-                return Response(LedgerSerializer(ledgers, many=True).data, status=status.HTTP_201_CREATED)
-            return Response(LedgerSerializer(ledgers).data, status=status.HTTP_201_CREATED)
-        except DjangoValidationError as e:
+                ledger_pks = [l.pk for l in ledgers]
+                optimized_ledgers = list(get_optimized_ledger_queryset().filter(pk__in=ledger_pks))
+                if len(optimized_ledgers) == 1:
+                    return Response(LedgerSerializer(optimized_ledgers[0], context={'request': request}).data, status=status.HTTP_201_CREATED)
+                return Response(LedgerSerializer(optimized_ledgers, many=True, context={'request': request}).data, status=status.HTTP_201_CREATED)
+            fresh_ledger = get_optimized_ledger_queryset().filter(pk=ledgers.pk).first() or ledgers
+            return Response(LedgerSerializer(fresh_ledger, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        except (DjangoValidationError, ObjectDoesNotExist) as e:
             msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
 
