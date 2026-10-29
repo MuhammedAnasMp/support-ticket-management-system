@@ -395,6 +395,15 @@ export const FinanceView: React.FC = () => {
     receipts_count?: number;
   } | null>(null);
 
+  // Syncing state for newly created ledger row loader
+  const [isSyncingNewLedger, setIsSyncingNewLedger] = useState<boolean>(false);
+  const [syncingLedgerInfo, setSyncingLedgerInfo] = useState<{
+    ledger_id?: number | string;
+    group_name?: string;
+    bundles_count?: number;
+    total_amount?: number;
+  } | null>(null);
+
   // Bundle Detail View & Edit Modal States
   const [selectedBundleForView, setSelectedBundleForView] = useState<WorkerClaimItem | null>(null);
   const [selectedBundleForEdit, setSelectedBundleForEdit] = useState<WorkerClaimItem | null>(null);
@@ -1807,6 +1816,41 @@ export const FinanceView: React.FC = () => {
           : Array.isArray(data?.ledgers)
             ? data.ledgers.map((l: any) => l.ledger_id).filter(Boolean)
             : [];
+
+      const newLedgerItems = Array.isArray(data)
+        ? data
+        : data?.ledger_id
+          ? [data]
+          : Array.isArray(data?.ledgers)
+            ? data.ledgers
+            : [];
+
+      // Calculate approximate total amount from selected bundles
+      const selectedBundlesObj = bundles.filter(b => targetBundleIds.includes(b.claim_id));
+      const totalAmount = selectedBundlesObj.reduce((sum, b) => sum + (parseFloat(b.total_claimed_amount) || 0), 0);
+
+      const targetGroupName = selectedGroupId
+        ? ledgerGroups.find(g => String(g.ledger_group_id) === String(selectedGroupId))?.group_name
+        : newGroupName.trim();
+
+      // Trigger syncing loader state for Ledgers
+      setSyncingLedgerInfo({
+        ledger_id: createdIds[0],
+        group_name: targetGroupName,
+        bundles_count: targetBundleIds.length,
+        total_amount: totalAmount
+      });
+      setIsSyncingNewLedger(true);
+
+      // Optimistically prepend to ledgers list so user sees immediate feedback
+      if (newLedgerItems.length > 0) {
+        setLedgers(prev => {
+          const existingIds = new Set(prev.map(l => l.ledger_id));
+          const toAdd = newLedgerItems.filter((l: any) => !existingIds.has(l.ledger_id));
+          return [...toAdd, ...prev];
+        });
+      }
+
       const ledgerMsg = createdIds.length > 1
         ? `Ledgers (${createdIds.join(', ')}) assembled successfully.`
         : createdIds.length === 1
@@ -1816,7 +1860,13 @@ export const FinanceView: React.FC = () => {
       setShowCreateLedgerModal(false);
       setSelectedBundleIds([]);
       setNewGroupName('');
+
       fetchData(true);
+
+      setTimeout(() => {
+        setIsSyncingNewLedger(false);
+        setSyncingLedgerInfo(null);
+      }, 1200);
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -2707,6 +2757,10 @@ export const FinanceView: React.FC = () => {
           approvalsProps={approvalsProps}
           setSelectedTicketForModal={setSelectedTicketForModal}
           onRefresh={() => fetchData(true, true)}
+          isSyncingNewLedger={isSyncingNewLedger}
+          syncingLedgerInfo={syncingLedgerInfo}
+          errorMessage={errorMessage}
+          setErrorMessage={setErrorMessage}
           onLedgerUpdated={(updatedLedger) => {
             setLedgers(prev => prev.map(l => l.ledger_id === updatedLedger.ledger_id ? updatedLedger : l));
             if (updatedLedger.ledger_group_detail) {

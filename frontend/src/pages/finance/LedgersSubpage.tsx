@@ -70,6 +70,15 @@ interface LedgersSubpageProps {
   onPageChange?: (page: number) => void;
   onItemsPerPageChange?: (num: number) => void;
   setSelectedTicketForModal?: (ticket: any) => void;
+  isSyncingNewLedger?: boolean;
+  syncingLedgerInfo?: {
+    ledger_id?: number | string;
+    group_name?: string;
+    bundles_count?: number;
+    total_amount?: number;
+  } | null;
+  errorMessage?: string | null;
+  setErrorMessage?: (msg: string | null) => void;
 }
 
 export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
@@ -124,7 +133,11 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   itemsPerPage: propItemsPerPage,
   onPageChange: propOnPageChange,
   onItemsPerPageChange: propOnItemsPerPageChange,
-  setSelectedTicketForModal
+  setSelectedTicketForModal,
+  isSyncingNewLedger = false,
+  syncingLedgerInfo = null,
+  errorMessage = null,
+  setErrorMessage
 }) => {
   // Stepper Visibility State
   const [showStepper, setShowStepper] = useState<boolean>(true);
@@ -2542,7 +2555,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
           <div className="p-12 text-center text-xs text-on-surface-variant flex items-center justify-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin text-primary" /> Loading ledgers...
           </div>
-        ) : allGroupedLedgerClusters.length === 0 ? (
+        ) : allGroupedLedgerClusters.length === 0 && !isSyncingNewLedger ? (
           <div className="p-12 text-center text-on-surface-variant space-y-2">
             <Layers className="w-8 h-8 mx-auto text-outline" />
             <p className="text-xs font-medium text-on-surface">No Ledger match your filters</p>
@@ -2620,6 +2633,59 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
+                  {/* SKELETON / ROW LOADER UNTIL THE NEW LEDGER IS VISIBLE IN UI */}
+                  {isSyncingNewLedger && (
+                    <tr className="animate-pulse bg-primary/10 dark:bg-primary/20 border-l-4 border-l-primary transition-all">
+                      <td className="w-9 px-2 py-3 text-center">
+                        <div className="w-5 h-5 mx-auto rounded flex items-center justify-center bg-primary/20 text-primary">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-primary">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-primary">
+                            {syncingLedgerInfo?.group_name || (syncingLedgerInfo?.ledger_id ? `Ledger #${syncingLedgerInfo.ledger_id}` : 'New Ledger Group')}
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/25 text-primary font-bold animate-pulse inline-flex items-center gap-1">
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            <span>Creating Ledger...</span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-on-surface-variant">
+                        <span className="text-xs font-mono">
+                          {syncingLedgerInfo?.bundles_count ? `${syncingLedgerInfo.bundles_count} bundle(s)` : 'Assembling...'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-on-surface-variant">
+                        <div className="h-4 w-14 bg-primary/20 rounded animate-pulse" />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[9px]">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          </div>
+                          <span className="text-xs text-on-surface-variant">You</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-primary">
+                        {syncingLedgerInfo?.total_amount ? `KD ${syncingLedgerInfo.total_amount.toFixed(3)}` : (
+                          <div className="h-4 w-16 bg-primary/20 rounded ml-auto animate-pulse" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Creating...</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5 opacity-40 pointer-events-none">
+                          <div className="h-6 w-14 bg-slate-300/60 dark:bg-slate-700/60 rounded" />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {groupedLedgerClusters.map((cluster, clusterIdx) => {
                     const isGroupCollapsed = !expandedGroupIds[cluster.groupId];
 
@@ -4340,18 +4406,36 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                   <span>Refresh</span>
                 </button>
                 <button
+                  type="button"
+                  disabled={submitting}
                   onClick={() => {
+                    if (submitting) return;
                     setShowCreateLedgerModal(false);
                     setSelectedBundleIds([]);
                     setSelectedGroupId('');
                     setNewGroupName('');
                   }}
-                  className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                  className="p-1 hover:bg-surface-container-high rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
+
+            {/* Error Message inside modal */}
+            {errorMessage && (
+              <div className="p-2.5 px-3 rounded bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-2xs shrink-0">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+                {setErrorMessage && (
+                  <button onClick={() => setErrorMessage(null)} className="p-0.5 hover:bg-red-500/20 rounded cursor-pointer">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="space-y-4 overflow-y-auto flex-1 pr-1 pb-20">
               <div className="space-y-2">
@@ -4746,8 +4830,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-outline-variant shrink-0">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => setShowCreateLedgerModal(false)}
-                className="px-4 py-2 rounded border border-outline text-xs font-medium hover:bg-surface-container-high transition-colors cursor-pointer"
+                className="px-4 py-2 rounded border border-outline text-xs font-medium hover:bg-surface-container-high transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -4760,7 +4845,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 {submitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{selectedGroupId ? 'Adding Bundles...' : 'Assembling...'}</span>
+                    <span>{selectedGroupId ? 'Adding Bundles...' : 'Creating Ledger...'}</span>
                   </>
                 ) : (
                   <>
