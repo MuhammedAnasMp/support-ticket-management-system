@@ -1187,7 +1187,12 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       if (res.ok) {
         const data = await res.json();
         const list: ExpenseItem[] = Array.isArray(data) ? data : (data.results || []);
-        setWorkerExpenses(list);
+        const targetWorkerId = Number(emp.id || emp.user_id);
+        const filteredList = list.filter(exp => {
+          const expWid = getUserId(exp.worker) ?? getUserId(exp.worker_detail);
+          return expWid ? Number(expWid) === targetWorkerId : true;
+        });
+        setWorkerExpenses(filteredList);
         // Do not automatically add expenses; user must choose them explicitly
         setSelectedExpenseIds([]);
       }
@@ -1461,10 +1466,10 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   }, [displayExpenses.length, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo]);
 
   const paginatedBundles = useMemo(() => {
-    if (isServerPaginated) return bundles;
+    if (isServerPaginated) return filteredBundles;
     const start = (currentPage - 1) * itemsPerPage;
     return filteredBundles.slice(start, start + itemsPerPage);
-  }, [isServerPaginated, bundles, filteredBundles, currentPage, itemsPerPage]);
+  }, [isServerPaginated, filteredBundles, currentPage, itemsPerPage]);
 
   const paginatedModalExpenses = useMemo(() => {
     const start = (modalPage - 1) * modalItemsPerPage;

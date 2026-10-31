@@ -1148,12 +1148,12 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     ];
 
     const directPending = expDirectInstances.find(a => a.status === 'Pending');
-    const globalPending = allApprovals.find(a =>
+    const globalPending = !exp.approved ? allApprovals.find(a =>
       (a.expense === exp.expense_id ||
       a.expense_id === exp.expense_id ||
       (a.target_summary?.type === 'Expense' && a.target_summary?.id === exp.expense_id)) &&
       a.status === 'Pending'
-    );
+    ) : undefined;
     const activePending = directPending || globalPending;
 
     const matchingApp = activePending || expDirectInstances[0] || allApprovals.find(a =>
@@ -1207,7 +1207,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         historyItems[0] = { ...historyItems[0], workflow_steps: workflowSteps };
       }
 
-      const hasPendingApproval = historyItems.some(i => i.status === 'Pending');
+      const hasPendingApproval = !exp.approved && historyItems.some(i => i.status === 'Pending');
 
       return {
         app: matchingApp,
@@ -1216,7 +1216,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
           type: 'Expense' as const,
           id: exp.expense_id,
           items: historyItems,
-          isApproved: exp.approved && !hasPendingApproval,
+          isApproved: exp.approved || !hasPendingApproval,
           remarks: typeof exp.remarks === 'string' ? exp.remarks : ''
         }
       };
@@ -2079,9 +2079,11 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         ...(exp.receipt && !exp.receipts?.some((r: any) => r.media_id === exp.receipt?.media_id) ? [exp.receipt] : [])
                       ];
 
-                      const activePendingInstance = approvalData?.group?.items?.find(i => i.status === 'Pending') ||
+                      const activePendingInstance = !exp.approved ? (
+                        approvalData?.group?.items?.find(i => i.status === 'Pending') ||
                         ((exp as any).approval_instances || []).find((i: any) => i.status === 'Pending') ||
-                        (approvalData?.app?.status === 'Pending' ? approvalData?.app : undefined);
+                        (approvalData?.app?.status === 'Pending' ? approvalData?.app : undefined)
+                      ) : undefined;
                       const reworkInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rework');
                       const rejectedInstance = approvalData?.group?.items?.find((i: any) => i.status === 'Rejected');
                       const latestInstance = approvalData?.group?.items?.[0] || approvalData?.app;
@@ -2091,7 +2093,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                         rawStatus === 'Paid' ||
                         (exp.claim && (exp.claim.status === 'Paid' || exp.claim_status === 'Paid'))
                       );
-                      const isExpenseApproved = !isExpensePaid && !activePendingInstance && (exp.approved === true || rawStatus === 'Approved');
+                      const isExpenseApproved = !isExpensePaid && (exp.approved === true || rawStatus === 'Approved');
 
                       // An expense is actively in Rework ONLY if it has not yet been resubmitted to Pending
                       const isCurrentlyRework = !isExpensePaid && !isExpenseApproved && !activePendingInstance && (
@@ -2379,7 +2381,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                 </span>
                               ) : !exp.claim ? (
                                 (isRejectedOrRework || isExpenseApproved) ? (
-                                  <Can permission={"finance.add_expense"}>
+                                  <Can permission={canEditExpense ? true : ["finance.add_expense", "finance.change_expense", "maintenance.change_my_expence", "accounts.change_others_expence"] as any}>
                                     <button
                                       type="button"
                                       disabled={updatingExpenseId === exp.expense_id}
@@ -2548,20 +2550,20 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                         <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                                           <CheckCircle2 className="w-3.5 h-3.5" /> Approved
                                         </span>
-                                        {/* {!exp.claim && (
-                                        <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
-                                          <button
-                                            type="button"
-                                            disabled={updatingExpenseId === exp.expense_id}
-                                            onClick={() => openEditExpenseModal(exp)}
-                                            className="px-2.5 py-1 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                                            title="Edit approved expense (Will move back to Approval)"
-                                          >
-                                            <Pencil className="w-3.5 h-3.5 text-primary" />
-                                            <span>Edit</span>
-                                          </button>
-                                        </Can>
-                                      )} */}
+                                        {!exp.claim && (
+                                          <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                            <button
+                                              type="button"
+                                              disabled={updatingExpenseId === exp.expense_id}
+                                              onClick={() => openEditExpenseModal(exp)}
+                                              className="px-2.5 py-1 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                              title="Edit approved expense (Will move back to Approval)"
+                                            >
+                                              <Pencil className="w-3.5 h-3.5 text-primary" />
+                                              <span>Edit</span>
+                                            </button>
+                                          </Can>
+                                        )}
                                       </div>
                                     ) : null}
                                   </div>
@@ -2742,20 +2744,20 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                 <div className="p-3.5 rounded border border-outline-variant bg-surface-container space-y-3">
                                   <div className="flex items-center justify-between pb-1 border-b border-outline-variant/60">
                                     <span className="text-xs font-bold tracking-wider text-on-surface">Expense Information</span>
-                                    {/* {!exp.claim && (isRejectedOrRework || isExpenseApproved) && (
-                                    <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
-                                      <button
-                                        type="button"
-                                        disabled={updatingExpenseId === exp.expense_id}
-                                        onClick={() => openEditExpenseModal(exp)}
-                                        className="px-3 py-1.5 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                                        title={isExpenseApproved ? "Edit approved expense (Will move back to Approval)" : "Edit expense"}
-                                      >
-                                        <Pencil className="w-3.5 h-3.5 text-primary" />
-                                        <span>{isExpenseApproved ? 'Edit (Moves to Approval)' : 'Edit Expense'}</span>
-                                      </button>
-                                    </Can>
-                                  )} */}
+                                    {!exp.claim && (isRejectedOrRework || isExpenseApproved) && (
+                                      <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                        <button
+                                          type="button"
+                                          disabled={updatingExpenseId === exp.expense_id}
+                                          onClick={() => openEditExpenseModal(exp)}
+                                          className="px-3 py-1.5 rounded border border-outline hover:border-primary text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                          title={isExpenseApproved ? "Edit approved expense (Will move back to Approval)" : "Edit expense"}
+                                        >
+                                          <Pencil className="w-3.5 h-3.5 text-primary" />
+                                          <span>{isExpenseApproved ? 'Edit (Moves to Approval)' : 'Edit Expense'}</span>
+                                        </button>
+                                      </Can>
+                                    )}
                                   </div>
 
 

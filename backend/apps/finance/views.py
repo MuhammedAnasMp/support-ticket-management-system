@@ -1,4 +1,5 @@
-from django.db.models import Q, Prefetch, Count, F
+import re
+from django.db.models import Q, Prefetch, Count, F, Case, When, Value, IntegerField
 from django.utils import timezone
 from rest_framework import viewsets, exceptions, status
 from rest_framework.decorators import action
@@ -254,17 +255,23 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     expense_type__approve_required=False)).exclude(is_paid=True).exclude(claim__status='Paid')
             elif status_lower in ('pending approval', 'pending', 'in review'):
                 queryset = queryset.filter(
-                    approved=False,
-                    expense_type__approve_required=True
-                ).exclude(is_paid=True).exclude(claim__status='Paid').exclude(
-                    approval_instances__status__in=['Rework', 'Rejected']
-                )
+                    Q(approved=False) &
+                    (Q(expense_type__isnull=True) | Q(expense_type__approve_required=True)) &
+                    (Q(approval_instances__status='Pending') | ~Q(
+                        approval_instances__status__in=['Rework', 'Rejected']))
+                ).exclude(is_paid=True).exclude(claim__status='Paid').distinct()
             elif status_lower == 'rejected':
-                queryset = queryset.filter(approval_instances__status='Rejected').exclude(
-                    is_paid=True).exclude(claim__status='Paid')
+                queryset = queryset.filter(
+                    approved=False,
+                    approval_instances__status='Rejected'
+                ).exclude(approval_instances__status='Pending').exclude(
+                    is_paid=True).exclude(claim__status='Paid').distinct()
             elif status_lower == 'rework':
-                queryset = queryset.filter(approval_instances__status='Rework').exclude(
-                    is_paid=True).exclude(claim__status='Paid')
+                queryset = queryset.filter(
+                    approved=False,
+                    approval_instances__status='Rework'
+                ).exclude(approval_instances__status='Pending').exclude(
+                    is_paid=True).exclude(claim__status='Paid').distinct()
             elif status_lower == 'paid':
                 queryset = queryset.filter(
                     Q(is_paid=True) | Q(claim__status='Paid'))
@@ -500,17 +507,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         worker = self.request.query_params.get("worker")
         if worker and str(worker).upper() != 'ALL':
             if str(worker).isdigit():
-                queryset = queryset.filter(
-                    Q(worker_id=int(worker)) |
-                    Q(ticket__allocations__worker_id=int(worker))
-                ).distinct()
+                queryset = queryset.filter(worker_id=int(worker))
             else:
                 queryset = queryset.filter(
                     Q(worker__full_name__icontains=worker) |
                     Q(worker__username__icontains=worker) |
-                    Q(worker__employee_no__icontains=worker) |
-                    Q(ticket__allocations__worker__full_name__icontains=worker) |
-                    Q(ticket__allocations__worker__username__icontains=worker)
+                    Q(worker__employee_no__icontains=worker)
                 ).distinct()
 
         ordering = self.request.query_params.get("ordering")
@@ -922,6 +924,24 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
 
             queryset = queryset.filter(q_filter).distinct()
 
+        # Parse search query and identify potential bundle ID search
+        search = self.request.query_params.get(
+            "search") or self.request.query_params.get("q")
+        bundle_id = None
+        if search:
+            search_str = search.strip()
+            exact_bundle_match = re.search(r'^(?:bundle|claim|b)?[\s\-_#]*(\d+)$', search_str, re.IGNORECASE)
+            if exact_bundle_match:
+                bundle_id = int(exact_bundle_match.group(1))
+            else:
+                prefix_match = re.search(r'(?:bundle|claim|b)[\s\-_#]+(\d+)', search_str, re.IGNORECASE) or re.search(r'#(\d+)', search_str)
+                if prefix_match:
+                    bundle_id = int(prefix_match.group(1))
+                elif re.search(r'\b\d+\b', search_str):
+                    num_match = re.search(r'\b\d+\b', search_str)
+                    if num_match:
+                        bundle_id = int(num_match.group(0))
+
         ticket = self.request.query_params.get("ticket")
         if ticket:
             queryset = queryset.filter(ticket_id=ticket)
@@ -930,47 +950,94 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
         if status_param and status_param.upper() != 'ALL':
             status_lower = status_param.lower().strip()
             if status_lower in ('in review', 'submitted', 'pending', 'pending approval'):
-                queryset = queryset.filter(
-                    Q(status__iexact='In Review') | Q(status__iexact='Submitted'))
+                status_q = Q(status__iexact='In Review') | Q(status__iexact='Submitted')
             else:
-                queryset = queryset.filter(status__iexact=status_param.strip())
+                status_q = Q(status__iexact=status_param.strip())
+            if bundle_id:
+                queryset = queryset.filter(status_q | Q(claim_id=bundle_id))
+            else:
+                queryset = queryset.filter(status_q)
 
         ledger_filter = self.request.query_params.get("ledger_filter")
         if ledger_filter:
             if ledger_filter.upper() == 'IN_LEDGER':
-                queryset = queryset.filter(ledgers__isnull=False).distinct()
+                ledger_q = Q(ledgers__isnull=False)
             elif ledger_filter.upper() == 'NOT_IN_LEDGER':
-                queryset = queryset.filter(ledgers__isnull=True).distinct()
+                ledger_q = Q(ledgers__isnull=True)
+            else:
+                ledger_q = Q()
+            if ledger_q:
+                if bundle_id:
+                    queryset = queryset.filter(ledger_q | Q(claim_id=bundle_id)).distinct()
+                else:
+                    queryset = queryset.filter(ledger_q).distinct()
 
         from_date = self.request.query_params.get(
             "from_date") or self.request.query_params.get("date_from")
         if from_date:
-            queryset = queryset.filter(claim_date__date__gte=from_date)
+            if bundle_id:
+                queryset = queryset.filter(Q(claim_date__date__gte=from_date) | Q(claim_id=bundle_id))
+            else:
+                queryset = queryset.filter(claim_date__date__gte=from_date)
 
         to_date = self.request.query_params.get(
             "to_date") or self.request.query_params.get("date_to")
         if to_date:
-            queryset = queryset.filter(claim_date__date__lte=to_date)
+            if bundle_id:
+                queryset = queryset.filter(Q(claim_date__date__lte=to_date) | Q(claim_id=bundle_id))
+            else:
+                queryset = queryset.filter(claim_date__date__lte=to_date)
 
-        search = self.request.query_params.get(
-            "search") or self.request.query_params.get("q")
         if search:
-            search = search.strip()
-            q_search = (
-                Q(worker__first_name__icontains=search) |
-                Q(worker__last_name__icontains=search) |
-                Q(worker__username__icontains=search) |
-                Q(ticket__work_order_no__icontains=search) |
-                Q(remarks__icontains=search) |
-                Q(ledgers__ledger_group__group_name__icontains=search)
-            )
-            if search.isdigit():
-                q_search |= Q(claim_id=int(search))
+            search_str = search.strip()
+            q_search = Q()
+            if bundle_id:
+                q_search |= Q(claim_id=bundle_id)
+
+            is_pure_bundle_query = bool(re.search(r'^(?:bundle|claim|b)?[\s\-_#]*\d+$', search_str, re.IGNORECASE))
+            if not is_pure_bundle_query:
+                q_search |= (
+                    Q(worker__first_name__icontains=search_str) |
+                    Q(worker__last_name__icontains=search_str) |
+                    Q(worker__full_name__icontains=search_str) |
+                    Q(worker__username__icontains=search_str) |
+                    Q(worker__employee_no__icontains=search_str) |
+                    Q(ticket__work_order_no__icontains=search_str) |
+                    Q(remarks__icontains=search_str) |
+                    Q(ledgers__ledger_group__group_name__icontains=search_str)
+                )
+            elif search_str.isdigit():
+                q_search |= (
+                    Q(ticket__work_order_no__icontains=search_str) |
+                    Q(remarks__icontains=search_str) |
+                    Q(worker__username__icontains=search_str) |
+                    Q(worker__employee_no__icontains=search_str) |
+                    Q(worker__full_name__icontains=search_str) |
+                    Q(ledgers__ledger_group__group_name__icontains=search_str)
+                )
+
             queryset = queryset.filter(q_search).distinct()
+
+            if bundle_id:
+                queryset = queryset.annotate(
+                    search_priority=Case(
+                        When(claim_id=bundle_id, then=Value(0)),
+                        default=Value(1),
+                        output_field=IntegerField()
+                    )
+                )
 
         worker_param = self.request.query_params.get("worker")
         if worker_param:
             queryset = queryset.filter(worker_id=worker_param)
+
+        ordering = self.request.query_params.get("ordering")
+        if bundle_id:
+            order_fields = ['search_priority'] + ([ordering] if ordering else ['-claim_date', '-claim_id'])
+        elif ordering:
+            order_fields = [ordering]
+        else:
+            order_fields = ['-claim_date', '-claim_id']
 
         return queryset.select_related(
             'worker',
@@ -1018,7 +1085,7 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by'
-        ).order_by('-claim_date', '-claim_id')
+        ).order_by(*order_fields)
 
     @action(detail=False, methods=['get'], url_path='unclaimed-workers')
     def unclaimed_workers(self, request):

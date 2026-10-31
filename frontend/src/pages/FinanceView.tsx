@@ -994,14 +994,12 @@ export const FinanceView: React.FC = () => {
           }
         }
 
-        if (approvals.length === 0) {
-          fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-              if (data && !signal.aborted) setApprovals(parseList(data));
-            })
-            .catch(() => { });
-        }
+        fetch(`${API_URL}/finance/approvals/?page_size=100${dateParams}`, { headers, signal })
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && !signal.aborted) setApprovals(parseList(data));
+          })
+          .catch(() => { });
       } else if (subpage === 'bundles') {
         let claimsUrl = `${API_URL}/finance/claim/?page=${bundlePage}&page_size=${bundlePageSize}${dateParams}`;
         if (statusFilter !== 'ALL') {
@@ -1291,23 +1289,39 @@ export const FinanceView: React.FC = () => {
 
   // Filtered lists for main tables
   const filteredBundles = useMemo(() => {
+    const trimmedQuery = searchQuery.trim();
+    const bundleMatch = trimmedQuery ? (
+      trimmedQuery.match(/^(?:bundle|claim|b)?[\s\-_#]*(\d+)$/i) ||
+      trimmedQuery.match(/(?:bundle|claim|b)[\s\-_#]+(\d+)/i) ||
+      trimmedQuery.match(/#(\d+)/) ||
+      trimmedQuery.match(/\b\d+\b/)
+    ) : null;
+    const targetBundleId = bundleMatch ? Number(bundleMatch[1] || bundleMatch[0]) : null;
+
     if (subpage === 'bundles') {
-      return bundles;
+      if (!targetBundleId) return bundles;
+      return [...bundles].sort((a, b) => {
+        if (a.claim_id === targetBundleId && b.claim_id !== targetBundleId) return -1;
+        if (b.claim_id === targetBundleId && a.claim_id !== targetBundleId) return 1;
+        return 0;
+      });
     }
-    return bundles.filter((b) => {
+
+    const filtered = bundles.filter((b) => {
       if (statusFilter !== 'ALL') {
         const filterLower = statusFilter.toLowerCase().trim();
         const bStatusLower = (b.status || '').toLowerCase().trim();
         const matchesStatus = (filterLower === 'in review' || filterLower === 'submitted')
           ? (bStatusLower === 'in review' || bStatusLower === 'submitted')
           : bStatusLower === filterLower;
-        if (!matchesStatus) return false;
+        if (!matchesStatus && b.claim_id !== targetBundleId) return false;
       }
-      if (ledgerFilter === 'IN_LEDGER' && !b.ledger_details) return false;
-      if (ledgerFilter === 'NOT_IN_LEDGER' && b.ledger_details) return false;
-      if (!isWithinDateRange(b.claim_date, filterDateFrom, filterDateTo)) return false;
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
+      if (ledgerFilter === 'IN_LEDGER' && !b.ledger_details && b.claim_id !== targetBundleId) return false;
+      if (ledgerFilter === 'NOT_IN_LEDGER' && b.ledger_details && b.claim_id !== targetBundleId) return false;
+      if (!isWithinDateRange(b.claim_date, filterDateFrom, filterDateTo) && b.claim_id !== targetBundleId) return false;
+      if (trimmedQuery) {
+        if (targetBundleId && b.claim_id === targetBundleId) return true;
+        const query = trimmedQuery.toLowerCase();
         const workerName = (b.worker_detail?.full_name || b.worker_detail?.username || '').toLowerCase();
         const claimIdStr = b.claim_id.toString();
         const ticketStr = b.ticket_details?.work_order_no?.toLowerCase() || '';
@@ -1317,6 +1331,15 @@ export const FinanceView: React.FC = () => {
       }
       return true;
     });
+
+    if (targetBundleId) {
+      return [...filtered].sort((a, b) => {
+        if (a.claim_id === targetBundleId && b.claim_id !== targetBundleId) return -1;
+        if (b.claim_id === targetBundleId && a.claim_id !== targetBundleId) return 1;
+        return 0;
+      });
+    }
+    return filtered;
   }, [subpage, bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
 
   const filteredLedgers = useMemo(() => {
